@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Local-only, machine-specific — not shared
+.claude/
+.claude-mem/
+CLAUDE.md
+TESTING.md
+.codegraph/
