@@ -1,0 +1,407 @@
+// AI Cinema — Prisma schema, Main Flow 1 (AI Movie Production & Publishing)
+// Nguồn: docs/PROJECT_OVERVIEW.md + Database Diagram (drawio, page "Database Diagram").
+// Phạm vi: chỉ các bảng phục vụ MF-1. Wallet/Membership/Rewards/Support/... (MF-2..MF-5) sẽ thêm ở phase sau.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Identity (tối thiểu cho MF-1) ─────────────────────────
+// Ghi chú: đây là bản rút gọn (role dạng enum) để MF-1 có actor tham chiếu được.
+// Identity & RBAC đầy đủ (roles/permissions/role_permissions/user_roles/refresh_tokens)
+// nên làm ở phase auth riêng — xem đề xuất trong phần review database diagram.
+enum UserRole {
+  MEMBER
+  CONTENT_CREATOR
+  CONTENT_REVIEWER
+  STAFF
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         UserRole
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  moviesCreated    Movie[]           @relation("MovieCreatedBy")
+  contentBriefs    ContentBrief[]    @relation("ContentBriefCreatedBy")
+  generationJobs   GenerationJob[]   @relation("GenerationJobCreatedBy")
+  reviews          Review[]          @relation("ReviewReviewer")
+  complianceChecks ComplianceCheck[] @relation("ComplianceCheckedBy")
+  appliedLabels    AiContentLabel[]  @relation("LabelAppliedBy")
+  publications     Publication[]     @relation("PublicationPublishedBy")
+
+  @@map("user")
+}
+
+// ───────────────────────── Catalog ─────────────────────────
+
+model Genre {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+
+  movies MovieGenre[]
+
+  @@map("genre")
+}
+
+model Movie {
+  id              String   @id @default(uuid())
+  title           String
+  synopsis        String?
+  defaultLanguage String
+  description     String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy User         @relation("MovieCreatedBy", fields: [createdById], references: [id])
+  seasons   Season[]
+  episodes  Episode[]
+  genres    MovieGenre[]
+
+  @@map("movie")
+}
+
+model MovieGenre {
+  movieId String
+  genreId String
+
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([movieId, genreId])
+  @@map("movie_genre")
+}
+
+model Season {
+  id           String  @id @default(uuid())
+  movieId      String
+  seasonNumber Int
+  title        String?
+
+  movie    Movie     @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+
+  @@unique([movieId, seasonNumber])
+  @@map("season")
+}
+
+enum EpisodeProductionStatus {
+  DRAFT
+  IN_PRODUCTION
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  REJECTED
+}
+
+model Episode {
+  id               String                  @id @default(uuid())
+  movieId          String
+  seasonId         String?
+  episodeNumber    Int
+  title            String
+  productionStatus EpisodeProductionStatus @default(DRAFT)
+  currentPackageId String?                 @unique
+
+  movie          Movie           @relation(fields: [movieId], references: [id])
+  season         Season?         @relation(fields: [seasonId], references: [id])
+  currentPackage EpisodePackage? @relation("EpisodeCurrentPackage", fields: [currentPackageId], references: [id])
+
+  contentBriefs  ContentBrief[]
+  generationJobs GenerationJob[]
+  packages       EpisodePackage[] @relation("EpisodePackageEpisode")
+  publications   Publication[]
+
+  @@unique([movieId, seasonId, episodeNumber])
+  @@map("episode")
+}
+
+// ───────────────────────── Production planning (rút gọn) ─────────────────────────
+
+model ContentBrief {
+  id                    String   @id @default(uuid())
+  episodeId             String
+  promptText            String
+  styleConfig           Json?
+  targetDurationSeconds Int?
+  targetLanguages       String[]
+  createdById           String
+  createdAt             DateTime @default(now())
+
+  episode   Episode @relation(fields: [episodeId], references: [id])
+  createdBy User    @relation("ContentBriefCreatedBy", fields: [createdById], references: [id])
+
+  @@map("content_brief")
+}
+
+// ───────────────────────── AI Generation ─────────────────────────
+
+model AiProvider {
+  id       String  @id @default(uuid())
+  name     String  @unique
+  isActive Boolean @default(true)
+  config   Json?
+
+  models AiModel[]
+
+  @@map("ai_provider")
+}
+
+enum AiModality {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  MULTIMODAL
+}
+
+model AiModel {
+  id           String     @id @default(uuid())
+  aiProviderId String
+  name         String
+  version      String?
+  modality     AiModality
+
+  provider       AiProvider      @relation(fields: [aiProviderId], references: [id])
+  generationJobs GenerationJob[]
+
+  @@unique([aiProviderId, name, version])
+  @@map("ai_model")
+}
+
+enum GenerationJobType {
+  SCRIPT
+  IMAGE
+  VOICE
+  VIDEO
+  ASSEMBLY
+}
+
+enum GenerationJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+model GenerationJob {
+  id                   String              @id @default(uuid())
+  episodeId            String
+  aiModelId            String
+  jobType              GenerationJobType
+  attemptNumber        Int                 @default(1)
+  parentJobId          String?
+  configSnapshot       Json?
+  status               GenerationJobStatus @default(QUEUED)
+  externalJobReference String?
+  errorMessage         String?
+  queuedAt             DateTime?
+  completedAt          DateTime?
+  createdById          String
+  createdAt            DateTime            @default(now())
+
+  episode   Episode         @relation(fields: [episodeId], references: [id])
+  aiModel   AiModel         @relation(fields: [aiModelId], references: [id])
+  createdBy User            @relation("GenerationJobCreatedBy", fields: [createdById], references: [id])
+  parentJob GenerationJob?  @relation("GenerationJobRetryChain", fields: [parentJobId], references: [id])
+  retries   GenerationJob[] @relation("GenerationJobRetryChain")
+
+  generatedAssets   GeneratedAsset[]
+  assembledPackages EpisodePackage[] @relation("EpisodePackageAssemblyJob")
+
+  @@map("generation_job")
+}
+
+enum AssetType {
+  SCRIPT_TEXT
+  IMAGE
+  VOICE_AUDIO
+  VIDEO_CLIP
+  SUBTITLE
+}
+
+enum GeneratedAssetStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+model GeneratedAsset {
+  id              String               @id @default(uuid())
+  generationJobId String
+  assetType       AssetType
+  language        String?
+  contentText     String?
+  storageKey      String?
+  mimeType        String?
+  fileSizeBytes   BigInt?
+  checksumSha256  String?
+  durationSeconds Int?
+  resolution      String?
+  metadata        Json?
+  status          GeneratedAssetStatus @default(PENDING)
+  isSelected      Boolean              @default(false)
+
+  generationJob GenerationJob         @relation(fields: [generationJobId], references: [id])
+  packageLinks  EpisodePackageAsset[]
+
+  @@map("generated_asset")
+}
+
+// ───────────────────────── Review & Publishing ─────────────────────────
+
+enum EpisodePackageStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  PUBLISHED
+}
+
+model EpisodePackage {
+  id             String               @id @default(uuid())
+  episodeId      String
+  packageVersion Int
+  assembledBy    String?
+  assemblyJobId  String?
+  status         EpisodePackageStatus @default(DRAFT)
+  createdAt      DateTime             @default(now())
+
+  episode     Episode        @relation("EpisodePackageEpisode", fields: [episodeId], references: [id])
+  assemblyJob GenerationJob? @relation("EpisodePackageAssemblyJob", fields: [assemblyJobId], references: [id])
+
+  currentForEpisode Episode? @relation("EpisodeCurrentPackage")
+
+  assets           EpisodePackageAsset[]
+  reviews          Review[]
+  complianceChecks ComplianceCheck[]
+  aiContentLabels  AiContentLabel[]
+  publications     Publication[]
+
+  @@unique([episodeId, packageVersion])
+  @@map("episode_package")
+}
+
+model EpisodePackageAsset {
+  episodePackageId String
+  generatedAssetId String
+
+  episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id], onDelete: Cascade)
+  generatedAsset GeneratedAsset @relation(fields: [generatedAssetId], references: [id], onDelete: Cascade)
+
+  @@id([episodePackageId, generatedAssetId])
+  @@map("episode_package_asset")
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+model Review {
+  id               String       @id @default(uuid())
+  episodePackageId String
+  reviewerId       String
+  status           ReviewStatus @default(PENDING)
+  comments         String?
+  rejectionReason  String?
+  decidedAt        DateTime?
+  createdAt        DateTime     @default(now())
+
+  episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
+  reviewer       User           @relation("ReviewReviewer", fields: [reviewerId], references: [id])
+
+  @@map("review")
+}
+
+enum ComplianceCheckType {
+  AI_LABEL
+  CONTENT_POLICY
+  COPYRIGHT
+  LEGAL
+}
+
+enum ComplianceResult {
+  PENDING
+  PASS
+  FAIL
+}
+
+model ComplianceCheck {
+  id               String              @id @default(uuid())
+  episodePackageId String
+  checkType        ComplianceCheckType
+  result           ComplianceResult    @default(PENDING)
+  rulesetVersion   String?
+  checkedById      String?
+  checkedBySystem  String?
+  failureReason    String?
+  checkedAt        DateTime?
+
+  episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
+  checkedBy      User?          @relation("ComplianceCheckedBy", fields: [checkedById], references: [id])
+
+  @@map("compliance_check")
+}
+
+model AiContentLabel {
+  id               String  @id @default(uuid())
+  episodePackageId String
+  labelType        String
+  labelText        String
+  displayLocation  String?
+  rulesetVersion   String?
+  appliedById      String?
+
+  episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
+  appliedBy      User?          @relation("LabelAppliedBy", fields: [appliedById], references: [id])
+
+  @@map("ai_content_label")
+}
+
+model Publication {
+  id               String    @id @default(uuid())
+  episodeId        String
+  episodePackageId String
+  scheduledAt      DateTime?
+  publishedAt      DateTime?
+  unpublishedAt    DateTime?
+  publishedById    String
+
+  episode        Episode        @relation(fields: [episodeId], references: [id])
+  episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
+  publishedBy    User           @relation("PublicationPublishedBy", fields: [publishedById], references: [id])
+
+  @@map("publication")
+}
+
+// ───────────────────────── Audit ─────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String
+  action     String
+  actorType  String
+  actorId    String?
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@map("audit_log")
+}
