@@ -1,0 +1,10 @@
+model EpisodePackageAsset {
+    episodePackageId String @map("episode_package_id") @db.Uuid
+    generatedAssetId String @map("generated_asset_id") @db.Uuid
+
+    episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id], onDelete: Cascade)
+    generatedAsset GeneratedAsset @relation(fields: [generatedAssetId], references: [id], onDelete: Cascade)
+
+    @@id([episodePackageId, generatedAssetId])
+    @@map("episode_package_assets")
+}

@@ -1,0 +1,38 @@
+enum EpisodeProductionStatus {
+    DRAFT
+    BRIEF_READY
+    GENERATING
+    ASSEMBLED
+    IN_REVIEW
+    CHANGES_REQUESTED
+    REVIEW_APPROVED
+    COMPLIANCE_PENDING
+    COMPLIANCE_PASSED
+    COMPLIANCE_FAILED
+    PUBLISHING
+    PUBLISHED
+    UNPUBLISHED
+    ARCHIVED
+}
+
+model Episode {
+    id               String                  @id @default(uuid()) @db.Uuid
+    movieId          String                  @map("movie_id") @db.Uuid
+    seasonId         String?                 @map("season_id") @db.Uuid
+    episodeNumber    Int                     @map("episode_number") @db.Integer
+    title            String                  @db.VarChar(255)
+    productionStatus EpisodeProductionStatus @default(DRAFT) @map("production_status")
+    currentPackageId String?                 @unique @map("current_package_id") @db.Uuid
+
+    movie          Movie           @relation(fields: [movieId], references: [id])
+    season         Season?         @relation(fields: [seasonId], references: [id])
+    currentPackage EpisodePackage? @relation("EpisodeCurrentPackage", fields: [currentPackageId], references: [id])
+
+    contentBriefs  ContentBrief[]
+    generationJobs GenerationJob[]
+    packages       EpisodePackage[] @relation("EpisodePackageEpisode")
+    publications   Publication[]
+
+    @@unique([movieId, seasonId, episodeNumber])
+    @@map("episodes")
+}

@@ -1,0 +1,17 @@
+model Movie {
+    id              String   @id @default(uuid()) @db.Uuid
+    title           String   @db.VarChar(255)
+    synopsis        String?  @db.Text
+    defaultLanguage String   @map("default_language") @db.VarChar(10)
+    description     String?  @db.Text
+    createdById     String   @map("created_by_id") @db.Uuid
+    createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+    createdBy User         @relation("MovieCreatedBy", fields: [createdById], references: [id])
+    seasons   Season[]
+    episodes  Episode[]
+    genres    MovieGenre[]
+
+    @@map("movies")
+}

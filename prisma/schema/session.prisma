@@ -1,0 +1,12 @@
+model Season {
+    id           String  @id @default(uuid()) @db.Uuid
+    movieId      String  @map("movie_id") @db.Uuid
+    seasonNumber Int     @map("season_number") @db.Integer
+    title        String? @db.VarChar(255)
+
+    movie    Movie     @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    episodes Episode[]
+
+    @@unique([movieId, seasonNumber])
+    @@map("seasons")
+}
