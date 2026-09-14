@@ -1,0 +1,15 @@
+model Publication {
+    id               String    @id @default(uuid()) @db.Uuid
+    episodeId        String    @map("episode_id") @db.Uuid
+    episodePackageId String    @map("episode_package_id") @db.Uuid
+    scheduledAt      DateTime? @map("scheduled_at") @db.Timestamptz(6)
+    publishedAt      DateTime? @map("published_at") @db.Timestamptz(6)
+    unpublishedAt    DateTime? @map("unpublished_at") @db.Timestamptz(6)
+    publishedById    String    @map("published_by_id") @db.Uuid
+
+    episode        Episode        @relation(fields: [episodeId], references: [id])
+    episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
+    publishedBy    User           @relation("PublicationPublishedBy", fields: [publishedById], references: [id])
+
+    @@map("publications")
+}

@@ -1,0 +1,10 @@
+model MovieGenre {
+    movieId String @map("movie_id") @db.Uuid
+    genreId String @map("genre_id") @db.Uuid
+
+    movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+    @@id([movieId, genreId])
+    @@map("movie_genres")
+}

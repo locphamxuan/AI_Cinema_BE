@@ -1,0 +1,21 @@
+enum AiModality {
+    TEXT
+    IMAGE
+    AUDIO
+    VIDEO
+    MULTIMODAL
+}
+
+model AiModel {
+    id           String     @id @default(uuid()) @db.Uuid
+    aiProviderId String     @map("ai_provider_id") @db.Uuid
+    name         String     @db.VarChar(100)
+    version      String?    @db.VarChar(50)
+    modality     AiModality
+
+    provider       AiProvider      @relation(fields: [aiProviderId], references: [id])
+    generationJobs GenerationJob[]
+
+    @@unique([aiProviderId, name, version])
+    @@map("ai_models")
+}
