@@ -1,0 +1,34 @@
+enum QuotaAllocationType {
+    INITIAL
+    TOP_UP
+}
+
+enum QuotaAllocationStatus {
+    ACTIVE
+    CONSUMED
+    RETURNED
+    SUPERSEDED
+}
+
+//Record the granting of a quota for a specific production plan, distinguishing allocation from consumption.
+//A single allocation (or additional allocation) of AI budget for a specific production_plan.
+model QuotaAllocation {
+    id                  String                @id @default(uuid()) @db.Uuid
+    productionPlanId    String                @map("production_plan_id") @db.Uuid
+    productionProjectId String                @map("production_project_id") @db.Uuid
+    allocationType      QuotaAllocationType   @map("allocation_type")
+    allocatedAmount     Decimal               @map("allocated_amount") @db.Decimal
+    remainingAmount     Decimal               @map("remaining_amount") @db.Decimal
+    status              QuotaAllocationStatus @default(ACTIVE)
+    allocatedById       String?               @map("allocated_by") @db.Uuid
+    createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    productionPlan    ProductionPlan    @relation("ProductionPlanQuotaAllocations", fields: [productionPlanId], references: [id], onDelete: Restrict)
+    productionProject ProductionProject @relation(fields: [productionProjectId], references: [id], onDelete: Restrict)
+    allocatedBy       User?             @relation("QuotaAllocationCreatedBy", fields: [allocatedById], references: [id], onDelete: SetNull)
+
+    debitedJobs GenerationJob[] @relation("QuotaAllocationDebitedJobs")
+
+    @@index([productionPlanId, status])
+    @@map("quota_allocations")
+}

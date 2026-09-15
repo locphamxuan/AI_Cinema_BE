@@ -1,11 +1,13 @@
+//Group of episodes in a series
 model Season {
     id           String  @id @default(uuid()) @db.Uuid
     movieId      String  @map("movie_id") @db.Uuid
     seasonNumber Int     @map("season_number") @db.Integer
     title        String? @db.VarChar(255)
 
-    movie    Movie     @relation(fields: [movieId], references: [id], onDelete: Cascade)
-    episodes Episode[]
+    movie              Movie               @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    episodes           Episode[]
+    productionProjects ProductionProject[]
 
     @@unique([movieId, seasonNumber])
     @@map("seasons")

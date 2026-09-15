@@ -6,6 +6,11 @@ enum ReviewStatus {
     CHANGES_REQUESTED
 }
 
+/**
+ * One review cycle by a Content Reviewer for an episode package (final content review).
+ * Unlike `plan_review`, this is a review gate that occurs *after* resources have been
+ * expended—verifying whether the final product aligns with the plan.
+ */
 model Review {
     id               String       @id @default(uuid()) @db.Uuid
     episodePackageId String       @map("episode_package_id") @db.Uuid

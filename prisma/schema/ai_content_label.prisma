@@ -4,6 +4,7 @@ enum LabelType {
     AI_ASSISTED
 }
 
+//AI-generated content label attached to the episode_package.
 model AiContentLabel {
     id               String    @id @default(uuid()) @db.Uuid
     episodePackageId String    @map("episode_package_id") @db.Uuid

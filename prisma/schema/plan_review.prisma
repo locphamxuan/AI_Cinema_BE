@@ -1,0 +1,25 @@
+enum PlanReviewStatus {
+    PENDING
+    IN_REVIEW
+    APPROVED
+    REJECTED
+    CHANGES_REQUESTED
+}
+
+//Dedicated review round for production_plan
+//One review cycle by a Content Reviewer for a specific production plan.
+model PlanReview {
+    id               String           @id @default(uuid()) @db.Uuid
+    productionPlanId String           @map("production_plan_id") @db.Uuid
+    reviewerId       String           @map("reviewer_id") @db.Uuid
+    status           PlanReviewStatus @default(PENDING)
+    comments         String?          @db.Text
+    rejectionReason  String?          @map("rejection_reason") @db.Text
+    decidedAt        DateTime?        @map("decided_at") @db.Timestamptz(6)
+    createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    productionPlan ProductionPlan @relation(fields: [productionPlanId], references: [id])
+    reviewer       User           @relation("PlanReviewReviewer", fields: [reviewerId], references: [id])
+
+    @@map("plan_reviews")
+}

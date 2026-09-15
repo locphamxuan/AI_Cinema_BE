@@ -16,13 +16,16 @@ model User {
     createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-    moviesCreated    Movie[]           @relation("MovieCreatedBy")
-    contentBriefs    ContentBrief[]    @relation("ContentBriefCreatedBy")
-    generationJobs   GenerationJob[]   @relation("GenerationJobCreatedBy")
-    reviews          Review[]          @relation("ReviewReviewer")
-    complianceChecks ComplianceCheck[] @relation("ComplianceCheckedBy")
-    appliedLabels    AiContentLabel[]  @relation("LabelAppliedBy")
-    publications     Publication[]     @relation("PublicationPublishedBy")
+    moviesCreated             Movie[]             @relation("MovieCreatedBy")
+    productionPlansCreated    ProductionPlan[]    @relation("ProductionPlanCreatedBy")
+    generationJobs            GenerationJob[]     @relation("GenerationJobCreatedBy")
+    reviews                   Review[]            @relation("ReviewReviewer")
+    complianceChecks          ComplianceCheck[]   @relation("ComplianceCheckedBy")
+    appliedLabels             AiContentLabel[]    @relation("LabelAppliedBy")
+    publications              Publication[]       @relation("PublicationPublishedBy")
+    planReviews               PlanReview[]        @relation("PlanReviewReviewer")
+    quotaAllocationsCreated   QuotaAllocation[]   @relation("QuotaAllocationCreatedBy")
+    productionProjectsCreated ProductionProject[] @relation("ProductionProjectCreatedBy")
 
     @@map("users")
 }

@@ -1,6 +1,10 @@
 enum EpisodeProductionStatus {
     DRAFT
-    BRIEF_READY
+    PLAN_DRAFT
+    PLAN_SUBMITTED
+    PLAN_CHANGES_REQUESTED
+    PLAN_APPROVED
+    QUOTA_ALLOCATED
     GENERATING
     ASSEMBLED
     IN_REVIEW
@@ -15,23 +19,26 @@ enum EpisodeProductionStatus {
     ARCHIVED
 }
 
+//The entity that produced and released the actual content (a single episode, or the standalone film itself if `season_id` is NULL).
 model Episode {
-    id               String                  @id @default(uuid()) @db.Uuid
-    movieId          String                  @map("movie_id") @db.Uuid
-    seasonId         String?                 @map("season_id") @db.Uuid
-    episodeNumber    Int                     @map("episode_number") @db.Integer
-    title            String                  @db.VarChar(255)
-    productionStatus EpisodeProductionStatus @default(DRAFT) @map("production_status")
-    currentPackageId String?                 @unique @map("current_package_id") @db.Uuid
+    id                  String                  @id @default(uuid()) @db.Uuid
+    movieId             String                  @map("movie_id") @db.Uuid
+    seasonId            String?                 @map("season_id") @db.Uuid
+    episodeNumber       Int                     @map("episode_number") @db.Integer
+    title               String                  @db.VarChar(255)
+    productionStatus    EpisodeProductionStatus @default(DRAFT) @map("production_status")
+    currentPackageId    String?                 @unique @map("current_package_id") @db.Uuid
+    productionProjectId String                  @map("production_project_id") @db.Uuid
 
     movie          Movie           @relation(fields: [movieId], references: [id])
     season         Season?         @relation(fields: [seasonId], references: [id])
     currentPackage EpisodePackage? @relation("EpisodeCurrentPackage", fields: [currentPackageId], references: [id])
 
-    contentBriefs  ContentBrief[]
-    generationJobs GenerationJob[]
-    packages       EpisodePackage[] @relation("EpisodePackageEpisode")
-    publications   Publication[]
+    productionPlans   ProductionPlan[]
+    generationJobs    GenerationJob[]
+    packages          EpisodePackage[]  @relation("EpisodePackageEpisode")
+    publications      Publication[]
+    productionProject ProductionProject @relation(fields: [productionProjectId], references: [id])
 
     @@unique([movieId, seasonId, episodeNumber])
     @@map("episodes")
