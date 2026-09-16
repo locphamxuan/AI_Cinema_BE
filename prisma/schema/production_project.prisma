@@ -5,11 +5,18 @@ enum ProductionProjectStatus {
     CANCELLED
 }
 
-//A single production run, encompassing the deadline and total budget quota for a group of episodes.
+enum ProductionContentType {
+    MOVIE
+    SERIES
+}
+
+//AI movie production workspace/plan to create a new movie or series.
+//Created BEFORE any catalog content (Movie/Season/Episode) exists.
 model ProductionProject {
     id                     String                  @id @default(uuid()) @db.Uuid
-    movieId                String?                 @map("movie_id") @db.Uuid
-    seasonId               String?                 @map("season_id") @db.Uuid
+    title                  String                  @db.VarChar(255)
+    description            String?                 @db.Text
+    contentType            ProductionContentType   @map("content_type")
     createdById            String                  @map("created_by") @db.Uuid
     deadline               DateTime                @db.Timestamptz(6)
     plannedReleaseDate     DateTime                @map("planned_release_date") @db.Timestamptz(6)
@@ -17,10 +24,8 @@ model ProductionProject {
     remainingAiQuotaBudget Decimal                 @map("remaining_ai_quota_budget") @db.Decimal
     status                 ProductionProjectStatus @default(DRAFT)
 
-    movie            Movie?            @relation(fields: [movieId], references: [id])
-    season           Season?           @relation(fields: [seasonId], references: [id])
     createdBy        User              @relation("ProductionProjectCreatedBy", fields: [createdById], references: [id])
-    episodes         Episode[]
+    productionPlans  ProductionPlan[]
     quotaAllocations QuotaAllocation[]
 
     @@map("production_projects")

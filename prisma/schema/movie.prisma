@@ -9,11 +9,10 @@ model Movie {
     createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-    createdBy          User                @relation("MovieCreatedBy", fields: [createdById], references: [id])
-    seasons            Season[]
-    episodes           Episode[]
-    genres             MovieGenre[]
-    productionProjects ProductionProject[]
+    createdBy User         @relation("MovieCreatedBy", fields: [createdById], references: [id])
+    seasons   Season[]
+    episodes  Episode[]
+    genres    MovieGenre[]
 
     @@map("movies")
 }

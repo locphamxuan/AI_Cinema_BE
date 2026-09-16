@@ -5,10 +5,8 @@ model Season {
     seasonNumber Int     @map("season_number") @db.Integer
     title        String? @db.VarChar(255)
 
-    movie              Movie               @relation(fields: [movieId], references: [id], onDelete: Cascade)
-    episodes           Episode[]
-    productionProjects ProductionProject[]
-
+    movie    Movie            @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    episodes Episode[]
     @@unique([movieId, seasonNumber])
     @@map("seasons")
 }

@@ -3,18 +3,19 @@ enum EpisodePackageStatus {
     SUPERSEDED
 }
 
-//A specific bundle comprising the selected assets, forming a complete "release candidate."
+//A specific bundle comprising the selected assets, forming a complete "release candidate".
+//Assembled from a ProductionPlan's generated assets, before any catalog Episode exists.
 model EpisodePackage {
-    id             String               @id @default(uuid()) @db.Uuid
-    episodeId      String               @map("episode_id") @db.Uuid
-    packageVersion Int                  @map("package_version") @db.Integer
-    assembledBy    String?              @map("assembled_by") @db.Uuid
-    assemblyJobId  String?              @map("assembly_job_id") @db.Uuid
-    status         EpisodePackageStatus @default(ASSEMBLED)
-    createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+    id               String               @id @default(uuid()) @db.Uuid
+    productionPlanId String               @map("production_plan_id") @db.Uuid
+    packageVersion   Int                  @map("package_version") @db.Integer
+    assembledBy      String?              @map("assembled_by") @db.Uuid
+    assemblyJobId    String?              @map("assembly_job_id") @db.Uuid
+    status           EpisodePackageStatus @default(ASSEMBLED)
+    createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
-    episode     Episode        @relation("EpisodePackageEpisode", fields: [episodeId], references: [id])
-    assemblyJob GenerationJob? @relation("EpisodePackageAssemblyJob", fields: [assemblyJobId], references: [id])
+    productionPlan ProductionPlan @relation(fields: [productionPlanId], references: [id])
+    assemblyJob    GenerationJob? @relation("EpisodePackageAssemblyJob", fields: [assemblyJobId], references: [id])
 
     currentForEpisode Episode? @relation("EpisodeCurrentPackage")
 
@@ -24,6 +25,6 @@ model EpisodePackage {
     aiContentLabels  AiContentLabel[]
     publications     Publication[]
 
-    @@unique([episodeId, packageVersion])
+    @@unique([productionPlanId, packageVersion])
     @@map("episode_packages")
 }
