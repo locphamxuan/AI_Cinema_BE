@@ -23,6 +23,7 @@ model ProductionProject {
     totalAiQuotaBudget     Decimal                 @map("total_ai_quota_budget") @db.Decimal
     remainingAiQuotaBudget Decimal                 @map("remaining_ai_quota_budget") @db.Decimal
     status                 ProductionProjectStatus @default(DRAFT)
+    cancelledReason        String?                 @map("cancelled_reason") @db.Text
 
     createdBy        User              @relation("ProductionProjectCreatedBy", fields: [createdById], references: [id])
     productionPlans  ProductionPlan[]
