@@ -6,6 +6,7 @@ import { ProductionProjectModule } from 'src/modules/production-project/producti
 import { ProductionPlanModule } from 'src/modules/production-plan/production-plan.module';
 import { ConfigModule } from '@nestjs/config';
 import { PaginationModule } from '@nestarc/pagination';
+import { GenreModule } from 'src/modules/genre/genre.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PaginationModule } from '@nestarc/pagination';
     PrismaModule,
     ProductionProjectModule,
     ProductionPlanModule,
+    GenreModule,
   ],
   controllers: [AppController],
   providers: [AppService],
