@@ -1,3 +1,6 @@
+# Claude tools (local-only, không push lên GitHub)
+.claude-tools/
+
 # Logs
 logs
 *.log
