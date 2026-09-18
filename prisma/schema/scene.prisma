@@ -1,0 +1,29 @@
+enum SceneStatus {
+    DRAFT
+    SUBMITTED
+    UNDER_REVIEW
+    CHANGES_REQUESTED
+    APPROVED
+    GENERATING
+    COMPLETED
+}
+
+model Scene {
+    id                    String          @id @default(uuid()) @db.Uuid
+    productionPlanId      String          @map("production_plan_id") @db.Uuid
+    sceneNumber           Int             @map("scene_number") @db.Integer
+    title                 String          @db.VarChar(255)
+    scriptText            String?         @map("script_text") @db.Text
+    targetDurationSeconds Int             @map("target_duration_seconds") @db.Integer
+    status                SceneStatus     @default(DRAFT)
+    createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt             DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+    productionPlan        ProductionPlan  @relation(fields: [productionPlanId], references: [id], onDelete: Cascade)
+    planReviews           PlanReview[]
+    generationJobs        GenerationJob[]
+    submissions           Submission[]
+
+    @@unique([productionPlanId, sceneNumber])
+    @@index([productionPlanId, status])
+    @@map("scenes")
+}

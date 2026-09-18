@@ -1,0 +1,26 @@
+enum PolicyType {
+  AI_LABELING
+  CONTENT_POLICY
+  COPYRIGHT
+  LEGAL
+  PUBLISHING
+}
+
+model Policy {
+  id                String     @id @default(uuid()) @db.Uuid
+  name              String     @db.VarChar(255)
+  type              PolicyType
+  version           String     @db.VarChar(50)
+  documentReference String?    @map("document_reference") @db.Text // e.g. "Điều 44 Luật 134/2025/QH15 và Điều 18 NĐ 142/2026/NĐ-CP"
+  content           Json?      @db.JsonB
+  effectiveFrom     DateTime?  @map("effective_from") @db.Timestamptz(6)
+  effectiveTo       DateTime?  @map("effective_to") @db.Timestamptz(6)
+  isActive          Boolean    @default(true) @map("is_active")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  projects         ProjectPolicy[]
+  complianceChecks ComplianceCheck[]
+  aiContentLabels  AiContentLabel[]
+
+  @@map("policies")
+}

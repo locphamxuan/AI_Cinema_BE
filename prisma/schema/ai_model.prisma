@@ -6,6 +6,7 @@ enum AiModality {
     MULTIMODAL
 }
 
+//A specific model/version from a provider
 model AiModel {
     id           String     @id @default(uuid()) @db.Uuid
     aiProviderId String     @map("ai_provider_id") @db.Uuid
