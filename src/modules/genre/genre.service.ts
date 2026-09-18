@@ -1,5 +1,5 @@
-import { PaginateQuery, paginate } from '@nestarc/pagination';
 import { Injectable } from '@nestjs/common';
+import { paginate, PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
@@ -11,7 +11,9 @@ export class GenreService {
       sortableColumns: ['id', 'name', 'description'],
       defaultSortBy: [['name', 'ASC']],
       searchableColumns: ['name', 'description'],
-      filterableColumns: { name: ['$eq', '$in'] },
+      filterableColumns: {
+        name: ['$eq', '$in'],
+      },
     });
   }
 }

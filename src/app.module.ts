@@ -4,9 +4,10 @@ import { AppService } from './app.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { ProductionProjectModule } from 'src/modules/production-project/production-project.module';
 import { ProductionPlanModule } from 'src/modules/production-plan/production-plan.module';
+import { GenreModule } from 'src/modules/genre/genre.module';
+import { PolicyModule } from 'src/modules/policy/policy.module';
 import { ConfigModule } from '@nestjs/config';
 import { PaginationModule } from '@nestarc/pagination';
-import { GenreModule } from 'src/modules/genre/genre.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { GenreModule } from 'src/modules/genre/genre.module';
     ProductionProjectModule,
     ProductionPlanModule,
     GenreModule,
+    PolicyModule,
   ],
   controllers: [AppController],
   providers: [AppService],
