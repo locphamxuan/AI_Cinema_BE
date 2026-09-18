@@ -1,0 +1,9 @@
+model ProductionProjectGenre {
+    productionProjectId String            @map("production_project_id") @db.Uuid
+    genreId             String            @map("genre_id") @db.Uuid
+    productionProject   ProductionProject @relation(fields: [productionProjectId], references: [id], onDelete: Cascade)
+    genre               Genre             @relation(fields: [genreId], references: [id], onDelete: Restrict)
+
+    @@id([productionProjectId, genreId])
+    @@map("production_project_genres")
+}

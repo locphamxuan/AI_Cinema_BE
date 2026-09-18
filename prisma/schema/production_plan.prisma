@@ -1,0 +1,41 @@
+enum ProductionPlanStatus {
+    DRAFT
+    SUBMITTED
+    UNDER_REVIEW
+    CHANGES_REQUESTED
+    APPROVED
+}
+
+//Production plan for a single output (movie or episode) — script, scene breakdown, resource estimates — with version control.
+//Belongs to a ProductionProject, not to a finalized catalog Episode.
+model ProductionPlan {
+    id                       String               @id @default(uuid()) @db.Uuid
+    productionProjectId      String               @map("production_project_id") @db.Uuid
+    episodeNumber            Int?                 @map("episode_number") @db.Integer
+    planVersion              Int                  @map("plan_version") @db.Integer
+    previousPlanId           String?              @map("previous_plan_id") @db.Uuid
+    scriptText               String?              @map("script_text") @db.Text
+    sceneBreakdown           Json?                @map("scene_breakdown") @db.JsonB
+    productionApproach       String?              @map("production_approach") @db.Text
+    targetDurationSeconds    Int?                 @map("target_duration_seconds") @db.Integer
+    targetLanguages          String[]             @map("target_languages")
+    estimatedAiResourceUsage Decimal?             @map("estimated_ai_resource_usage") @db.Decimal
+    status                   ProductionPlanStatus @default(DRAFT)
+    createdById              String               @map("created_by") @db.Uuid
+    createdAt                DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    productionProject ProductionProject @relation(fields: [productionProjectId], references: [id])
+    createdBy         User              @relation("ProductionPlanCreatedBy", fields: [createdById], references: [id])
+
+    previousPlan     ProductionPlan?   @relation("ProductionPlanRevision", fields: [previousPlanId], references: [id])
+    nextPlans        ProductionPlan[]  @relation("ProductionPlanRevision")
+    planReviews      PlanReview[]
+    generationJobs   GenerationJob[]   @relation("ProductionPlanGenerationJobs")
+    quotaAllocations QuotaAllocation[] @relation("ProductionPlanQuotaAllocations")
+    episodePackages  EpisodePackage[]
+    submissions      Submission[]
+    scenes           Scene[]
+
+    @@unique([productionProjectId, planVersion])
+    @@map("production_plans")
+}

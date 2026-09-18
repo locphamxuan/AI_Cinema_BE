@@ -1,0 +1,10 @@
+model ProjectPolicy {
+    productionProjectId String @map("production_project_id") @db.Uuid
+    policyId            String @map("policy_id") @db.Uuid
+
+    productionProject ProductionProject @relation(fields: [productionProjectId], references: [id], onDelete: Cascade)
+    policy            Policy            @relation(fields: [policyId], references: [id], onDelete: Restrict)
+
+    @@id([productionProjectId, policyId])
+    @@map("project_policies")
+}

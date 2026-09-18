@@ -1,15 +1,7 @@
+//Catalog lifecycle of a released episode (or standalone film when `season_id` is NULL).
+//Created/finalized AFTER production, from an approved EpisodePackage.
 enum EpisodeProductionStatus {
     DRAFT
-    BRIEF_READY
-    GENERATING
-    ASSEMBLED
-    IN_REVIEW
-    CHANGES_REQUESTED
-    REVIEW_APPROVED
-    COMPLIANCE_PENDING
-    COMPLIANCE_PASSED
-    COMPLIANCE_FAILED
-    PUBLISHING
     PUBLISHED
     UNPUBLISHED
     ARCHIVED
@@ -28,10 +20,7 @@ model Episode {
     season         Season?         @relation(fields: [seasonId], references: [id])
     currentPackage EpisodePackage? @relation("EpisodeCurrentPackage", fields: [currentPackageId], references: [id])
 
-    contentBriefs  ContentBrief[]
-    generationJobs GenerationJob[]
-    packages       EpisodePackage[] @relation("EpisodePackageEpisode")
-    publications   Publication[]
+    publications Publication[]
 
     @@unique([movieId, seasonId, episodeNumber])
     @@map("episodes")

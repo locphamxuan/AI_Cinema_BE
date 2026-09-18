@@ -1,0 +1,36 @@
+enum ProductionProjectStatus {
+    DRAFT
+    ACTIVE
+    COMPLETED
+    CANCELLED
+}
+
+enum ProductionContentType {
+    MOVIE
+    SERIES
+}
+
+//AI movie production workspace/plan to create a new movie or series.
+//Created BEFORE any catalog content (Movie/Season/Episode) exists.
+model ProductionProject {
+    id                     String                  @id @default(uuid()) @db.Uuid
+    title                  String                  @db.VarChar(255)
+    description            String?                 @db.Text
+    contentType            ProductionContentType   @map("content_type")
+    createdById            String                  @map("created_by") @db.Uuid
+    deadline               DateTime                @db.Timestamptz(6)
+    plannedReleaseDate     DateTime                @map("planned_release_date") @db.Timestamptz(6)
+    totalAiQuotaBudget     Decimal                 @map("total_ai_quota_budget") @db.Decimal
+    remainingAiQuotaBudget Decimal                 @map("remaining_ai_quota_budget") @db.Decimal
+    status                 ProductionProjectStatus @default(DRAFT)
+    cancelledReason        String?                 @map("cancelled_reason") @db.Text
+
+    createdBy               User                     @relation("ProductionProjectCreatedBy", fields: [createdById], references: [id])
+    productionPlans         ProductionPlan[]
+    quotaAllocations        QuotaAllocation[]
+    milestones              Milestone[]
+    projectPolicies         ProjectPolicy[]
+    productionProjectGenres ProductionProjectGenre[]
+
+    @@map("production_projects")
+}

@@ -1,0 +1,24 @@
+enum MilestoneStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Milestone {
+  id                  String          @id @default(uuid()) @db.Uuid
+  productionProjectId String          @map("production_project_id") @db.Uuid
+  title               String          @db.VarChar(255)
+  description         String?         @db.Text
+  targetDate          DateTime?       @map("target_date") @db.Timestamptz(6)
+  status              MilestoneStatus @default(PLANNED)
+  resultText          String?         @map("result_text") @db.Text
+  completedAt         DateTime?       @map("completed_at") @db.Timestamptz(6)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  productionProject ProductionProject @relation(fields: [productionProjectId], references: [id], onDelete: Cascade)
+
+  @@index([productionProjectId, status])
+  @@map("milestones")
+}
