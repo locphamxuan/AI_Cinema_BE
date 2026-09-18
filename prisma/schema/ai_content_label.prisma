@@ -11,11 +11,12 @@ model AiContentLabel {
     labelType        LabelType @map("label_type")
     labelText        String    @map("label_text") @db.VarChar(500)
     displayLocation  String?   @map("display_location") @db.VarChar(100)
-    rulesetVersion   String?   @map("ruleset_version") @db.VarChar(50)
     appliedById      String?   @map("applied_by_id") @db.Uuid
+    policyId         String    @db.Uuid
 
     episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
     appliedBy      User?          @relation("LabelAppliedBy", fields: [appliedById], references: [id])
+    policy         Policy         @relation(fields: [policyId], references: [id])
 
     @@map("ai_content_labels")
 }

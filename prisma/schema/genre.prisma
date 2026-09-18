@@ -3,7 +3,8 @@ model Genre {
     name        String  @unique @db.VarChar(100)
     description String? @db.Text
 
-    movies MovieGenre[]
+    movies                  MovieGenre[]
+    productionProjectGenres ProductionProjectGenre[]
 
     @@map("genres")
 }

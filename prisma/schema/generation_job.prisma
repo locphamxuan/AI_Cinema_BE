@@ -36,19 +36,21 @@ model GenerationJob {
     errorMessage         String?             @map("error_message") @db.Text
     resourceCost         Decimal?            @map("resource_cost") @db.Decimal
     quotaAllocationId    String?             @map("quota_allocation_id") @db.Uuid
+    sceneId              String?             @db.Uuid
     queuedAt             DateTime?           @map("queued_at") @db.Timestamptz(6)
     completedAt          DateTime?           @map("completed_at") @db.Timestamptz(6)
     createdById          String              @map("created_by_id") @db.Uuid
     createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
-    productionPlan  ProductionPlan   @relation("ProductionPlanGenerationJobs", fields: [productionPlanId], references: [id], onDelete: Restrict)
-    aiModel         AiModel          @relation(fields: [aiModelId], references: [id], onDelete: Restrict)
-    createdBy       User             @relation("GenerationJobCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-    parentJob       GenerationJob?   @relation("GenerationJobRetryChain", fields: [parentJobId], references: [id], onDelete: Restrict)
-    retries         GenerationJob[]  @relation("GenerationJobRetryChain")
-    quotaAllocation QuotaAllocation? @relation("QuotaAllocationDebitedJobs", fields: [quotaAllocationId], references: [id], onDelete: Restrict)
-    generatedAssets GeneratedAsset[]
+    productionPlan    ProductionPlan   @relation("ProductionPlanGenerationJobs", fields: [productionPlanId], references: [id], onDelete: Restrict)
+    aiModel           AiModel          @relation(fields: [aiModelId], references: [id], onDelete: Restrict)
+    createdBy         User             @relation("GenerationJobCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+    parentJob         GenerationJob?   @relation("GenerationJobRetryChain", fields: [parentJobId], references: [id], onDelete: Restrict)
+    retries           GenerationJob[]  @relation("GenerationJobRetryChain")
+    quotaAllocation   QuotaAllocation? @relation("QuotaAllocationDebitedJobs", fields: [quotaAllocationId], references: [id], onDelete: Restrict)
+    generatedAssets   GeneratedAsset[]
     assembledPackages EpisodePackage[] @relation("EpisodePackageAssemblyJob")
+    scene             Scene?           @relation(fields: [sceneId], references: [id])
 
     @@index([productionPlanId])
     @@index([quotaAllocationId])

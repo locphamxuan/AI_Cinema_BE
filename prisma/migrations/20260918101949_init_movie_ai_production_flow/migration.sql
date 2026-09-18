@@ -11,7 +11,7 @@ CREATE TYPE "ComplianceCheckType" AS ENUM ('AI_LABEL_PRESENCE', 'CONTENT_POLICY'
 CREATE TYPE "ComplianceResult" AS ENUM ('PENDING', 'PASS', 'FAIL');
 
 -- CreateEnum
-CREATE TYPE "EpisodeProductionStatus" AS ENUM ('DRAFT', 'PLAN_DRAFT', 'PLAN_SUBMITTED', 'PLAN_CHANGES_REQUESTED', 'PLAN_APPROVED', 'QUOTA_ALLOCATED', 'GENERATING', 'ASSEMBLED', 'IN_REVIEW', 'CHANGES_REQUESTED', 'REVIEW_APPROVED', 'COMPLIANCE_PENDING', 'COMPLIANCE_PASSED', 'COMPLIANCE_FAILED', 'PUBLISHING', 'PUBLISHED', 'UNPUBLISHED', 'ARCHIVED');
+CREATE TYPE "EpisodeProductionStatus" AS ENUM ('DRAFT', 'PUBLISHED', 'UNPUBLISHED', 'ARCHIVED');
 
 -- CreateEnum
 CREATE TYPE "EpisodePackageStatus" AS ENUM ('ASSEMBLED', 'SUPERSEDED');
@@ -29,13 +29,22 @@ CREATE TYPE "GenerationJobType" AS ENUM ('SCRIPT', 'VOICE', 'BACKGROUND_AUDIO', 
 CREATE TYPE "GenerationJobStatus" AS ENUM ('PENDING', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED');
 
 -- CreateEnum
+CREATE TYPE "MilestoneStatus" AS ENUM ('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED');
+
+-- CreateEnum
 CREATE TYPE "PlanReviewStatus" AS ENUM ('PENDING', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED');
+
+-- CreateEnum
+CREATE TYPE "PolicyType" AS ENUM ('AI_LABELING', 'CONTENT_POLICY', 'COPYRIGHT', 'LEGAL', 'PUBLISHING');
 
 -- CreateEnum
 CREATE TYPE "ProductionPlanStatus" AS ENUM ('DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CHANGES_REQUESTED', 'APPROVED');
 
 -- CreateEnum
 CREATE TYPE "ProductionProjectStatus" AS ENUM ('DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED');
+
+-- CreateEnum
+CREATE TYPE "ProductionContentType" AS ENUM ('MOVIE', 'SERIES');
 
 -- CreateEnum
 CREATE TYPE "QuotaAllocationType" AS ENUM ('INITIAL', 'TOP_UP');
@@ -45,6 +54,15 @@ CREATE TYPE "QuotaAllocationStatus" AS ENUM ('ACTIVE', 'CONSUMED', 'RETURNED', '
 
 -- CreateEnum
 CREATE TYPE "ReviewStatus" AS ENUM ('PENDING', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED');
+
+-- CreateEnum
+CREATE TYPE "SceneStatus" AS ENUM ('DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CHANGES_REQUESTED', 'APPROVED', 'GENERATING', 'COMPLETED');
+
+-- CreateEnum
+CREATE TYPE "SubmissionType" AS ENUM ('PLAN', 'SCENE', 'EPISODE');
+
+-- CreateEnum
+CREATE TYPE "SubmissionStatus" AS ENUM ('SUBMITTED', 'UNDER_REVIEW', 'CHANGES_REQUESTED', 'APPROVED', 'REJECTED');
 
 -- CreateEnum
 CREATE TYPE "UserRole" AS ENUM ('MEMBER', 'CONTENT_CREATOR', 'CONTENT_REVIEWER', 'STAFF', 'ADMIN');
@@ -58,6 +76,7 @@ CREATE TABLE "ai_content_labels" (
     "display_location" VARCHAR(100),
     "ruleset_version" VARCHAR(50),
     "applied_by_id" UUID,
+    "policyId" UUID NOT NULL,
 
     CONSTRAINT "ai_content_labels_pkey" PRIMARY KEY ("id")
 );
@@ -103,11 +122,11 @@ CREATE TABLE "compliance_checks" (
     "episode_package_id" UUID NOT NULL,
     "check_type" "ComplianceCheckType" NOT NULL,
     "result" "ComplianceResult" NOT NULL DEFAULT 'PENDING',
-    "ruleset_version" VARCHAR(50),
     "checked_by_id" UUID,
     "checked_by_system" VARCHAR(100),
     "failure_reason" TEXT,
     "checked_at" TIMESTAMPTZ(6),
+    "policyId" UUID NOT NULL,
 
     CONSTRAINT "compliance_checks_pkey" PRIMARY KEY ("id")
 );
@@ -121,7 +140,6 @@ CREATE TABLE "episodes" (
     "title" VARCHAR(255) NOT NULL,
     "production_status" "EpisodeProductionStatus" NOT NULL DEFAULT 'DRAFT',
     "current_package_id" UUID,
-    "production_project_id" UUID NOT NULL,
 
     CONSTRAINT "episodes_pkey" PRIMARY KEY ("id")
 );
@@ -129,7 +147,7 @@ CREATE TABLE "episodes" (
 -- CreateTable
 CREATE TABLE "episode_packages" (
     "id" UUID NOT NULL,
-    "episode_id" UUID NOT NULL,
+    "production_plan_id" UUID NOT NULL,
     "package_version" INTEGER NOT NULL,
     "assembled_by" UUID,
     "assembly_job_id" UUID,
@@ -170,7 +188,6 @@ CREATE TABLE "generated_assets" (
 -- CreateTable
 CREATE TABLE "generation_jobs" (
     "id" UUID NOT NULL,
-    "episode_id" UUID NOT NULL,
     "production_plan_id" UUID NOT NULL,
     "ai_model_id" UUID NOT NULL,
     "job_type" "GenerationJobType" NOT NULL,
@@ -182,6 +199,7 @@ CREATE TABLE "generation_jobs" (
     "error_message" TEXT,
     "resource_cost" DECIMAL,
     "quota_allocation_id" UUID,
+    "sceneId" UUID,
     "queued_at" TIMESTAMPTZ(6),
     "completed_at" TIMESTAMPTZ(6),
     "created_by_id" UUID NOT NULL,
@@ -197,6 +215,22 @@ CREATE TABLE "genres" (
     "description" TEXT,
 
     CONSTRAINT "genres_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "milestones" (
+    "id" UUID NOT NULL,
+    "production_project_id" UUID NOT NULL,
+    "title" VARCHAR(255) NOT NULL,
+    "description" TEXT,
+    "target_date" TIMESTAMPTZ(6),
+    "status" "MilestoneStatus" NOT NULL DEFAULT 'PLANNED',
+    "result_text" TEXT,
+    "completed_at" TIMESTAMPTZ(6),
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "milestones_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -231,14 +265,32 @@ CREATE TABLE "plan_reviews" (
     "rejection_reason" TEXT,
     "decided_at" TIMESTAMPTZ(6),
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "sceneId" UUID,
 
     CONSTRAINT "plan_reviews_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
+CREATE TABLE "policies" (
+    "id" UUID NOT NULL,
+    "name" VARCHAR(255) NOT NULL,
+    "type" "PolicyType" NOT NULL,
+    "version" VARCHAR(50) NOT NULL,
+    "document_reference" TEXT,
+    "content" JSONB,
+    "effective_from" TIMESTAMPTZ(6),
+    "effective_to" TIMESTAMPTZ(6),
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "policies_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "production_plans" (
     "id" UUID NOT NULL,
-    "episode_id" UUID NOT NULL,
+    "production_project_id" UUID NOT NULL,
+    "episode_number" INTEGER,
     "plan_version" INTEGER NOT NULL,
     "previous_plan_id" UUID,
     "script_text" TEXT,
@@ -257,16 +309,34 @@ CREATE TABLE "production_plans" (
 -- CreateTable
 CREATE TABLE "production_projects" (
     "id" UUID NOT NULL,
-    "movie_id" UUID,
-    "season_id" UUID,
+    "title" VARCHAR(255) NOT NULL,
+    "description" TEXT,
+    "content_type" "ProductionContentType" NOT NULL,
     "created_by" UUID NOT NULL,
     "deadline" TIMESTAMPTZ(6) NOT NULL,
     "planned_release_date" TIMESTAMPTZ(6) NOT NULL,
     "total_ai_quota_budget" DECIMAL NOT NULL,
     "remaining_ai_quota_budget" DECIMAL NOT NULL,
     "status" "ProductionProjectStatus" NOT NULL DEFAULT 'DRAFT',
+    "cancelled_reason" TEXT,
 
     CONSTRAINT "production_projects_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "production_project_genres" (
+    "production_project_id" UUID NOT NULL,
+    "genre_id" UUID NOT NULL,
+
+    CONSTRAINT "production_project_genres_pkey" PRIMARY KEY ("production_project_id","genre_id")
+);
+
+-- CreateTable
+CREATE TABLE "project_policies" (
+    "production_project_id" UUID NOT NULL,
+    "policy_id" UUID NOT NULL,
+
+    CONSTRAINT "project_policies_pkey" PRIMARY KEY ("production_project_id","policy_id")
 );
 
 -- CreateTable
@@ -307,8 +377,24 @@ CREATE TABLE "reviews" (
     "rejection_reason" TEXT,
     "decided_at" TIMESTAMPTZ(6),
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "submissionId" UUID,
 
     CONSTRAINT "reviews_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "scenes" (
+    "id" UUID NOT NULL,
+    "production_plan_id" UUID NOT NULL,
+    "scene_number" INTEGER NOT NULL,
+    "title" VARCHAR(255) NOT NULL,
+    "script_text" TEXT,
+    "target_duration_seconds" INTEGER NOT NULL,
+    "status" "SceneStatus" NOT NULL DEFAULT 'DRAFT',
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "scenes_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -319,6 +405,23 @@ CREATE TABLE "seasons" (
     "title" VARCHAR(255),
 
     CONSTRAINT "seasons_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "submissions" (
+    "id" UUID NOT NULL,
+    "submission_type" "SubmissionType" NOT NULL,
+    "production_plan_id" UUID NOT NULL,
+    "scene_id" UUID,
+    "episode_package_id" UUID,
+    "status" "SubmissionStatus" NOT NULL DEFAULT 'SUBMITTED',
+    "note" TEXT,
+    "submitted_by_id" UUID NOT NULL,
+    "submitted_at" TIMESTAMPTZ(6),
+    "decided_at" TIMESTAMPTZ(6),
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "submissions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -348,7 +451,7 @@ CREATE UNIQUE INDEX "episodes_current_package_id_key" ON "episodes"("current_pac
 CREATE UNIQUE INDEX "episodes_movie_id_season_id_episode_number_key" ON "episodes"("movie_id", "season_id", "episode_number");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "episode_packages_episode_id_package_version_key" ON "episode_packages"("episode_id", "package_version");
+CREATE UNIQUE INDEX "episode_packages_production_plan_id_package_version_key" ON "episode_packages"("production_plan_id", "package_version");
 
 -- CreateIndex
 CREATE INDEX "generation_jobs_production_plan_id_idx" ON "generation_jobs"("production_plan_id");
@@ -357,19 +460,37 @@ CREATE INDEX "generation_jobs_production_plan_id_idx" ON "generation_jobs"("prod
 CREATE INDEX "generation_jobs_quota_allocation_id_idx" ON "generation_jobs"("quota_allocation_id");
 
 -- CreateIndex
-CREATE INDEX "generation_jobs_episode_id_job_type_status_idx" ON "generation_jobs"("episode_id", "job_type", "status");
+CREATE INDEX "generation_jobs_production_plan_id_job_type_status_idx" ON "generation_jobs"("production_plan_id", "job_type", "status");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "genres_name_key" ON "genres"("name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "production_plans_episode_id_plan_version_key" ON "production_plans"("episode_id", "plan_version");
+CREATE INDEX "milestones_production_project_id_status_idx" ON "milestones"("production_project_id", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "production_plans_production_project_id_plan_version_key" ON "production_plans"("production_project_id", "plan_version");
 
 -- CreateIndex
 CREATE INDEX "quota_allocations_production_plan_id_status_idx" ON "quota_allocations"("production_plan_id", "status");
 
 -- CreateIndex
+CREATE INDEX "scenes_production_plan_id_status_idx" ON "scenes"("production_plan_id", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "scenes_production_plan_id_scene_number_key" ON "scenes"("production_plan_id", "scene_number");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "seasons_movie_id_season_number_key" ON "seasons"("movie_id", "season_number");
+
+-- CreateIndex
+CREATE INDEX "submissions_production_plan_id_status_idx" ON "submissions"("production_plan_id", "status");
+
+-- CreateIndex
+CREATE INDEX "submissions_scene_id_idx" ON "submissions"("scene_id");
+
+-- CreateIndex
+CREATE INDEX "submissions_episode_package_id_idx" ON "submissions"("episode_package_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
@@ -381,6 +502,9 @@ ALTER TABLE "ai_content_labels" ADD CONSTRAINT "ai_content_labels_episode_packag
 ALTER TABLE "ai_content_labels" ADD CONSTRAINT "ai_content_labels_applied_by_id_fkey" FOREIGN KEY ("applied_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "ai_content_labels" ADD CONSTRAINT "ai_content_labels_policyId_fkey" FOREIGN KEY ("policyId") REFERENCES "policies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_ai_provider_id_fkey" FOREIGN KEY ("ai_provider_id") REFERENCES "ai_providers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -388,6 +512,9 @@ ALTER TABLE "compliance_checks" ADD CONSTRAINT "compliance_checks_episode_packag
 
 -- AddForeignKey
 ALTER TABLE "compliance_checks" ADD CONSTRAINT "compliance_checks_checked_by_id_fkey" FOREIGN KEY ("checked_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "compliance_checks" ADD CONSTRAINT "compliance_checks_policyId_fkey" FOREIGN KEY ("policyId") REFERENCES "policies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "episodes" ADD CONSTRAINT "episodes_movie_id_fkey" FOREIGN KEY ("movie_id") REFERENCES "movies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -399,10 +526,7 @@ ALTER TABLE "episodes" ADD CONSTRAINT "episodes_season_id_fkey" FOREIGN KEY ("se
 ALTER TABLE "episodes" ADD CONSTRAINT "episodes_current_package_id_fkey" FOREIGN KEY ("current_package_id") REFERENCES "episode_packages"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "episodes" ADD CONSTRAINT "episodes_production_project_id_fkey" FOREIGN KEY ("production_project_id") REFERENCES "production_projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "episode_packages" ADD CONSTRAINT "episode_packages_episode_id_fkey" FOREIGN KEY ("episode_id") REFERENCES "episodes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "episode_packages" ADD CONSTRAINT "episode_packages_production_plan_id_fkey" FOREIGN KEY ("production_plan_id") REFERENCES "production_plans"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "episode_packages" ADD CONSTRAINT "episode_packages_assembly_job_id_fkey" FOREIGN KEY ("assembly_job_id") REFERENCES "generation_jobs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -415,9 +539,6 @@ ALTER TABLE "episode_package_assets" ADD CONSTRAINT "episode_package_assets_gene
 
 -- AddForeignKey
 ALTER TABLE "generated_assets" ADD CONSTRAINT "generated_assets_generation_job_id_fkey" FOREIGN KEY ("generation_job_id") REFERENCES "generation_jobs"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "generation_jobs" ADD CONSTRAINT "generation_jobs_episode_id_fkey" FOREIGN KEY ("episode_id") REFERENCES "episodes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "generation_jobs" ADD CONSTRAINT "generation_jobs_production_plan_id_fkey" FOREIGN KEY ("production_plan_id") REFERENCES "production_plans"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -435,6 +556,12 @@ ALTER TABLE "generation_jobs" ADD CONSTRAINT "generation_jobs_parent_job_id_fkey
 ALTER TABLE "generation_jobs" ADD CONSTRAINT "generation_jobs_quota_allocation_id_fkey" FOREIGN KEY ("quota_allocation_id") REFERENCES "quota_allocations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "generation_jobs" ADD CONSTRAINT "generation_jobs_sceneId_fkey" FOREIGN KEY ("sceneId") REFERENCES "scenes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "milestones" ADD CONSTRAINT "milestones_production_project_id_fkey" FOREIGN KEY ("production_project_id") REFERENCES "production_projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "movies" ADD CONSTRAINT "movies_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -450,7 +577,10 @@ ALTER TABLE "plan_reviews" ADD CONSTRAINT "plan_reviews_production_plan_id_fkey"
 ALTER TABLE "plan_reviews" ADD CONSTRAINT "plan_reviews_reviewer_id_fkey" FOREIGN KEY ("reviewer_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "production_plans" ADD CONSTRAINT "production_plans_episode_id_fkey" FOREIGN KEY ("episode_id") REFERENCES "episodes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "plan_reviews" ADD CONSTRAINT "plan_reviews_sceneId_fkey" FOREIGN KEY ("sceneId") REFERENCES "scenes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "production_plans" ADD CONSTRAINT "production_plans_production_project_id_fkey" FOREIGN KEY ("production_project_id") REFERENCES "production_projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "production_plans" ADD CONSTRAINT "production_plans_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -459,13 +589,19 @@ ALTER TABLE "production_plans" ADD CONSTRAINT "production_plans_created_by_fkey"
 ALTER TABLE "production_plans" ADD CONSTRAINT "production_plans_previous_plan_id_fkey" FOREIGN KEY ("previous_plan_id") REFERENCES "production_plans"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "production_projects" ADD CONSTRAINT "production_projects_movie_id_fkey" FOREIGN KEY ("movie_id") REFERENCES "movies"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "production_projects" ADD CONSTRAINT "production_projects_season_id_fkey" FOREIGN KEY ("season_id") REFERENCES "seasons"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "production_projects" ADD CONSTRAINT "production_projects_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "production_project_genres" ADD CONSTRAINT "production_project_genres_production_project_id_fkey" FOREIGN KEY ("production_project_id") REFERENCES "production_projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "production_project_genres" ADD CONSTRAINT "production_project_genres_genre_id_fkey" FOREIGN KEY ("genre_id") REFERENCES "genres"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "project_policies" ADD CONSTRAINT "project_policies_production_project_id_fkey" FOREIGN KEY ("production_project_id") REFERENCES "production_projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "project_policies" ADD CONSTRAINT "project_policies_policy_id_fkey" FOREIGN KEY ("policy_id") REFERENCES "policies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "publications" ADD CONSTRAINT "publications_episode_id_fkey" FOREIGN KEY ("episode_id") REFERENCES "episodes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -492,4 +628,22 @@ ALTER TABLE "reviews" ADD CONSTRAINT "reviews_episode_package_id_fkey" FOREIGN K
 ALTER TABLE "reviews" ADD CONSTRAINT "reviews_reviewer_id_fkey" FOREIGN KEY ("reviewer_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "reviews" ADD CONSTRAINT "reviews_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "submissions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "scenes" ADD CONSTRAINT "scenes_production_plan_id_fkey" FOREIGN KEY ("production_plan_id") REFERENCES "production_plans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "seasons" ADD CONSTRAINT "seasons_movie_id_fkey" FOREIGN KEY ("movie_id") REFERENCES "movies"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "submissions" ADD CONSTRAINT "submissions_production_plan_id_fkey" FOREIGN KEY ("production_plan_id") REFERENCES "production_plans"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "submissions" ADD CONSTRAINT "submissions_scene_id_fkey" FOREIGN KEY ("scene_id") REFERENCES "scenes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "submissions" ADD CONSTRAINT "submissions_episode_package_id_fkey" FOREIGN KEY ("episode_package_id") REFERENCES "episode_packages"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "submissions" ADD CONSTRAINT "submissions_submitted_by_id_fkey" FOREIGN KEY ("submitted_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

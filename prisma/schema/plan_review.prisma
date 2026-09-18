@@ -17,9 +17,11 @@ model PlanReview {
     rejectionReason  String?          @map("rejection_reason") @db.Text
     decidedAt        DateTime?        @map("decided_at") @db.Timestamptz(6)
     createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+    sceneId          String?          @db.Uuid
 
     productionPlan ProductionPlan @relation(fields: [productionPlanId], references: [id])
     reviewer       User           @relation("PlanReviewReviewer", fields: [reviewerId], references: [id])
+    scene          Scene?         @relation(fields: [sceneId], references: [id])
 
     @@map("plan_reviews")
 }

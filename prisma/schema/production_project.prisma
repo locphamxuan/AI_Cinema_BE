@@ -25,9 +25,12 @@ model ProductionProject {
     status                 ProductionProjectStatus @default(DRAFT)
     cancelledReason        String?                 @map("cancelled_reason") @db.Text
 
-    createdBy        User              @relation("ProductionProjectCreatedBy", fields: [createdById], references: [id])
-    productionPlans  ProductionPlan[]
-    quotaAllocations QuotaAllocation[]
+    createdBy               User                     @relation("ProductionProjectCreatedBy", fields: [createdById], references: [id])
+    productionPlans         ProductionPlan[]
+    quotaAllocations        QuotaAllocation[]
+    milestones              Milestone[]
+    projectPolicies         ProjectPolicy[]
+    productionProjectGenres ProductionProjectGenre[]
 
     @@map("production_projects")
 }

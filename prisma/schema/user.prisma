@@ -26,6 +26,7 @@ model User {
     planReviews               PlanReview[]        @relation("PlanReviewReviewer")
     quotaAllocationsCreated   QuotaAllocation[]   @relation("QuotaAllocationCreatedBy")
     productionProjectsCreated ProductionProject[] @relation("ProductionProjectCreatedBy")
+    submissions               Submission[]        @relation("SubmissionSubmittedBy")
 
     @@map("users")
 }

@@ -20,9 +20,11 @@ model Review {
     rejectionReason  String?      @map("rejection_reason") @db.Text
     decidedAt        DateTime?    @map("decided_at") @db.Timestamptz(6)
     createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+    submissionId     String?      @db.Uuid
 
     episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
     reviewer       User           @relation("ReviewReviewer", fields: [reviewerId], references: [id])
+    submission     Submission?    @relation(fields: [submissionId], references: [id])
 
     @@map("reviews")
 }

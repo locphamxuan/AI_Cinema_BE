@@ -24,6 +24,7 @@ model EpisodePackage {
     complianceChecks ComplianceCheck[]
     aiContentLabels  AiContentLabel[]
     publications     Publication[]
+    submissions      Submission[]
 
     @@unique([productionPlanId, packageVersion])
     @@map("episode_packages")

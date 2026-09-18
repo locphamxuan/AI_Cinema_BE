@@ -17,14 +17,15 @@ model ComplianceCheck {
     episodePackageId String              @map("episode_package_id") @db.Uuid
     checkType        ComplianceCheckType @map("check_type")
     result           ComplianceResult    @default(PENDING)
-    rulesetVersion   String?             @map("ruleset_version") @db.VarChar(50)
     checkedById      String?             @map("checked_by_id") @db.Uuid
     checkedBySystem  String?             @map("checked_by_system") @db.VarChar(100)
     failureReason    String?             @map("failure_reason") @db.Text
     checkedAt        DateTime?           @map("checked_at") @db.Timestamptz(6)
+    policyId         String              @db.Uuid
 
     episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
     checkedBy      User?          @relation("ComplianceCheckedBy", fields: [checkedById], references: [id])
+    policy         Policy         @relation(fields: [policyId], references: [id])
 
     @@map("compliance_checks")
 }
