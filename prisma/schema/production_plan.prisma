@@ -15,12 +15,13 @@ model ProductionPlan {
     planVersion              Int                  @map("plan_version") @db.Integer
     previousPlanId           String?              @map("previous_plan_id") @db.Uuid
     scriptText               String?              @map("script_text") @db.Text
-    sceneBreakdown           Json?                @map("scene_breakdown") @db.JsonB
     productionApproach       String?              @map("production_approach") @db.Text
     targetDurationSeconds    Int?                 @map("target_duration_seconds") @db.Integer
     targetLanguages          String[]             @map("target_languages")
     estimatedAiResourceUsage Decimal?             @map("estimated_ai_resource_usage") @db.Decimal
     status                   ProductionPlanStatus @default(DRAFT)
+    totalSceneCount          Int                  @default(0) @map("total_scene_count") @db.Integer
+    completedSceneCount      Int                  @default(0) @map("completed_scene_count") @db.Integer
     createdById              String               @map("created_by") @db.Uuid
     createdAt                DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 

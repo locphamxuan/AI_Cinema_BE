@@ -1,5 +1,7 @@
-import { IsArray, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsArray, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CreateSceneRequestDto } from 'src/modules/scene/dto/create-scene.request.dto';
 
 export class CreateProductionPlanRequestDto {
   @ApiPropertyOptional({
@@ -29,27 +31,6 @@ export class CreateProductionPlanRequestDto {
   scriptText?: string;
 
   @ApiPropertyOptional({
-    example: {
-      scenes: [
-        {
-          name: 'Opening',
-          durationSeconds: 120,
-          description: 'Exterior shot of the space station orbiting Earth.',
-        },
-        {
-          name: 'Climax',
-          durationSeconds: 300,
-          description: 'Captain Lee confronts the antagonist in the control room.',
-        },
-      ],
-    },
-    description: 'Structured breakdown of scenes with names, durations, and descriptions. Shape is flexible JSON.',
-  })
-  @IsObject()
-  @IsOptional()
-  sceneBreakdown?: Record<string, unknown>;
-
-  @ApiPropertyOptional({
     example: 'Full AI generation with 3D character animation and voice-over',
     description: 'High-level description of the production approach, tools, and techniques planned for this episode.',
   })
@@ -59,7 +40,8 @@ export class CreateProductionPlanRequestDto {
 
   @ApiPropertyOptional({
     example: 1800,
-    description: 'Target episode duration in seconds. Used for resource estimation and platform scheduling.',
+    description:
+      'Target episode duration in seconds. If set, must not exceed the project default episode duration; the sum of scene durations must fit under it.',
   })
   @IsInt()
   @Min(1)
@@ -67,7 +49,7 @@ export class CreateProductionPlanRequestDto {
   targetDurationSeconds?: number;
 
   @ApiPropertyOptional({
-    example: ['en', 'vi'],
+    example: ['vi', 'en'],
     description: 'List of BCP-47 language codes indicating which localised versions will be produced.',
   })
   @IsArray()
@@ -84,6 +66,21 @@ export class CreateProductionPlanRequestDto {
   @Min(0)
   @IsOptional()
   estimatedAiResourceUsage?: number;
+
+  @ApiPropertyOptional({
+    example: [
+      { sceneNumber: 1, title: 'Opening', targetDurationSeconds: 120 },
+      { sceneNumber: 2, title: 'Climax', targetDurationSeconds: 300 },
+    ],
+    description:
+      'Initial scenes of the plan. Optional - a plan can be created first and scenes added later via POST /production-plans/:planId/scenes.',
+    type: [CreateSceneRequestDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSceneRequestDto)
+  @IsOptional()
+  scenes?: CreateSceneRequestDto[];
 
   @ApiProperty({
     example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
