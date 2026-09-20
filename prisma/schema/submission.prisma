@@ -1,0 +1,38 @@
+enum SubmissionType {
+    PLAN
+    SCENE
+    EPISODE
+}
+
+enum SubmissionStatus {
+    SUBMITTED
+    UNDER_REVIEW
+    CHANGES_REQUESTED
+    APPROVED
+    REJECTED
+}
+
+model Submission {
+    id               String           @id @default(uuid()) @db.Uuid
+    submissionType   SubmissionType   @map("submission_type")
+    productionPlanId String           @map("production_plan_id") @db.Uuid
+    sceneId          String?          @map("scene_id") @db.Uuid
+    episodePackageId String?          @map("episode_package_id") @db.Uuid
+    status           SubmissionStatus @default(SUBMITTED)
+    note             String?          @db.Text
+    submittedById    String           @map("submitted_by_id") @db.Uuid
+    submittedAt      DateTime?        @map("submitted_at") @db.Timestamptz(6)
+    decidedAt        DateTime?        @map("decided_at") @db.Timestamptz(6)
+    createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    productionPlan ProductionPlan  @relation(fields: [productionPlanId], references: [id], onDelete: Restrict)
+    scene          Scene?          @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+    episodePackage EpisodePackage? @relation(fields: [episodePackageId], references: [id], onDelete: SetNull)
+    submittedBy    User            @relation("SubmissionSubmittedBy", fields: [submittedById], references: [id])
+    reviews        Review[]
+
+    @@index([productionPlanId, status])
+    @@index([sceneId])
+    @@index([episodePackageId])
+    @@map("submissions")
+}

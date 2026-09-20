@@ -1,3 +1,4 @@
+//An event that makes an episode_package public (or takes it down)
 model Publication {
     id               String    @id @default(uuid()) @db.Uuid
     episodeId        String    @map("episode_id") @db.Uuid
