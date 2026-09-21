@@ -1,4 +1,14 @@
-import { IsArray, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CreateSceneRequestDto } from 'src/modules/scene/dto/create-scene.request.dto';
@@ -10,8 +20,8 @@ export class CreateProductionPlanRequestDto {
   })
   @IsInt()
   @Min(1)
-  @IsOptional()
-  episodeNumber?: number;
+  @IsNotEmpty()
+  episodeNumber: number;
 
   @ApiPropertyOptional({
     example: 'b1c2d3e4-f5a6-7890-bcde-f12345678901',

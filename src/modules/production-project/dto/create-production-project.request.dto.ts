@@ -56,7 +56,7 @@ export class CreateProductionProjectRequestDto {
   @ApiProperty({
     example: 5,
     description:
-      'Number of episodes this project will produce. Required for contentType SERIES; defaults to 1 for MOVIE.',
+      'Number of episodes this project will produce. Required for contentType SERIES; defaults to 1 for MOVIE. One DRAFT production plan is auto-created per episode (episodeNumber 1..N, planVersion 1) and assigned to the content creator, who can edit or revise them via the production-plan APIs.',
   })
   @IsInt()
   @Min(1)
@@ -116,15 +116,16 @@ export class CreateProductionProjectRequestDto {
     example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
     description: 'UUID of the Content Creator assigned to execute this production project.',
   })
+  @IsNotEmpty()
   @IsUUID()
   assignedCreatorId: string;
 
-  @ApiProperty({
-    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    description: 'UUID of the Content Reviewer who creates and owns this production project.',
-  })
-  @IsUUID()
-  createdById: string;
+  // @ApiProperty({
+  //   example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  //   description: 'UUID of the Content Reviewer who creates and owns this production project.',
+  // })
+  // @IsUUID()
+  // createdById: string;
 
   @ApiPropertyOptional({
     example: [

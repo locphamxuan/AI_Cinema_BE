@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  ProductionContentType,
   ProductionPlan,
   ProductionPlanStatus,
   ProductionProjectStatus,
@@ -53,25 +54,6 @@ export class ProductionPlanService {
 
     await this.requireCreator(dto.createdById);
 
-    let planVersion = 1;
-    if (dto.previousPlanId) {
-      const previousPlan = await this.prisma.productionPlan.findFirst({
-        where: { id: dto.previousPlanId, productionProjectId: projectId },
-      });
-      if (!previousPlan) {
-        throw new BadRequestException(
-          `Previous plan with id "${dto.previousPlanId}" does not belong to project "${projectId}"`,
-        );
-      }
-      planVersion = previousPlan.planVersion + 1;
-    } else {
-      const lastPlan = await this.prisma.productionPlan.findFirst({
-        where: { productionProjectId: projectId },
-        orderBy: { planVersion: 'desc' },
-      });
-      planVersion = (lastPlan?.planVersion ?? 0) + 1;
-    }
-
     const scenes = dto.scenes ?? [];
     if (scenes.length > 0) {
       this.assertUniqueSceneNumbers(scenes.map((s) => s.sceneNumber));
@@ -86,12 +68,15 @@ export class ProductionPlanService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const { episodeNumber, previousPlanId } = await this.resolveEpisode(tx, project, projectId, dto);
+      const planVersion = await this.nextPlanVersion(tx, projectId, episodeNumber);
+
       const plan = await tx.productionPlan.create({
         data: {
           productionProjectId: projectId,
-          episodeNumber: dto.episodeNumber,
+          episodeNumber,
           planVersion,
-          previousPlanId: dto.previousPlanId,
+          previousPlanId,
           scriptText: dto.scriptText,
           productionApproach: dto.productionApproach,
           targetDurationSeconds: dto.targetDurationSeconds,
@@ -132,7 +117,7 @@ export class ProductionPlanService {
       this.prisma.productionPlan.count({ where }),
       this.prisma.productionPlan.findMany({
         where,
-        orderBy: { planVersion: 'desc' },
+        orderBy: [{ episodeNumber: 'asc' }, { planVersion: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
         select: {
@@ -293,11 +278,12 @@ export class ProductionPlanService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const planVersion = await this.nextPlanVersion(tx, projectId, source.episodeNumber);
       const revised = await tx.productionPlan.create({
         data: {
           productionProjectId: projectId,
           episodeNumber: source.episodeNumber,
-          planVersion: source.planVersion + 1,
+          planVersion,
           previousPlanId: source.id,
           scriptText: dto.scriptText ?? source.scriptText,
           productionApproach: dto.productionApproach ?? source.productionApproach,
@@ -326,6 +312,60 @@ export class ProductionPlanService {
         include: { scenes: { orderBy: { sceneNumber: 'asc' } } },
       });
     });
+  }
+
+  private async resolveEpisode(
+    tx: Prisma.TransactionClient,
+    project: { contentType: ProductionContentType },
+    projectId: string,
+    dto: CreateProductionPlanRequestDto,
+  ): Promise<{ episodeNumber: number; previousPlanId?: string }> {
+    if (dto.previousPlanId) {
+      const previousPlan = await tx.productionPlan.findFirst({
+        where: { id: dto.previousPlanId, productionProjectId: projectId },
+        select: { id: true, episodeNumber: true },
+      });
+      if (!previousPlan) {
+        throw new BadRequestException(
+          `Previous plan with id "${dto.previousPlanId}" does not belong to project "${projectId}"`,
+        );
+      }
+      if (dto.episodeNumber !== undefined && dto.episodeNumber !== previousPlan.episodeNumber) {
+        throw new BadRequestException(
+          `episodeNumber (${dto.episodeNumber}) does not match the previous plan's episode (${previousPlan.episodeNumber})`,
+        );
+      }
+      return { episodeNumber: previousPlan.episodeNumber, previousPlanId: previousPlan.id };
+    }
+
+    return {
+      episodeNumber:
+        project.contentType === ProductionContentType.MOVIE
+          ? 1
+          : dto.episodeNumber ?? (await this.nextEpisodeNumber(tx, projectId)),
+    };
+  }
+
+  private async nextEpisodeNumber(tx: Prisma.TransactionClient, projectId: string): Promise<number> {
+    const last = await tx.productionPlan.findFirst({
+      where: { productionProjectId: projectId },
+      orderBy: { episodeNumber: 'desc' },
+      select: { episodeNumber: true },
+    });
+    return (last?.episodeNumber ?? 0) + 1;
+  }
+
+  private async nextPlanVersion(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+    episodeNumber: number,
+  ): Promise<number> {
+    const last = await tx.productionPlan.findFirst({
+      where: { productionProjectId: projectId, episodeNumber },
+      orderBy: { planVersion: 'desc' },
+      select: { planVersion: true },
+    });
+    return (last?.planVersion ?? 0) + 1;
   }
 
   private async requireCreator(userId: string) {

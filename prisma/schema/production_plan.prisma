@@ -11,7 +11,7 @@ enum ProductionPlanStatus {
 model ProductionPlan {
     id                       String               @id @default(uuid()) @db.Uuid
     productionProjectId      String               @map("production_project_id") @db.Uuid
-    episodeNumber            Int?                 @map("episode_number") @db.Integer
+    episodeNumber            Int                  @map("episode_number") @db.Integer
     planVersion              Int                  @map("plan_version") @db.Integer
     previousPlanId           String?              @map("previous_plan_id") @db.Uuid
     scriptText               String?              @map("script_text") @db.Text
@@ -37,6 +37,6 @@ model ProductionPlan {
     submissions      Submission[]
     scenes           Scene[]
 
-    @@unique([productionProjectId, planVersion])
+    @@unique([productionProjectId, episodeNumber, planVersion])
     @@map("production_plans")
 }
