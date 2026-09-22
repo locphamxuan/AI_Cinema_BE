@@ -5,15 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  Prisma,
-  ProductionPlan,
-  ProductionPlanStatus,
-  SceneStatus,
-  SubmissionStatus,
-  SubmissionType,
-  UserRole,
-} from '@prisma/client';
+import { Prisma, ProductionPlan, ProductionPlanStatus, SceneStatus, UserRole } from '@prisma/client';
 import { PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ProductionProjectService } from 'src/modules/production-project/production-project.service';
@@ -218,26 +210,34 @@ export class ProductionPlanService {
     return this.prisma.$transaction(async (tx) => {
       const updatedPlan = await tx.productionPlan.update({
         where: { id: planId },
-        data: { status: ProductionPlanStatus.SUBMITTED },
-      });
-
-      await tx.scene.updateMany({
-        where: { productionPlanId: planId },
-        data: { status: SceneStatus.SUBMITTED },
-      });
-
-      const submission = await tx.submission.create({
         data: {
-          submissionType: SubmissionType.PLAN,
-          productionPlanId: planId,
-          status: SubmissionStatus.SUBMITTED,
-          note: dto.note,
-          submittedById: plan.createdById,
-          submittedAt: new Date(),
+          scriptText: dto.scriptText,
+          productionApproach: dto.productionApproach,
+          targetDurationSeconds: dto.targetDurationSeconds,
+          estimatedAiResourceUsage: dto.estimatedAiResourceUsage,
+          totalSceneCount: dto.scenes.length,
+          status: ProductionPlanStatus.SUBMITTED,
         },
       });
 
-      return { plan: updatedPlan, submission };
+      for (const sceneDto of dto.scenes) {
+        const result = await tx.scene.updateMany({
+          where: {
+            id: sceneDto.sceneId,
+            productionPlanId: planId,
+          },
+          data: {
+            scriptText: sceneDto.scriptText,
+            status: SceneStatus.SUBMITTED,
+          },
+        });
+
+        if (result.count !== 1) {
+          throw new NotFoundException(`Scene ${sceneDto.sceneId} does not belong to this production plan`);
+        }
+      }
+
+      return updatedPlan;
     });
   }
 
