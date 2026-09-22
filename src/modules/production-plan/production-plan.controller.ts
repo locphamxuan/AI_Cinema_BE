@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
-import { CreateProductionPlanRequestDto } from './dto/create-production-plan.request.dto';
 import { UpdateProductionPlanRequestDto } from './dto/update-production-plan.request.dto';
 import { SubmitProductionPlanRequestDto } from './dto/submit-production-plan.request.dto';
 import { CreateProductionPlanRevisionRequestDto } from './dto/create-production-plan-revision.request.dto';
@@ -16,11 +15,6 @@ export class ProductionPlanController {
     private readonly productionPlanService: ProductionPlanService,
     private readonly sceneService: SceneService,
   ) {}
-
-  @Post('production-projects/:projectId/plans')
-  async create(@Param('projectId') projectId: string, @Body() dto: CreateProductionPlanRequestDto) {
-    return this.productionPlanService.create(projectId, dto);
-  }
 
   @Get('production-projects/:projectId/plans')
   async findAll(@Param('projectId') projectId: string, @Paginate() query: PaginateQuery) {

@@ -4,7 +4,7 @@ import { CreateMilestoneRequestDto } from './dto/create-milestone.request.dto';
 import { UpdateMilestoneRequestDto } from './dto/update-milestone.request.dto';
 import { MilestoneService } from './milestone.service';
 
-@ApiTags('production-projects (milestones)')
+@ApiTags('milestones')
 @Controller()
 export class MilestoneController {
   constructor(private readonly milestoneService: MilestoneService) {}

@@ -16,12 +16,18 @@ export class CreateAiContentLabelRequestDto {
   @IsOptional()
   displayLocation?: string;
 
-  @ApiPropertyOptional({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', description: 'UUID of the user applying the label.' })
+  @ApiPropertyOptional({
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    description: 'UUID of the user applying the label.',
+  })
   @IsUUID()
   @IsOptional()
   appliedById?: string;
 
-  @ApiProperty({ example: 'c4e5d6f7-a8b9-0123-cdef-456789abcdef', description: 'UUID of the Policy the label must comply with.' })
+  @ApiProperty({
+    example: 'c4e5d6f7-a8b9-0123-cdef-456789abcdef',
+    description: 'UUID of the Policy the label must comply with.',
+  })
   @IsUUID()
   policyId: string;
 }
