@@ -1,3 +1,13 @@
+# Claude tools (local-only, không push lên GitHub)
+.claude-tools/
+
+# Local-only, machine-specific — not shared
+.claude/
+.claude-mem/
+CLAUDE.md
+TESTING.md
+.codegraph/
+
 # Logs
 logs
 *.log

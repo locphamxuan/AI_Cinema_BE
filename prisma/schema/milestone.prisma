@@ -10,6 +10,7 @@ model Milestone {
   productionProjectId String          @map("production_project_id") @db.Uuid
   title               String          @db.VarChar(255)
   description         String?         @db.Text
+  startDate           DateTime?       @map("start_date") @db.Timestamptz(6)
   targetDate          DateTime?       @map("target_date") @db.Timestamptz(6)
   status              MilestoneStatus @default(PLANNED)
   resultText          String?         @map("result_text") @db.Text

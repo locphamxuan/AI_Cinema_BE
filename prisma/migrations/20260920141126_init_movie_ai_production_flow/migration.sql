@@ -74,7 +74,6 @@ CREATE TABLE "ai_content_labels" (
     "label_type" "LabelType" NOT NULL,
     "label_text" VARCHAR(500) NOT NULL,
     "display_location" VARCHAR(100),
-    "ruleset_version" VARCHAR(50),
     "applied_by_id" UUID,
     "policyId" UUID NOT NULL,
 
@@ -223,6 +222,7 @@ CREATE TABLE "milestones" (
     "production_project_id" UUID NOT NULL,
     "title" VARCHAR(255) NOT NULL,
     "description" TEXT,
+    "start_date" TIMESTAMPTZ(6),
     "target_date" TIMESTAMPTZ(6),
     "status" "MilestoneStatus" NOT NULL DEFAULT 'PLANNED',
     "result_text" TEXT,
@@ -294,12 +294,13 @@ CREATE TABLE "production_plans" (
     "plan_version" INTEGER NOT NULL,
     "previous_plan_id" UUID,
     "script_text" TEXT,
-    "scene_breakdown" JSONB,
     "production_approach" TEXT,
     "target_duration_seconds" INTEGER,
     "target_languages" TEXT[],
     "estimated_ai_resource_usage" DECIMAL,
     "status" "ProductionPlanStatus" NOT NULL DEFAULT 'DRAFT',
+    "total_scene_count" INTEGER NOT NULL DEFAULT 0,
+    "completed_scene_count" INTEGER NOT NULL DEFAULT 0,
     "created_by" UUID NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -313,8 +314,12 @@ CREATE TABLE "production_projects" (
     "description" TEXT,
     "content_type" "ProductionContentType" NOT NULL,
     "created_by" UUID NOT NULL,
+    "assigned_creator_id" UUID NOT NULL,
+    "episode_count" INTEGER,
+    "production_start_date" TIMESTAMP(3) NOT NULL,
     "deadline" TIMESTAMPTZ(6) NOT NULL,
     "planned_release_date" TIMESTAMPTZ(6) NOT NULL,
+    "default_episode_duration_seconds" INTEGER,
     "total_ai_quota_budget" DECIMAL NOT NULL,
     "remaining_ai_quota_budget" DECIMAL NOT NULL,
     "status" "ProductionProjectStatus" NOT NULL DEFAULT 'DRAFT',
@@ -590,6 +595,9 @@ ALTER TABLE "production_plans" ADD CONSTRAINT "production_plans_previous_plan_id
 
 -- AddForeignKey
 ALTER TABLE "production_projects" ADD CONSTRAINT "production_projects_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "production_projects" ADD CONSTRAINT "production_projects_assigned_creator_id_fkey" FOREIGN KEY ("assigned_creator_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "production_project_genres" ADD CONSTRAINT "production_project_genres_production_project_id_fkey" FOREIGN KEY ("production_project_id") REFERENCES "production_projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;

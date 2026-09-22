@@ -27,6 +27,7 @@ model User {
     quotaAllocationsCreated   QuotaAllocation[]   @relation("QuotaAllocationCreatedBy")
     productionProjectsCreated ProductionProject[] @relation("ProductionProjectCreatedBy")
     submissions               Submission[]        @relation("SubmissionSubmittedBy")
+    productionProjects        ProductionProject[] @relation("ProductionProjectAssignedCreator")
 
     @@map("users")
 }

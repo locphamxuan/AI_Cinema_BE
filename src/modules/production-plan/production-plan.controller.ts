@@ -1,13 +1,52 @@
-import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
-import { CreateProductionPlanRequestDto } from './dto/create-production-plan.request.dto';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { Paginate, type PaginateQuery } from '@nestarc/pagination';
+import { UpdateProductionPlanRequestDto } from './dto/update-production-plan.request.dto';
+import { SubmitProductionPlanRequestDto } from './dto/submit-production-plan.request.dto';
+import { CreateProductionPlanRevisionRequestDto } from './dto/create-production-plan-revision.request.dto';
+import { CreateSceneRequestDto } from 'src/modules/scene/dto/create-scene.request.dto';
 import { ProductionPlanService } from './production-plan.service';
+import { SceneService } from 'src/modules/scene/scene.service';
 
-@Controller('production-projects/:projectId/plans')
+@ApiTags('production-plans')
+@Controller()
 export class ProductionPlanController {
-  constructor(private readonly productionPlanService: ProductionPlanService) {}
+  constructor(
+    private readonly productionPlanService: ProductionPlanService,
+    private readonly sceneService: SceneService,
+  ) {}
 
-  @Post()
-  create(@Param('projectId', new ParseUUIDPipe()) projectId: string, @Body() dto: CreateProductionPlanRequestDto) {
-    return this.productionPlanService.create(projectId, dto);
+  @Get('production-projects/:projectId/plans')
+  async findAll(@Param('projectId') projectId: string, @Paginate() query: PaginateQuery) {
+    return this.productionPlanService.findAll(projectId, query);
+  }
+
+  @Get('production-plans/:planId')
+  async findById(@Param('planId') planId: string) {
+    return this.productionPlanService.findById(planId, true);
+  }
+
+  @Patch('production-plans/:planId')
+  async update(@Param('planId') planId: string, @Body() dto: UpdateProductionPlanRequestDto) {
+    return this.productionPlanService.update(planId, dto);
+  }
+
+  @Post('production-plans/:planId/submit')
+  async submit(@Param('planId') planId: string, @Body() dto: SubmitProductionPlanRequestDto) {
+    return this.productionPlanService.submit(planId, dto);
+  }
+
+  @Post('production-projects/:projectId/plans/:planId/revisions')
+  async createRevision(
+    @Param('projectId') projectId: string,
+    @Param('planId') planId: string,
+    @Body() dto: CreateProductionPlanRevisionRequestDto,
+  ) {
+    return this.productionPlanService.createRevision(projectId, planId, dto);
+  }
+
+  @Post('production-plans/:planId/scenes')
+  async addScene(@Param('planId') planId: string, @Body() dto: CreateSceneRequestDto) {
+    return this.sceneService.create(planId, dto);
   }
 }
