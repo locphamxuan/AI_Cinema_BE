@@ -15,6 +15,7 @@ import { EpisodePackageModule } from 'src/modules/episode-package/episode-packag
 import { ReviewModule } from 'src/modules/review/review.module';
 import { AiContentLabelModule } from 'src/modules/ai-content-label/ai-content-label.module';
 import { ComplianceCheckModule } from 'src/modules/compliance-check/compliance-check.module';
+import { UserModule } from 'src/modules/user/user.module';
 import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { PublicationModule } from 'src/modules/publication/publication.module';
 import { ConfigModule } from '@nestjs/config';
@@ -45,6 +46,7 @@ import { PaginationModule } from '@nestarc/pagination';
     ComplianceCheckModule,
     CatalogModule,
     PublicationModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],
