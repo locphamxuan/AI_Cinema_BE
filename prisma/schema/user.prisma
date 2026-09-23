@@ -28,6 +28,7 @@ model User {
     productionProjectsCreated ProductionProject[] @relation("ProductionProjectCreatedBy")
     submissions               Submission[]        @relation("SubmissionSubmittedBy")
     productionProjects        ProductionProject[] @relation("ProductionProjectAssignedCreator")
+    genreStyleModelsCreated   GenreStyleModel[]   @relation("GenreStyleModelCreatedBy")
 
     @@map("users")
 }

@@ -16,6 +16,9 @@ model AiModel {
 
     provider       AiProvider      @relation(fields: [aiProviderId], references: [id])
     generationJobs GenerationJob[]
+    // Open-weight models only (e.g. FLUX) can have LoRA style adapters
+    // trained on top of them — see genre_style_model.prisma.
+    styleModels    GenreStyleModel[]
 
     @@unique([aiProviderId, name, version])
     @@map("ai_models")

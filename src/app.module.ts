@@ -18,6 +18,7 @@ import { ComplianceCheckModule } from 'src/modules/compliance-check/compliance-c
 import { UserModule } from 'src/modules/user/user.module';
 import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { PublicationModule } from 'src/modules/publication/publication.module';
+import { GenreStyleModelModule } from 'src/modules/genre-style-model/genre-style-model.module';
 import { ConfigModule } from '@nestjs/config';
 import { PaginationModule } from '@nestarc/pagination';
 
@@ -47,6 +48,7 @@ import { PaginationModule } from '@nestarc/pagination';
     CatalogModule,
     PublicationModule,
     UserModule,
+    GenreStyleModelModule,
   ],
   controllers: [AppController],
   providers: [AppService],

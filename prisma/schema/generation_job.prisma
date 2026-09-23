@@ -37,6 +37,11 @@ model GenerationJob {
     resourceCost         Decimal?            @map("resource_cost") @db.Decimal
     quotaAllocationId    String?             @map("quota_allocation_id") @db.Uuid
     sceneId              String?             @db.Uuid
+    // Only meaningful for visual jobTypes (POSTER, THUMBNAIL, VIDEO_ASSEMBLY);
+    // null for SCRIPT/VOICE/BACKGROUND_AUDIO/SUBTITLE/TRANSLATION. Resolved
+    // from productionProject.primaryGenreId + the chosen base AiModel at
+    // job-creation time — see GenreStyleModelService.
+    genreStyleModelId    String?             @map("genre_style_model_id") @db.Uuid
     queuedAt             DateTime?           @map("queued_at") @db.Timestamptz(6)
     completedAt          DateTime?           @map("completed_at") @db.Timestamptz(6)
     createdById          String              @map("created_by_id") @db.Uuid
@@ -51,9 +56,11 @@ model GenerationJob {
     generatedAssets   GeneratedAsset[]
     assembledPackages EpisodePackage[] @relation("EpisodePackageAssemblyJob")
     scene             Scene?           @relation(fields: [sceneId], references: [id])
+    genreStyleModel   GenreStyleModel? @relation(fields: [genreStyleModelId], references: [id], onDelete: SetNull)
 
     @@index([productionPlanId])
     @@index([quotaAllocationId])
     @@index([productionPlanId, jobType, status])
+    @@index([genreStyleModelId])
     @@map("generation_jobs")
 }

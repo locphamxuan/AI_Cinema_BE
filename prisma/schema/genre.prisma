@@ -5,6 +5,8 @@ model Genre {
 
     movies                  MovieGenre[]
     productionProjectGenres ProductionProjectGenre[]
+    styleModels             GenreStyleModel[]
+    primaryForProjects      ProductionProject[]      @relation("ProductionProjectPrimaryGenre")
 
     @@map("genres")
 }

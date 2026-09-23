@@ -1,0 +1,77 @@
+// Level 1.5 exception to PROJECT_OVERVIEW.md §4.1.8 "AI Orchestrator, no
+// fine-tune/train": a GenreStyleModel is a *small LoRA adapter* trained on
+// top of one existing open-weight AiModel (e.g. FLUX), scoped to exactly one
+// Genre. It never modifies the base model's weights and never applies to
+// closed third-party APIs (Veo/Sora/Kling/Runway/Suno/Udio/ElevenLabs) —
+// those keep using AiProvider/AiModel as-is, unstyled.
+//
+// Why per-Genre and not per-Movie/per-Character: the team explicitly does
+// NOT want a character/image reused across different movies — only the
+// genre-level visual style (lighting, color grade, mood) is meant to be
+// shared/reused across productions of the same genre.
+enum GenreStyleModelStatus {
+    DRAFT // created, no training samples yet
+    DATASET_READY // reached minSampleThreshold, can start training
+    TRAINING // handed off to trainingProvider (e.g. fal.ai, Replicate)
+    READY // trained weights available at storageKey, can be set isActive
+    FAILED
+    ARCHIVED // superseded by a newer version of the same (baseAiModel, triggerKeyword) lineage
+}
+
+//One LoRA style adapter for a single Genre, trained on top of one base AiModel.
+model GenreStyleModel {
+    id                    String                @id @default(uuid()) @db.Uuid
+    genreId               String                @map("genre_id") @db.Uuid
+    baseAiModelId         String                @map("base_ai_model_id") @db.Uuid
+    name                  String                @db.VarChar(150)
+    // Activation token embedded in generation prompts, e.g. "ai-cinema-cyberpunk-v1"
+    triggerKeyword        String                @map("trigger_keyword") @db.VarChar(100)
+    status                GenreStyleModelStatus @default(DRAFT)
+    version               Int                   @default(1) @db.Integer
+    // Hosted LoRA-training service used instead of self-managed GPU infra
+    // (Level 1 Orchestrator posture) — e.g. "fal.ai", "replicate".
+    trainingProvider      String?               @map("training_provider") @db.VarChar(100)
+    externalTrainingJobId String?               @map("external_training_job_id") @db.VarChar(255)
+    // Path/URL to the trained LoRA weights once status = READY
+    storageKey            String?               @map("storage_key") @db.VarChar(500)
+    sampleCount           Int                   @default(0) @map("sample_count") @db.Integer
+    minSampleThreshold    Int                   @default(15) @map("min_sample_threshold") @db.Integer
+    // Whether this is the current version used at generation time for its
+    // (baseAiModel, triggerKeyword) lineage — only one active version per
+    // lineage, enforced in GenreStyleModelService, not by a DB constraint
+    // (Prisma has no partial-unique-index syntax).
+    isActive              Boolean               @default(false) @map("is_active")
+    failureReason         String?               @map("failure_reason") @db.Text
+    trainedAt             DateTime?             @map("trained_at") @db.Timestamptz(6)
+    createdById           String                @map("created_by_id") @db.Uuid
+    createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+    genre           Genre                      @relation(fields: [genreId], references: [id], onDelete: Restrict)
+    baseAiModel     AiModel                    @relation(fields: [baseAiModelId], references: [id], onDelete: Restrict)
+    createdBy       User                       @relation("GenreStyleModelCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+    trainingSamples GenreStyleTrainingSample[]
+    generationJobs  GenerationJob[]
+
+    // triggerKeyword identifies "the same style" across retrains (version
+    // bumps); genreId/baseAiModelId alone must NOT be unique here, since one
+    // genre can have several distinct named styles on the same base model.
+    @@unique([baseAiModelId, triggerKeyword, version])
+    @@index([genreId, baseAiModelId, isActive])
+    @@map("genre_style_models")
+}
+
+//One reference file (+ caption) in a GenreStyleModel's training dataset —
+//the literal "folder" of data used to train that genre's LoRA.
+model GenreStyleTrainingSample {
+    id                String   @id @default(uuid()) @db.Uuid
+    genreStyleModelId String   @map("genre_style_model_id") @db.Uuid
+    storageKey        String   @map("storage_key") @db.VarChar(500)
+    caption           String?  @db.Text
+    createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    genreStyleModel GenreStyleModel @relation(fields: [genreStyleModelId], references: [id], onDelete: Cascade)
+
+    @@index([genreStyleModelId])
+    @@map("genre_style_training_samples")
+}

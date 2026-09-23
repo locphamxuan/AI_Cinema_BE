@@ -28,9 +28,15 @@ model ProductionProject {
     remainingAiQuotaBudget        Decimal                 @map("remaining_ai_quota_budget") @db.Decimal
     status                        ProductionProjectStatus @default(DRAFT)
     cancelledReason               String?                 @map("cancelled_reason") @db.Text
+    // Which genre's LoRA style (see GenreStyleModel) drives visual
+    // generation for this project. A project can be tagged with several
+    // genres via productionProjectGenres, but exactly one — this one — is
+    // the style actually applied at generation time.
+    primaryGenreId                String?                 @map("primary_genre_id") @db.Uuid
 
     createdBy               User                     @relation("ProductionProjectCreatedBy", fields: [createdById], references: [id])
     assignedCreator         User                     @relation("ProductionProjectAssignedCreator", fields: [assignedCreatorId], references: [id])
+    primaryGenre            Genre?                   @relation("ProductionProjectPrimaryGenre", fields: [primaryGenreId], references: [id], onDelete: SetNull)
     productionPlans         ProductionPlan[]
     quotaAllocations        QuotaAllocation[]
     milestones              Milestone[]
