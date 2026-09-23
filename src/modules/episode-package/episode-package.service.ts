@@ -33,10 +33,10 @@ export class EpisodePackageService {
       );
     }
 
-    if (dto.assembledById) {
-      const user = await this.prisma.user.findUnique({ where: { id: dto.assembledById } });
-      if (!user) throw new BadRequestException(`User with id "${dto.assembledById}" does not exist`);
-    }
+    // if (dto.assembledById) {
+    //   const user = await this.prisma.user.findUnique({ where: { id: dto.assembledById } });
+    //   if (!user) throw new BadRequestException(`User with id "${dto.assembledById}" does not exist`);
+    // }
 
     if (dto.assemblyJobId) {
       const job = await this.prisma.generationJob.findFirst({
@@ -82,7 +82,7 @@ export class EpisodePackageService {
         data: {
           productionPlanId: planId,
           packageVersion: (lastPackage?.packageVersion ?? 0) + 1,
-          assembledBy: dto.assembledById,
+          assembledBy: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
           assemblyJobId: dto.assemblyJobId,
         },
       });

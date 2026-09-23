@@ -19,8 +19,8 @@ export class GenerationJobService {
     const aiModel = await this.prisma.aiModel.findUnique({ where: { id: dto.aiModelId } });
     if (!aiModel) throw new BadRequestException(`AI model with id "${dto.aiModelId}" does not exist`);
 
-    const createdBy = await this.prisma.user.findUnique({ where: { id: dto.createdById } });
-    if (!createdBy) throw new BadRequestException(`User with id "${dto.createdById}" does not exist`);
+    // const createdBy = await this.prisma.user.findUnique({ where: { id: dto.createdById } });
+    // if (!createdBy) throw new BadRequestException(`User with id "${dto.createdById}" does not exist`);
 
     if (dto.sceneId) {
       const scene = await this.prisma.scene.findFirst({
@@ -52,7 +52,7 @@ export class GenerationJobService {
         parentJobId: dto.parentJobId,
         configSnapshot: (dto.configSnapshot ?? undefined) as Prisma.InputJsonValue,
         attemptNumber,
-        createdById: dto.createdById,
+        createdById: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
       },
       include: { aiModel: true, scene: { select: { id: true, title: true } }, generatedAssets: true },
     });

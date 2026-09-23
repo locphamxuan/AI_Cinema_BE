@@ -1,14 +1,7 @@
-import { IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProductionPlanRevisionRequestDto {
-  @ApiProperty({
-    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    description: 'UUID of the Content Creator who authors the revised production plan.',
-  })
-  @IsUUID()
-  createdById: string;
-
   @ApiPropertyOptional({ description: 'Overrides the script text of the previous plan.' })
   @IsString()
   @IsOptional()

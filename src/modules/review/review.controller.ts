@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CreateEpisodeSubmissionRequestDto } from './dto/create-episode-submission.request.dto';
-import { CreateReviewRequestDto, DecideReviewRequestDto } from './dto/create-review.request.dto';
+import { CreateReviewRequestDto } from './dto/create-review.request.dto';
 import { ReviewService } from './review.service';
+import { DecideReviewRequestDto } from 'src/modules/review/dto/decide-review.request.dto';
 
 @ApiTags('reviews')
 @Controller()

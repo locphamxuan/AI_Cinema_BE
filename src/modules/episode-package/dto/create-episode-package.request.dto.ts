@@ -3,14 +3,6 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateEpisodePackageRequestDto {
   @ApiPropertyOptional({
-    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    description: 'UUID of the user/system that assembles the package.',
-  })
-  @IsUUID()
-  @IsOptional()
-  assembledById?: string;
-
-  @ApiPropertyOptional({
     description:
       'UUID of the COMPLETED VIDEO_ASSEMBLY generation job. Optional - the package can be assembled without it.',
   })

@@ -34,8 +34,8 @@ export class CatalogService {
     });
     if (!project) throw new NotFoundException('Production project does not exist');
 
-    const user = await this.prisma.user.findUnique({ where: { id: dto.createdById } });
-    if (!user) throw new BadRequestException(`User with id "${dto.createdById}" does not exist`);
+    // const user = await this.prisma.user.findUnique({ where: { id: dto.createdById } });
+    // if (!user) throw new BadRequestException(`User with id "${dto.createdById}" does not exist`);
 
     const episodeNumber = dto.episodeNumber ?? pkg.productionPlan.episodeNumber;
     if (episodeNumber == null) {
@@ -52,7 +52,7 @@ export class CatalogService {
           synopsis: dto.synopsis,
           description: dto.description,
           defaultLanguage: dto.defaultLanguage,
-          createdById: user.id,
+          createdById: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
         },
       });
 
