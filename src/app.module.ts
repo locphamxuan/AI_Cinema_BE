@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
+import { AuthModule } from 'src/modules/auth/auth.module';
 import { GenreModule } from 'src/modules/genre/genre.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
 import { ProductionProjectModule } from 'src/modules/production-project/production-project.module';
@@ -32,6 +33,7 @@ import { PaginationModule } from '@nestarc/pagination';
       isGlobal: true,
     }),
     PrismaModule,
+    AuthModule,
     GenreModule,
     PolicyModule,
     ProductionProjectModule,
