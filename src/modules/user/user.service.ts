@@ -8,12 +8,22 @@ export class UserService {
 
   async findAll(query: PaginateQuery) {
     return paginate(query, this.prisma.user, {
-      sortableColumns: ['id', 'email', 'fullName', 'role', 'isActive', 'createdAt', 'updatedAt'],
+      sortableColumns: ['id', 'email', 'fullName', 'isActive', 'createdAt', 'updatedAt'],
       defaultSortBy: [['fullName', 'ASC']],
       searchableColumns: ['email', 'fullName'],
       filterableColumns: {
-        role: ['$eq', '$in'],
         isActive: ['$eq'],
+      },
+    });
+  }
+
+  findByEmail(email: string) {
+    return this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        userRoles: {
+          include: { role: true },
+        },
       },
     });
   }

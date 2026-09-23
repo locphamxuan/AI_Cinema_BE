@@ -1,12 +1,6 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { paginate, PaginateQuery } from '@nestarc/pagination';
-import { GenerationJobStatus, Prisma, ProductionContentType, ProductionProjectStatus, UserRole } from '@prisma/client';
+import { GenerationJobStatus, Prisma, ProductionContentType, ProductionProjectStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateProductionProjectRequestDto } from './dto/create-production-project.request.dto';
 import { UpdateProductionProjectRequestDto } from './dto/update-production-project.request.dto';
@@ -18,7 +12,6 @@ export class ProductionProjectService {
 
   async create(dto: CreateProductionProjectRequestDto) {
     // const user = await this.requireReviewer(dto.createdById);
-    await this.requireCreator(dto.assignedCreatorId);
 
     this.ensureReleaseFlow(dto.deadline, dto.plannedReleaseDate);
     this.ensureProductionStart(dto.productionStartDate, dto.deadline);
@@ -317,17 +310,6 @@ export class ProductionProjectService {
   //   }
   //   return user;
   // }
-
-  private async requireCreator(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new BadRequestException(`User with id "${userId}" does not exist`);
-    }
-    if (user.role !== UserRole.CONTENT_CREATOR) {
-      throw new ForbiddenException(`User with id "${userId}" must have role CONTENT_CREATOR`);
-    }
-    return user;
-  }
 
   private resolveEpisodeCount(contentType: ProductionContentType, episodeCount?: number): number {
     if (contentType === ProductionContentType.SERIES) {

@@ -1,11 +1,5 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { Prisma, ProductionPlan, ProductionPlanStatus, SceneStatus, UserRole } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, ProductionPlan, ProductionPlanStatus, SceneStatus } from '@prisma/client';
 import { PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ProductionProjectService } from 'src/modules/production-project/production-project.service';
@@ -363,16 +357,6 @@ export class ProductionPlanService {
       select: { planVersion: true },
     });
     return (last?.planVersion ?? 0) + 1;
-  }
-
-  private async requireCreator(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new BadRequestException(`User with id "${userId}" does not exist`);
-    }
-    if (user.role !== UserRole.CONTENT_CREATOR) {
-      throw new ForbiddenException(`User with id "${userId}" must have role CONTENT_CREATOR`);
-    }
   }
 
   // private assertUniqueSceneNumbers(sceneNumbers: number[]) {

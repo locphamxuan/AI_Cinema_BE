@@ -1,17 +1,8 @@
-enum UserRole {
-    MEMBER
-    CONTENT_CREATOR
-    CONTENT_REVIEWER
-    STAFF
-    ADMIN
-}
-
 model User {
     id           String   @id @default(uuid()) @db.Uuid
     email        String   @unique @db.VarChar(255)
     passwordHash String   @map("password_hash") @db.VarChar(255)
     fullName     String   @map("full_name") @db.VarChar(255)
-    role         UserRole
     isActive     Boolean  @default(true) @map("is_active")
     createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -28,6 +19,7 @@ model User {
     productionProjectsCreated ProductionProject[] @relation("ProductionProjectCreatedBy")
     submissions               Submission[]        @relation("SubmissionSubmittedBy")
     productionProjects        ProductionProject[] @relation("ProductionProjectAssignedCreator")
+    userRoles                 UserRole[]
 
     @@map("users")
 }

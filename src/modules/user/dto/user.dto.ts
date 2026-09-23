@@ -21,13 +21,6 @@ export class UserDto {
   fullName: string;
 
   @ApiProperty({
-    enum: UserRole,
-    example: UserRole.MEMBER,
-    description: 'Role of the user.',
-  })
-  role: UserRole;
-
-  @ApiProperty({
     example: true,
     description: 'Whether the user account is active.',
   })

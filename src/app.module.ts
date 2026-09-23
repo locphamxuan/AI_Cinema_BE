@@ -20,6 +20,8 @@ import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { PublicationModule } from 'src/modules/publication/publication.module';
 import { ConfigModule } from '@nestjs/config';
 import { PaginationModule } from '@nestarc/pagination';
+import { CacheModule } from 'src/modules/cache/cache.module';
+import { AuthModule } from 'src/modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -31,6 +33,9 @@ import { PaginationModule } from '@nestarc/pagination';
       isGlobal: true,
     }),
     PrismaModule,
+    CacheModule,
+
+    AuthModule,
     GenreModule,
     PolicyModule,
     ProductionProjectModule,
