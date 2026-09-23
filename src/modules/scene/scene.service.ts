@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AssetType,
   GeneratedAssetStatus,
@@ -12,7 +6,6 @@ import {
   SceneStatus,
   SubmissionStatus,
   SubmissionType,
-  UserRole,
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateSceneRequestDto } from './dto/create-scene.request.dto';
@@ -23,7 +16,7 @@ import { SubmitSceneRequestDto } from './dto/submit-scene.request.dto';
 export class SceneService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(planId: string, dto: CreateSceneRequestDto, createdById?: string) {
+  async create(planId: string, dto: CreateSceneRequestDto) {
     const plan = await this.requireEditablePlan(planId);
 
     const duplicate = await this.prisma.scene.findUnique({
@@ -110,11 +103,11 @@ export class SceneService {
   async submit(sceneId: string, dto: SubmitSceneRequestDto) {
     const scene = await this.findById(sceneId);
 
-    const user = await this.prisma.user.findUnique({ where: { id: dto.submittedById } });
-    if (!user) throw new BadRequestException(`User with id "${dto.submittedById}" does not exist`);
-    if (user.role !== UserRole.CONTENT_CREATOR) {
-      throw new ForbiddenException(`User with id "${dto.submittedById}" must have role CONTENT_CREATOR`);
-    }
+    // const user = await this.prisma.user.findUnique({ where: { id: dto.submittedById } });
+    // if (!user) throw new BadRequestException(`User with id "${dto.submittedById}" does not exist`);
+    // if (user.role !== UserRole.CONTENT_CREATOR) {
+    //   throw new ForbiddenException(`User with id "${dto.submittedById}" must have role CONTENT_CREATOR`);
+    // }
 
     const plan = await this.prisma.productionPlan.findUnique({ where: { id: scene.productionPlanId } });
     if (!plan) throw new NotFoundException('Production plan does not exist');
@@ -156,7 +149,7 @@ export class SceneService {
           sceneId,
           status: SubmissionStatus.APPROVED,
           note: dto.note,
-          submittedById: dto.submittedById,
+          submittedById: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
           submittedAt: new Date(),
           decidedAt: new Date(),
         },

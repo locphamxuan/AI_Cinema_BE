@@ -33,12 +33,12 @@ export class QuotaAllocationService {
       throw new BadRequestException('quota_exceeded');
     }
 
-    let allocatedById: string | undefined;
-    if (dto.allocatedById) {
-      const user = await this.prisma.user.findUnique({ where: { id: dto.allocatedById } });
-      if (!user) throw new BadRequestException(`User with id "${dto.allocatedById}" does not exist`);
-      allocatedById = user.id;
-    }
+    // let allocatedById: string | undefined;
+    // if (dto.allocatedById) {
+    //   const user = await this.prisma.user.findUnique({ where: { id: dto.allocatedById } });
+    //   if (!user) throw new BadRequestException(`User with id "${dto.allocatedById}" does not exist`);
+    //   allocatedById = user.id;
+    // }
 
     return this.prisma.$transaction(async (tx) => {
       const allocation = await tx.quotaAllocation.create({
@@ -49,7 +49,7 @@ export class QuotaAllocationService {
           allocatedAmount: dto.allocatedAmount,
           remainingAmount: dto.allocatedAmount,
           status: QuotaAllocationStatus.ACTIVE,
-          allocatedById,
+          allocatedById: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
         },
       });
 

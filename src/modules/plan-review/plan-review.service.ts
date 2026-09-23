@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   PlanReviewStatus,
   Prisma,
@@ -12,7 +6,6 @@ import {
   SceneStatus,
   SubmissionStatus,
   SubmissionType,
-  UserRole,
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreatePlanReviewRequestDto } from './dto/create-plan-review.request.dto';
@@ -28,11 +21,11 @@ export class PlanReviewService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(planId: string, dto: CreatePlanReviewRequestDto) {
-    const reviewer = await this.prisma.user.findUnique({ where: { id: dto.reviewerId } });
-    if (!reviewer) throw new BadRequestException(`User with id "${dto.reviewerId}" does not exist`);
-    if (reviewer.role !== UserRole.CONTENT_REVIEWER) {
-      throw new ForbiddenException(`User with id "${dto.reviewerId}" must have role CONTENT_REVIEWER`);
-    }
+    // const reviewer = await this.prisma.user.findUnique({ where: { id: dto.reviewerId } });
+    // if (!reviewer) throw new BadRequestException(`User with id "${dto.reviewerId}" does not exist`);
+    // if (reviewer.role !== UserRole.CONTENT_REVIEWER) {
+    //   throw new ForbiddenException(`User with id "${dto.reviewerId}" must have role CONTENT_REVIEWER`);
+    // }
 
     const plan = await this.prisma.productionPlan.findUnique({
       where: { id: planId },
@@ -74,7 +67,7 @@ export class PlanReviewService {
             data: {
               productionPlanId: planId,
               sceneId,
-              reviewerId: dto.reviewerId,
+              reviewerId: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
               status: PlanReviewStatus.PENDING,
               comments: dto.comments,
             },

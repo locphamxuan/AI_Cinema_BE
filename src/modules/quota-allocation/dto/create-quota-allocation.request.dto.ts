@@ -1,6 +1,6 @@
-import { IsEnum, IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
+import { IsEnum, IsNumber, Min } from 'class-validator';
 import { QuotaAllocationType } from '@prisma/client';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateQuotaAllocationRequestDto {
   @ApiProperty({
@@ -15,12 +15,4 @@ export class CreateQuotaAllocationRequestDto {
   @IsNumber()
   @Min(0.000001)
   allocatedAmount: number;
-
-  @ApiPropertyOptional({
-    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    description: 'UUID of the user/system who granted the quota.',
-  })
-  @IsUUID()
-  @IsOptional()
-  allocatedById?: string;
 }
