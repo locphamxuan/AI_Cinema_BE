@@ -16,7 +16,7 @@ import { CancelProductionProjectRequestDto } from './dto/cancel-production-proje
 export class ProductionProjectService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateProductionProjectRequestDto) {
+  async create(dto: CreateProductionProjectRequestDto, createdById: string) {
     // const user = await this.requireReviewer(dto.createdById);
     await this.requireCreator(dto.assignedCreatorId);
 
@@ -45,7 +45,7 @@ export class ProductionProjectService {
           description: dto.description,
           contentType: dto.contentType,
           defaultEpisodeDurationSeconds: dto.defaultEpisodeDurationSeconds,
-          createdById: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
+          createdById,
           assignedCreatorId: dto.assignedCreatorId,
           episodeCount,
           productionStartDate: new Date(dto.productionStartDate),

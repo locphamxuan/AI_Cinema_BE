@@ -7,7 +7,7 @@ import { CreateQuotaAllocationRequestDto } from './dto/create-quota-allocation.r
 export class QuotaAllocationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(planId: string, dto: CreateQuotaAllocationRequestDto) {
+  async create(planId: string, dto: CreateQuotaAllocationRequestDto, allocatedById: string) {
     const plan = await this.prisma.productionPlan.findUnique({
       where: { id: planId },
       include: { productionProject: true },
@@ -49,7 +49,7 @@ export class QuotaAllocationService {
           allocatedAmount: dto.allocatedAmount,
           remainingAmount: dto.allocatedAmount,
           status: QuotaAllocationStatus.ACTIVE,
-          allocatedById: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
+          allocatedById,
         },
       });
 

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ApiPaginatedResponse, Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { GenreStyleModelDto } from './dto/genre-style-model.dto';
 import { CreateGenreStyleModelRequestDto } from './dto/create-genre-style-model.request.dto';
@@ -9,6 +9,7 @@ import { CompleteTrainingRequestDto } from './dto/complete-training.request.dto'
 import { GenreStyleModelService } from './genre-style-model.service';
 
 @ApiTags('genre-style-models')
+@ApiBearerAuth()
 @Controller('genre-style-models')
 export class GenreStyleModelController {
   constructor(private readonly genreStyleModelService: GenreStyleModelService) {}

@@ -241,7 +241,12 @@ export class ProductionPlanService {
     });
   }
 
-  async createRevision(projectId: string, planId: string, dto: CreateProductionPlanRevisionRequestDto) {
+  async createRevision(
+    projectId: string,
+    planId: string,
+    dto: CreateProductionPlanRevisionRequestDto,
+    createdById: string,
+  ) {
     const source = await this.findById(planId, true);
     if (source.productionProjectId !== projectId) {
       throw new BadRequestException(`Plan "${planId}" does not belong to project "${projectId}"`);
@@ -288,7 +293,7 @@ export class ProductionPlanService {
           targetLanguages: dto.targetLanguages ?? source.targetLanguages,
           estimatedAiResourceUsage: dto.estimatedAiResourceUsage ?? source.estimatedAiResourceUsage,
           totalSceneCount: source.scenes.length,
-          createdById: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
+          createdById,
         },
       });
 

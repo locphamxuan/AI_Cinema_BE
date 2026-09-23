@@ -20,7 +20,7 @@ const DECIDABLE_STATUSES: PlanReviewStatus[] = [
 export class PlanReviewService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(planId: string, dto: CreatePlanReviewRequestDto) {
+  async create(planId: string, dto: CreatePlanReviewRequestDto, reviewerId: string) {
     // const reviewer = await this.prisma.user.findUnique({ where: { id: dto.reviewerId } });
     // if (!reviewer) throw new BadRequestException(`User with id "${dto.reviewerId}" does not exist`);
     // if (reviewer.role !== UserRole.CONTENT_REVIEWER) {
@@ -67,7 +67,7 @@ export class PlanReviewService {
             data: {
               productionPlanId: planId,
               sceneId,
-              reviewerId: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
+              reviewerId,
               status: PlanReviewStatus.PENDING,
               comments: dto.comments,
             },

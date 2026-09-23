@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { UpdateProductionPlanRequestDto } from './dto/update-production-plan.request.dto';
 import { SubmitProductionPlanRequestDto } from './dto/submit-production-plan.request.dto';
 import { CreateProductionPlanRevisionRequestDto } from './dto/create-production-plan-revision.request.dto';
@@ -9,6 +10,7 @@ import { ProductionPlanService } from './production-plan.service';
 import { SceneService } from 'src/modules/scene/scene.service';
 
 @ApiTags('production-plans')
+@ApiBearerAuth()
 @Controller()
 export class ProductionPlanController {
   constructor(
@@ -41,8 +43,9 @@ export class ProductionPlanController {
     @Param('projectId') projectId: string,
     @Param('planId') planId: string,
     @Body() dto: CreateProductionPlanRevisionRequestDto,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.productionPlanService.createRevision(projectId, planId, dto);
+    return this.productionPlanService.createRevision(projectId, planId, dto, userId);
   }
 
   @Post('production-plans/:planId/scenes')

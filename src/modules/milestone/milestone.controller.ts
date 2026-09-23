@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CreateMilestoneRequestDto } from './dto/create-milestone.request.dto';
 import { UpdateMilestoneRequestDto } from './dto/update-milestone.request.dto';
 import { MilestoneService } from './milestone.service';
 
 @ApiTags('milestones')
+@ApiBearerAuth()
 @Controller()
 export class MilestoneController {
   constructor(private readonly milestoneService: MilestoneService) {}

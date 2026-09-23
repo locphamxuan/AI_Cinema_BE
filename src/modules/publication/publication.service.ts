@@ -7,7 +7,7 @@ import { CreatePublicationRequestDto } from './dto/create-publication.request.dt
 export class PublicationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(episodeId: string, dto: CreatePublicationRequestDto) {
+  async create(episodeId: string, dto: CreatePublicationRequestDto, publishedById: string) {
     const episode = await this.prisma.episode.findUnique({ where: { id: episodeId } });
     if (!episode) throw new NotFoundException(`Episode with id "${episodeId}" does not exist`);
     if (episode.currentPackageId !== dto.packageId) {
@@ -30,7 +30,7 @@ export class PublicationService {
         episodeId,
         episodePackageId: dto.packageId,
         scheduledAt,
-        publishedById: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
+        publishedById,
       },
       include: { episode: true, episodePackage: true },
     });

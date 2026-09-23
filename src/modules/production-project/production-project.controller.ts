@@ -1,19 +1,24 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ApiPaginatedResponse, Paginate, type PaginateQuery } from '@nestarc/pagination';
+import { UserRole } from '@prisma/client';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateProductionProjectRequestDto } from './dto/create-production-project.request.dto';
 import { UpdateProductionProjectRequestDto } from './dto/update-production-project.request.dto';
 import { CancelProductionProjectRequestDto } from './dto/cancel-production-project.request.dto';
 import { ProductionProjectService } from './production-project.service';
 
 @ApiTags('production-projects')
+@ApiBearerAuth()
 @Controller('production-projects')
 export class ProductionProjectController {
   constructor(private readonly productionProjectService: ProductionProjectService) {}
 
   @Post()
-  async create(@Body() dto: CreateProductionProjectRequestDto) {
-    return this.productionProjectService.create(dto);
+  @Roles(UserRole.CONTENT_REVIEWER, UserRole.ADMIN)
+  async create(@Body() dto: CreateProductionProjectRequestDto, @CurrentUser('id') userId: string) {
+    return this.productionProjectService.create(dto, userId);
   }
 
   @Get()

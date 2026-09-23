@@ -12,7 +12,7 @@ const VIDEO_ASSEMBLY: GenerationJobType = GenerationJobType.VIDEO_ASSEMBLY;
 export class GenerationJobService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(planId: string, dto: CreateGenerationJobRequestDto) {
+  async create(planId: string, dto: CreateGenerationJobRequestDto, createdById: string) {
     const plan = await this.prisma.productionPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
 
@@ -52,7 +52,7 @@ export class GenerationJobService {
         parentJobId: dto.parentJobId,
         configSnapshot: (dto.configSnapshot ?? undefined) as Prisma.InputJsonValue,
         attemptNumber,
-        createdById: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
+        createdById,
       },
       include: { aiModel: true, scene: { select: { id: true, title: true } }, generatedAssets: true },
     });

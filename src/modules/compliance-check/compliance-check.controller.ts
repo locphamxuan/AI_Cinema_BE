@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CreateComplianceCheckRequestDto } from './dto/create-compliance-check.request.dto';
 import { DecideComplianceCheckRequestDto } from './dto/decide-compliance-check.request.dto';
 import { ComplianceCheckService } from './compliance-check.service';
 
 @ApiTags('compliance-checks')
+@ApiBearerAuth()
 @Controller()
 export class ComplianceCheckController {
   constructor(private readonly complianceCheckService: ComplianceCheckService) {}

@@ -14,7 +14,7 @@ import { CreateEpisodePackageRequestDto } from './dto/create-episode-package.req
 export class EpisodePackageService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async assemble(planId: string, dto: CreateEpisodePackageRequestDto) {
+  async assemble(planId: string, dto: CreateEpisodePackageRequestDto, assembledBy: string) {
     const plan = await this.prisma.productionPlan.findUnique({
       where: { id: planId },
       include: { scenes: { select: { id: true, title: true, status: true } } },
@@ -82,7 +82,7 @@ export class EpisodePackageService {
         data: {
           productionPlanId: planId,
           packageVersion: (lastPackage?.packageVersion ?? 0) + 1,
-          assembledBy: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
+          assembledBy,
           assemblyJobId: dto.assemblyJobId,
         },
       });

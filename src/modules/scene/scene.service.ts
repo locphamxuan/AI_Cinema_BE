@@ -100,7 +100,7 @@ export class SceneService {
     });
   }
 
-  async submit(sceneId: string, dto: SubmitSceneRequestDto) {
+  async submit(sceneId: string, dto: SubmitSceneRequestDto, submittedById: string) {
     const scene = await this.findById(sceneId);
 
     // const user = await this.prisma.user.findUnique({ where: { id: dto.submittedById } });
@@ -149,7 +149,7 @@ export class SceneService {
           sceneId,
           status: SubmissionStatus.APPROVED,
           note: dto.note,
-          submittedById: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
+          submittedById,
           submittedAt: new Date(),
           decidedAt: new Date(),
         },

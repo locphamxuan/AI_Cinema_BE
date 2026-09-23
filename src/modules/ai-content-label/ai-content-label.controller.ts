@@ -1,16 +1,25 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateAiContentLabelRequestDto } from './dto/create-ai-content-label.request.dto';
 import { AiContentLabelService } from './ai-content-label.service';
 
 @ApiTags('ai-content-labels')
+@ApiBearerAuth()
 @Controller()
 export class AiContentLabelController {
   constructor(private readonly aiContentLabelService: AiContentLabelService) {}
 
   @Post('episode-packages/:packageId/ai-content-labels')
-  async create(@Param('packageId') packageId: string, @Body() dto: CreateAiContentLabelRequestDto) {
-    return this.aiContentLabelService.create(packageId, dto);
+  @Roles(UserRole.CONTENT_REVIEWER, UserRole.ADMIN)
+  async create(
+    @Param('packageId') packageId: string,
+    @Body() dto: CreateAiContentLabelRequestDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.aiContentLabelService.create(packageId, dto, userId);
   }
 
   @Get('episode-packages/:packageId/ai-content-labels')

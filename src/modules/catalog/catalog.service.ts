@@ -9,7 +9,7 @@ import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.req
 export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createFromPackage(packageId: string, dto: CreateCatalogRequestDto) {
+  async createFromPackage(packageId: string, dto: CreateCatalogRequestDto, createdById: string) {
     const pkg = await this.prisma.episodePackage.findUnique({
       where: { id: packageId },
       include: {
@@ -52,7 +52,7 @@ export class CatalogService {
           synopsis: dto.synopsis,
           description: dto.description,
           defaultLanguage: dto.defaultLanguage,
-          createdById: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
+          createdById,
         },
       });
 

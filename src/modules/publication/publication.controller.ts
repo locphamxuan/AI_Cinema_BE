@@ -1,16 +1,25 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreatePublicationRequestDto } from './dto/create-publication.request.dto';
 import { PublicationService } from './publication.service';
 
 @ApiTags('publications')
+@ApiBearerAuth()
 @Controller()
 export class PublicationController {
   constructor(private readonly publicationService: PublicationService) {}
 
   @Post('episodes/:episodeId/publications')
-  async create(@Param('episodeId') episodeId: string, @Body() dto: CreatePublicationRequestDto) {
-    return this.publicationService.create(episodeId, dto);
+  @Roles(UserRole.CONTENT_REVIEWER, UserRole.ADMIN)
+  async create(
+    @Param('episodeId') episodeId: string,
+    @Body() dto: CreatePublicationRequestDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.publicationService.create(episodeId, dto, userId);
   }
 
   @Get('episodes/:episodeId/publications')
@@ -19,11 +28,13 @@ export class PublicationController {
   }
 
   @Post('publications/:publicationId/publish')
+  @Roles(UserRole.CONTENT_REVIEWER, UserRole.ADMIN)
   async publish(@Param('publicationId') publicationId: string) {
     return this.publicationService.publish(publicationId);
   }
 
   @Post('publications/:publicationId/unpublish')
+  @Roles(UserRole.CONTENT_REVIEWER, UserRole.ADMIN)
   async unpublish(@Param('publicationId') publicationId: string) {
     return this.publicationService.unpublish(publicationId);
   }

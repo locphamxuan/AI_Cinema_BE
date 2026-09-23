@@ -1,18 +1,24 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreateGenerationJobRequestDto } from './dto/create-generation-job.request.dto';
 import { CreateGeneratedAssetRequestDto } from './dto/create-generated-asset.request.dto';
 import { CompleteGenerationJobRequestDto } from './dto/complete-generation-job.request.dto';
 import { GenerationJobService } from './generation-job.service';
 
 @ApiTags('generation-jobs')
+@ApiBearerAuth()
 @Controller()
 export class GenerationJobController {
   constructor(private readonly generationJobService: GenerationJobService) {}
 
   @Post('production-plans/:planId/generation-jobs')
-  async create(@Param('planId') planId: string, @Body() dto: CreateGenerationJobRequestDto) {
-    return this.generationJobService.create(planId, dto);
+  async create(
+    @Param('planId') planId: string,
+    @Body() dto: CreateGenerationJobRequestDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.generationJobService.create(planId, dto, userId);
   }
 
   @Get('production-plans/:planId/generation-jobs')
