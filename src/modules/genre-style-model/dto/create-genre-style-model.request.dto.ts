@@ -4,7 +4,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class CreateGenreStyleModelRequestDto {
   @ApiProperty({
     example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    description: 'UUID of the Genre this LoRA style adapter is scoped to. One genre can have several versions/base models.',
+    description:
+      'UUID of the Genre this LoRA style adapter is scoped to. One genre can have several versions/base models.',
   })
   @IsUUID()
   genreId: string;

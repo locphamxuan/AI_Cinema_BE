@@ -1,4 +1,11 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { paginate, PaginateQuery } from '@nestarc/pagination';
 import { AiModality, GenreStyleModelStatus, UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -87,7 +94,10 @@ export class GenreStyleModelService {
   /** Adds one file to the training "folder" for this genre style. */
   async addTrainingSample(styleModelId: string, dto: AddTrainingSampleRequestDto) {
     const styleModel = await this.findById(styleModelId);
-    if (styleModel.status !== GenreStyleModelStatus.DRAFT && styleModel.status !== GenreStyleModelStatus.DATASET_READY) {
+    if (
+      styleModel.status !== GenreStyleModelStatus.DRAFT &&
+      styleModel.status !== GenreStyleModelStatus.DATASET_READY
+    ) {
       throw new ConflictException(
         `Cannot add training samples to a GenreStyleModel with status "${styleModel.status}"`,
       );
@@ -100,7 +110,9 @@ export class GenreStyleModelService {
 
       const sampleCount = await tx.genreStyleTrainingSample.count({ where: { genreStyleModelId: styleModelId } });
       const nextStatus =
-        sampleCount >= styleModel.minSampleThreshold ? GenreStyleModelStatus.DATASET_READY : GenreStyleModelStatus.DRAFT;
+        sampleCount >= styleModel.minSampleThreshold
+          ? GenreStyleModelStatus.DATASET_READY
+          : GenreStyleModelStatus.DRAFT;
 
       await tx.genreStyleModel.update({
         where: { id: styleModelId },
