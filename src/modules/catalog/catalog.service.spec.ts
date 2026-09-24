@@ -36,14 +36,27 @@ describe('CatalogService.createFromPackage', () => {
       ...overrides,
     });
 
-  beforeEach(() => {
-    jest.clearAllMocks();
+  const givenPackage = (overrides: object = {}) =>
     prisma.episodePackage.findUnique.mockResolvedValue({
       id: 'package-id',
-      productionPlan: { productionProjectId: 'project-id', seasonNumber: 2, seasonEpisodeNumber: 3 },
+      productionPlan: {
+        productionProjectId: 'project-id',
+        seasonNumber: 2,
+        seasonEpisodeNumber: 3,
+        targetLanguages: ['vi', 'en'],
+      },
       complianceChecks: passedChecks,
       reviews: [{ status: ReviewStatus.APPROVED }],
+      streamUrl: 'https://cdn/master.m3u8',
+      durationSeconds: 95,
+      qualities: ['360p', '720p', '1080p'],
+      subtitles: [{ language: 'vi' }, { language: 'en' }],
+      ...overrides,
     });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    givenPackage();
     tx.movie.create.mockResolvedValue({ id: 'movie-id' });
     tx.season.upsert.mockResolvedValue({ id: 'season-2' });
     tx.episode.findFirst.mockResolvedValue(null);
@@ -63,6 +76,9 @@ describe('CatalogService.createFromPackage', () => {
       seasonId: 'season-2',
       episodeNumber: 3,
       currentPackageId: 'package-id',
+      streamUrl: 'https://cdn/master.m3u8',
+      durationSeconds: 95,
+      qualities: ['360p', '720p', '1080p'],
     });
   });
 
@@ -83,8 +99,30 @@ describe('CatalogService.createFromPackage', () => {
     expect(tx.episode.create).not.toHaveBeenCalled();
     expect(tx.episode.update).toHaveBeenCalledWith({
       where: { id: 'episode-id' },
-      data: { currentPackageId: 'package-id' },
+      data: {
+        currentPackageId: 'package-id',
+        streamUrl: 'https://cdn/master.m3u8',
+        durationSeconds: 95,
+        qualities: ['360p', '720p', '1080p'],
+      },
     });
+  });
+
+  it('refuses a package without a transcoded cut', async () => {
+    givenProject();
+    givenPackage({ streamUrl: null, qualities: [] });
+
+    await expect(service.createFromPackage('package-id', {}, 'reviewer-id')).rejects.toThrow(/transcoded cut/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a package missing a subtitle language of its plan', async () => {
+    givenProject();
+    givenPackage({ subtitles: [{ language: 'vi' }] });
+
+    await expect(service.createFromPackage('package-id', {}, 'reviewer-id')).rejects.toThrow(
+      /missing subtitles in: en/,
+    );
   });
 
   it('publishes a movie without a season', async () => {

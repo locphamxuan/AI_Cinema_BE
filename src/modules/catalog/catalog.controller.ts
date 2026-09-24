@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -41,6 +41,13 @@ export class CatalogController {
   @Roles(...MF1_ROLES)
   async findEpisodeById(@Param('episodeId') episodeId: string) {
     return this.catalogService.findEpisodeById(episodeId);
+  }
+
+  @Get('catalog/episodes/:episodeId/subtitles/:language')
+  @Public()
+  @Header('Content-Type', 'text/vtt; charset=utf-8')
+  async findEpisodeSubtitle(@Param('episodeId', ParseUUIDPipe) episodeId: string, @Param('language') language: string) {
+    return this.catalogService.findEpisodeSubtitle(episodeId, language);
   }
 
   @Patch('catalog/episodes/:episodeId')

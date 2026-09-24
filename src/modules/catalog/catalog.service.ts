@@ -5,14 +5,14 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { complianceVerdict } from 'src/modules/compliance-check/compliance-verdict';
 import { CreateCatalogRequestDto } from './dto/create-catalog.request.dto';
 import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.request.dto';
-
-const DEFAULT_LANGUAGE = 'vi';
+import { DEFAULT_LANGUAGE } from 'src/common/validation/language-code';
 
 // Viewer-facing reads only ever expose PUBLISHED episodes, and never the
 // internal production data (packages, reviews, creators).
 const PUBLISHED_EPISODES = {
   where: { productionStatus: EpisodeProductionStatus.PUBLISHED },
   orderBy: { episodeNumber: 'asc' },
+  include: { currentPackage: { select: { subtitles: { select: { language: true } } } } },
 } satisfies Prisma.Movie$episodesArgs;
 
 const PUBLIC_MOVIE_INCLUDE = {
@@ -32,6 +32,7 @@ export class CatalogService {
         productionPlan: true,
         complianceChecks: true,
         reviews: { where: { status: ReviewStatus.APPROVED } },
+        subtitles: { select: { language: true } },
       },
     });
     if (!pkg) throw new NotFoundException(`Episode package with id "${packageId}" does not exist`);
@@ -51,6 +52,15 @@ export class CatalogService {
     if (!project) throw new NotFoundException('Production project does not exist');
 
     const plan = pkg.productionPlan;
+    if (!pkg.streamUrl || pkg.qualities.length === 0) {
+      throw new ConflictException('The package has no transcoded cut yet - re-assemble it before cataloguing');
+    }
+    const subtitled = new Set(pkg.subtitles.map((s) => s.language));
+    const missing = plan.targetLanguages.filter((language) => !subtitled.has(language));
+    if (missing.length > 0) {
+      throw new ConflictException(`The package is missing subtitles in: ${missing.join(', ')}`);
+    }
+
     const isSeries = project.contentType === ProductionContentType.SERIES;
     const seasonNumber = dto.seasonNumber ?? (isSeries ? plan.seasonNumber : undefined);
     const episodeNumber = dto.episodeNumber ?? plan.seasonEpisodeNumber;
@@ -88,9 +98,15 @@ export class CatalogService {
       }
 
       // A re-assembled package replaces the episode's current cut instead of adding a duplicate.
+      const cut = {
+        currentPackageId: pkg.id,
+        streamUrl: pkg.streamUrl,
+        durationSeconds: pkg.durationSeconds,
+        qualities: pkg.qualities,
+      };
       const existing = await tx.episode.findFirst({ where: { movieId, seasonId, episodeNumber } });
       if (existing) {
-        await tx.episode.update({ where: { id: existing.id }, data: { currentPackageId: pkg.id } });
+        await tx.episode.update({ where: { id: existing.id }, data: cut });
       } else {
         const label = seasonNumber ? `Mùa ${seasonNumber} · Tập ${episodeNumber}` : `Tập ${episodeNumber}`;
         await tx.episode.create({
@@ -100,7 +116,7 @@ export class CatalogService {
             episodeNumber,
             title: dto.episodeTitle ?? `${dto.title ?? project.title} - ${label}`,
             productionStatus: EpisodeProductionStatus.DRAFT,
-            currentPackageId: pkg.id,
+            ...cut,
           },
         });
       }
@@ -172,6 +188,20 @@ export class CatalogService {
     });
     if (!episode) throw new NotFoundException(`Episode with id "${episodeId}" does not exist`);
     return episode;
+  }
+
+  /** WebVTT track of a published episode, served to the player. */
+  async findEpisodeSubtitle(episodeId: string, language: string) {
+    const subtitle = await this.prisma.episodePackageSubtitle.findFirst({
+      where: {
+        language,
+        episodePackage: {
+          currentForEpisode: { id: episodeId, productionStatus: EpisodeProductionStatus.PUBLISHED },
+        },
+      },
+    });
+    if (!subtitle) throw new NotFoundException(`Episode "${episodeId}" has no published "${language}" subtitles`);
+    return subtitle.content;
   }
 
   async updateEpisode(episodeId: string, dto: UpdateCatalogEpisodeRequestDto) {
