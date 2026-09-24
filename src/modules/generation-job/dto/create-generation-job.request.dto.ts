@@ -1,6 +1,7 @@
-import { IsEnum, IsObject, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsEnum, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import { GenerationJobType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LANGUAGE_CODE } from 'src/common/validation/language-code';
 
 export class CreateGenerationJobRequestDto {
   @ApiProperty({
@@ -29,6 +30,14 @@ export class CreateGenerationJobRequestDto {
   @MaxLength(500)
   @IsOptional()
   customFunction?: string;
+
+  @ApiPropertyOptional({
+    example: 'en',
+    description: 'Required when jobType is SUBTITLE or TRANSLATION: BCP-47 code of the output language.',
+  })
+  @Matches(LANGUAGE_CODE, { message: 'language must be a BCP-47 code such as "vi" or "en"' })
+  @IsOptional()
+  language?: string;
 
   @ApiPropertyOptional({ description: 'UUID of the scene this job produces assets for (scene-level job).' })
   @IsUUID()

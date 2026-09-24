@@ -14,5 +14,6 @@ import { GenreStyleModelModule } from 'src/modules/genre-style-model/genre-style
     { provide: PROMPT_COMPOSER, useClass: MockPromptComposer },
     { provide: AI_GENERATION_PROVIDER, useClass: MockAiGenerationProvider },
   ],
+  exports: [GenerationJobService],
 })
 export class GenerationJobModule {}

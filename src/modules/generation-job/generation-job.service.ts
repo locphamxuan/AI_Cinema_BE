@@ -26,6 +26,7 @@ import {
 
 const CANCELLABLE: GenerationJobStatus[] = [GenerationJobStatus.PENDING, GenerationJobStatus.QUEUED];
 const RUNNABLE: GenerationJobStatus[] = [GenerationJobStatus.PENDING, GenerationJobStatus.QUEUED];
+const LANGUAGE_JOB_TYPES: GenerationJobType[] = [GenerationJobType.SUBTITLE, GenerationJobType.TRANSLATION];
 const VISUAL_JOB_TYPES: GenerationJobType[] = [
   GenerationJobType.SCENE_IMAGE,
   GenerationJobType.SCENE_VIDEO,
@@ -45,6 +46,7 @@ interface NewAttempt {
   jobType: GenerationJobType;
   rawPrompt: string | null;
   customFunction: string | null;
+  language: string | null;
   sceneId: string | null;
   parentJobId: string | null;
   attemptNumber: number;
@@ -79,6 +81,7 @@ export class GenerationJobService {
       jobType: dto.jobType,
       rawPrompt: dto.prompt ?? null,
       customFunction: dto.customFunction ?? null,
+      language: dto.language ?? null,
       sceneId: dto.sceneId ?? null,
       parentJobId: dto.parentJobId ?? null,
       attemptNumber,
@@ -130,6 +133,7 @@ export class GenerationJobService {
       jobType: job.jobType,
       rawPrompt: dto.prompt ?? job.rawPrompt,
       customFunction: job.customFunction,
+      language: job.language,
       sceneId: job.sceneId,
       parentJobId: job.id,
       attemptNumber: job.attemptNumber + 1,
@@ -169,6 +173,7 @@ export class GenerationJobService {
         composedPrompt: job.prompt?.composedPrompt ?? job.rawPrompt ?? '',
         seed: job.prompt?.seed,
         loraWeights: job.genreStyleModelId ? this.loraWeights(job.configSnapshot) : null,
+        language: job.language,
       });
     } catch (error) {
       return this.prisma.generationJob.update({
@@ -187,6 +192,7 @@ export class GenerationJobService {
         data: {
           generationJobId: jobId,
           assetType: assetTypeFor(job.jobType, model.modality),
+          language: job.language,
           contentText: result.contentText,
           storageKey: result.storageKey,
           mimeType: result.mimeType,
@@ -235,12 +241,15 @@ export class GenerationJobService {
   }
 
   private async createAttempt(attempt: NewAttempt) {
-    const { planId, jobType, rawPrompt, customFunction, sceneId } = attempt;
+    const { planId, jobType, rawPrompt, customFunction, language, sceneId } = attempt;
     if (jobType !== GenerationJobType.VIDEO_ASSEMBLY && !rawPrompt?.trim()) {
       throw new BadRequestException('prompt is required');
     }
     if (jobType === GenerationJobType.CUSTOM && !customFunction?.trim()) {
       throw new BadRequestException('customFunction is required for a CUSTOM job');
+    }
+    if (LANGUAGE_JOB_TYPES.includes(jobType) && !language) {
+      throw new BadRequestException(`language is required for a ${jobType} job`);
     }
 
     const plan = await this.requirePlan(planId);
@@ -296,6 +305,7 @@ export class GenerationJobService {
         attemptNumber: attempt.attemptNumber,
         rawPrompt,
         customFunction,
+        language: LANGUAGE_JOB_TYPES.includes(jobType) ? language : null,
         estimatedTokenCost,
         configSnapshot: configSnapshot,
         genreStyleModelId: genreStyle?.id,

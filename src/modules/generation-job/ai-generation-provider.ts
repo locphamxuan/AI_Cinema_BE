@@ -11,6 +11,8 @@ export interface AiGenerationRequest {
   composedPrompt: string;
   seed?: number | null;
   loraWeights?: string | null;
+  // Output language of a SUBTITLE/TRANSLATION job (BCP-47)
+  language?: string | null;
 }
 
 export interface AiGenerationResult {
@@ -44,7 +46,7 @@ const SAMPLE_HLS = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 export class MockAiGenerationProvider implements AiGenerationProvider {
   readonly name = 'mock';
 
-  generate({ model, composedPrompt, seed }: AiGenerationRequest): Promise<AiGenerationResult> {
+  generate({ model, composedPrompt, seed, language }: AiGenerationRequest): Promise<AiGenerationResult> {
     const promptFactor = 0.75 + (Math.min(composedPrompt.length, PROMPT_LENGTH_CAP) / PROMPT_LENGTH_CAP) * 0.5;
     const outputUnits = Math.round(model.baseUnits * promptFactor);
 
@@ -65,6 +67,14 @@ export class MockAiGenerationProvider implements AiGenerationProvider {
       case AiModality.AUDIO:
         return Promise.resolve({ outputUnits, mimeType: 'audio/mpeg', durationSeconds: outputUnits });
       default:
+        if (language) {
+          // A subtitle line: the Creator's direction as the dialogue, tagged with its language.
+          const direction = composedPrompt
+            .split('\n')
+            .pop()!
+            .replace(/^Direction:\s*/, '');
+          return Promise.resolve({ outputUnits, contentText: `[${language}] ${direction}`, mimeType: 'text/plain' });
+        }
         return Promise.resolve({
           outputUnits,
           contentText: `[mock ${model.name}] ${composedPrompt}`,

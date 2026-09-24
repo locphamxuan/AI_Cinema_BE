@@ -11,6 +11,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateSceneRequestDto } from './dto/create-scene.request.dto';
 import { UpdateSceneRequestDto } from './dto/update-scene.request.dto';
 import { SubmitSceneRequestDto } from './dto/submit-scene.request.dto';
+import { latestAttempts } from 'src/modules/generation-job/latest-attempts';
 
 @Injectable()
 export class SceneService {
@@ -123,9 +124,7 @@ export class SceneService {
     if (jobs.length === 0) {
       throw new BadRequestException('Scene has no generation jobs yet');
     }
-    // A retried job stays for audit; only the newest attempt of each chain decides the scene.
-    const retried = new Set(jobs.map((job) => job.parentJobId).filter(Boolean));
-    const current = jobs.filter((job) => !retried.has(job.id));
+    const current = latestAttempts(jobs);
     const hasPendingJob = current.some((job) => !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status));
     if (hasPendingJob) {
       throw new ConflictException('Scene still has running/pending generation jobs');

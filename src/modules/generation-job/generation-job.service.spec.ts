@@ -100,6 +100,21 @@ describe('GenerationJobService', () => {
       expect(typeof prompt.seed).toBe('number');
     });
 
+    it('requires and stores the output language of a subtitle job', async () => {
+      aiModelRouter.resolveForJob.mockResolvedValue({ model: { id: 'llm-id' }, estimatedTokenCost: 5 });
+
+      await expect(
+        service.create('plan-id', { jobType: GenerationJobType.SUBTITLE, prompt: 'lời thoại' }, 'creator-id'),
+      ).rejects.toThrow('language is required for a SUBTITLE job');
+
+      await service.create(
+        'plan-id',
+        { jobType: GenerationJobType.TRANSLATION, prompt: 'lời thoại', language: 'en' },
+        'creator-id',
+      );
+      expect(createdJobData()).toMatchObject({ jobType: GenerationJobType.TRANSLATION, language: 'en' });
+    });
+
     it('refuses to queue a job whose estimate does not fit the remaining quota (BR-15)', async () => {
       aiModelRouter.resolveForJob.mockResolvedValue({ model: { id: 'veo-id' }, estimatedTokenCost: 99 });
 
