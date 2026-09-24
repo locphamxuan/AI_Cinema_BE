@@ -68,4 +68,14 @@ describe('AiModelRouterService', () => {
       estimatedTokenCost: 60,
     });
   });
+
+  it('routes a described CUSTOM function without needing the registry', () => {
+    expect(router.routeFor(GenerationJobType.CUSTOM, 'Đồng bộ khẩu hình nhân vật')).toMatchObject({
+      model: AI_MODEL_CATALOG.video.name,
+      match: 'specialist',
+    });
+    expect(router.routeFor(GenerationJobType.CUSTOM, 'việc gì đó rất lạ')).toMatchObject({ match: 'general' });
+    expect(router.routeFor(GenerationJobType.SCENE_VIDEO)).toMatchObject({ match: 'catalog', estimatedTokenCost: 60 });
+    expect(prisma.aiModel.findFirst).not.toHaveBeenCalled();
+  });
 });

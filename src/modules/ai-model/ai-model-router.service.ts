@@ -32,6 +32,23 @@ export class AiModelRouterService {
     return { model, entry, match, estimatedTokenCost: estimateTokenCost(entry) };
   }
 
+  /**
+   * The model a job would be routed to, without touching the registry — shown to
+   * the Creator while describing a step, before the job exists (BR-40, BR-41).
+   */
+  routeFor(jobType: GenerationJobType, customFunction?: string | null) {
+    const { key, match } = resolveCatalogKey(jobType, customFunction);
+    const entry = AI_MODEL_CATALOG[key];
+    return {
+      jobType,
+      provider: entry.provider,
+      model: entry.name,
+      modality: entry.modality,
+      match,
+      estimatedTokenCost: estimateTokenCost(entry),
+    };
+  }
+
   /** The model and estimate each job type is routed to, for Creator-facing estimates. */
   routingTable() {
     return Object.values(GenerationJobType).map((jobType) => {
