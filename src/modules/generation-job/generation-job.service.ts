@@ -273,13 +273,17 @@ export class GenerationJobService {
     });
 
     // BR-15: the estimate must fit in the plan's active quota before anything is generated.
-    const allocation = await this.activeAllocation(this.prisma, planId);
+    // With a top-up the plan holds several ACTIVE allocations; the oldest one that can cover it pays.
     const required = estimatedTokenCost + composed.composeTokenCost;
-    if (!allocation) throw new ConflictException('The plan has no active AI quota allocation');
-    if (Number(allocation.remainingAmount) < required) {
-      throw new ConflictException(
-        `quota_exceeded: needs ${required} tokens, ${Number(allocation.remainingAmount)} left`,
-      );
+    const allocation = await this.activeAllocation(this.prisma, planId, required);
+    if (!allocation) {
+      const active = await this.prisma.quotaAllocation.findMany({
+        where: { productionPlanId: planId, status: QuotaAllocationStatus.ACTIVE },
+        select: { remainingAmount: true },
+      });
+      if (active.length === 0) throw new ConflictException('The plan has no active AI quota allocation');
+      const left = Math.max(...active.map((a) => Number(a.remainingAmount)));
+      throw new ConflictException(`quota_exceeded: needs ${required} tokens, ${left} left`);
     }
 
     const configSnapshot = genreStyle
@@ -404,9 +408,9 @@ export class GenerationJobService {
     });
   }
 
-  private activeAllocation(client: Prisma.TransactionClient | PrismaService, planId: string) {
+  private activeAllocation(client: Prisma.TransactionClient | PrismaService, planId: string, required = 0) {
     return client.quotaAllocation.findFirst({
-      where: { productionPlanId: planId, status: QuotaAllocationStatus.ACTIVE },
+      where: { productionPlanId: planId, status: QuotaAllocationStatus.ACTIVE, remainingAmount: { gte: required } },
       orderBy: { createdAt: 'asc' },
     });
   }

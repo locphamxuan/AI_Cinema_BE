@@ -27,7 +27,7 @@ describe('GenerationJobService', () => {
   const prisma = {
     productionPlan: { findUnique: jest.fn() },
     scene: { findFirst: jest.fn(), update: jest.fn() },
-    quotaAllocation: { findFirst: jest.fn() },
+    quotaAllocation: { findFirst: jest.fn(), findMany: jest.fn() },
     generationJob: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
   };
@@ -42,6 +42,14 @@ describe('GenerationJobService', () => {
     aiProvider,
   );
 
+  /** Active allocations of the plan, oldest first; findFirst honours the remainingAmount filter. */
+  const givenAllocations = (allocations: (typeof ALLOCATION)[]) => {
+    prisma.quotaAllocation.findMany.mockResolvedValue(allocations);
+    prisma.quotaAllocation.findFirst.mockImplementation(({ where }: { where: { remainingAmount?: { gte: number } } }) =>
+      Promise.resolve(allocations.find((a) => a.remainingAmount >= (where.remainingAmount?.gte ?? 0)) ?? null),
+    );
+  };
+
   const createdJobData = () =>
     (prisma.generationJob.create.mock.calls as [{ data: Record<string, unknown> }][])[0][0].data;
 
@@ -49,7 +57,7 @@ describe('GenerationJobService', () => {
     jest.clearAllMocks();
     prisma.productionPlan.findUnique.mockResolvedValue(PLAN);
     prisma.scene.findFirst.mockResolvedValue(SCENE);
-    prisma.quotaAllocation.findFirst.mockResolvedValue(ALLOCATION);
+    givenAllocations([ALLOCATION]);
     genreStyleModelService.resolveActiveStyleForProject.mockResolvedValue(null);
   });
 
@@ -124,9 +132,21 @@ describe('GenerationJobService', () => {
       expect(prisma.generationJob.create).not.toHaveBeenCalled();
     });
 
+    it('charges a top-up when the initial allocation can no longer cover the estimate', async () => {
+      aiModelRouter.resolveForJob.mockResolvedValue({ model: { id: 'veo-id' }, estimatedTokenCost: 99 });
+      givenAllocations([
+        { ...ALLOCATION, remainingAmount: 20 },
+        { ...ALLOCATION, id: 'top-up-id', remainingAmount: 500 },
+      ]);
+
+      await service.create('plan-id', { jobType: GenerationJobType.SCENE_VIDEO, prompt: 'rượt đuổi' }, 'creator-id');
+
+      expect(createdJobData()).toMatchObject({ quotaAllocationId: 'top-up-id' });
+    });
+
     it('requires a quota allocation and a prompt', async () => {
       aiModelRouter.resolveForJob.mockResolvedValue({ model: { id: 'tts-id' }, estimatedTokenCost: 35 });
-      prisma.quotaAllocation.findFirst.mockResolvedValue(null);
+      givenAllocations([]);
 
       await expect(
         service.create('plan-id', { jobType: GenerationJobType.VOICE, prompt: 'x' }, 'creator-id'),
