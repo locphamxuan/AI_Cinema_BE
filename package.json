@@ -82,9 +82,25 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "**/*.service.ts",
+      "common/**/*.ts",
+      "modules/**/*-catalog.ts",
+      "modules/**/*-verdict.ts",
+      "modules/**/*-provider.ts",
+      "modules/**/prompt-composer.ts",
+      "modules/**/genre-style-dataset.ts",
+      "!prisma/**",
+      "!app.service.ts"
     ],
     "coverageDirectory": "../coverage",
+    "coverageThreshold": {
+      "global": {
+        "statements": 35,
+        "branches": 27,
+        "functions": 35,
+        "lines": 35
+      }
+    },
     "testEnvironment": "node"
   }
 }

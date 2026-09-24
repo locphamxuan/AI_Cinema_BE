@@ -26,9 +26,9 @@ export const LORA_TRAINING_PROVIDER = 'LORA_TRAINING_PROVIDER';
 export class MockLoraTrainingProvider implements LoraTrainingProvider {
   readonly name = 'mock';
 
-  async submitTraining(submission: LoraTrainingSubmission): Promise<LoraTrainingHandle> {
-    return {
+  submitTraining(submission: LoraTrainingSubmission): Promise<LoraTrainingHandle> {
+    return Promise.resolve({
       externalTrainingJobId: `mock-lora-job-${submission.triggerKeyword}-${Date.now()}`,
-    };
+    });
   }
 }
