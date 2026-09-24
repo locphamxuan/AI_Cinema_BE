@@ -1,18 +1,5 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  ComplianceCheckType,
-  ComplianceResult,
-  ReviewStatus,
-  SubmissionStatus,
-  SubmissionType,
-  UserRole,
-} from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ComplianceCheckType, ComplianceResult, ReviewStatus, SubmissionStatus, SubmissionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateEpisodeSubmissionRequestDto } from './dto/create-episode-submission.request.dto';
 import { CreateReviewRequestDto } from './dto/create-review.request.dto';
@@ -47,14 +34,8 @@ export class ReviewService {
     });
   }
 
-  async createReview(packageId: string, dto: CreateReviewRequestDto) {
-    //const pkg = await this.requirePackage(packageId);
-
-    const reviewer = await this.prisma.user.findUnique({ where: { id: dto.reviewerId } });
-    if (!reviewer) throw new BadRequestException(`User with id "${dto.reviewerId}" does not exist`);
-    if (reviewer.role !== UserRole.CONTENT_REVIEWER) {
-      throw new ForbiddenException(`User with id "${dto.reviewerId}" must have role CONTENT_REVIEWER`);
-    }
+  async createReview(packageId: string, dto: CreateReviewRequestDto, reviewerId: string) {
+    await this.requirePackage(packageId);
 
     const labelPass = await this.prisma.complianceCheck.findFirst({
       where: {
@@ -85,7 +66,7 @@ export class ReviewService {
       const review = await tx.review.create({
         data: {
           episodePackageId: packageId,
-          reviewerId: reviewer.id,
+          reviewerId,
           status: ReviewStatus.PENDING,
           comments: dto.comments,
           submissionId,

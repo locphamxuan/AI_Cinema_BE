@@ -27,8 +27,12 @@ export class ReviewController {
 
   @Post('episode-packages/:packageId/reviews')
   @Roles(...REVIEWER_ROLES)
-  async createReview(@Param('packageId') packageId: string, @Body() dto: CreateReviewRequestDto) {
-    return this.reviewService.createReview(packageId, dto);
+  async createReview(
+    @Param('packageId') packageId: string,
+    @Body() dto: CreateReviewRequestDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.reviewService.createReview(packageId, dto, userId);
   }
 
   @Get('reviews/:reviewId')
