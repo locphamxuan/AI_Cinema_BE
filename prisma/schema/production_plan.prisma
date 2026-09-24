@@ -11,7 +11,14 @@ enum ProductionPlanStatus {
 model ProductionPlan {
     id                       String               @id @default(uuid()) @db.Uuid
     productionProjectId      String               @map("production_project_id") @db.Uuid
+    // Running number of the episode across the whole project (versioning key).
     episodeNumber            Int                  @map("episode_number") @db.Integer
+    // Season of the episode and its number inside that season (what viewers see).
+    seasonNumber             Int                  @default(1) @map("season_number") @db.Integer
+    seasonEpisodeNumber      Int                  @map("season_episode_number") @db.Integer
+    // Duration the Reviewer allotted this episode at project creation — the baseline
+    // the Creator's proposed targetDurationSeconds is reviewed against.
+    allottedDurationSeconds  Int?                 @map("allotted_duration_seconds") @db.Integer
     planVersion              Int                  @map("plan_version") @db.Integer
     previousPlanId           String?              @map("previous_plan_id") @db.Uuid
     scriptText               String?              @map("script_text") @db.Text

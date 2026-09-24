@@ -18,6 +18,7 @@ model Movie {
     seasons   Season[]
     episodes  Episode[]
     genres    MovieGenre[]
+    productionProject ProductionProject?
 
     @@map("movies")
 }

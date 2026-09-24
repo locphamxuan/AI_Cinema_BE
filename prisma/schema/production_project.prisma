@@ -33,10 +33,14 @@ model ProductionProject {
     // genres via productionProjectGenres, but exactly one — this one — is
     // the style actually applied at generation time.
     primaryGenreId                String?                 @map("primary_genre_id") @db.Uuid
+    // Catalog title the project's episodes are published under; created when
+    // the first episode enters the catalog and reused for every later one.
+    movieId                       String?                 @unique @map("movie_id") @db.Uuid
 
     createdBy               User                     @relation("ProductionProjectCreatedBy", fields: [createdById], references: [id])
     assignedCreator         User                     @relation("ProductionProjectAssignedCreator", fields: [assignedCreatorId], references: [id])
     primaryGenre            Genre?                   @relation("ProductionProjectPrimaryGenre", fields: [primaryGenreId], references: [id], onDelete: SetNull)
+    movie                   Movie?                   @relation(fields: [movieId], references: [id], onDelete: SetNull)
     productionPlans         ProductionPlan[]
     quotaAllocations        QuotaAllocation[]
     milestones              Milestone[]
