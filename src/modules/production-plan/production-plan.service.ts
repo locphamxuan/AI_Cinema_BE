@@ -133,15 +133,18 @@ export class ProductionPlanService {
     if (plan.status !== ProductionPlanStatus.DRAFT && plan.status !== ProductionPlanStatus.CHANGES_REQUESTED) {
       throw new ConflictException(`Only DRAFT or CHANGES_REQUESTED plans can be submitted, current "${plan.status}"`);
     }
-    if (plan.totalSceneCount === 0) {
+    if (plan.scenes.length === 0) {
       throw new BadRequestException('A plan must have at least one scene before submission');
     }
+    // Every scene is submitted together, so none is left behind in DRAFT.
+    const submitted = new Set(dto.scenes.map((s) => s.sceneId));
+    if (submitted.size !== plan.scenes.length || plan.scenes.some((s) => !submitted.has(s.id))) {
+      throw new BadRequestException('scenes must list every scene of the plan exactly once');
+    }
 
-    const project = await this.prisma.productionProject.findUnique({ where: { id: plan.productionProjectId } });
-    if (!project) throw new NotFoundException('Production project does not exist');
-
+    // The duration checked is the one being submitted, not the plan's previous one.
     const total = plan.scenes.reduce((sum, scene) => sum + scene.targetDurationSeconds, 0);
-    this.assertDurationAllowed(project, plan.targetDurationSeconds, total);
+    this.assertDurationAllowed(plan.productionProject, dto.targetDurationSeconds, total);
 
     return this.prisma.$transaction(async (tx) => {
       const updatedPlan = await tx.productionPlan.update({
@@ -157,20 +160,10 @@ export class ProductionPlanService {
       });
 
       for (const sceneDto of dto.scenes) {
-        const result = await tx.scene.updateMany({
-          where: {
-            id: sceneDto.sceneId,
-            productionPlanId: planId,
-          },
-          data: {
-            scriptText: sceneDto.scriptText,
-            status: SceneStatus.SUBMITTED,
-          },
+        await tx.scene.update({
+          where: { id: sceneDto.sceneId },
+          data: { scriptText: sceneDto.scriptText, status: SceneStatus.SUBMITTED },
         });
-
-        if (result.count !== 1) {
-          throw new NotFoundException(`Scene ${sceneDto.sceneId} does not belong to this production plan`);
-        }
       }
 
       return updatedPlan;
