@@ -178,6 +178,14 @@ export class ProductionProjectService {
               orderBy: { createdAt: 'asc' },
               include: { allocatedBy: { select: { id: true, fullName: true } } },
             },
+            // Top-up requests, newest first: the pending one is what the Reviewer decides.
+            quotaRequests: {
+              orderBy: { createdAt: 'desc' },
+              include: {
+                requestedBy: { select: { id: true, fullName: true } },
+                decidedBy: { select: { id: true, fullName: true } },
+              },
+            },
             _count: { select: { generationJobs: true } },
             // Newest package first; older ones keep their content reviews in the history.
             episodePackages: {
