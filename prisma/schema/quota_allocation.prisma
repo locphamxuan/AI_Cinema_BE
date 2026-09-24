@@ -29,6 +29,7 @@ model QuotaAllocation {
 
     debitedJobs GenerationJob[] @relation("QuotaAllocationDebitedJobs")
     usageEntries AiUsageLedger[] @relation("QuotaAllocationUsage")
+    quotaRequest QuotaRequest?
 
     @@index([productionPlanId, status])
     @@map("quota_allocations")
