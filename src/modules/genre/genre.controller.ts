@@ -1,11 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
+import { Public } from 'src/common/decorators/public.decorator';
 import { ApiPaginatedResponse, Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { GenreDto } from './dto/genre.dto';
 import { GenreService } from './genre.service';
 
 @ApiTags('genres')
-@ApiBearerAuth()
+@Public()
 @Controller('genres')
 export class GenreController {
   constructor(private readonly genreService: GenreService) {}

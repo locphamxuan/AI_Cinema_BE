@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { Public } from 'src/common/decorators/public.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateCatalogRequestDto } from './dto/create-catalog.request.dto';
 import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.request.dto';
@@ -25,12 +26,14 @@ export class CatalogController {
   }
 
   @Get('movies')
+  @Public()
   async findAllMovies(@Paginate() query: PaginateQuery) {
     return this.catalogService.findAllMovies(query);
   }
 
   @Get('movies/:movieId')
-  async findMovieById(@Param('movieId') movieId: string) {
+  @Public()
+  async findMovieById(@Param('movieId', ParseUUIDPipe) movieId: string) {
     return this.catalogService.findMovieById(movieId);
   }
 

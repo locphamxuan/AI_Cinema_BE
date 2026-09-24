@@ -5,6 +5,19 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateCatalogRequestDto } from './dto/create-catalog.request.dto';
 import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.request.dto';
 
+// Viewer-facing reads only ever expose PUBLISHED episodes, and never the
+// internal production data (packages, reviews, creators).
+const PUBLISHED_EPISODES = {
+  where: { productionStatus: EpisodeProductionStatus.PUBLISHED },
+  orderBy: { episodeNumber: 'asc' },
+} satisfies Prisma.Movie$episodesArgs;
+
+const PUBLIC_MOVIE_INCLUDE = {
+  genres: { include: { genre: true } },
+  seasons: { orderBy: { seasonNumber: 'asc' } },
+  episodes: PUBLISHED_EPISODES,
+} satisfies Prisma.MovieInclude;
+
 @Injectable()
 export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
@@ -96,7 +109,7 @@ export class CatalogService {
   }
 
   async findAllMovies(query: PaginateQuery) {
-    const where: Prisma.MovieWhereInput = {};
+    const where: Prisma.MovieWhereInput = { episodes: { some: PUBLISHED_EPISODES.where } };
     const title = typeof query.search === 'string' && query.search.trim() ? query.search.trim() : null;
     if (title) where.title = { contains: title, mode: 'insensitive' };
 
@@ -107,14 +120,16 @@ export class CatalogService {
     const limit = query.limit && query.limit > 0 && query.limit <= 100 ? query.limit : 20;
     const page = query.page && query.page > 0 ? query.page : 1;
 
-    const [total, items] = await this.prisma.$transaction([
+    // Two plain reads — a batch $transaction adds nothing here and times out
+    // waiting for a connection on the remote Neon pool.
+    const [total, items] = await Promise.all([
       this.prisma.movie.count({ where }),
       this.prisma.movie.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        include: { genres: { include: { genre: true } }, seasons: { include: { episodes: true } }, episodes: true },
+        include: PUBLIC_MOVIE_INCLUDE,
       }),
     ]);
 
@@ -122,14 +137,9 @@ export class CatalogService {
   }
 
   async findMovieById(movieId: string) {
-    const movie = await this.prisma.movie.findUnique({
-      where: { id: movieId },
-      include: {
-        genres: { include: { genre: true } },
-        seasons: { include: { episodes: { include: { publications: true } } } },
-        episodes: { include: { currentPackage: true, publications: true } },
-        createdBy: { select: { fullName: true } },
-      },
+    const movie = await this.prisma.movie.findFirst({
+      where: { id: movieId, episodes: { some: PUBLISHED_EPISODES.where } },
+      include: PUBLIC_MOVIE_INCLUDE,
     });
     if (!movie) throw new NotFoundException(`Movie with id "${movieId}" does not exist`);
     return movie;
