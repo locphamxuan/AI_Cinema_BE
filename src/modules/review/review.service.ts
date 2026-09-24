@@ -6,6 +6,13 @@ import { CreateReviewRequestDto } from './dto/create-review.request.dto';
 import { DecideReviewRequestDto } from 'src/modules/review/dto/decide-review.request.dto';
 
 const DECIDABLE: ReviewStatus[] = [ReviewStatus.APPROVED, ReviewStatus.CHANGES_REQUESTED, ReviewStatus.REJECTED];
+const OPEN: ReviewStatus[] = [ReviewStatus.PENDING, ReviewStatus.IN_REVIEW];
+
+const SUBMISSION_STATUS: Partial<Record<ReviewStatus, SubmissionStatus>> = {
+  [ReviewStatus.APPROVED]: SubmissionStatus.APPROVED,
+  [ReviewStatus.CHANGES_REQUESTED]: SubmissionStatus.CHANGES_REQUESTED,
+  [ReviewStatus.REJECTED]: SubmissionStatus.REJECTED,
+};
 
 @Injectable()
 export class ReviewService {
@@ -94,35 +101,27 @@ export class ReviewService {
 
     const review = await this.prisma.review.findUnique({ where: { id: reviewId } });
     if (!review) throw new NotFoundException(`Review with id "${reviewId}" does not exist`);
-    if (review.status !== ReviewStatus.PENDING && review.status !== ReviewStatus.IN_REVIEW) {
-      throw new ConflictException(`Review with id "${reviewId}" has already been decided`);
-    }
+    const alreadyDecided = new ConflictException(`Review with id "${reviewId}" has already been decided`);
+    if (!OPEN.includes(review.status)) throw alreadyDecided;
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.review.update({
-        where: { id: reviewId },
-        data: {
-          status: dto.decision,
-          comments: dto.comments,
-          rejectionReason: dto.rejectionReason,
-          decidedAt: new Date(),
-        },
+      const decidedAt = new Date();
+      // Conditional on the review still being open: two Reviewers deciding at once
+      // can no longer both overwrite it.
+      const decided = await tx.review.updateMany({
+        where: { id: reviewId, status: { in: OPEN } },
+        data: { status: dto.decision, comments: dto.comments, rejectionReason: dto.rejectionReason, decidedAt },
       });
+      if (decided.count === 0) throw alreadyDecided;
 
       if (review.submissionId) {
-        const submissionStatus =
-          dto.decision === ReviewStatus.APPROVED
-            ? SubmissionStatus.APPROVED
-            : dto.decision === ReviewStatus.CHANGES_REQUESTED
-              ? SubmissionStatus.CHANGES_REQUESTED
-              : SubmissionStatus.REJECTED;
         await tx.submission.update({
           where: { id: review.submissionId },
-          data: { status: submissionStatus, decidedAt: new Date() },
+          data: { status: SUBMISSION_STATUS[dto.decision], decidedAt },
         });
       }
 
-      return updated;
+      return tx.review.findUniqueOrThrow({ where: { id: reviewId } });
     });
   }
 
