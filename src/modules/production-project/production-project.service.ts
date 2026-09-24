@@ -8,6 +8,7 @@ import {
 import { paginate, PaginateQuery } from '@nestarc/pagination';
 import { GenerationJobStatus, Prisma, ProductionContentType, ProductionProjectStatus, UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CreateProductionProjectRequestDto } from './dto/create-production-project.request.dto';
 import { UpdateProductionProjectRequestDto } from './dto/update-production-project.request.dto';
 import { CancelProductionProjectRequestDto } from './dto/cancel-production-project.request.dto';
@@ -110,8 +111,10 @@ export class ProductionProjectService {
     });
   }
 
-  async findAll(query: PaginateQuery) {
+  /** Creators only see the projects assigned to them; reviewers and admins see all. */
+  async findAll(query: PaginateQuery, user: AuthenticatedUser) {
     return paginate(query, this.prisma.productionProject, {
+      where: user.role === UserRole.CONTENT_CREATOR ? { assignedCreatorId: user.id } : undefined,
       sortableColumns: [
         'id',
         'title',
