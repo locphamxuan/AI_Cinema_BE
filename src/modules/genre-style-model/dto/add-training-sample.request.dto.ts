@@ -3,8 +3,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AddTrainingSampleRequestDto {
   @ApiProperty({
-    example: 'genre-style-samples/cyberpunk-v1/ref-014.png',
-    description: 'Object storage key/path of the uploaded reference image for this genre style.',
+    example: 'genre-styles/khoa-hoc-vien-tuong/aicinema-scifi-style/v1/014.png',
+    description:
+      "Storage key of the reference image, relative to the training-data root. Must sit inside the style's datasetFolder.",
   })
   @IsString()
   @IsNotEmpty()

@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
+import { Roles } from 'src/common/decorators/roles.decorator';
 import { ApiPaginatedResponse, Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { GenreStyleModelDto } from './dto/genre-style-model.dto';
 import { CreateGenreStyleModelRequestDto } from './dto/create-genre-style-model.request.dto';
@@ -33,6 +35,12 @@ export class GenreStyleModelController {
   @Post(':id/training-samples')
   async addTrainingSample(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AddTrainingSampleRequestDto) {
     return this.genreStyleModelService.addTrainingSample(id, dto);
+  }
+
+  @Post(':id/import-dataset')
+  @Roles(UserRole.CONTENT_REVIEWER, UserRole.ADMIN)
+  async importDatasetFolder(@Param('id', ParseUUIDPipe) id: string) {
+    return this.genreStyleModelService.importDatasetFolder(id);
   }
 
   @Post(':id/start-training')

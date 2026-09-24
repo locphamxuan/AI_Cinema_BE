@@ -6,8 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { readdir, readFile } from 'node:fs/promises';
+import * as path from 'node:path';
 import { paginate, PaginateQuery } from '@nestarc/pagination';
-import { AiModality, GenreStyleModelStatus, UserRole } from '@prisma/client';
+import { AiModality, GenreStyleModelStatus, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateGenreStyleModelRequestDto } from './dto/create-genre-style-model.request.dto';
 import { AddTrainingSampleRequestDto } from './dto/add-training-sample.request.dto';
@@ -15,6 +17,7 @@ import { StartTrainingRequestDto } from './dto/start-training.request.dto';
 import { CompleteTrainingRequestDto } from './dto/complete-training.request.dto';
 import { LORA_TRAINING_PROVIDER } from './lora-training-provider';
 import type { LoraTrainingProvider } from './lora-training-provider';
+import { genreStyleDatasetFolder, isTrainingImage, trainingDataRoot } from './genre-style-dataset';
 
 @Injectable()
 export class GenreStyleModelService {
@@ -83,23 +86,23 @@ export class GenreStyleModelService {
   async findById(id: string) {
     const styleModel = await this.prisma.genreStyleModel.findUnique({
       where: { id },
-      include: { trainingSamples: { orderBy: { createdAt: 'asc' } } },
+      include: { genre: true, trainingSamples: { orderBy: { createdAt: 'asc' } } },
     });
     if (!styleModel) {
       throw new NotFoundException(`GenreStyleModel with id "${id}" does not exist`);
     }
-    return styleModel;
+    return {
+      ...styleModel,
+      datasetFolder: genreStyleDatasetFolder(styleModel.genre.name, styleModel.triggerKeyword, styleModel.version),
+    };
   }
 
   /** Adds one file to the training "folder" for this genre style. */
   async addTrainingSample(styleModelId: string, dto: AddTrainingSampleRequestDto) {
-    const styleModel = await this.findById(styleModelId);
-    if (
-      styleModel.status !== GenreStyleModelStatus.DRAFT &&
-      styleModel.status !== GenreStyleModelStatus.DATASET_READY
-    ) {
-      throw new ConflictException(
-        `Cannot add training samples to a GenreStyleModel with status "${styleModel.status}"`,
+    const styleModel = await this.requireEditableDataset(styleModelId);
+    if (!dto.storageKey.startsWith(`${styleModel.datasetFolder}/`) || !isTrainingImage(dto.storageKey)) {
+      throw new BadRequestException(
+        `storageKey must be an image (.png/.jpg/.jpeg/.webp) inside this style's dataset folder "${styleModel.datasetFolder}/"`,
       );
     }
 
@@ -107,19 +110,48 @@ export class GenreStyleModelService {
       const sample = await tx.genreStyleTrainingSample.create({
         data: { genreStyleModelId: styleModelId, storageKey: dto.storageKey, caption: dto.caption },
       });
-
-      const sampleCount = await tx.genreStyleTrainingSample.count({ where: { genreStyleModelId: styleModelId } });
-      const nextStatus =
-        sampleCount >= styleModel.minSampleThreshold
-          ? GenreStyleModelStatus.DATASET_READY
-          : GenreStyleModelStatus.DRAFT;
-
-      await tx.genreStyleModel.update({
-        where: { id: styleModelId },
-        data: { sampleCount, status: nextStatus },
-      });
-
+      await this.syncSampleCount(tx, styleModelId, styleModel.minSampleThreshold);
       return sample;
+    });
+  }
+
+  /**
+   * Registers every image in the style's local dataset folder that is not a
+   * sample yet; a sibling "<name>.txt" becomes the caption.
+   */
+  async importDatasetFolder(styleModelId: string) {
+    const styleModel = await this.requireEditableDataset(styleModelId);
+    const folderPath = path.join(trainingDataRoot(), styleModel.datasetFolder);
+
+    let fileNames: string[];
+    try {
+      fileNames = await readdir(folderPath);
+    } catch {
+      throw new NotFoundException(
+        `Dataset folder "${styleModel.datasetFolder}" does not exist under the training-data root`,
+      );
+    }
+
+    const existingKeys = new Set(styleModel.trainingSamples.map((s) => s.storageKey));
+    const newSamples: { storageKey: string; caption: string | null }[] = [];
+    for (const fileName of fileNames.filter(isTrainingImage).sort()) {
+      const storageKey = `${styleModel.datasetFolder}/${fileName}`;
+      if (existingKeys.has(storageKey)) continue;
+
+      const captionPath = path.join(folderPath, `${path.parse(fileName).name}.txt`);
+      const caption = await readFile(captionPath, 'utf8').then(
+        (text) => text.trim() || null,
+        () => null,
+      );
+      newSamples.push({ storageKey, caption });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.genreStyleTrainingSample.createMany({
+        data: newSamples.map((s) => ({ genreStyleModelId: styleModelId, ...s })),
+      });
+      const updated = await this.syncSampleCount(tx, styleModelId, styleModel.minSampleThreshold);
+      return { imported: newSamples.length, sampleCount: updated.sampleCount, status: updated.status };
     });
   }
 
@@ -209,6 +241,30 @@ export class GenreStyleModelService {
 
     return this.prisma.genreStyleModel.findFirst({
       where: { genreId: project.primaryGenreId, baseAiModelId, isActive: true, status: GenreStyleModelStatus.READY },
+    });
+  }
+
+  private async requireEditableDataset(styleModelId: string) {
+    const styleModel = await this.findById(styleModelId);
+    if (
+      styleModel.status !== GenreStyleModelStatus.DRAFT &&
+      styleModel.status !== GenreStyleModelStatus.DATASET_READY
+    ) {
+      throw new ConflictException(
+        `Cannot add training samples to a GenreStyleModel with status "${styleModel.status}"`,
+      );
+    }
+    return styleModel;
+  }
+
+  private async syncSampleCount(tx: Prisma.TransactionClient, styleModelId: string, minSampleThreshold: number) {
+    const sampleCount = await tx.genreStyleTrainingSample.count({ where: { genreStyleModelId: styleModelId } });
+    return tx.genreStyleModel.update({
+      where: { id: styleModelId },
+      data: {
+        sampleCount,
+        status: sampleCount >= minSampleThreshold ? GenreStyleModelStatus.DATASET_READY : GenreStyleModelStatus.DRAFT,
+      },
     });
   }
 
