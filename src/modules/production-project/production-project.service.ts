@@ -9,6 +9,7 @@ import { paginate, PaginateQuery } from '@nestarc/pagination';
 import { GenerationJobStatus, Prisma, ProductionContentType, ProductionProjectStatus, UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { DEFAULT_LANGUAGE } from 'src/common/validation/language-code';
 import { CreateProductionProjectRequestDto } from './dto/create-production-project.request.dto';
 import { UpdateProductionProjectRequestDto } from './dto/update-production-project.request.dto';
 import { CancelProductionProjectRequestDto } from './dto/cancel-production-project.request.dto';
@@ -46,6 +47,7 @@ export class ProductionProjectService {
 
     const milestones = dto.milestones ?? [];
     this.assertMilestones(milestones);
+    const subtitleLanguages = [...new Set(dto.subtitleLanguages ?? [DEFAULT_LANGUAGE])];
 
     return this.prisma.$transaction(async (tx) => {
       const project = await tx.productionProject.create({
@@ -57,6 +59,7 @@ export class ProductionProjectService {
           createdById,
           assignedCreatorId: dto.assignedCreatorId,
           episodeCount: episodes.length,
+          subtitleLanguages,
           productionStartDate: new Date(dto.productionStartDate),
           deadline: new Date(dto.deadline),
           plannedReleaseDate: new Date(dto.plannedReleaseDate),
@@ -96,7 +99,7 @@ export class ProductionProjectService {
             seasonEpisodeNumber: episode.seasonEpisodeNumber,
             allottedDurationSeconds: episode.allottedDurationSeconds ?? defaultEpisodeDurationSeconds,
             planVersion: 1,
-            targetLanguages: [],
+            targetLanguages: subtitleLanguages,
             createdById: project.assignedCreatorId,
           },
         });
@@ -189,6 +192,7 @@ export class ProductionProjectService {
                 },
                 complianceChecks: true,
                 aiContentLabels: true,
+                subtitles: { select: { language: true } },
                 currentForEpisode: {
                   select: {
                     id: true,

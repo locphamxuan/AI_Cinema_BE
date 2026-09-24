@@ -61,7 +61,18 @@ describe('ProductionProjectService.create — seasons and episode durations', ()
     expect((tx.productionProject.create.mock.calls[0] as [{ data: Record<string, unknown> }])[0].data).toMatchObject({
       episodeCount: 3,
       defaultEpisodeDurationSeconds: 1500,
+      subtitleLanguages: ['vi'],
     });
+    expect(createdPlans().every((p) => (p.targetLanguages as string[]).join() === 'vi')).toBe(true);
+  });
+
+  it('subtitles every plan in the languages chosen for the project', async () => {
+    await service.create(baseDto({ episodeCount: 2, subtitleLanguages: ['vi', 'en', 'vi'] }), 'reviewer-id');
+
+    expect(createdPlans().map((p) => p.targetLanguages)).toEqual([
+      ['vi', 'en'],
+      ['vi', 'en'],
+    ]);
   });
 
   it('keeps the single-season behaviour when only episodeCount is sent', async () => {

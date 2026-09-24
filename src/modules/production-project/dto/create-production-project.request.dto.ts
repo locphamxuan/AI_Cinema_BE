@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
   ValidateNested,
@@ -16,6 +17,7 @@ import {
 import { Type } from 'class-transformer';
 import { ProductionContentType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LANGUAGE_CODE } from 'src/common/validation/language-code';
 import { CreateProjectEpisodeRequestDto } from './create-project-episode.request.dto';
 import { CreateProjectMilestoneRequestDto } from './create-project-milestone.request.dto';
 
@@ -125,6 +127,16 @@ export class CreateProductionProjectRequestDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   policyIds?: string[];
+
+  @ApiPropertyOptional({
+    example: ['vi', 'en'],
+    description: 'Languages every episode must ship subtitles in (BCP-47). Defaults to ["vi"].',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @Matches(LANGUAGE_CODE, { each: true, message: 'each subtitle language must be a BCP-47 code such as "vi" or "en"' })
+  @IsOptional()
+  subtitleLanguages?: string[];
 
   @ApiProperty({
     example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
