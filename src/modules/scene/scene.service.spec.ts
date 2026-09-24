@@ -10,7 +10,7 @@ type Job = {
   generatedAssets: { assetType: AssetType; status: GeneratedAssetStatus }[];
 };
 
-const video = [{ assetType: AssetType.VIDEO, status: GeneratedAssetStatus.GENERATED }];
+const video: Job['generatedAssets'] = [{ assetType: AssetType.VIDEO, status: GeneratedAssetStatus.GENERATED }];
 const job = (id: string, status: string, parentJobId: string | null = null, generatedAssets = video): Job => ({
   id,
   parentJobId,
