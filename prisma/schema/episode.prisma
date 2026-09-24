@@ -15,6 +15,14 @@ model Episode {
     title            String                  @db.VarChar(255)
     productionStatus EpisodeProductionStatus @default(DRAFT) @map("production_status")
     currentPackageId String?                 @unique @map("current_package_id") @db.Uuid
+    synopsis         String?                 @db.Text
+    thumbnailUrl     String?                 @map("thumbnail_url") @db.VarChar(500)
+    // BR-31: an episode is at most 30 minutes
+    durationSeconds  Int?                    @map("duration_seconds") @db.Integer
+    // BR-29: price in Coin to unlock the episode; 0 = free
+    coinPrice        Int                     @default(0) @map("coin_price") @db.Integer
+    // HLS playlist served to viewers; filled from the published package's video
+    streamUrl        String?                 @map("stream_url") @db.VarChar(500)
 
     movie          Movie           @relation(fields: [movieId], references: [id])
     season         Season?         @relation(fields: [seasonId], references: [id])
