@@ -1,11 +1,5 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { Prisma, ProductionPlan, ProductionPlanStatus, SceneStatus, UserRole } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, ProductionPlan, ProductionPlanStatus, SceneStatus } from '@prisma/client';
 import { PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ProductionProjectService } from 'src/modules/production-project/production-project.service';
@@ -33,67 +27,6 @@ export class ProductionPlanService {
     private readonly prisma: PrismaService,
     private readonly productionProjectService: ProductionProjectService,
   ) {}
-
-  // async create(projectId: string, dto: CreateProductionPlanRequestDto) {
-  //   const project = await this.productionProjectService.findById(projectId);
-
-  //   if (project.status !== ProductionProjectStatus.DRAFT && project.status !== ProductionProjectStatus.ACTIVE) {
-  //     throw new ConflictException(`Cannot create a plan on a project with status "${project.status}"`);
-  //   }
-
-  //   await this.requireCreator(dto.createdById);
-
-  //   const scenes = dto.scenes ?? [];
-  //   if (scenes.length > 0) {
-  //     this.assertUniqueSceneNumbers(scenes.map((s) => s.sceneNumber));
-  //     this.assertDurationAllowed(project, dto.targetDurationSeconds ?? null, this.sceneSum(scenes));
-  //   }
-  //   if (dto.targetDurationSeconds && project.defaultEpisodeDurationSeconds !== null) {
-  //     if (dto.targetDurationSeconds > project.defaultEpisodeDurationSeconds) {
-  //       throw new BadRequestException(
-  //         `targetDurationSeconds (${dto.targetDurationSeconds}s) cannot exceed the project default episode duration (${project.defaultEpisodeDurationSeconds}s)`,
-  //       );
-  //     }
-  //   }
-
-  //   return this.prisma.$transaction(async (tx) => {
-  //     const { episodeNumber, previousPlanId } = await this.resolveEpisode(tx, project, projectId, dto);
-  //     const planVersion = await this.nextPlanVersion(tx, projectId, episodeNumber);
-
-  //     const plan = await tx.productionPlan.create({
-  //       data: {
-  //         productionProjectId: projectId,
-  //         episodeNumber,
-  //         planVersion,
-  //         previousPlanId,
-  //         scriptText: dto.scriptText,
-  //         productionApproach: dto.productionApproach,
-  //         targetDurationSeconds: dto.targetDurationSeconds,
-  //         targetLanguages: dto.targetLanguages ?? [],
-  //         estimatedAiResourceUsage: dto.estimatedAiResourceUsage,
-  //         totalSceneCount: scenes.length,
-  //         createdById: dto.createdById,
-  //       },
-  //     });
-
-  //     if (scenes.length > 0) {
-  //       await tx.scene.createMany({
-  //         data: scenes.map((scene) => ({
-  //           productionPlanId: plan.id,
-  //           sceneNumber: scene.sceneNumber,
-  //           title: scene.title,
-  //           scriptText: scene.scriptText,
-  //           targetDurationSeconds: scene.targetDurationSeconds,
-  //         })),
-  //       });
-  //     }
-
-  //     return tx.productionPlan.findUnique({
-  //       where: { id: plan.id },
-  //       include: { scenes: { orderBy: { sceneNumber: 'asc' } } },
-  //     });
-  //   });
-  // }
 
   async findAll(projectId: string, query: PaginateQuery) {
     await this.productionProjectService.findById(projectId);
@@ -259,7 +192,6 @@ export class ProductionPlanService {
         `Can only revise a DRAFT or CHANGES_REQUESTED plan, current "${source.status}". Use POST /production-plans/:planId/submit instead.`,
       );
     }
-    // await this.requireCreator(dto.createdById);
     await this.productionProjectService.findById(projectId);
 
     const project = await this.prisma.productionProject.findUnique({ where: { id: projectId } });
@@ -324,47 +256,6 @@ export class ProductionPlanService {
     });
   }
 
-  // private async resolveEpisode(
-  //   tx: Prisma.TransactionClient,
-  //   project: { contentType: ProductionContentType },
-  //   projectId: string,
-  //   dto: CreateProductionPlanRequestDto,
-  // ): Promise<{ episodeNumber: number; previousPlanId?: string }> {
-  //   if (dto.previousPlanId) {
-  //     const previousPlan = await tx.productionPlan.findFirst({
-  //       where: { id: dto.previousPlanId, productionProjectId: projectId },
-  //       select: { id: true, episodeNumber: true },
-  //     });
-  //     if (!previousPlan) {
-  //       throw new BadRequestException(
-  //         `Previous plan with id "${dto.previousPlanId}" does not belong to project "${projectId}"`,
-  //       );
-  //     }
-  //     if (dto.episodeNumber !== undefined && dto.episodeNumber !== previousPlan.episodeNumber) {
-  //       throw new BadRequestException(
-  //         `episodeNumber (${dto.episodeNumber}) does not match the previous plan's episode (${previousPlan.episodeNumber})`,
-  //       );
-  //     }
-  //     return { episodeNumber: previousPlan.episodeNumber, previousPlanId: previousPlan.id };
-  //   }
-
-  //   return {
-  //     episodeNumber:
-  //       project.contentType === ProductionContentType.MOVIE
-  //         ? 1
-  //         : (dto.episodeNumber ?? (await this.nextEpisodeNumber(tx, projectId))),
-  //   };
-  // }
-
-  // private async nextEpisodeNumber(tx: Prisma.TransactionClient, projectId: string): Promise<number> {
-  //   const last = await tx.productionPlan.findFirst({
-  //     where: { productionProjectId: projectId },
-  //     orderBy: { episodeNumber: 'desc' },
-  //     select: { episodeNumber: true },
-  //   });
-  //   return (last?.episodeNumber ?? 0) + 1;
-  // }
-
   private async nextPlanVersion(
     tx: Prisma.TransactionClient,
     projectId: string,
@@ -377,27 +268,6 @@ export class ProductionPlanService {
     });
     return (last?.planVersion ?? 0) + 1;
   }
-
-  private async requireCreator(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new BadRequestException(`User with id "${userId}" does not exist`);
-    }
-    if (user.role !== UserRole.CONTENT_CREATOR) {
-      throw new ForbiddenException(`User with id "${userId}" must have role CONTENT_CREATOR`);
-    }
-  }
-
-  // private assertUniqueSceneNumbers(sceneNumbers: number[]) {
-  //   const unique = new Set(sceneNumbers);
-  //   if (unique.size !== sceneNumbers.length) {
-  //     throw new BadRequestException('sceneNumber must be unique within a plan');
-  //   }
-  // }
-
-  // private sceneSum(scenes: { targetDurationSeconds: number }[]): number {
-  //   return scenes.reduce((sum, scene) => sum + scene.targetDurationSeconds, 0);
-  // }
 
   private assertDurationAllowed(
     project: { defaultEpisodeDurationSeconds: number | null },

@@ -29,12 +29,6 @@ export class PlanReviewService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(planId: string, dto: CreatePlanReviewRequestDto, reviewerId: string) {
-    // const reviewer = await this.prisma.user.findUnique({ where: { id: dto.reviewerId } });
-    // if (!reviewer) throw new BadRequestException(`User with id "${dto.reviewerId}" does not exist`);
-    // if (reviewer.role !== UserRole.CONTENT_REVIEWER) {
-    //   throw new ForbiddenException(`User with id "${dto.reviewerId}" must have role CONTENT_REVIEWER`);
-    // }
-
     const plan = await this.prisma.productionPlan.findUnique({
       where: { id: planId },
       include: { scenes: { select: { id: true } } },

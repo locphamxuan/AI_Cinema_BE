@@ -14,12 +14,6 @@ export class ReviewService {
   async createEpisodeSubmission(packageId: string, dto: CreateEpisodeSubmissionRequestDto, submittedById: string) {
     const pkg = await this.requirePackage(packageId);
 
-    // const user = await this.prisma.user.findUnique({ where: { id: dto.submittedById } });
-    // if (!user) throw new BadRequestException(`User with id "${dto.submittedById}" does not exist`);
-    // if (user.role !== UserRole.CONTENT_CREATOR) {
-    //   throw new ForbiddenException(`User with id "${dto.submittedById}" must have role CONTENT_CREATOR`);
-    // }
-
     return this.prisma.submission.create({
       data: {
         submissionType: SubmissionType.EPISODE,

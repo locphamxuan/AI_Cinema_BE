@@ -25,7 +25,6 @@ export class ProductionProjectService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateProductionProjectRequestDto, createdById: string) {
-    // const user = await this.requireReviewer(dto.createdById);
     await this.requireCreator(dto.assignedCreatorId);
 
     this.ensureReleaseFlow(dto.deadline, dto.plannedReleaseDate);
@@ -354,17 +353,6 @@ export class ProductionProjectService {
       projectPolicies: { include: { policy: true } },
     };
   }
-
-  // private async requireReviewer(userId: string) {
-  //   const user = await this.prisma.user.findUnique({ where: { id: userId } });
-  //   if (!user) {
-  //     throw new BadRequestException(`User with id "${userId}" does not exist`);
-  //   }
-  //   if (user.role !== UserRole.CONTENT_REVIEWER) {
-  //     throw new ForbiddenException(`User with id "${userId}" must have role CONTENT_REVIEWER`);
-  //   }
-  //   return user;
-  // }
 
   private async requireCreator(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });

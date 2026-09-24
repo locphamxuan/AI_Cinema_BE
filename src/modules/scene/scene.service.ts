@@ -102,12 +102,6 @@ export class SceneService {
   async submit(sceneId: string, dto: SubmitSceneRequestDto, submittedById: string) {
     const scene = await this.findById(sceneId);
 
-    // const user = await this.prisma.user.findUnique({ where: { id: dto.submittedById } });
-    // if (!user) throw new BadRequestException(`User with id "${dto.submittedById}" does not exist`);
-    // if (user.role !== UserRole.CONTENT_CREATOR) {
-    //   throw new ForbiddenException(`User with id "${dto.submittedById}" must have role CONTENT_CREATOR`);
-    // }
-
     const plan = await this.prisma.productionPlan.findUnique({ where: { id: scene.productionPlanId } });
     if (!plan) throw new NotFoundException('Production plan does not exist');
     if (plan.status !== ProductionPlanStatus.APPROVED) {
