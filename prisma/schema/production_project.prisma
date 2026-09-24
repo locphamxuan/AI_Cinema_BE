@@ -36,6 +36,8 @@ model ProductionProject {
     // Catalog title the project's episodes are published under; created when
     // the first episode enters the catalog and reused for every later one.
     movieId                       String?                 @unique @map("movie_id") @db.Uuid
+    // Languages every episode must ship subtitles in (BCP-47 codes, e.g. "vi", "en").
+    subtitleLanguages             String[]                @default(["vi"]) @map("subtitle_languages")
 
     createdBy               User                     @relation("ProductionProjectCreatedBy", fields: [createdById], references: [id])
     assignedCreator         User                     @relation("ProductionProjectAssignedCreator", fields: [assignedCreatorId], references: [id])

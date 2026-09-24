@@ -12,6 +12,10 @@ model EpisodePackage {
     assembledBy      String?              @map("assembled_by") @db.Uuid
     assemblyJobId    String?              @map("assembly_job_id") @db.Uuid
     status           EpisodePackageStatus @default(ASSEMBLED)
+    // Final cut after transcoding (LI-02): total duration, HLS master playlist and its renditions.
+    durationSeconds  Int?                 @map("duration_seconds") @db.Integer
+    streamUrl        String?              @map("stream_url") @db.VarChar(500)
+    qualities        String[]             @default([]) @map("qualities")
     createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
     productionPlan ProductionPlan @relation(fields: [productionPlanId], references: [id])
@@ -25,7 +29,22 @@ model EpisodePackage {
     aiContentLabels  AiContentLabel[]
     publications     Publication[]
     submissions      Submission[]
+    subtitles        EpisodePackageSubtitle[]
 
     @@unique([productionPlanId, packageVersion])
     @@map("episode_packages")
+}
+
+//WebVTT subtitle track of the assembled cut, one per target language of the plan.
+model EpisodePackageSubtitle {
+    id               String @id @default(uuid()) @db.Uuid
+    episodePackageId String @map("episode_package_id") @db.Uuid
+    // BCP-47 code, e.g. "vi"
+    language         String @db.VarChar(10)
+    content          String @db.Text
+
+    episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id], onDelete: Cascade)
+
+    @@unique([episodePackageId, language])
+    @@map("episode_package_subtitles")
 }

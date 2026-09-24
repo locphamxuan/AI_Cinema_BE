@@ -40,6 +40,8 @@ model GenerationJob {
     // model is prompt.composedPrompt (Prompt Composer, §4.1.7.1).
     rawPrompt            String?             @map("raw_prompt") @db.Text
     customFunction       String?             @map("custom_function") @db.Text
+    // Output language of a SUBTITLE/TRANSLATION job (BCP-47 code)
+    language             String?             @db.VarChar(10)
     // BR-41: estimate checked against quota before generating; the real cost
     // (resourceCost) grows with outputDurationSeconds and is only known afterwards.
     estimatedTokenCost   Int                 @default(0) @map("estimated_token_cost") @db.Integer
