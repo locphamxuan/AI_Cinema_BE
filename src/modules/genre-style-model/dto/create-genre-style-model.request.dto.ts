@@ -59,11 +59,4 @@ export class CreateGenreStyleModelRequestDto {
   @Max(200)
   @IsOptional()
   minSampleThreshold?: number;
-
-  @ApiProperty({
-    example: 'c3d4e5f6-a7b8-9012-cdef-123456789012',
-    description: 'UUID of the Content Reviewer who owns this genre-level style decision.',
-  })
-  @IsUUID()
-  createdById: string;
 }

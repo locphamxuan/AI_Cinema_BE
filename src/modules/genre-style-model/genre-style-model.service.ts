@@ -1,19 +1,11 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { readdir, readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { paginate, PaginateQuery } from '@nestarc/pagination';
-import { AiModality, GenreStyleModelStatus, Prisma, UserRole } from '@prisma/client';
+import { AiModality, GenreStyleModelStatus, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateGenreStyleModelRequestDto } from './dto/create-genre-style-model.request.dto';
 import { AddTrainingSampleRequestDto } from './dto/add-training-sample.request.dto';
-import { StartTrainingRequestDto } from './dto/start-training.request.dto';
 import { CompleteTrainingRequestDto } from './dto/complete-training.request.dto';
 import { LORA_TRAINING_PROVIDER } from './lora-training-provider';
 import type { LoraTrainingProvider } from './lora-training-provider';
@@ -26,9 +18,7 @@ export class GenreStyleModelService {
     @Inject(LORA_TRAINING_PROVIDER) private readonly trainingProvider: LoraTrainingProvider,
   ) {}
 
-  async create(dto: CreateGenreStyleModelRequestDto) {
-    await this.requireReviewer(dto.createdById);
-
+  async create(dto: CreateGenreStyleModelRequestDto, createdById: string) {
     const genre = await this.prisma.genre.findUnique({ where: { id: dto.genreId } });
     if (!genre) {
       throw new NotFoundException(`Genre with id "${dto.genreId}" does not exist`);
@@ -64,7 +54,7 @@ export class GenreStyleModelService {
         triggerKeyword: dto.triggerKeyword,
         trainingProvider: dto.trainingProvider,
         minSampleThreshold: dto.minSampleThreshold ?? 15,
-        createdById: dto.createdById,
+        createdById,
       },
     });
   }
@@ -156,9 +146,7 @@ export class GenreStyleModelService {
   }
 
   /** Hands the current dataset off to the hosted LoRA-training provider. */
-  async startTraining(styleModelId: string, dto: StartTrainingRequestDto) {
-    await this.requireReviewer(dto.triggeredById);
-
+  async startTraining(styleModelId: string) {
     const styleModel = await this.findById(styleModelId);
     if (styleModel.status !== GenreStyleModelStatus.DATASET_READY) {
       throw new ConflictException(
@@ -266,16 +254,5 @@ export class GenreStyleModelService {
         status: sampleCount >= minSampleThreshold ? GenreStyleModelStatus.DATASET_READY : GenreStyleModelStatus.DRAFT,
       },
     });
-  }
-
-  private async requireReviewer(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new BadRequestException(`User with id "${userId}" does not exist`);
-    }
-    if (user.role !== UserRole.CONTENT_REVIEWER) {
-      throw new ForbiddenException(`User with id "${userId}" must have role CONTENT_REVIEWER`);
-    }
-    return user;
   }
 }
