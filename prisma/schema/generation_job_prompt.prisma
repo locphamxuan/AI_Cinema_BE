@@ -1,0 +1,18 @@
+//Prompt Composer output for one generation job (PROJECT_OVERVIEW.md §4.1.7.1):
+//what was really sent to the model — also what reviewers audit for BR-42/BR-43.
+model GenerationJobPrompt {
+  id               String   @id @default(uuid()) @db.Uuid
+  generationJobId  String   @unique @map("generation_job_id") @db.Uuid
+  composedPrompt   String   @map("composed_prompt") @db.Text
+  // LLM (or composer implementation) that produced composedPrompt, for audit
+  composeModel     String   @map("compose_model") @db.VarChar(100)
+  // Fixed per-call cost, charged to quota separately from the generation cost
+  composeTokenCost Int      @default(0) @map("compose_token_cost") @db.Integer
+  // Fresh random seed for IMAGE/VIDEO jobs so repeated generic prompts diverge
+  seed             Int?     @db.Integer
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  generationJob GenerationJob @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+
+  @@map("generation_job_prompts")
+}

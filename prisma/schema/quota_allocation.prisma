@@ -28,6 +28,7 @@ model QuotaAllocation {
     allocatedBy       User?             @relation("QuotaAllocationCreatedBy", fields: [allocatedById], references: [id], onDelete: SetNull)
 
     debitedJobs GenerationJob[] @relation("QuotaAllocationDebitedJobs")
+    usageEntries AiUsageLedger[] @relation("QuotaAllocationUsage")
 
     @@index([productionPlanId, status])
     @@map("quota_allocations")

@@ -33,6 +33,7 @@ model ProductionPlan {
     planReviews      PlanReview[]
     generationJobs   GenerationJob[]   @relation("ProductionPlanGenerationJobs")
     quotaAllocations QuotaAllocation[] @relation("ProductionPlanQuotaAllocations")
+    usageEntries     AiUsageLedger[]   @relation("ProductionPlanUsage")
     episodePackages  EpisodePackage[]
     submissions      Submission[]
     scenes           Scene[]
