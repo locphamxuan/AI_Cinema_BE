@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeProductionStatus } from '@prisma/client';
+import { ComplianceResult, EpisodeProductionStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { complianceVerdict } from 'src/modules/compliance-check/compliance-verdict';
 import { CreatePublicationRequestDto } from './dto/create-publication.request.dto';
 
 @Injectable()
@@ -14,11 +15,14 @@ export class PublicationService {
       throw new BadRequestException('Can only publish the current package of the episode');
     }
 
-    const pkg = await this.prisma.episodePackage.findUnique({ where: { id: dto.packageId } });
+    const pkg = await this.prisma.episodePackage.findUnique({
+      where: { id: dto.packageId },
+      include: { complianceChecks: true },
+    });
     if (!pkg) throw new NotFoundException(`Episode package with id "${dto.packageId}" does not exist`);
-
-    // const user = await this.prisma.user.findUnique({ where: { id: dto.publishedById } });
-    // if (!user) throw new BadRequestException(`User with id "${dto.publishedById}" does not exist`);
+    if (complianceVerdict(pkg.complianceChecks) !== ComplianceResult.PASS) {
+      throw new ConflictException('The package has not passed every compliance check (BR-42)');
+    }
 
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : undefined;
     if (scheduledAt && Number.isNaN(scheduledAt.getTime())) {

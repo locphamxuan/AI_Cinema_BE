@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ComplianceCheckType, ComplianceResult, EpisodeProductionStatus, ReviewStatus, Prisma } from '@prisma/client';
+import { ComplianceResult, EpisodeProductionStatus, ReviewStatus, Prisma } from '@prisma/client';
 import { PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { complianceVerdict } from 'src/modules/compliance-check/compliance-verdict';
 import { CreateCatalogRequestDto } from './dto/create-catalog.request.dto';
 import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.request.dto';
 
@@ -27,9 +28,7 @@ export class CatalogService {
       where: { id: packageId },
       include: {
         productionPlan: true,
-        complianceChecks: {
-          where: { checkType: ComplianceCheckType.AI_LABEL_PRESENCE, result: ComplianceResult.PASS },
-        },
+        complianceChecks: true,
         reviews: { where: { status: ReviewStatus.APPROVED } },
       },
     });
@@ -37,8 +36,10 @@ export class CatalogService {
     if (pkg.reviews.length === 0) {
       throw new ConflictException('The package must have an APPROVED review before entering the catalog');
     }
-    if (pkg.complianceChecks.length === 0) {
-      throw new ConflictException('The package must have a PASSING AI_LABEL_PRESENCE compliance check');
+    if (complianceVerdict(pkg.complianceChecks) !== ComplianceResult.PASS) {
+      throw new ConflictException(
+        'Every compliance check of the package must PASS before it enters the catalog (BR-42)',
+      );
     }
 
     const project = await this.prisma.productionProject.findUnique({
