@@ -1,10 +1,12 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ComplianceResult, EpisodeProductionStatus, ReviewStatus, Prisma } from '@prisma/client';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ComplianceResult, EpisodeProductionStatus, ProductionContentType, ReviewStatus, Prisma } from '@prisma/client';
 import { PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { complianceVerdict } from 'src/modules/compliance-check/compliance-verdict';
 import { CreateCatalogRequestDto } from './dto/create-catalog.request.dto';
 import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.request.dto';
+
+const DEFAULT_LANGUAGE = 'vi';
 
 // Viewer-facing reads only ever expose PUBLISHED episodes, and never the
 // internal production data (packages, reviews, creators).
@@ -48,58 +50,63 @@ export class CatalogService {
     });
     if (!project) throw new NotFoundException('Production project does not exist');
 
-    // const user = await this.prisma.user.findUnique({ where: { id: dto.createdById } });
-    // if (!user) throw new BadRequestException(`User with id "${dto.createdById}" does not exist`);
-
-    const episodeNumber = dto.episodeNumber ?? pkg.productionPlan.episodeNumber;
-    if (episodeNumber == null) {
-      throw new BadRequestException('Episode number is required');
-    }
-
-    const episodeTitle = dto.episodeTitle ?? `${dto.title} - Tập ${episodeNumber}`;
-    const genreIds = project.productionProjectGenres.map((g) => g.genreId);
+    const plan = pkg.productionPlan;
+    const isSeries = project.contentType === ProductionContentType.SERIES;
+    const seasonNumber = dto.seasonNumber ?? (isSeries ? plan.seasonNumber : undefined);
+    const episodeNumber = dto.episodeNumber ?? plan.seasonEpisodeNumber;
 
     return this.prisma.$transaction(async (tx) => {
-      const movie = await tx.movie.create({
-        data: {
-          title: dto.title,
-          synopsis: dto.synopsis,
-          description: dto.description,
-          defaultLanguage: dto.defaultLanguage,
-          createdById,
-        },
-      });
-
-      if (genreIds.length > 0) {
-        await tx.movieGenre.createMany({
-          data: genreIds.map((genreId) => ({ movieId: movie.id, genreId })),
+      // Every episode of a project is published under one catalog title.
+      let movieId = project.movieId;
+      if (!movieId) {
+        const movie = await tx.movie.create({
+          data: {
+            title: dto.title ?? project.title,
+            synopsis: dto.synopsis ?? project.description,
+            description: dto.description,
+            defaultLanguage: dto.defaultLanguage ?? DEFAULT_LANGUAGE,
+            createdById,
+          },
         });
+        movieId = movie.id;
+        await tx.productionProject.update({ where: { id: project.id }, data: { movieId } });
+
+        const genreIds = project.productionProjectGenres.map((g) => g.genreId);
+        if (genreIds.length > 0) {
+          await tx.movieGenre.createMany({ data: genreIds.map((genreId) => ({ movieId: movieId!, genreId })) });
+        }
       }
 
-      let seasonId: string | undefined;
-      if (dto.seasonNumber) {
-        let season = await tx.season.findUnique({
-          where: { movieId_seasonNumber: { movieId: movie.id, seasonNumber: dto.seasonNumber } },
+      let seasonId: string | null = null;
+      if (seasonNumber) {
+        const season = await tx.season.upsert({
+          where: { movieId_seasonNumber: { movieId, seasonNumber } },
+          create: { movieId, seasonNumber },
+          update: {},
         });
-        if (!season) {
-          season = await tx.season.create({ data: { movieId: movie.id, seasonNumber: dto.seasonNumber } });
-        }
         seasonId = season.id;
       }
 
-      await tx.episode.create({
-        data: {
-          movieId: movie.id,
-          seasonId,
-          episodeNumber,
-          title: episodeTitle,
-          productionStatus: EpisodeProductionStatus.DRAFT,
-          currentPackageId: pkg.id,
-        },
-      });
+      // A re-assembled package replaces the episode's current cut instead of adding a duplicate.
+      const existing = await tx.episode.findFirst({ where: { movieId, seasonId, episodeNumber } });
+      if (existing) {
+        await tx.episode.update({ where: { id: existing.id }, data: { currentPackageId: pkg.id } });
+      } else {
+        const label = seasonNumber ? `Mùa ${seasonNumber} · Tập ${episodeNumber}` : `Tập ${episodeNumber}`;
+        await tx.episode.create({
+          data: {
+            movieId,
+            seasonId,
+            episodeNumber,
+            title: dto.episodeTitle ?? `${dto.title ?? project.title} - ${label}`,
+            productionStatus: EpisodeProductionStatus.DRAFT,
+            currentPackageId: pkg.id,
+          },
+        });
+      }
 
       return tx.movie.findUnique({
-        where: { id: movie.id },
+        where: { id: movieId },
         include: {
           genres: { include: { genre: true } },
           seasons: { include: { episodes: true } },
