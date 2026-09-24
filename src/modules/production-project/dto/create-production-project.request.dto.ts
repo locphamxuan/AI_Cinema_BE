@@ -1,4 +1,5 @@
 import {
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsEnum,
@@ -15,6 +16,7 @@ import {
 import { Type } from 'class-transformer';
 import { ProductionContentType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CreateProjectEpisodeRequestDto } from './create-project-episode.request.dto';
 import { CreateProjectMilestoneRequestDto } from './create-project-milestone.request.dto';
 
 export class CreateProductionProjectRequestDto {
@@ -62,6 +64,18 @@ export class CreateProductionProjectRequestDto {
   @Min(1)
   @IsOptional()
   episodeCount?: number;
+
+  @ApiPropertyOptional({
+    type: [CreateProjectEpisodeRequestDto],
+    description:
+      'Every episode in order, with its season and allotted duration. Seasons may hold different episode counts. When given, episodeCount (if sent) must equal its length and defaultEpisodeDurationSeconds defaults to the longest episode.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateProjectEpisodeRequestDto)
+  @IsOptional()
+  episodes?: CreateProjectEpisodeRequestDto[];
 
   @ApiProperty({
     example: '2026-10-01T00:00:00.000Z',

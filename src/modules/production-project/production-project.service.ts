@@ -13,6 +13,12 @@ import { CreateProductionProjectRequestDto } from './dto/create-production-proje
 import { UpdateProductionProjectRequestDto } from './dto/update-production-project.request.dto';
 import { CancelProductionProjectRequestDto } from './dto/cancel-production-project.request.dto';
 
+interface PlannedEpisode {
+  seasonNumber: number;
+  seasonEpisodeNumber: number;
+  allottedDurationSeconds: number | null;
+}
+
 @Injectable()
 export class ProductionProjectService {
   constructor(private readonly prisma: PrismaService) {}
@@ -24,7 +30,9 @@ export class ProductionProjectService {
     this.ensureReleaseFlow(dto.deadline, dto.plannedReleaseDate);
     this.ensureProductionStart(dto.productionStartDate, dto.deadline);
 
-    const episodeCount = this.resolveEpisodeCount(dto.contentType, dto.episodeCount);
+    const episodes = this.resolveEpisodes(dto);
+    const defaultEpisodeDurationSeconds =
+      dto.defaultEpisodeDurationSeconds ?? this.longestAllotted(episodes) ?? undefined;
 
     const existing = await this.prisma.productionProject.findFirst({ where: { title: dto.title } });
     if (existing) {
@@ -45,10 +53,10 @@ export class ProductionProjectService {
           title: dto.title,
           description: dto.description,
           contentType: dto.contentType,
-          defaultEpisodeDurationSeconds: dto.defaultEpisodeDurationSeconds,
+          defaultEpisodeDurationSeconds,
           createdById,
           assignedCreatorId: dto.assignedCreatorId,
-          episodeCount,
+          episodeCount: episodes.length,
           productionStartDate: new Date(dto.productionStartDate),
           deadline: new Date(dto.deadline),
           plannedReleaseDate: new Date(dto.plannedReleaseDate),
@@ -79,11 +87,14 @@ export class ProductionProjectService {
         });
       }
 
-      for (let episodeNumber = 1; episodeNumber <= episodeCount; episodeNumber += 1) {
+      for (const [index, episode] of episodes.entries()) {
         await tx.productionPlan.create({
           data: {
             productionProjectId: project.id,
-            episodeNumber,
+            episodeNumber: index + 1,
+            seasonNumber: episode.seasonNumber,
+            seasonEpisodeNumber: episode.seasonEpisodeNumber,
+            allottedDurationSeconds: episode.allottedDurationSeconds ?? defaultEpisodeDurationSeconds,
             planVersion: 1,
             targetLanguages: [],
             createdById: project.assignedCreatorId,
@@ -99,6 +110,8 @@ export class ProductionProjectService {
             select: {
               id: true,
               episodeNumber: true,
+              seasonNumber: true,
+              seasonEpisodeNumber: true,
               planVersion: true,
               status: true,
               totalSceneCount: true,
@@ -358,6 +371,55 @@ export class ProductionProjectService {
       throw new ForbiddenException(`User with id "${userId}" must have role CONTENT_CREATOR`);
     }
     return user;
+  }
+
+  /**
+   * The episodes to create a plan for, in order. `episodes` gives each one's
+   * season and allotted duration (seasons may differ in size); without it the
+   * project gets `episodeCount` episodes in a single season.
+   */
+  private resolveEpisodes(dto: CreateProductionProjectRequestDto): PlannedEpisode[] {
+    if (!dto.episodes) {
+      const count = this.resolveEpisodeCount(dto.contentType, dto.episodeCount);
+      return Array.from({ length: count }, (_, i) => ({
+        seasonNumber: 1,
+        seasonEpisodeNumber: i + 1,
+        allottedDurationSeconds: dto.defaultEpisodeDurationSeconds ?? null,
+      }));
+    }
+
+    if (dto.episodeCount !== undefined && dto.episodeCount !== dto.episodes.length) {
+      throw new BadRequestException(
+        `episodeCount (${dto.episodeCount}) does not match the ${dto.episodes.length} episodes given`,
+      );
+    }
+    const seasons = [...new Set(dto.episodes.map((e) => e.seasonNumber))].sort((a, b) => a - b);
+    if (seasons.some((season, i) => season !== i + 1)) {
+      throw new BadRequestException('Seasons must be numbered 1, 2, 3… without gaps');
+    }
+    if (dto.contentType === ProductionContentType.MOVIE && seasons.length > 1) {
+      throw new BadRequestException('A MOVIE has a single season');
+    }
+    const cap = dto.defaultEpisodeDurationSeconds;
+    if (cap !== undefined && dto.episodes.some((e) => e.targetDurationSeconds > cap)) {
+      throw new BadRequestException(`No episode may exceed defaultEpisodeDurationSeconds (${cap}s)`);
+    }
+
+    // Season by season, keeping the given order inside each season.
+    return seasons.flatMap((seasonNumber) =>
+      dto
+        .episodes!.filter((e) => e.seasonNumber === seasonNumber)
+        .map((e, i) => ({
+          seasonNumber,
+          seasonEpisodeNumber: i + 1,
+          allottedDurationSeconds: e.targetDurationSeconds,
+        })),
+    );
+  }
+
+  private longestAllotted(episodes: PlannedEpisode[]): number | null {
+    const durations = episodes.map((e) => e.allottedDurationSeconds).filter((d): d is number => d !== null);
+    return durations.length > 0 ? Math.max(...durations) : null;
   }
 
   private resolveEpisodeCount(contentType: ProductionContentType, episodeCount?: number): number {

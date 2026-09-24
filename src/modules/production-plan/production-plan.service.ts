@@ -112,6 +112,9 @@ export class ProductionPlanService {
         select: {
           id: true,
           episodeNumber: true,
+          seasonNumber: true,
+          seasonEpisodeNumber: true,
+          allottedDurationSeconds: true,
           planVersion: true,
           status: true,
           totalSceneCount: true,
@@ -285,6 +288,9 @@ export class ProductionPlanService {
         data: {
           productionProjectId: projectId,
           episodeNumber: source.episodeNumber,
+          seasonNumber: source.seasonNumber,
+          seasonEpisodeNumber: source.seasonEpisodeNumber,
+          allottedDurationSeconds: source.allottedDurationSeconds,
           planVersion,
           previousPlanId: source.id,
           scriptText: dto.scriptText ?? source.scriptText,
