@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, QuotaAllocationStatus, GenerationJobStatus, GenerationJobType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { AiModelRouterService } from 'src/modules/ai-model/ai-model-router.service';
+import { GenreStyleModelService } from 'src/modules/genre-style-model/genre-style-model.service';
 import { CreateGenerationJobRequestDto } from './dto/create-generation-job.request.dto';
 import { CreateGeneratedAssetRequestDto } from './dto/create-generated-asset.request.dto';
 import { CompleteGenerationJobRequestDto } from './dto/complete-generation-job.request.dto';
@@ -10,14 +12,23 @@ const VIDEO_ASSEMBLY: GenerationJobType = GenerationJobType.VIDEO_ASSEMBLY;
 
 @Injectable()
 export class GenerationJobService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly aiModelRouter: AiModelRouterService,
+    private readonly genreStyleModelService: GenreStyleModelService,
+  ) {}
 
   async create(planId: string, dto: CreateGenerationJobRequestDto, createdById: string) {
     const plan = await this.prisma.productionPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
 
-    const aiModel = await this.prisma.aiModel.findUnique({ where: { id: dto.aiModelId } });
-    if (!aiModel) throw new BadRequestException(`AI model with id "${dto.aiModelId}" does not exist`);
+    const aiModel = await this.aiModelRouter.resolveForJobType(dto.jobType);
+    // Only returns a LoRA when the routed model is its base (FLUX for POSTER/THUMBNAIL)
+    // and the project's primary genre has an active, trained style.
+    const genreStyle = await this.genreStyleModelService.resolveActiveStyleForProject(
+      plan.productionProjectId,
+      aiModel.id,
+    );
 
     // const createdBy = await this.prisma.user.findUnique({ where: { id: dto.createdById } });
     // if (!createdBy) throw new BadRequestException(`User with id "${dto.createdById}" does not exist`);
@@ -46,11 +57,14 @@ export class GenerationJobService {
     return this.prisma.generationJob.create({
       data: {
         productionPlanId: planId,
-        aiModelId: dto.aiModelId,
+        aiModelId: aiModel.id,
         jobType: dto.jobType,
         sceneId: dto.sceneId,
         parentJobId: dto.parentJobId,
-        configSnapshot: (dto.configSnapshot ?? undefined) as Prisma.InputJsonValue,
+        configSnapshot: (genreStyle
+          ? { ...dto.configSnapshot, loraTriggerKeyword: genreStyle.triggerKeyword, loraWeights: genreStyle.storageKey }
+          : dto.configSnapshot) as Prisma.InputJsonValue | undefined,
+        genreStyleModelId: genreStyle?.id,
         attemptNumber,
         createdById,
       },
@@ -102,6 +116,7 @@ export class GenerationJobService {
         configSnapshot: job.configSnapshot === null ? undefined : (job.configSnapshot as Prisma.InputJsonValue),
         attemptNumber: job.attemptNumber + 1,
         quotaAllocationId: job.quotaAllocationId,
+        genreStyleModelId: job.genreStyleModelId,
         createdById: job.createdById,
       },
       include: { aiModel: true, generatedAssets: true },

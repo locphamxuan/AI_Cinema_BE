@@ -3,11 +3,11 @@ import { GenerationJobType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateGenerationJobRequestDto {
-  @ApiProperty({ example: 'f9e8d7c6-b5a4-3210-fedc-ba9876543210', description: 'UUID of the used AI model.' })
-  @IsUUID()
-  aiModelId: string;
-
-  @ApiProperty({ example: 'SCRIPT', description: 'Pipeline stage the job belongs to.', enum: GenerationJobType })
+  @ApiProperty({
+    example: 'SCRIPT',
+    description: 'Pipeline stage the job belongs to. The AI model is picked by the system from this (BR-40).',
+    enum: GenerationJobType,
+  })
   @IsEnum(GenerationJobType)
   jobType: GenerationJobType;
 
