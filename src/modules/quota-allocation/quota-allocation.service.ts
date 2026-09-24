@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ProductionPlanStatus, QuotaAllocationStatus, QuotaAllocationType } from '@prisma/client';
+import { Prisma, ProductionPlanStatus, QuotaAllocationStatus, QuotaAllocationType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateQuotaAllocationRequestDto } from './dto/create-quota-allocation.request.dto';
 
@@ -25,26 +25,37 @@ export class QuotaAllocationService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // Conditional decrement in one statement: two concurrent allocations can no
-      // longer both read the same balance and overspend the project budget.
-      const reserved = await tx.productionProject.updateMany({
-        where: { id: plan.productionProjectId, remainingAiQuotaBudget: { gte: dto.allocatedAmount } },
-        data: { remainingAiQuotaBudget: { decrement: dto.allocatedAmount } },
-      });
-      if (reserved.count === 0) throw new BadRequestException('quota_exceeded');
+    return this.prisma.$transaction((tx) =>
+      this.allocate(tx, plan, dto.allocationType, dto.allocatedAmount, allocatedById),
+    );
+  }
 
-      return tx.quotaAllocation.create({
-        data: {
-          productionPlanId: planId,
-          productionProjectId: plan.productionProjectId,
-          allocationType: dto.allocationType,
-          allocatedAmount: dto.allocatedAmount,
-          remainingAmount: dto.allocatedAmount,
-          status: QuotaAllocationStatus.ACTIVE,
-          allocatedById,
-        },
-      });
+  /** Moves tokens from the project budget into a new ACTIVE allocation of the plan. */
+  async allocate(
+    tx: Prisma.TransactionClient,
+    plan: { id: string; productionProjectId: string },
+    allocationType: QuotaAllocationType,
+    amount: number,
+    allocatedById: string,
+  ) {
+    // Conditional decrement in one statement: two concurrent allocations can no
+    // longer both read the same balance and overspend the project budget.
+    const reserved = await tx.productionProject.updateMany({
+      where: { id: plan.productionProjectId, remainingAiQuotaBudget: { gte: amount } },
+      data: { remainingAiQuotaBudget: { decrement: amount } },
+    });
+    if (reserved.count === 0) throw new BadRequestException('quota_exceeded');
+
+    return tx.quotaAllocation.create({
+      data: {
+        productionPlanId: plan.id,
+        productionProjectId: plan.productionProjectId,
+        allocationType,
+        allocatedAmount: amount,
+        remainingAmount: amount,
+        status: QuotaAllocationStatus.ACTIVE,
+        allocatedById,
+      },
     });
   }
 
