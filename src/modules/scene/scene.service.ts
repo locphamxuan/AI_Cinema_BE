@@ -123,11 +123,14 @@ export class SceneService {
     if (jobs.length === 0) {
       throw new BadRequestException('Scene has no generation jobs yet');
     }
-    const hasPendingJob = jobs.some((job) => !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status));
+    // A retried job stays for audit; only the newest attempt of each chain decides the scene.
+    const retried = new Set(jobs.map((job) => job.parentJobId).filter(Boolean));
+    const current = jobs.filter((job) => !retried.has(job.id));
+    const hasPendingJob = current.some((job) => !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status));
     if (hasPendingJob) {
       throw new ConflictException('Scene still has running/pending generation jobs');
     }
-    const hasVideo = jobs.some((job) =>
+    const hasVideo = current.some((job) =>
       job.generatedAssets.some(
         (asset) => asset.assetType === AssetType.VIDEO && asset.status !== GeneratedAssetStatus.VALIDATION_FAILED,
       ),
@@ -135,7 +138,7 @@ export class SceneService {
     if (!hasVideo) {
       throw new BadRequestException('Scene must have at least one VIDEO asset to be submitted');
     }
-    if (jobs.some((job) => job.status === 'FAILED')) {
+    if (current.some((job) => job.status === 'FAILED')) {
       throw new BadRequestException('Scene has a FAILED generation job; retry or regenerate before submitting');
     }
 
