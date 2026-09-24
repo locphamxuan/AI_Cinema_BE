@@ -4,6 +4,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreateGenerationJobRequestDto } from './dto/create-generation-job.request.dto';
 import { CreateGeneratedAssetRequestDto } from './dto/create-generated-asset.request.dto';
 import { CompleteGenerationJobRequestDto } from './dto/complete-generation-job.request.dto';
+import { RetryGenerationJobRequestDto } from './dto/retry-generation-job.request.dto';
 import { GenerationJobService } from './generation-job.service';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { CREATOR_ROLES, MF1_ROLES } from 'src/common/auth/mf1-roles';
@@ -37,8 +38,14 @@ export class GenerationJobController {
 
   @Post('generation-jobs/:jobId/retry')
   @Roles(...CREATOR_ROLES)
-  async retry(@Param('jobId') jobId: string) {
-    return this.generationJobService.retry(jobId);
+  async retry(@Param('jobId') jobId: string, @Body() dto: RetryGenerationJobRequestDto) {
+    return this.generationJobService.retry(jobId, dto);
+  }
+
+  @Post('generation-jobs/:jobId/run')
+  @Roles(...CREATOR_ROLES)
+  async run(@Param('jobId') jobId: string) {
+    return this.generationJobService.run(jobId);
   }
 
   @Post('generation-jobs/:jobId/cancel')

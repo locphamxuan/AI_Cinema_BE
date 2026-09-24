@@ -1,4 +1,4 @@
-import { IsEnum, IsObject, IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsObject, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { GenerationJobType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -10,6 +10,25 @@ export class CreateGenerationJobRequestDto {
   })
   @IsEnum(GenerationJobType)
   jobType: GenerationJobType;
+
+  @ApiPropertyOptional({
+    example: 'phong cách kịch tính hồi hộp, mưa đêm',
+    description:
+      'Free-form Creator prompt. Required except for VIDEO_ASSEMBLY; the Prompt Composer expands it with the scene context before it reaches the model.',
+  })
+  @IsString()
+  @MaxLength(4000)
+  @IsOptional()
+  prompt?: string;
+
+  @ApiPropertyOptional({
+    example: 'đồng bộ khẩu hình nhân vật',
+    description: 'Required when jobType is CUSTOM: what the Creator wants the function to do.',
+  })
+  @IsString()
+  @MaxLength(500)
+  @IsOptional()
+  customFunction?: string;
 
   @ApiPropertyOptional({ description: 'UUID of the scene this job produces assets for (scene-level job).' })
   @IsUUID()
