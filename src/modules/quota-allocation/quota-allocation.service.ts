@@ -8,10 +8,7 @@ export class QuotaAllocationService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(planId: string, dto: CreateQuotaAllocationRequestDto, allocatedById: string) {
-    const plan = await this.prisma.productionPlan.findUnique({
-      where: { id: planId },
-      include: { productionProject: true },
-    });
+    const plan = await this.prisma.productionPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
     if (plan.status !== ProductionPlanStatus.APPROVED) {
       throw new ConflictException(
@@ -28,20 +25,16 @@ export class QuotaAllocationService {
       }
     }
 
-    const currentRemaining = Number(plan.productionProject.remainingAiQuotaBudget);
-    if (currentRemaining < dto.allocatedAmount) {
-      throw new BadRequestException('quota_exceeded');
-    }
-
-    // let allocatedById: string | undefined;
-    // if (dto.allocatedById) {
-    //   const user = await this.prisma.user.findUnique({ where: { id: dto.allocatedById } });
-    //   if (!user) throw new BadRequestException(`User with id "${dto.allocatedById}" does not exist`);
-    //   allocatedById = user.id;
-    // }
-
     return this.prisma.$transaction(async (tx) => {
-      const allocation = await tx.quotaAllocation.create({
+      // Conditional decrement in one statement: two concurrent allocations can no
+      // longer both read the same balance and overspend the project budget.
+      const reserved = await tx.productionProject.updateMany({
+        where: { id: plan.productionProjectId, remainingAiQuotaBudget: { gte: dto.allocatedAmount } },
+        data: { remainingAiQuotaBudget: { decrement: dto.allocatedAmount } },
+      });
+      if (reserved.count === 0) throw new BadRequestException('quota_exceeded');
+
+      return tx.quotaAllocation.create({
         data: {
           productionPlanId: planId,
           productionProjectId: plan.productionProjectId,
@@ -52,13 +45,6 @@ export class QuotaAllocationService {
           allocatedById,
         },
       });
-
-      await tx.productionProject.update({
-        where: { id: plan.productionProjectId },
-        data: { remainingAiQuotaBudget: currentRemaining - dto.allocatedAmount },
-      });
-
-      return allocation;
     });
   }
 
