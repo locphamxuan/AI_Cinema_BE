@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreateEpisodePackageRequestDto } from './dto/create-episode-package.request.dto';
@@ -31,5 +31,11 @@ export class EpisodePackageController {
   @Get('episode-packages/:packageId')
   async findById(@Param('packageId') packageId: string) {
     return this.episodePackageService.findById(packageId);
+  }
+
+  @Get('episode-packages/:packageId/subtitles/:language')
+  @Header('Content-Type', 'text/vtt; charset=utf-8')
+  async findSubtitle(@Param('packageId') packageId: string, @Param('language') language: string) {
+    return this.episodePackageService.findSubtitle(packageId, language);
   }
 }

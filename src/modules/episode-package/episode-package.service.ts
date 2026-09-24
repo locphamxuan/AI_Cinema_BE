@@ -1,23 +1,46 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  AssetType,
   EpisodePackageStatus,
   GeneratedAssetStatus,
   GenerationJobStatus,
   GenerationJobType,
+  Prisma,
   ProductionPlanStatus,
   SceneStatus,
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { latestAttempts } from 'src/modules/generation-job/latest-attempts';
 import { CreateEpisodePackageRequestDto } from './dto/create-episode-package.request.dto';
+import { EpisodeSubtitleService, type EpisodeScene } from './episode-subtitle.service';
+import { VIDEO_TRANSCODER, type SceneClip, type VideoTranscoder } from './video-transcoder';
+
+const PACKAGE_INCLUDE = {
+  assets: { include: { generatedAsset: true } },
+  assemblyJob: true,
+  reviews: true,
+  complianceChecks: true,
+  aiContentLabels: true,
+  submissions: true,
+  publications: true,
+  subtitles: { select: { language: true } },
+} satisfies Prisma.EpisodePackageInclude;
 
 @Injectable()
 export class EpisodePackageService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subtitles: EpisodeSubtitleService,
+    @Inject(VIDEO_TRANSCODER) private readonly transcoder: VideoTranscoder,
+  ) {}
 
   async assemble(planId: string, dto: CreateEpisodePackageRequestDto, assembledBy: string) {
     const plan = await this.prisma.productionPlan.findUnique({
       where: { id: planId },
-      include: { scenes: { select: { id: true, title: true, status: true } } },
+      include: {
+        scenes: { orderBy: { sceneNumber: 'asc' } },
+        productionProject: { select: { subtitleLanguages: true } },
+      },
     });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
     if (plan.status !== ProductionPlanStatus.APPROVED) {
@@ -32,11 +55,6 @@ export class EpisodePackageService {
         `All scenes must be COMPLETED before assembling. Still pending: ${notCompleted.map((s) => s.title).join(', ')}`,
       );
     }
-
-    // if (dto.assembledById) {
-    //   const user = await this.prisma.user.findUnique({ where: { id: dto.assembledById } });
-    //   if (!user) throw new BadRequestException(`User with id "${dto.assembledById}" does not exist`);
-    // }
 
     if (dto.assemblyJobId) {
       const job = await this.prisma.generationJob.findFirst({
@@ -66,6 +84,17 @@ export class EpisodePackageService {
       }
     }
 
+    // The final cut: every scene's latest video, transcoded into the stream ladder,
+    // with a subtitle track per target language timed to those clips.
+    const clips = await this.sceneClips(planId, plan.scenes);
+    const scenes: EpisodeScene[] = plan.scenes.map((scene, index) => ({
+      ...scene,
+      durationSeconds: clips[index].durationSeconds,
+    }));
+    const languages = plan.targetLanguages.length > 0 ? plan.targetLanguages : plan.productionProject.subtitleLanguages;
+    const tracks = await this.subtitles.buildTracks(planId, scenes, languages, assembledBy);
+    const cut = await this.transcoder.transcode(clips);
+
     return this.prisma.$transaction(async (tx) => {
       const lastPackage = await tx.episodePackage.findFirst({
         where: { productionPlanId: planId },
@@ -84,6 +113,10 @@ export class EpisodePackageService {
           packageVersion: (lastPackage?.packageVersion ?? 0) + 1,
           assembledBy,
           assemblyJobId: dto.assemblyJobId,
+          durationSeconds: Math.round(cut.durationSeconds),
+          streamUrl: cut.streamUrl,
+          qualities: cut.qualities,
+          subtitles: { create: tracks },
         },
       });
 
@@ -105,18 +138,7 @@ export class EpisodePackageService {
         });
       }
 
-      return tx.episodePackage.findUnique({
-        where: { id: pkg.id },
-        include: {
-          assets: { include: { generatedAsset: true } },
-          assemblyJob: true,
-          reviews: true,
-          complianceChecks: true,
-          aiContentLabels: true,
-          submissions: true,
-          publications: true,
-        },
-      });
+      return tx.episodePackage.findUnique({ where: { id: pkg.id }, include: PACKAGE_INCLUDE });
     });
   }
 
@@ -125,7 +147,7 @@ export class EpisodePackageService {
     return this.prisma.episodePackage.findMany({
       where: { productionPlanId: planId },
       orderBy: { createdAt: 'desc' },
-      include: { assets: { include: { generatedAsset: true } } },
+      include: { assets: { include: { generatedAsset: true } }, subtitles: { select: { language: true } } },
     });
   }
 
@@ -140,10 +162,50 @@ export class EpisodePackageService {
         aiContentLabels: { include: { policy: true } },
         submissions: true,
         publications: true,
+        subtitles: { select: { language: true } },
       },
     });
     if (!pkg) throw new NotFoundException(`Episode package with id "${packageId}" does not exist`);
     return pkg;
+  }
+
+  /** Subtitle track of a package as a WebVTT document. */
+  async findSubtitle(packageId: string, language: string) {
+    const subtitle = await this.prisma.episodePackageSubtitle.findUnique({
+      where: { episodePackageId_language: { episodePackageId: packageId, language } },
+    });
+    if (!subtitle) throw new NotFoundException(`Package "${packageId}" has no "${language}" subtitles`);
+    return subtitle.content;
+  }
+
+  /** Latest usable video of each scene, in scene order; its length falls back to the scene's target. */
+  private async sceneClips(
+    planId: string,
+    scenes: { id: string; title: string; targetDurationSeconds: number }[],
+  ): Promise<SceneClip[]> {
+    const jobs = await this.prisma.generationJob.findMany({
+      where: { productionPlanId: planId, jobType: GenerationJobType.SCENE_VIDEO },
+      orderBy: { completedAt: 'asc' },
+      include: { generatedAssets: true },
+    });
+    const completed = latestAttempts(jobs).filter((job) => job.status === GenerationJobStatus.COMPLETED);
+    return scenes.map((scene) => {
+      const video = completed
+        .filter((job) => job.sceneId === scene.id)
+        .flatMap((job) => job.generatedAssets)
+        .filter(
+          (asset) =>
+            asset.assetType === AssetType.VIDEO &&
+            asset.storageKey &&
+            asset.status !== GeneratedAssetStatus.VALIDATION_FAILED,
+        )
+        .pop();
+      if (!video?.storageKey) throw new ConflictException(`Scene "${scene.title}" has no video to assemble`);
+      return {
+        storageKey: video.storageKey,
+        durationSeconds: Number(video.durationSeconds ?? scene.targetDurationSeconds),
+      };
+    });
   }
 
   private async requirePlan(planId: string) {
