@@ -29,11 +29,7 @@ export class SceneService {
     const project = await this.prisma.productionProject.findUnique({ where: { id: plan.productionProjectId } });
     if (!project) throw new NotFoundException('Production project does not exist');
 
-    await this.assertDurationAllowed(
-      project,
-      plan.targetDurationSeconds,
-      plan.durationTotal + dto.targetDurationSeconds,
-    );
+    this.assertDurationAllowed(project, plan.targetDurationSeconds, plan.durationTotal + dto.targetDurationSeconds);
 
     return this.prisma.$transaction(async (tx) => {
       const scene = await tx.scene.create({
@@ -42,7 +38,9 @@ export class SceneService {
           sceneNumber: dto.sceneNumber,
           title: dto.title,
           scriptText: dto.scriptText,
+          description: dto.description,
           targetDurationSeconds: dto.targetDurationSeconds,
+          estimatedTokens: dto.estimatedTokens,
         },
       });
       await tx.productionPlan.update({
@@ -75,7 +73,7 @@ export class SceneService {
       if (!project) throw new NotFoundException('Production project does not exist');
 
       const otherTotal = plan.durationTotal - scene.targetDurationSeconds;
-      await this.assertDurationAllowed(project, plan.targetDurationSeconds, otherTotal + dto.targetDurationSeconds);
+      this.assertDurationAllowed(project, plan.targetDurationSeconds, otherTotal + dto.targetDurationSeconds);
     }
 
     return this.prisma.scene.update({ where: { id: sceneId }, data: dto });
@@ -193,7 +191,7 @@ export class SceneService {
     return { ...plan, durationTotal };
   }
 
-  private async assertDurationAllowed(
+  private assertDurationAllowed(
     project: { defaultEpisodeDurationSeconds: number | null },
     planTargetDuration: number | null,
     total: number,

@@ -304,7 +304,9 @@ export class ProductionPlanService {
             sceneNumber: scene.sceneNumber,
             title: scene.title,
             scriptText: scene.scriptText,
+            description: scene.description,
             targetDurationSeconds: scene.targetDurationSeconds,
+            estimatedTokens: scene.estimatedTokens,
           })),
         });
       }
