@@ -3,14 +3,18 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreateEpisodePackageRequestDto } from './dto/create-episode-package.request.dto';
 import { EpisodePackageService } from './episode-package.service';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { CREATOR_ROLES, MF1_ROLES } from 'src/common/auth/mf1-roles';
 
 @ApiTags('episode-packages')
 @ApiBearerAuth()
+@Roles(...MF1_ROLES)
 @Controller()
 export class EpisodePackageController {
   constructor(private readonly episodePackageService: EpisodePackageService) {}
 
   @Post('production-plans/:planId/episode-packages')
+  @Roles(...CREATOR_ROLES)
   async assemble(
     @Param('planId') planId: string,
     @Body() dto: CreateEpisodePackageRequestDto,

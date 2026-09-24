@@ -5,14 +5,18 @@ import { CreateGenerationJobRequestDto } from './dto/create-generation-job.reque
 import { CreateGeneratedAssetRequestDto } from './dto/create-generated-asset.request.dto';
 import { CompleteGenerationJobRequestDto } from './dto/complete-generation-job.request.dto';
 import { GenerationJobService } from './generation-job.service';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { CREATOR_ROLES, MF1_ROLES } from 'src/common/auth/mf1-roles';
 
 @ApiTags('generation-jobs')
 @ApiBearerAuth()
+@Roles(...MF1_ROLES)
 @Controller()
 export class GenerationJobController {
   constructor(private readonly generationJobService: GenerationJobService) {}
 
   @Post('production-plans/:planId/generation-jobs')
+  @Roles(...CREATOR_ROLES)
   async create(
     @Param('planId') planId: string,
     @Body() dto: CreateGenerationJobRequestDto,
@@ -32,21 +36,25 @@ export class GenerationJobController {
   }
 
   @Post('generation-jobs/:jobId/retry')
+  @Roles(...CREATOR_ROLES)
   async retry(@Param('jobId') jobId: string) {
     return this.generationJobService.retry(jobId);
   }
 
   @Post('generation-jobs/:jobId/cancel')
+  @Roles(...CREATOR_ROLES)
   async cancel(@Param('jobId') jobId: string) {
     return this.generationJobService.cancel(jobId);
   }
 
   @Post('generation-jobs/:jobId/generated-assets')
+  @Roles(...CREATOR_ROLES)
   async createGeneratedAsset(@Param('jobId') jobId: string, @Body() dto: CreateGeneratedAssetRequestDto) {
     return this.generationJobService.createGeneratedAsset(jobId, dto);
   }
 
   @Post('generation-jobs/:jobId/complete')
+  @Roles(...CREATOR_ROLES)
   async complete(@Param('jobId') jobId: string, @Body() dto: CompleteGenerationJobRequestDto) {
     return this.generationJobService.complete(jobId, dto);
   }
