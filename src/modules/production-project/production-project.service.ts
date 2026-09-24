@@ -155,15 +155,25 @@ export class ProductionProjectService {
           orderBy: [{ episodeNumber: 'asc' }, { planVersion: 'desc' }],
           include: {
             scenes: { orderBy: { sceneNumber: 'asc' } },
-            planReviews: { orderBy: { createdAt: 'asc' } },
-            quotaAllocations: { orderBy: { createdAt: 'asc' } },
+            planReviews: {
+              orderBy: { createdAt: 'asc' },
+              include: { reviewer: { select: { id: true, fullName: true } } },
+            },
+            quotaAllocations: {
+              orderBy: { createdAt: 'asc' },
+              include: { allocatedBy: { select: { id: true, fullName: true } } },
+            },
             _count: { select: { generationJobs: true } },
+            // Newest package first; older ones keep their content reviews in the history.
             episodePackages: {
               orderBy: { packageVersion: 'desc' },
-              take: 1,
               include: {
                 submissions: { orderBy: { createdAt: 'desc' }, take: 1 },
-                reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
+                // Every content review, newest first: the Creator reads them as feedback history.
+                reviews: {
+                  orderBy: { createdAt: 'desc' },
+                  include: { reviewer: { select: { id: true, fullName: true } } },
+                },
                 complianceChecks: true,
                 aiContentLabels: true,
                 currentForEpisode: {
