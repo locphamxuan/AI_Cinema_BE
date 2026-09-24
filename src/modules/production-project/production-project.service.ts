@@ -149,16 +149,33 @@ export class ProductionProjectService {
       where: { id },
       include: {
         ...this.projectInclude(),
+        // Everything the workspace needs to show where each episode is in MF-1,
+        // newest plan version first per episode.
         productionPlans: {
-          select: {
-            id: true,
-            episodeNumber: true,
-            planVersion: true,
-            status: true,
-            totalSceneCount: true,
-            completedSceneCount: true,
-          },
           orderBy: [{ episodeNumber: 'asc' }, { planVersion: 'desc' }],
+          include: {
+            scenes: { orderBy: { sceneNumber: 'asc' } },
+            planReviews: { orderBy: { createdAt: 'asc' } },
+            quotaAllocations: { orderBy: { createdAt: 'asc' } },
+            _count: { select: { generationJobs: true } },
+            episodePackages: {
+              orderBy: { packageVersion: 'desc' },
+              take: 1,
+              include: {
+                submissions: { orderBy: { createdAt: 'desc' }, take: 1 },
+                reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
+                complianceChecks: true,
+                aiContentLabels: true,
+                currentForEpisode: {
+                  select: {
+                    id: true,
+                    productionStatus: true,
+                    publications: { orderBy: { publishedAt: 'desc' }, take: 1 },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -304,6 +321,7 @@ export class ProductionProjectService {
   private projectInclude() {
     return {
       assignedCreator: { select: { id: true, fullName: true } },
+      createdBy: { select: { id: true, fullName: true } },
       milestones: { orderBy: { createdAt: 'asc' as const } },
       productionProjectGenres: { include: { genre: true } },
       projectPolicies: { include: { policy: true } },
