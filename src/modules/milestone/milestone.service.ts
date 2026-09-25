@@ -1,5 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { MilestoneStatus, ProductionProjectStatus, Prisma } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { MilestoneStatus, ProductionProjectStatus, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMilestoneRequestDto } from './dto/create-milestone.request.dto';
 import { UpdateMilestoneRequestDto } from './dto/update-milestone.request.dto';
@@ -43,8 +49,18 @@ export class MilestoneService {
     return milestone;
   }
 
-  async update(id: string, dto: UpdateMilestoneRequestDto) {
+  /**
+   * The Reviewer sets a milestone's title, description and date; the Creator only
+   * reports progress on it. Completing needs a result, and a completed milestone
+   * cannot be reopened.
+   */
+  async update(id: string, dto: UpdateMilestoneRequestDto, role: UserRole) {
     const milestone = await this.findById(id);
+
+    const plan = dto.title !== undefined || dto.description !== undefined || dto.targetDate !== undefined;
+    if (plan && role === UserRole.CONTENT_CREATOR) {
+      throw new ForbiddenException("Only the Reviewer can change a milestone's title, description or date");
+    }
 
     const data: Prisma.MilestoneUpdateInput = {};
     if (dto.title !== undefined) data.title = dto.title;
@@ -52,22 +68,17 @@ export class MilestoneService {
     if (dto.targetDate !== undefined) data.targetDate = new Date(dto.targetDate);
     if (dto.resultText !== undefined) data.resultText = dto.resultText;
 
-    const finalStatus = dto.status ?? milestone.status;
-
-    if (milestone.status === MilestoneStatus.COMPLETED && finalStatus !== MilestoneStatus.COMPLETED) {
+    const status = dto.status ?? milestone.status;
+    if (milestone.status === MilestoneStatus.COMPLETED && status !== MilestoneStatus.COMPLETED) {
       throw new ConflictException('Cannot reopen a completed milestone');
     }
-    if (finalStatus === MilestoneStatus.COMPLETED) {
-      if (!(dto.resultText ?? milestone.resultText)) {
+    if (status === MilestoneStatus.COMPLETED && milestone.status !== MilestoneStatus.COMPLETED) {
+      if (!(dto.resultText ?? milestone.resultText)?.trim()) {
         throw new BadRequestException('resultText is required before marking a milestone as COMPLETED');
       }
-      data.status = MilestoneStatus.COMPLETED;
       data.completedAt = new Date();
-    } else if (finalStatus === MilestoneStatus.CANCELLED && milestone.status === MilestoneStatus.CANCELLED) {
-      // no-op, idempotent
-    } else {
-      data.status = finalStatus;
     }
+    data.status = status;
 
     return this.prisma.milestone.update({ where: { id }, data });
   }
