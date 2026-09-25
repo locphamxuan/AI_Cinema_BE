@@ -7,6 +7,7 @@ describe('MilestoneService', () => {
   const prisma = {
     productionProject: { findUnique: jest.fn() },
     milestone: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    $transaction: jest.fn(),
   };
   const service = new MilestoneService(prisma as unknown as PrismaService);
 
@@ -31,6 +32,7 @@ describe('MilestoneService', () => {
           productionProjectId: 'p1',
           title: 'Kịch bản',
           description: undefined,
+          startDate: null,
           targetDate: new Date('2026-10-30T00:00:00.000Z'),
         },
       });
@@ -52,10 +54,19 @@ describe('MilestoneService', () => {
   });
 
   describe('update', () => {
-    it('lets the Creator report progress', async () => {
+    beforeEach(() => prisma.productionProject.findUnique.mockResolvedValue(null));
+
+    it('does not let anyone set a status other than CANCELLED: it follows the dates', async () => {
       givenMilestone();
-      await service.update('m1', { status: MilestoneStatus.IN_PROGRESS }, UserRole.CONTENT_CREATOR);
-      expect(updatedData()).toEqual({ status: MilestoneStatus.IN_PROGRESS });
+      await expect(
+        service.update('m1', { status: MilestoneStatus.IN_PROGRESS }, UserRole.CONTENT_CREATOR),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.update('m1', { status: MilestoneStatus.COMPLETED }, UserRole.CONTENT_REVIEWER),
+      ).rejects.toThrow(BadRequestException);
+
+      await service.update('m1', { status: MilestoneStatus.CANCELLED }, UserRole.CONTENT_REVIEWER);
+      expect(updatedData()).toEqual({ status: MilestoneStatus.CANCELLED });
     });
 
     it("keeps the plan of a milestone the Reviewer's", async () => {
@@ -68,32 +79,17 @@ describe('MilestoneService', () => {
       expect(updatedData()).toMatchObject({ title: 'Mới', targetDate: new Date('2026-12-01T00:00:00.000Z') });
     });
 
-    it('completes a milestone only with a result, stamping when', async () => {
-      givenMilestone({ status: MilestoneStatus.IN_PROGRESS });
+    it('refuses a start after the target date', async () => {
+      givenMilestone({ targetDate: new Date('2026-10-01T00:00:00.000Z') });
       await expect(
-        service.update('m1', { status: MilestoneStatus.COMPLETED, resultText: '  ' }, UserRole.CONTENT_CREATOR),
-      ).rejects.toThrow(BadRequestException);
-
-      await service.update(
-        'm1',
-        { status: MilestoneStatus.COMPLETED, resultText: 'Xong 5 tập' },
-        UserRole.CONTENT_CREATOR,
-      );
-      expect(updatedData()).toMatchObject({ status: MilestoneStatus.COMPLETED, resultText: 'Xong 5 tập' });
-      expect(updatedData().completedAt).toBeInstanceOf(Date);
+        service.update('m1', { startDate: '2026-10-05T00:00:00.000Z' }, UserRole.CONTENT_REVIEWER),
+      ).rejects.toThrow('startDate');
     });
 
-    it('never reopens a completed milestone', async () => {
-      givenMilestone({ status: MilestoneStatus.COMPLETED, resultText: 'Xong' });
-      await expect(
-        service.update('m1', { status: MilestoneStatus.IN_PROGRESS }, UserRole.CONTENT_REVIEWER),
-      ).rejects.toThrow('Cannot reopen');
-    });
-
-    it('does not restamp a milestone that was already completed', async () => {
-      givenMilestone({ status: MilestoneStatus.COMPLETED, resultText: 'Xong' });
-      await service.update('m1', { resultText: 'Xong, có ghi chú' }, UserRole.CONTENT_CREATOR);
-      expect(updatedData()).toEqual({ resultText: 'Xong, có ghi chú', status: MilestoneStatus.COMPLETED });
+    it('lets the Creator note what was achieved', async () => {
+      givenMilestone();
+      await service.update('m1', { resultText: 'Xong 5 tập' }, UserRole.CONTENT_CREATOR);
+      expect(updatedData()).toEqual({ resultText: 'Xong 5 tập' });
     });
 
     it('reports a missing milestone', async () => {

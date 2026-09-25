@@ -9,6 +9,7 @@ import { MilestoneStatus, ProductionProjectStatus, Prisma, UserRole } from '@pri
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMilestoneRequestDto } from './dto/create-milestone.request.dto';
 import { UpdateMilestoneRequestDto } from './dto/update-milestone.request.dto';
+import { byTimeline, syncMilestoneClock } from './milestone-clock';
 
 @Injectable()
 export class MilestoneService {
@@ -28,6 +29,7 @@ export class MilestoneService {
         productionProjectId: projectId,
         title: dto.title,
         description: dto.description,
+        startDate: dto.startDate ? new Date(dto.startDate) : null,
         targetDate: dto.targetDate ? new Date(dto.targetDate) : null,
       },
     });
@@ -35,10 +37,9 @@ export class MilestoneService {
 
   async findAll(projectId: string) {
     await this.requireProject(projectId);
-    return this.prisma.milestone.findMany({
-      where: { productionProjectId: projectId },
-      orderBy: { createdAt: 'asc' },
-    });
+    await syncMilestoneClock(this.prisma, projectId);
+    const milestones = await this.prisma.milestone.findMany({ where: { productionProjectId: projectId } });
+    return byTimeline(milestones);
   }
 
   async findById(id: string) {
@@ -50,37 +51,46 @@ export class MilestoneService {
   }
 
   /**
-   * The Reviewer sets a milestone's title, description and date; the Creator only
-   * reports progress on it. Completing needs a result, and a completed milestone
-   * cannot be reopened.
+   * The Reviewer sets a milestone's title, description and dates, or cancels it. Its
+   * status otherwise follows the clock (see milestone-clock.ts), so nobody sets it by
+   * hand; the Creator can only note what was achieved.
    */
   async update(id: string, dto: UpdateMilestoneRequestDto, role: UserRole) {
     const milestone = await this.findById(id);
 
-    const plan = dto.title !== undefined || dto.description !== undefined || dto.targetDate !== undefined;
+    const plan =
+      dto.title !== undefined ||
+      dto.description !== undefined ||
+      dto.startDate !== undefined ||
+      dto.targetDate !== undefined ||
+      dto.status !== undefined;
     if (plan && role === UserRole.CONTENT_CREATOR) {
-      throw new ForbiddenException("Only the Reviewer can change a milestone's title, description or date");
+      throw new ForbiddenException(
+        "Only the Reviewer can change a milestone's plan; its status follows the dates on its own",
+      );
+    }
+    if (dto.status !== undefined && dto.status !== MilestoneStatus.CANCELLED) {
+      throw new BadRequestException('A milestone status follows its dates; it can only be set to CANCELLED');
+    }
+
+    const startDate = dto.startDate !== undefined ? new Date(dto.startDate) : milestone.startDate;
+    const targetDate = dto.targetDate !== undefined ? new Date(dto.targetDate) : milestone.targetDate;
+    if (startDate && targetDate && startDate > targetDate) {
+      throw new BadRequestException('startDate must be on or before targetDate');
     }
 
     const data: Prisma.MilestoneUpdateInput = {};
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.targetDate !== undefined) data.targetDate = new Date(dto.targetDate);
+    if (dto.startDate !== undefined) data.startDate = startDate;
+    if (dto.targetDate !== undefined) data.targetDate = targetDate;
     if (dto.resultText !== undefined) data.resultText = dto.resultText;
+    if (dto.status !== undefined) data.status = dto.status;
 
-    const status = dto.status ?? milestone.status;
-    if (milestone.status === MilestoneStatus.COMPLETED && status !== MilestoneStatus.COMPLETED) {
-      throw new ConflictException('Cannot reopen a completed milestone');
-    }
-    if (status === MilestoneStatus.COMPLETED && milestone.status !== MilestoneStatus.COMPLETED) {
-      if (!(dto.resultText ?? milestone.resultText)?.trim()) {
-        throw new BadRequestException('resultText is required before marking a milestone as COMPLETED');
-      }
-      data.completedAt = new Date();
-    }
-    data.status = status;
-
-    return this.prisma.milestone.update({ where: { id }, data });
+    await this.prisma.milestone.update({ where: { id }, data });
+    // New dates can move it (and the ones after it) to another phase right away.
+    await syncMilestoneClock(this.prisma, milestone.productionProjectId);
+    return this.findById(id);
   }
 
   private async requireProject(projectId: string) {

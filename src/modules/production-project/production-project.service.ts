@@ -8,6 +8,7 @@ import {
 import { paginate, PaginateQuery } from '@nestarc/pagination';
 import { GenerationJobStatus, Prisma, ProductionContentType, ProductionProjectStatus, UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { syncMilestoneClock } from 'src/modules/milestone/milestone-clock';
 import { PlatformSettingService } from 'src/modules/platform-setting/platform-setting.service';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { DEFAULT_LANGUAGE } from 'src/common/validation/language-code';
@@ -170,6 +171,7 @@ export class ProductionProjectService {
   }
 
   async findDetail(id: string) {
+    await syncMilestoneClock(this.prisma, id);
     const project = await this.prisma.productionProject.findUnique({
       where: { id },
       include: {
@@ -369,7 +371,9 @@ export class ProductionProjectService {
     return {
       assignedCreator: { select: { id: true, fullName: true } },
       createdBy: { select: { id: true, fullName: true } },
-      milestones: { orderBy: { createdAt: 'asc' as const } },
+      milestones: {
+        orderBy: [{ targetDate: { sort: 'asc' as const, nulls: 'last' as const } }, { createdAt: 'asc' as const }],
+      },
       productionProjectGenres: { include: { genre: true } },
       projectPolicies: { include: { policy: true } },
     };
