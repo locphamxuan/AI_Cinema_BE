@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, PolicyType, UserRole } from '@prisma/client';
 import { Pool } from 'pg';
+import * as bcrypt from 'bcrypt';
 import { AI_MODEL_CATALOG } from '../src/modules/ai-model/ai-model-catalog';
 import { GENRE_CATALOG, genreStyleTriggerKeyword } from './genre-catalog';
 
@@ -13,53 +14,51 @@ if (!connectionString) {
 const adapter = new PrismaPg(new Pool({ connectionString }));
 const prisma = new PrismaClient({ adapter });
 
+// Every seeded staff account signs in with this password (development only);
+// public sign-up can only create viewers, so these are the MF-1 actors.
+const SEED_USER_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';
+// Placeholder hashes an earlier seed stored; they are replaced so the account can sign in.
+const PLACEHOLDER_HASH_PREFIX = '$2b$10$dummy';
+
 const users = [
   // CONTENT CREATORS
   {
     email: 'creator01@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator01',
     fullName: 'Nguyễn Minh Anh',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator02@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator02',
     fullName: 'Trần Quốc Bảo',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator03@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator03',
     fullName: 'Lê Hoàng Nam',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator04@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator04',
     fullName: 'Phạm Gia Huy',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator05@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator05',
     fullName: 'Võ Thành Đạt',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator06@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator06',
     fullName: 'Đặng Nhật Minh',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator07@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator07',
     fullName: 'Bùi Đức Anh',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator08@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator08',
     fullName: 'Ngô Tuấn Kiệt',
     role: UserRole.CONTENT_CREATOR,
   },
@@ -67,37 +66,31 @@ const users = [
   // CONTENT REVIEWERS
   {
     email: 'reviewer01@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer01',
     fullName: 'Nguyễn Thu Hà',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer02@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer02',
     fullName: 'Trần Ngọc Linh',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer03@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer03',
     fullName: 'Lê Thanh Hương',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer04@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer04',
     fullName: 'Phạm Khánh Vy',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer05@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer05',
     fullName: 'Vũ Minh Trang',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer06@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer06',
     fullName: 'Đỗ Hoàng Long',
     role: UserRole.CONTENT_REVIEWER,
   },
@@ -105,19 +98,16 @@ const users = [
   // STAFF / ADMIN / MEMBER
   {
     email: 'staff01@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.staff01',
     fullName: 'Nguyễn Văn Thành',
     role: UserRole.STAFF,
   },
   {
     email: 'admin@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.admin',
     fullName: 'AI Cinema Admin',
     role: UserRole.ADMIN,
   },
   {
     email: 'member01@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.member01',
     fullName: 'Nguyễn Hoàng Anh',
     role: UserRole.MEMBER,
   },
@@ -175,22 +165,21 @@ async function main() {
     });
   }
 
+  const passwordHash = await bcrypt.hash(SEED_USER_PASSWORD, 10);
   for (const user of users) {
-    await prisma.user.upsert({
-      where: {
-        email: user.email,
-      },
-      update: {
+    const existing = await prisma.user.findUnique({ where: { email: user.email } });
+    if (!existing) {
+      await prisma.user.create({ data: { ...user, passwordHash, isActive: true } });
+      continue;
+    }
+    // A password someone already set is kept; only placeholder hashes are replaced.
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: {
         fullName: user.fullName,
         role: user.role,
         isActive: true,
-      },
-      create: {
-        email: user.email,
-        passwordHash: user.passwordHash,
-        fullName: user.fullName,
-        role: user.role,
-        isActive: true,
+        ...(existing.passwordHash.startsWith(PLACEHOLDER_HASH_PREFIX) ? { passwordHash } : {}),
       },
     });
   }
