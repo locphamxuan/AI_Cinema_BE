@@ -50,11 +50,35 @@ $ npm run start:prod
 # unit tests
 $ npm run test
 
-# e2e tests
-$ npm run test:e2e
+# e2e tests: the whole MF-1 flow against a throwaway local Postgres (Docker)
+$ npm run test:e2e:db        # start it (data lives in tmpfs)
+$ npm run test:e2e           # migrate + seed it, then run test/*.e2e-spec.ts
+$ npm run test:e2e:db:down   # drop it for a clean slate
 
 # test coverage
 $ npm run test:cov
+```
+
+The e2e suite only ever connects to `E2E_DATABASE_URL` (default
+`localhost:54329`) and refuses any non-local host, so the shared database is
+never touched.
+
+Seeded staff accounts (`creator01`..`08`, `reviewer01`..`06`, `admin`
+`@aicinema.com`) sign in with `SEED_USER_PASSWORD` (default `Aicinema@123`).
+Public registration always creates a `MEMBER`.
+
+### Renamed migrations (2026-09-25)
+
+The two genre-style migrations were renamed to sort after the initial one, so a
+fresh database can be built from `prisma/migrations`. A database that already
+applied them under the old names needs its history renamed once (schema and
+checksums are unchanged):
+
+```sql
+UPDATE _prisma_migrations SET migration_name = '20260920141200_add_genre_style_model'
+  WHERE migration_name = '20260920073113_add_genre_style_model';
+UPDATE _prisma_migrations SET migration_name = '20260920141300_fix_genre_style_model_unique_key'
+  WHERE migration_name = '20260920073500_fix_genre_style_model_unique_key';
 ```
 
 ## Deployment

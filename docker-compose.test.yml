@@ -1,0 +1,18 @@
+# Throwaway Postgres for the e2e suite (npm run test:e2e). Data lives in tmpfs,
+# so every `down` starts the next run from an empty database.
+services:
+  postgres-e2e:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_cinema_e2e
+    ports:
+      - '54329:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d ai_cinema_e2e']
+      interval: 2s
+      timeout: 3s
+      retries: 20
