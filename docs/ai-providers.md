@@ -1,39 +1,49 @@
 # AI providers
 
 Every generation job is routed to one model of `src/modules/ai-model/ai-model-catalog.ts` (the Creator never picks it).
-`RoutingAiGenerationProvider` then sends the job to that model's real API — or to the mock.
+`RoutingAiGenerationProvider` then sends the job to that model's service — or to the mock (sample library).
 
-| Catalog model | Jobs | Provider | Env key | Output stored at |
+**Only free tiers are wired in, so running the platform never costs money**, whoever sets the keys or turns live mode on.
+
+| Catalog model | Jobs | Service | Env key | Output stored at |
 | --- | --- | --- | --- | --- |
-| `gpt-4o-mini` | SCRIPT, SUBTITLE, TRANSLATION | OpenAI | `OPENAI_API_KEY` | `contentText` |
-| `flux-dev` (+ Genre Style LoRA) | SCENE_IMAGE, POSTER, THUMBNAIL | fal.ai | `FAL_KEY` | fal.ai CDN URL |
-| `eleven_multilingual_v2`, `eleven_music` | VOICE, BACKGROUND_AUDIO | ElevenLabs | `ELEVENLABS_API_KEY` | S3 bucket (mp3) |
-| `veo-3` | SCENE_VIDEO | Google Gemini API | `GEMINI_API_KEY` | S3 bucket (mp4) |
+| `gemini-2.5-flash-lite` | SCRIPT, SUBTITLE, TRANSLATION | Gemini API free tier | `GEMINI_API_KEY` | `contentText` |
+| `gemini-2.5-flash-preview-tts` | VOICE | Gemini API free tier | `GEMINI_API_KEY` | R2 (wav) |
+| `stable-diffusion-3-medium` | SCENE_IMAGE, POSTER, THUMBNAIL | Hugging Face Inference | `HF_TOKEN` | R2 (jpg) |
+| `ltx-video-distilled` | SCENE_VIDEO | Hugging Face Space `Lightricks/ltx-video-distilled` (ZeroGPU) | `HF_TOKEN` | R2 (mp4) |
+| `sample-music` | BACKGROUND_AUDIO | none — no free music model is served | — | mock |
 
 ## Modes
 
-- `AI_PROVIDER_MODE=mock` (default): no paid call is ever made (LI-01). Use it for development, tests and demos.
-- `AI_PROVIDER_MODE=live`: each provider whose key is set is called for real; the others stay on the mock,
-  so any subset of keys works. ElevenLabs and Veo also need the S3 bucket, since they return raw bytes.
+- `AI_PROVIDER_MODE=mock` (default): nothing is called. Use it for development and tests.
+- `AI_PROVIDER_MODE=live`: every service whose key is set is called; the others stay on the mock.
+  Voice-over, images and video also need the R2 bucket, since their output is copied there.
+- When a free quota is used up (Gemini 429, Hugging Face 402/429, ZeroGPU daily GPU time), the job
+  falls back to the mock instead of failing. Any other error (e.g. a revoked key) fails the job.
 
-The startup log says which providers are live: `Live AI providers: OpenAI, fal.ai; the rest use the mock`.
+The startup log says which models are live: `Live AI models: gemini-2.5-flash-lite, …; the rest use the mock`.
 
 ## Getting the keys
 
-Put them in `.env` only — never commit them or paste them into chats or issues.
+Put them in `.env` only — never in `.env.example` (it is committed), chats or issues.
 
-- **OpenAI** — platform.openai.com → API keys → *Create new secret key*. Add billing credit first.
-- **fal.ai** — fal.ai/dashboard/keys → *Add key* (scope API). Add credit under Billing.
-- **ElevenLabs** — elevenlabs.io → Developers → API keys. The music endpoint needs a paid plan.
-- **Google Gemini (Veo)** — aistudio.google.com/apikey → *Create API key*. Veo needs a billing-enabled project.
-- **Storage (Cloudflare R2)** — Cloudflare dashboard → R2 → create a bucket → Settings → enable the public
-  `r2.dev` URL (`S3_PUBLIC_BASE_URL`); R2 → *Manage API tokens* → create an *Object Read & Write* token for the bucket
-  (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`); the S3 endpoint is `https://<account-id>.r2.cloudflarestorage.com`.
-  Any other S3-compatible store works with the same variables.
+- **Gemini** — https://aistudio.google.com/apikey → *Create API key* in a project **without billing**.
+  Without billing Google only serves the free quota and answers 429 beyond it; it can never charge.
+- **Hugging Face** — https://huggingface.co/settings/tokens → *Create new token*, type **Read**.
+- **Cloudflare R2** — dashboard → R2 → create a bucket → Settings → enable the *Public Development URL*
+  (`S3_PUBLIC_BASE_URL`); *Manage API tokens* → *Object Read & Write* for the bucket
+  (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`); endpoint `https://<account-id>.r2.cloudflarestorage.com`.
 
-## Cost and limits
+## Limits of the free tiers
 
-- Veo is by far the most expensive call (billed per generated second) and takes 1–6 minutes; the request that runs the
-  job waits for it (up to 10 minutes). Keep it on the mock unless a real clip is needed.
-- Token cost charged to the plan's quota still follows `tokenCostOf()` (BR-41): output length × `tokensPerUnit`.
-  Text is billed per 100 completion tokens, speech/music/video per second, an image per frame.
+- A video clip is 4 seconds by default (`HF_VIDEO_SECONDS`, 1–8) and takes about 15–60 seconds;
+  the request that runs the job waits for it. ZeroGPU gives each account a few minutes of GPU a day.
+- Hugging Face gives free accounts a small monthly Inference credit; images stop once it is spent
+  and fall back to the mock until it renews.
+- Genre Style LoRA adapters are not applied to Stable Diffusion 3 images yet.
+
+## Production tokens
+
+The tokens a Reviewer allocates are the platform's own production credits, not money:
+`tokenCostOf()` charges `outputUnits × tokensPerUnit` of the catalog (BR-41). Text is billed per
+100 output tokens, speech and video per second, an image per frame.
