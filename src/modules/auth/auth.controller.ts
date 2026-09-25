@@ -8,6 +8,38 @@ import { LoginRequestDto } from './dto/login.request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
 
+import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { ApiTags } from '@nestjs/swagger';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, MaxLength, MinLength } from 'class-validator';
+import { AuthService } from './auth.service';
+
+export class RegisterAuthDto {
+  @IsEmail()
+  email: string;
+
+  @IsNotEmpty()
+  @MinLength(8)
+  password: string;
+
+  @IsNotEmpty()
+  @MaxLength(255)
+  fullName: string;
+
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
+}
+
+export class LoginAuthDto {
+  @IsEmail()
+  email: string;
+
+  @IsNotEmpty()
+  @MinLength(8)
+  password: string;
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -37,5 +69,16 @@ export class AuthController {
   @ApiBearerAuth()
   async me(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.me(user.id);
+  }
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  async register(@Body() dto: RegisterAuthDto) {
+    return this.authService.register(dto);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() dto: LoginAuthDto) {
+    return this.authService.login(dto);
   }
 }
