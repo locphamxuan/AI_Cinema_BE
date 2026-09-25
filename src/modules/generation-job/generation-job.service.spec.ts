@@ -10,14 +10,14 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { AiModelRouterService } from 'src/modules/ai-model/ai-model-router.service';
 import { GenreStyleModelService } from 'src/modules/genre-style-model/genre-style-model.service';
 import { GenerationJobService } from './generation-job.service';
-import { MockPromptComposer } from './prompt-composer';
+import { TemplatePromptComposer } from './prompt-composer';
 import type { AiGenerationProvider } from './ai-generation-provider';
 
 const PLAN = {
   id: 'plan-id',
   productionProjectId: 'project-id',
   scriptText: 'Kịch bản tổng',
-  productionProject: { status: 'ACTIVE' },
+  productionProject: { status: 'ACTIVE', title: 'Hẻm', description: 'Phim noir', primaryGenre: { name: 'Noir' } },
 };
 const SCENE = { id: 'scene-id', title: 'Hẻm mưa', description: 'Đêm mưa neon', status: SceneStatus.APPROVED };
 const ALLOCATION = { id: 'alloc-id', remainingAmount: 100, status: QuotaAllocationStatus.ACTIVE };
@@ -32,6 +32,7 @@ describe('GenerationJobService', () => {
   const prisma = {
     productionPlan: { findUnique: jest.fn() },
     scene: { findFirst: jest.fn(), update: jest.fn() },
+    submission: { findFirst: jest.fn() },
     quotaAllocation: { findFirst: jest.fn(), findMany: jest.fn() },
     generationJob: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
@@ -43,7 +44,7 @@ describe('GenerationJobService', () => {
     prisma as unknown as PrismaService,
     aiModelRouter as unknown as AiModelRouterService,
     genreStyleModelService as unknown as GenreStyleModelService,
-    new MockPromptComposer(),
+    new TemplatePromptComposer(),
     aiProvider,
   );
 
@@ -84,8 +85,8 @@ describe('GenerationJobService', () => {
         status: GenerationJobStatus.QUEUED,
       });
       const prompt = (createdJobData().prompt as { create: { composedPrompt: string; seed: number | null } }).create;
-      expect(prompt.composedPrompt).toContain('Scene: Hẻm mưa');
-      expect(prompt.composedPrompt).toContain('Script: Kịch bản tổng');
+      // The voice model reads the spoken line only — never the scene labels or the whole script.
+      expect(prompt.composedPrompt).toBe('giọng trầm');
       expect(prompt.seed).toBeNull();
       expect(prisma.scene.update).toHaveBeenCalledWith({
         where: { id: 'scene-id' },
@@ -258,5 +259,41 @@ describe('GenerationJobService', () => {
     await service.retry('job-id', { prompt: 'mới' });
 
     expect(createdJobData()).toMatchObject({ parentJobId: 'job-id', attemptNumber: 3, rawPrompt: 'mới' });
+  });
+
+  describe('discard', () => {
+    const givenJob = (status: GenerationJobStatus) =>
+      prisma.generationJob.findUnique.mockResolvedValue({
+        id: 'job-id',
+        productionPlanId: 'plan-id',
+        sceneId: 'scene-id',
+        status,
+      });
+
+    it('cancels a completed job so it drops out of its scene, also after the cut was sent back', async () => {
+      givenJob(GenerationJobStatus.COMPLETED);
+      prisma.submission.findFirst.mockResolvedValue({ status: 'CHANGES_REQUESTED' });
+
+      await service.discard('job-id');
+
+      expect(prisma.generationJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'job-id' }, data: { status: GenerationJobStatus.CANCELLED } }),
+      );
+    });
+
+    it('refuses a job that is still running', async () => {
+      givenJob(GenerationJobStatus.RUNNING);
+
+      await expect(service.discard('job-id')).rejects.toThrow('cannot be removed');
+      expect(prisma.generationJob.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses while the episode cut is with the Reviewer', async () => {
+      givenJob(GenerationJobStatus.COMPLETED);
+      prisma.submission.findFirst.mockResolvedValue({ status: 'SUBMITTED' });
+
+      await expect(service.discard('job-id')).rejects.toThrow('can no longer be changed');
+      expect(prisma.generationJob.update).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -52,6 +52,12 @@ export class GenerationJobController {
   @RequirePermission(PERMISSION.PRODUCTION_GENERATE)
   async cancel(@Param('jobId') jobId: string) {
     return this.generationJobService.cancel(jobId);
+  }
+
+  @Delete('generation-jobs/:jobId')
+  @RequirePermission(PERMISSION.PRODUCTION_GENERATE)
+  async discard(@Param('jobId') jobId: string) {
+    return this.generationJobService.discard(jobId);
   }
 
   @Post('generation-jobs/:jobId/generated-assets')

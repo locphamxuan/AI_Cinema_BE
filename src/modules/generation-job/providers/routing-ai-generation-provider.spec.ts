@@ -95,16 +95,17 @@ describe('RoutingAiGenerationProvider (free tiers only)', () => {
     expect(result).toMatchObject({ outputUnits: 5, mimeType: 'video/mp4' });
   });
 
-  it('falls back to the sample library when a free quota is used up, instead of failing the job', async () => {
+  it('fails the job when a free quota is used up, instead of returning an unrelated sample', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: { message: 'quota' } }, 429));
     predict.mockRejectedValue(new Error('You have exceeded your GPU quota'));
     const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(true));
 
-    const text = await provider.generate({ model: AI_MODEL_CATALOG.llm, composedPrompt: 'x' });
-    const clip = await provider.generate({ model: AI_MODEL_CATALOG.video, composedPrompt: 'y' });
-
-    expect(text.contentText).toContain('[mock');
-    expect(clip.mimeType).toBe('application/vnd.apple.mpegurl');
+    await expect(provider.generate({ model: AI_MODEL_CATALOG.llm, composedPrompt: 'x' })).rejects.toThrow(
+      'free quota is used up',
+    );
+    await expect(provider.generate({ model: AI_MODEL_CATALOG.video, composedPrompt: 'y' })).rejects.toThrow(
+      'free quota is used up',
+    );
   });
 
   it('still fails the job on a real error such as a revoked key', async () => {

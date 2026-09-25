@@ -8,7 +8,6 @@ import {
   type AiGenerationResult,
 } from '../ai-generation-provider';
 import { GeminiProvider } from './gemini.provider';
-import { QuotaExceededError } from './http';
 import { DEFAULT_VIDEO_SECONDS, HuggingFaceProvider } from './huggingface.provider';
 import { MediaStorage } from './media-storage';
 
@@ -16,7 +15,8 @@ import { MediaStorage } from './media-storage';
  * Sends each job to the free-tier service of its model (docs/ai-providers.md).
  * Only free tiers are wired in, so no key can ever cost money. Real calls need
  * AI_PROVIDER_MODE=live and the service's key; audio, images and video also need media
- * storage. Any other job — and any job whose free quota is used up — runs on the mock.
+ * storage. Any other job runs on the mock. A job whose free quota is used up fails
+ * (uncharged) rather than returning a sample that has nothing to do with its prompt.
  */
 @Injectable()
 export class RoutingAiGenerationProvider implements AiGenerationProvider {
@@ -58,12 +58,6 @@ export class RoutingAiGenerationProvider implements AiGenerationProvider {
   async generate(request: AiGenerationRequest): Promise<AiGenerationResult> {
     const provider = this.byModel.get(request.model.name);
     if (!provider) return this.mock.generate(request);
-    try {
-      return await provider.generate(request);
-    } catch (error) {
-      if (!(error instanceof QuotaExceededError)) throw error;
-      this.logger.warn(`${error.message} — ${request.model.name} falls back to the sample library`);
-      return this.mock.generate(request);
-    }
+    return provider.generate(request);
   }
 }

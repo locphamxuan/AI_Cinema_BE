@@ -12,6 +12,7 @@ import { AiModelRouterService } from 'src/modules/ai-model/ai-model-router.servi
 import { AI_MODEL_CATALOG, resolveCatalogKey } from 'src/modules/ai-model/ai-model-catalog';
 import { GenreStyleModelService } from 'src/modules/genre-style-model/genre-style-model.service';
 import { assertProjectOpen } from 'src/modules/production-project/project-lifecycle';
+import { assertCutOpen } from 'src/modules/scene/cut-lock';
 import { CreateGenerationJobRequestDto } from './dto/create-generation-job.request.dto';
 import { CreateGeneratedAssetRequestDto } from './dto/create-generated-asset.request.dto';
 import { CompleteGenerationJobRequestDto } from './dto/complete-generation-job.request.dto';
@@ -27,6 +28,7 @@ import {
 
 const CANCELLABLE: GenerationJobStatus[] = [GenerationJobStatus.PENDING, GenerationJobStatus.QUEUED];
 const RUNNABLE: GenerationJobStatus[] = [GenerationJobStatus.PENDING, GenerationJobStatus.QUEUED];
+const DISCARDABLE: GenerationJobStatus[] = [...CANCELLABLE, GenerationJobStatus.COMPLETED, GenerationJobStatus.FAILED];
 const LANGUAGE_JOB_TYPES: GenerationJobType[] = [GenerationJobType.SUBTITLE, GenerationJobType.TRANSLATION];
 const VISUAL_JOB_TYPES: GenerationJobType[] = [
   GenerationJobType.SCENE_IMAGE,
@@ -153,6 +155,26 @@ export class GenerationJobService {
     return this.prisma.generationJob.update({ where: { id: jobId }, data: { status: GenerationJobStatus.CANCELLED } });
   }
 
+  /**
+   * The Creator removes a generation step from a scene. The job is marked CANCELLED
+   * (kept for audit, tokens already spent are not refunded) so it no longer counts
+   * as the latest attempt of its chain.
+   */
+  async discard(jobId: string) {
+    const job = await this.findById(jobId);
+    if (!DISCARDABLE.includes(job.status)) {
+      throw new ConflictException(`A ${job.status} job cannot be removed`);
+    }
+    const plan = await this.requirePlan(job.productionPlanId);
+    assertProjectOpen(plan.productionProject);
+    await assertCutOpen(this.prisma, plan.id);
+    return this.prisma.generationJob.update({
+      where: { id: jobId },
+      data: { status: GenerationJobStatus.CANCELLED },
+      include: JOB_INCLUDE,
+    });
+  }
+
   /** Runs a queued job through the AI provider, stores its output and charges the quota. */
   async run(jobId: string) {
     const job = await this.findById(jobId);
@@ -265,13 +287,20 @@ export class GenerationJobService {
       ? await this.genreStyleModelService.resolveActiveStyleForProject(plan.productionProjectId, model.id)
       : null;
 
+    const project = plan.productionProject;
     const composed = await this.promptComposer.compose({
+      jobType,
       rawPrompt: rawPrompt ?? '',
       sceneTitle: scene?.title,
       sceneDescription: scene?.description,
-      scriptText: jobType === GenerationJobType.SCRIPT || jobType === GenerationJobType.VOICE ? plan.scriptText : null,
+      scriptText: jobType === GenerationJobType.SCRIPT ? plan.scriptText : null,
       customFunction,
       loraTriggerKeyword: genreStyle?.triggerKeyword,
+      projectTitle: project.title,
+      projectSynopsis: project.description,
+      genre: project.primaryGenre?.name,
+      previousScenePrompt:
+        scene && VISUAL_JOB_TYPES.includes(jobType) ? await this.previousScenePrompt(planId, scene.sceneNumber) : null,
     });
 
     // BR-15: the estimate must fit in the plan's active quota before anything is generated.
@@ -422,10 +451,29 @@ export class GenerationJobService {
     return snapshot?.loraWeights ?? null;
   }
 
+  /** The visual prompt last generated for the scene before this one, for a continuous look. */
+  private async previousScenePrompt(planId: string, sceneNumber: number): Promise<string | null> {
+    const job = await this.prisma.generationJob.findFirst({
+      where: {
+        productionPlanId: planId,
+        status: GenerationJobStatus.COMPLETED,
+        jobType: { in: [GenerationJobType.SCENE_VIDEO, GenerationJobType.SCENE_IMAGE] },
+        scene: { sceneNumber: { lt: sceneNumber } },
+      },
+      orderBy: [{ scene: { sceneNumber: 'desc' } }, { createdAt: 'desc' }],
+      select: { prompt: { select: { composedPrompt: true } } },
+    });
+    return job?.prompt?.composedPrompt ?? null;
+  }
+
   private async requirePlan(planId: string) {
     const plan = await this.prisma.productionPlan.findUnique({
       where: { id: planId },
-      include: { productionProject: { select: { status: true } } },
+      include: {
+        productionProject: {
+          select: { status: true, title: true, description: true, primaryGenre: { select: { name: true } } },
+        },
+      },
     });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
     return plan;
