@@ -43,14 +43,18 @@ describe('AiModelRouterService', () => {
   beforeEach(() => jest.resetAllMocks());
 
   it('looks up the registered model of an active provider with its estimate', async () => {
-    const flux = { id: 'flux-id', name: 'flux-dev' };
+    const flux = { id: 'sd3-id', name: 'stable-diffusion-3-medium' };
     prisma.aiModel.findFirst.mockResolvedValue(flux);
 
     const resolved = await router.resolveForJob(GenerationJobType.SCENE_IMAGE);
 
     expect(resolved).toMatchObject({ model: flux, match: 'catalog', estimatedTokenCost: 30 });
     expect(prisma.aiModel.findFirst).toHaveBeenCalledWith({
-      where: { name: 'flux-dev', version: '1.0', provider: { name: 'fal.ai', isActive: true } },
+      where: {
+        name: 'stable-diffusion-3-medium',
+        version: '3-medium',
+        provider: { name: 'Hugging Face', isActive: true },
+      },
     });
   });
 
@@ -64,8 +68,8 @@ describe('AiModelRouterService', () => {
     const table = router.routingTable();
     expect(table).toHaveLength(Object.values(GenerationJobType).length);
     expect(table.find((row) => row.jobType === GenerationJobType.SCENE_VIDEO)).toMatchObject({
-      model: 'veo-3',
-      estimatedTokenCost: 60,
+      model: 'ltx-video-distilled',
+      estimatedTokenCost: 24,
     });
   });
 
@@ -75,7 +79,7 @@ describe('AiModelRouterService', () => {
       match: 'specialist',
     });
     expect(router.routeFor(GenerationJobType.CUSTOM, 'việc gì đó rất lạ')).toMatchObject({ match: 'general' });
-    expect(router.routeFor(GenerationJobType.SCENE_VIDEO)).toMatchObject({ match: 'catalog', estimatedTokenCost: 60 });
+    expect(router.routeFor(GenerationJobType.SCENE_VIDEO)).toMatchObject({ match: 'catalog', estimatedTokenCost: 24 });
     expect(prisma.aiModel.findFirst).not.toHaveBeenCalled();
   });
 });

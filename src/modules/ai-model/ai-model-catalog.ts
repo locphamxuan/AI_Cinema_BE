@@ -3,16 +3,18 @@ import { AiModality, GenerationJobType } from '@prisma/client';
 /**
  * Level 1 AI Orchestrator model catalog (PROJECT_OVERVIEW.md §4.1.7, §4.1.8):
  * the platform only calls existing third-party models — one specialist per
- * generation function — and never trains/fine-tunes them. The single
- * exception is FLUX (open-weight), which can host Genre Style LoRA adapters
+ * generation function — and never trains/fine-tunes them. Only free-tier
+ * services are used (Gemini, Hugging Face), so running the platform never costs
+ * money. Open-weight image models can host Genre Style LoRA adapters
  * (§4.1.8.1, see genre-style-model module).
  *
- * prisma/seed.ts registers every entry into ai_providers/ai_models, and
+ * Migrations register every entry into ai_providers/ai_models, and
  * AiModelRouterService resolves a job's model from JOB_TYPE_ROUTING — the
  * Creator never picks a model (BR-40).
  *
  * Cost (BR-41) grows with output length: tokens = outputUnits × tokensPerUnit,
  * where baseUnits is the typical output length used for the planning estimate.
+ * These tokens are the platform's own production credits, not money.
  */
 export interface AiModelCatalogEntry {
   provider: string;
@@ -27,49 +29,51 @@ export interface AiModelCatalogEntry {
 
 export const AI_MODEL_CATALOG = {
   llm: {
-    provider: 'OpenAI',
-    name: 'gpt-4o-mini',
-    version: '2024-07-18',
+    provider: 'Google',
+    name: 'gemini-2.5-flash-lite',
+    version: '2.5',
     modality: AiModality.TEXT,
     isOpenWeight: false,
     baseUnits: 10,
     tokensPerUnit: 4,
   },
   tts: {
-    provider: 'ElevenLabs',
-    name: 'eleven_multilingual_v2',
-    version: 'v2',
+    provider: 'Google',
+    name: 'gemini-2.5-flash-preview-tts',
+    version: '2.5-preview',
     modality: AiModality.AUDIO,
     isOpenWeight: false,
     baseUnits: 14,
     tokensPerUnit: 2.5,
   },
+  // No free music model is served today: background music always comes from the sample library (mock).
   music: {
-    provider: 'ElevenLabs',
-    name: 'eleven_music',
-    version: 'v1',
+    provider: 'AI Cinema',
+    name: 'sample-music',
+    version: '1',
     modality: AiModality.AUDIO,
     isOpenWeight: false,
     baseUnits: 25,
     tokensPerUnit: 1,
   },
   image: {
-    provider: 'fal.ai',
-    name: 'flux-dev',
-    version: '1.0',
+    provider: 'Hugging Face',
+    name: 'stable-diffusion-3-medium',
+    version: '3-medium',
     modality: AiModality.IMAGE,
     isOpenWeight: true,
     baseUnits: 5,
     tokensPerUnit: 6,
   },
   video: {
-    provider: 'Google',
-    name: 'veo-3',
-    version: '3.0',
+    provider: 'Hugging Face',
+    name: 'ltx-video-distilled',
+    version: '0.9.7',
     modality: AiModality.VIDEO,
+    // Open weights, but it runs on a hosted Space: no Genre Style LoRA is trained on it.
     isOpenWeight: false,
-    baseUnits: 20,
-    tokensPerUnit: 3,
+    baseUnits: 4,
+    tokensPerUnit: 6,
   },
 } as const satisfies Record<string, AiModelCatalogEntry>;
 
