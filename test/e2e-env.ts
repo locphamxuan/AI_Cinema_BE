@@ -16,6 +16,8 @@ export function assertLocalDatabase(url: string) {
 
 assertLocalDatabase(E2E_DATABASE_URL);
 process.env.DATABASE_URL = E2E_DATABASE_URL;
+// The suite never calls a real AI service, whatever the developer's .env says.
+process.env.AI_PROVIDER_MODE = 'mock';
 process.env.JWT_SECRET ??= 'e2e-secret';
 process.env.JWT_ACCESS_EXPIRES_IN ??= '1h';
 process.env.JWT_REFRESH_EXPIRES_IN ??= '1d';
