@@ -5,8 +5,12 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "build": "nest build",
+    "postinstall": "prisma generate",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:local": "cross-env NODE_ENV=local PORT=3001 nest start --watch",
