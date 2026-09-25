@@ -79,13 +79,27 @@ describe('AuthService', () => {
         email: 'creator@aicinema.com',
         password: 'Aicinema@123',
         fullName: 'Creator',
-        role: UserRole.CONTENT_CREATOR,
       });
 
       const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: typeof reviewer }];
       const stored = data.passwordHash;
       expect(stored).not.toBe('Aicinema@123');
       expect(await bcrypt.compare('Aicinema@123', stored)).toBe(true);
+    });
+
+    it('always signs up a viewer, whatever role the body claims', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockImplementation(({ data }: { data: typeof reviewer }) => ({ ...reviewer, ...data }));
+
+      await service.register({
+        email: 'x@aicinema.com',
+        password: 'Aicinema@123',
+        fullName: 'X',
+        role: 'ADMIN',
+      } as never);
+
+      const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: typeof reviewer }];
+      expect(data.role).toBe(UserRole.MEMBER);
     });
 
     it('rejects a duplicate email', async () => {
@@ -96,7 +110,6 @@ describe('AuthService', () => {
           email: reviewer.email,
           password: 'Aicinema@123',
           fullName: 'Reviewer',
-          role: UserRole.CONTENT_REVIEWER,
         }),
       ).rejects.toThrow(ConflictException);
     });

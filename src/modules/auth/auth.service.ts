@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
-import { User } from '@prisma/client';
+import { User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { JwtPayload } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -28,7 +28,7 @@ export class AuthService {
         email: dto.email,
         passwordHash: await bcrypt.hash(dto.password, PASSWORD_SALT_ROUNDS),
         fullName: dto.fullName,
-        role: dto.role,
+        role: UserRole.MEMBER,
       },
     });
 
