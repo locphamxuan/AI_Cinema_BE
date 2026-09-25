@@ -271,9 +271,11 @@ export class ProductionProjectService {
           `totalAiQuotaBudget cannot be lower than the already allocated quota (${totalAllocated})`,
         );
       }
+      // Moved by the difference in the same statement as any concurrent allocation,
+      // instead of overwriting the balance read above.
       const diff = dto.totalAiQuotaBudget - Number(project.totalAiQuotaBudget);
       data.totalAiQuotaBudget = dto.totalAiQuotaBudget;
-      data.remainingAiQuotaBudget = Number(project.remainingAiQuotaBudget) + diff;
+      data.remainingAiQuotaBudget = { increment: diff };
     }
 
     const genreIds = dto.genreIds !== undefined ? [...new Set(dto.genreIds)] : null;
