@@ -6,15 +6,15 @@ import { ProductionProjectService } from './production-project.service';
 
 describe('ProductionProjectService.create — seasons and episode durations', () => {
   const tx = {
-    productionProject: { create: jest.fn(), findUnique: jest.fn() },
+    productionProject: { create: jest.fn() },
     productionProjectGenre: { createMany: jest.fn() },
     projectPolicy: { createMany: jest.fn() },
     milestone: { createMany: jest.fn() },
-    productionPlan: { create: jest.fn() },
+    productionPlan: { createMany: jest.fn() },
   };
   const prisma = {
     user: { findUnique: jest.fn() },
-    productionProject: { findFirst: jest.fn() },
+    productionProject: { findFirst: jest.fn(), findUnique: jest.fn() },
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
   };
   const service = new ProductionProjectService(prisma as unknown as PrismaService);
@@ -30,7 +30,7 @@ describe('ProductionProjectService.create — seasons and episode durations', ()
     ...overrides,
   });
   const createdPlans = () =>
-    tx.productionPlan.create.mock.calls.map(([{ data }]: [{ data: Record<string, unknown> }]) => data);
+    (tx.productionPlan.createMany.mock.calls[0] as [{ data: Record<string, unknown>[] }])[0].data;
 
   beforeEach(() => {
     jest.clearAllMocks();

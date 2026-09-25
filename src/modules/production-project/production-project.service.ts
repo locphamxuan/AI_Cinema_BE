@@ -48,7 +48,7 @@ export class ProductionProjectService {
     this.assertMilestones(milestones);
     const subtitleLanguages = [...new Set(dto.subtitleLanguages ?? [DEFAULT_LANGUAGE])];
 
-    return this.prisma.$transaction(async (tx) => {
+    const projectId = await this.prisma.$transaction(async (tx) => {
       const project = await tx.productionProject.create({
         data: {
           title: dto.title,
@@ -89,40 +89,42 @@ export class ProductionProjectService {
         });
       }
 
-      for (const [index, episode] of episodes.entries()) {
-        await tx.productionPlan.create({
-          data: {
-            productionProjectId: project.id,
-            episodeNumber: index + 1,
-            seasonNumber: episode.seasonNumber,
-            seasonEpisodeNumber: episode.seasonEpisodeNumber,
-            allottedDurationSeconds: episode.allottedDurationSeconds ?? defaultEpisodeDurationSeconds,
-            planVersion: 1,
-            targetLanguages: subtitleLanguages,
-            createdById: project.assignedCreatorId,
-          },
-        });
-      }
-
-      return tx.productionProject.findUnique({
-        where: { id: project.id },
-        include: {
-          ...this.projectInclude(),
-          productionPlans: {
-            select: {
-              id: true,
-              episodeNumber: true,
-              seasonNumber: true,
-              seasonEpisodeNumber: true,
-              planVersion: true,
-              status: true,
-              totalSceneCount: true,
-              completedSceneCount: true,
-            },
-            orderBy: [{ episodeNumber: 'asc' }, { planVersion: 'desc' }],
-          },
-        },
+      // One statement for every episode: the database sits across the ocean and an
+      // interactive transaction is closed after 5s, so a round-trip per episode fails long series.
+      await tx.productionPlan.createMany({
+        data: episodes.map((episode, index) => ({
+          productionProjectId: project.id,
+          episodeNumber: index + 1,
+          seasonNumber: episode.seasonNumber,
+          seasonEpisodeNumber: episode.seasonEpisodeNumber,
+          allottedDurationSeconds: episode.allottedDurationSeconds ?? defaultEpisodeDurationSeconds,
+          planVersion: 1,
+          targetLanguages: subtitleLanguages,
+          createdById: project.assignedCreatorId,
+        })),
       });
+
+      return project.id;
+    });
+
+    return this.prisma.productionProject.findUnique({
+      where: { id: projectId },
+      include: {
+        ...this.projectInclude(),
+        productionPlans: {
+          select: {
+            id: true,
+            episodeNumber: true,
+            seasonNumber: true,
+            seasonEpisodeNumber: true,
+            planVersion: true,
+            status: true,
+            totalSceneCount: true,
+            completedSceneCount: true,
+          },
+          orderBy: [{ episodeNumber: 'asc' }, { planVersion: 'desc' }],
+        },
+      },
     });
   }
 
