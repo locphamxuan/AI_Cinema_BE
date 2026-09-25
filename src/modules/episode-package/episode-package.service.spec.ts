@@ -36,6 +36,7 @@ describe('EpisodePackageService.assemble', () => {
   };
   const prisma = {
     productionPlan: { findUnique: jest.fn() },
+    episodePackage: { findFirst: jest.fn() },
     generationJob: { findMany: jest.fn() },
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
   };
@@ -62,6 +63,7 @@ describe('EpisodePackageService.assemble', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     givenPlan();
+    prisma.episodePackage.findFirst.mockResolvedValue(null);
     prisma.generationJob.findMany.mockResolvedValue([
       videoJob('v1', 's1', 'old.m3u8', 7),
       videoJob('v1-retry', 's1', 's1.m3u8', 8.4, 'v1'),
@@ -102,5 +104,26 @@ describe('EpisodePackageService.assemble', () => {
       new ConflictException('Scene "Cảnh s2" has no video to assemble'),
     );
     expect(subtitles.buildTracks).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['SUBMITTED', 'waiting for the Reviewer'],
+    ['UNDER_REVIEW', 'waiting for the Reviewer'],
+    ['APPROVED', 'was approved'],
+  ])('keeps a %s cut instead of replacing it', async (status, message) => {
+    prisma.episodePackage.findFirst.mockResolvedValue({ id: 'current', submissions: [{ status }] });
+
+    await expect(service.assemble('plan-id', {}, 'creator-id')).rejects.toThrow(message);
+    expect(tx.episodePackage.create).not.toHaveBeenCalled();
+  });
+
+  it('replaces a cut the Reviewer sent back', async () => {
+    prisma.episodePackage.findFirst.mockResolvedValue({
+      id: 'current',
+      submissions: [{ status: 'CHANGES_REQUESTED' }],
+    });
+
+    await service.assemble('plan-id', {}, 'creator-id');
+    expect(tx.episodePackage.create).toHaveBeenCalled();
   });
 });

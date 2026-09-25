@@ -8,6 +8,8 @@ import {
   Prisma,
   ProductionPlanStatus,
   SceneStatus,
+  SubmissionStatus,
+  SubmissionType,
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { latestAttempts } from 'src/modules/generation-job/latest-attempts';
@@ -50,6 +52,8 @@ export class EpisodePackageService {
         `An episode package can only be assembled for an APPROVED plan, current status "${plan.status}"`,
       );
     }
+
+    await this.assertCutReplaceable(planId);
 
     const notCompleted = plan.scenes.filter((s) => s.status !== SceneStatus.COMPLETED);
     if (notCompleted.length > 0) {
@@ -208,6 +212,27 @@ export class EpisodePackageService {
         durationSeconds: Number(video.durationSeconds ?? scene.targetDurationSeconds),
       };
     });
+  }
+
+  /**
+   * A new cut replaces the current one only before it is handed in or after the
+   * Reviewer sent it back: re-assembling would otherwise swap the cut under an
+   * audit in progress, or undo an approval.
+   */
+  private async assertCutReplaceable(planId: string) {
+    const current = await this.prisma.episodePackage.findFirst({
+      where: { productionPlanId: planId, status: EpisodePackageStatus.ASSEMBLED },
+      include: {
+        submissions: { where: { submissionType: SubmissionType.EPISODE }, orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    const status = current?.submissions[0]?.status;
+    if (status === SubmissionStatus.SUBMITTED || status === SubmissionStatus.UNDER_REVIEW) {
+      throw new ConflictException('The current cut is waiting for the Reviewer; it can be replaced once sent back');
+    }
+    if (status === SubmissionStatus.APPROVED) {
+      throw new ConflictException('The current cut was approved and can no longer be replaced');
+    }
   }
 
   private async requirePlan(planId: string) {

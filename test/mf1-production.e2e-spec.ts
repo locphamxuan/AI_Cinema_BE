@@ -189,6 +189,8 @@ describe('MF-1 production workflow (e2e)', () => {
 
     await creator.post(`/episode-packages/${packageId}/submissions`);
     await creator.post(`/episode-packages/${packageId}/submissions`, {}, 409);
+    // The cut under audit cannot be swapped by re-assembling.
+    await creator.post(`/production-plans/${planId}/episode-packages`, {}, 409);
   });
 
   it('lets the Reviewer send the cut back before any compliance work', async () => {
@@ -237,6 +239,7 @@ describe('MF-1 production workflow (e2e)', () => {
 
     const approved = await reviewer.patch(`/reviews/${review.id}`, { decision: 'APPROVED' });
     expect(approved.status).toBe('APPROVED');
+    await creator.post(`/production-plans/${planId}/episode-packages`, {}, 409);
   });
 
   it('publishes the approved episode to the public catalog', async () => {
