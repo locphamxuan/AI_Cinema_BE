@@ -24,3 +24,13 @@ export async function callProviderJson<T>(
 }
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The free tier of a provider is used up for now. The router falls back to the sample
+ * library instead of failing the job, so production keeps working without paying.
+ */
+export class QuotaExceededError extends Error {
+  constructor(provider: string, detail: string) {
+    super(`${provider} free quota exceeded: ${detail.slice(0, 200)}`);
+  }
+}

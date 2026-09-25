@@ -3,146 +3,131 @@ import { AI_MODEL_CATALOG } from 'src/modules/ai-model/ai-model-catalog';
 import { RoutingAiGenerationProvider } from './routing-ai-generation-provider';
 import type { MediaStorage } from './media-storage';
 
+const predict = jest.fn();
+jest.mock('./gradio-space', () => ({
+  callSpace: (_space: string, _token: string, endpoint: string, payload: object) =>
+    (predict(endpoint, payload) as Promise<{ data: unknown }>).then((r) => r.data),
+}));
+
 const configOf = (values: Record<string, string>) =>
   ({ get: (name: string) => values[name] }) as unknown as ConfigService;
 const upload = jest.fn();
 const storage = (configured: boolean) => ({ isConfigured: configured, upload }) as unknown as MediaStorage;
 
-const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
-const bytesResponse = (size: number) => new Response(new Uint8Array(size), { status: 200 });
+const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+const bytesResponse = (size: number, type: string) =>
+  new Response(new Uint8Array(size), { status: 200, headers: { 'content-type': type } });
 
-describe('RoutingAiGenerationProvider', () => {
+const LIVE = { AI_PROVIDER_MODE: 'live', GEMINI_API_KEY: 'g-key', HF_TOKEN: 'hf_token' };
+
+describe('RoutingAiGenerationProvider (free tiers only)', () => {
   const fetchMock = jest.fn<Promise<Response>, [string, RequestInit?]>();
   const urlOf = (call: number) => fetchMock.mock.calls[call][0];
   beforeEach(() => {
     fetchMock.mockReset();
-    upload.mockReset().mockResolvedValue('https://cdn.test/generated/a.bin');
+    predict.mockReset();
+    upload.mockReset().mockResolvedValue('https://pub.r2.dev/generated/a.bin');
     global.fetch = fetchMock;
   });
 
-  const LIVE = {
-    AI_PROVIDER_MODE: 'live',
-    OPENAI_API_KEY: 'sk',
-    FAL_KEY: 'fal',
-    ELEVENLABS_API_KEY: 'xi',
-    GEMINI_API_KEY: 'g',
-  };
-
-  it('never calls a paid API outside live mode, even with keys set', async () => {
+  it('never calls a real service outside live mode, even with keys set', async () => {
     const provider = new RoutingAiGenerationProvider(configOf({ ...LIVE, AI_PROVIDER_MODE: 'mock' }), storage(true));
-
     const result = await provider.generate({ model: AI_MODEL_CATALOG.llm, composedPrompt: 'Opening scene' });
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(result.contentText).toContain('[mock gpt-4o-mini]');
+    expect(result.contentText).toContain('[mock gemini-2.5-flash-lite]');
   });
 
-  it('keeps providers without a key on the mock', async () => {
-    const provider = new RoutingAiGenerationProvider(
-      configOf({ AI_PROVIDER_MODE: 'live', FAL_KEY: 'fal' }),
-      storage(true),
-    );
-
-    await provider.generate({ model: AI_MODEL_CATALOG.llm, composedPrompt: 'Opening scene' });
-
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('writes text with OpenAI and bills it by completion length', async () => {
+  it('writes a subtitle with Gemini and bills it by output length', async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse({ choices: [{ message: { content: 'Xin chào Sài Gòn' } }], usage: { completion_tokens: 250 } }),
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: 'Xin chào Sài Gòn' }] } }],
+        usageMetadata: { candidatesTokenCount: 250 },
+      }),
     );
-    const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(true));
+    const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(false));
 
     const result = await provider.generate({ model: AI_MODEL_CATALOG.llm, composedPrompt: 'Greet', language: 'vi' });
 
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.openai.com/v1/chat/completions');
-    expect(JSON.parse(init!.body as string)).toMatchObject({ model: 'gpt-4o-mini' });
+    expect(urlOf(0)).toContain('gemini-2.5-flash-lite:generateContent');
     expect(result).toEqual({ outputUnits: 3, contentText: 'Xin chào Sài Gòn', mimeType: 'text/plain' });
   });
 
-  it('draws with the Genre Style LoRA on fal.ai when the job carries one', async () => {
+  it('turns Gemini speech into a playable WAV and measures it', async () => {
+    const pcm = Buffer.alloc(48_000 * 3).toString('base64');
     fetchMock.mockResolvedValue(
-      jsonResponse({ images: [{ url: 'https://fal.media/x.jpg', content_type: 'image/jpeg' }] }),
+      jsonResponse({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16', data: pcm } }] } }] }),
     );
-    const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(true));
-
-    const result = await provider.generate({
-      model: AI_MODEL_CATALOG.image,
-      composedPrompt: 'Neon alley',
-      seed: 7,
-      loraWeights: 'https://weights.test/horror.safetensors',
-    });
-
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://fal.run/fal-ai/flux-lora');
-    expect(JSON.parse(init!.body as string)).toMatchObject({
-      seed: 7,
-      loras: [{ path: 'https://weights.test/horror.safetensors', scale: 1 }],
-    });
-    expect(result.storageKey).toBe('https://fal.media/x.jpg');
-  });
-
-  it('stores ElevenLabs speech and measures its length from the mp3 size', async () => {
-    fetchMock.mockResolvedValue(bytesResponse(16_000 * 12));
     const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(true));
 
     const result = await provider.generate({ model: AI_MODEL_CATALOG.tts, composedPrompt: 'Chào mừng' });
 
-    expect(urlOf(0)).toContain('/text-to-speech/');
-    expect(upload).toHaveBeenCalledWith(expect.any(Uint8Array), 'audio/mpeg', 'mp3');
-    expect(result).toMatchObject({
-      outputUnits: 12,
-      durationSeconds: 12,
-      storageKey: 'https://cdn.test/generated/a.bin',
-    });
+    const [wav, mimeType] = upload.mock.calls[0] as [Buffer, string];
+    expect(wav.subarray(0, 4).toString()).toBe('RIFF');
+    expect(mimeType).toBe('audio/wav');
+    expect(result).toMatchObject({ outputUnits: 3, durationSeconds: 3 });
   });
 
-  it('keeps audio and video on the mock while media storage is missing', async () => {
-    const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(false));
-
-    await provider.generate({ model: AI_MODEL_CATALOG.video, composedPrompt: 'Chase' });
-    await provider.generate({ model: AI_MODEL_CATALOG.tts, composedPrompt: 'Chào' });
-
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('polls the Veo operation until the clip is ready, then stores it', async () => {
-    jest.useFakeTimers();
-    try {
-      fetchMock
-        .mockResolvedValueOnce(jsonResponse({ name: 'models/veo/operations/1' }))
-        .mockResolvedValueOnce(jsonResponse({ name: 'models/veo/operations/1', done: false }))
-        .mockResolvedValueOnce(
-          jsonResponse({
-            name: 'models/veo/operations/1',
-            done: true,
-            response: { generateVideoResponse: { generatedSamples: [{ video: { uri: 'https://files.test/v.mp4' } }] } },
-          }),
-        )
-        .mockResolvedValueOnce(bytesResponse(1024));
-      const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(true));
-
-      const pending = provider.generate({ model: AI_MODEL_CATALOG.video, composedPrompt: 'Chase' });
-      await jest.advanceTimersByTimeAsync(20_000);
-      const result = await pending;
-
-      expect(urlOf(0)).toContain('veo-3.0-fast-generate-001:predictLongRunning');
-      expect(urlOf(3)).toBe('https://files.test/v.mp4');
-      expect(upload).toHaveBeenCalledWith(expect.any(Uint8Array), 'video/mp4', 'mp4');
-      expect(result).toMatchObject({ outputUnits: 8, mimeType: 'video/mp4' });
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('fails the job with the provider message on an API error', async () => {
-    fetchMock.mockResolvedValue(new Response('{"error":"invalid_api_key"}', { status: 401 }));
+  it('draws an image on Hugging Face and keeps it in media storage', async () => {
+    fetchMock.mockResolvedValue(bytesResponse(1000, 'image/jpeg'));
     const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(true));
 
-    await expect(provider.generate({ model: AI_MODEL_CATALOG.llm, composedPrompt: 'x' })).rejects.toThrow(
-      'OpenAI responded 401: {"error":"invalid_api_key"}',
+    const result = await provider.generate({ model: AI_MODEL_CATALOG.image, composedPrompt: 'Neon alley', seed: 7 });
+
+    expect(urlOf(0)).toContain('stable-diffusion-3-medium');
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toMatchObject({ parameters: { seed: 7 } });
+    expect(upload).toHaveBeenCalledWith(expect.any(Uint8Array), 'image/jpeg', 'jpg');
+    expect(result.storageKey).toBe('https://pub.r2.dev/generated/a.bin');
+  });
+
+  it('renders a clip on the LTX-Video Space and copies it to storage', async () => {
+    predict.mockResolvedValue({ data: [{ video: { url: 'https://space.hf.space/file=/tmp/clip.mp4' } }, 1] });
+    fetchMock.mockResolvedValue(bytesResponse(2048, 'video/mp4'));
+    const provider = new RoutingAiGenerationProvider(configOf({ ...LIVE, HF_VIDEO_SECONDS: '5' }), storage(true));
+
+    const result = await provider.generate({ model: AI_MODEL_CATALOG.video, composedPrompt: 'Chase' });
+
+    expect(predict).toHaveBeenCalledWith(
+      '/text_to_video',
+      expect.objectContaining({ mode: 'text-to-video', duration_ui: 5 }),
     );
+    expect(upload).toHaveBeenCalledWith(expect.any(Uint8Array), 'video/mp4', 'mp4');
+    expect(result).toMatchObject({ outputUnits: 5, mimeType: 'video/mp4' });
+  });
+
+  it('falls back to the sample library when a free quota is used up, instead of failing the job', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { message: 'quota' } }, 429));
+    predict.mockRejectedValue(new Error('You have exceeded your GPU quota'));
+    const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(true));
+
+    const text = await provider.generate({ model: AI_MODEL_CATALOG.llm, composedPrompt: 'x' });
+    const clip = await provider.generate({ model: AI_MODEL_CATALOG.video, composedPrompt: 'y' });
+
+    expect(text.contentText).toContain('[mock');
+    expect(clip.mimeType).toBe('application/vnd.apple.mpegurl');
+  });
+
+  it('still fails the job on a real error such as a revoked key', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { message: 'API key not valid' } }, 400));
+    const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(false));
+
+    await expect(provider.generate({ model: AI_MODEL_CATALOG.llm, composedPrompt: 'x' })).rejects.toThrow(
+      'Gemini responded 400',
+    );
+  });
+
+  it('keeps voice, images and video on the mock without media storage, and music always', async () => {
+    const provider = new RoutingAiGenerationProvider(configOf(LIVE), storage(false));
+
+    for (const model of [
+      AI_MODEL_CATALOG.tts,
+      AI_MODEL_CATALOG.image,
+      AI_MODEL_CATALOG.video,
+      AI_MODEL_CATALOG.music,
+    ]) {
+      await provider.generate({ model, composedPrompt: 'x' });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(predict).not.toHaveBeenCalled();
   });
 });

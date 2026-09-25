@@ -201,15 +201,19 @@ describe('GenerationJobService', () => {
 
       expect(tx.aiUsageLedger.createMany).toHaveBeenCalledWith({
         data: [
-          expect.objectContaining({ entryType: AiUsageEntryType.GENERATION, tokenCost: 54, outputDurationSeconds: 18 }),
+          expect.objectContaining({
+            entryType: AiUsageEntryType.GENERATION,
+            tokenCost: 108,
+            outputDurationSeconds: 18,
+          }),
           expect.objectContaining({ entryType: AiUsageEntryType.PROMPT_COMPOSE, tokenCost: 2 }),
         ],
       });
       expect(tx.quotaAllocation.updateMany).toHaveBeenCalledWith({
-        where: { id: 'alloc-id', remainingAmount: { gte: 56 } },
-        data: { remainingAmount: { decrement: 56 } },
+        where: { id: 'alloc-id', remainingAmount: { gte: 110 } },
+        data: { remainingAmount: { decrement: 110 } },
       });
-      expect(job).toMatchObject({ status: GenerationJobStatus.COMPLETED, resourceCost: 56 });
+      expect(job).toMatchObject({ status: GenerationJobStatus.COMPLETED, resourceCost: 110 });
     });
 
     it('keeps an overrun visible: full cost in the ledger, allocation closed at zero', async () => {
@@ -222,7 +226,7 @@ describe('GenerationJobService', () => {
         where: { id: 'alloc-id' },
         data: { remainingAmount: 0, status: QuotaAllocationStatus.CONSUMED },
       });
-      expect(job).toMatchObject({ resourceCost: 122 });
+      expect(job).toMatchObject({ resourceCost: 242 });
     });
 
     it('marks the job FAILED when the provider errors, without charging anything', async () => {
