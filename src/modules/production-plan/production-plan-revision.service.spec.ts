@@ -69,7 +69,10 @@ describe('ProductionPlanService editing and revisions', () => {
       await expect(service.update('plan-id', { targetDurationSeconds: 1000 })).rejects.toThrow('cannot exceed');
     });
 
-    it('only edits a draft', async () => {
+    it('edits a draft or a plan sent back for changes, nothing under review or later', async () => {
+      givenPlan({ status: ProductionPlanStatus.CHANGES_REQUESTED });
+      await expect(service.update('plan-id', { scriptText: 'x' })).resolves.toBeUndefined();
+
       givenPlan({ status: ProductionPlanStatus.SUBMITTED });
       await expect(service.update('plan-id', { scriptText: 'x' })).rejects.toThrow(ConflictException);
     });

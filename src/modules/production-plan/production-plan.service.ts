@@ -91,7 +91,8 @@ export class ProductionPlanService {
 
   async update(planId: string, dto: UpdateProductionPlanRequestDto) {
     const plan = await this.findById(planId);
-    if (plan.status !== ProductionPlanStatus.DRAFT) {
+    // The Creator keeps a draft while writing it and while reworking a plan sent back for changes.
+    if (plan.status !== ProductionPlanStatus.DRAFT && plan.status !== ProductionPlanStatus.CHANGES_REQUESTED) {
       throw new ConflictException(`Cannot edit a plan with status "${plan.status}" - create a revision instead`);
     }
 
