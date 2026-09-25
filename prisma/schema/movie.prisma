@@ -5,6 +5,11 @@ model Movie {
     synopsis        String?  @db.Text
     defaultLanguage String   @map("default_language") @db.VarChar(10)
     description     String?  @db.Text
+    posterUrl       String?  @map("poster_url") @db.VarChar(500)
+    bannerUrl       String?  @map("banner_url") @db.VarChar(500)
+    releaseYear     Int?     @map("release_year") @db.Integer
+    // Vietnamese film rating label, e.g. "P", "T13", "T16", "T18"
+    ageRating       String?  @map("age_rating") @db.VarChar(10)
     createdById     String   @map("created_by_id") @db.Uuid
     createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -13,6 +18,7 @@ model Movie {
     seasons   Season[]
     episodes  Episode[]
     genres    MovieGenre[]
+    productionProject ProductionProject?
 
     @@map("movies")
 }

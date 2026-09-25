@@ -1,14 +1,20 @@
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCatalogRequestDto {
-  @ApiProperty({ example: 'Hành trình AI', description: 'Title of the catalog movie/series.' })
+  @ApiPropertyOptional({
+    example: 'Hành trình AI',
+    description:
+      "Title of the catalog movie/series. Defaults to the project title; ignored once the project's movie exists.",
+  })
   @IsString()
-  title: string;
+  @IsOptional()
+  title?: string;
 
-  @ApiProperty({ example: 'vi', description: 'Default BCP-47 language code.' })
+  @ApiPropertyOptional({ example: 'vi', description: 'Default BCP-47 language code. Defaults to "vi".' })
   @IsString()
-  defaultLanguage: string;
+  @IsOptional()
+  defaultLanguage?: string;
 
   @ApiPropertyOptional({ example: 'Bộ phim hoạt hình do AI tạo.', description: 'Movie synopsis.' })
   @IsString()
@@ -23,7 +29,7 @@ export class CreateCatalogRequestDto {
   @ApiPropertyOptional({
     example: 3,
     description:
-      'Season number of the episode. Defaults to no season (standalone movie episode). Creates the season if it does not exist.',
+      "Season number of the episode. Defaults to the plan's season for a SERIES and no season for a MOVIE. Creates the season if it does not exist.",
   })
   @IsInt()
   @Min(1)
@@ -32,7 +38,7 @@ export class CreateCatalogRequestDto {
 
   @ApiPropertyOptional({
     example: 2,
-    description: 'Episode number within the movie/season. Defaults to the plan episode number.',
+    description: "Episode number within the season. Defaults to the plan's number inside its season.",
   })
   @IsInt()
   @Min(1)

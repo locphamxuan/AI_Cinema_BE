@@ -1,0 +1,25 @@
+enum AiUsageEntryType {
+  GENERATION
+  PROMPT_COMPOSE
+}
+
+//Append-only record of AI tokens actually spent (BR-41), one row per charge.
+//Quota balances are derived from these entries, never edited in place.
+model AiUsageLedger {
+  id                    String           @id @default(uuid()) @db.Uuid
+  generationJobId       String           @map("generation_job_id") @db.Uuid
+  productionPlanId      String           @map("production_plan_id") @db.Uuid
+  quotaAllocationId     String?          @map("quota_allocation_id") @db.Uuid
+  entryType             AiUsageEntryType @map("entry_type")
+  outputDurationSeconds Decimal?         @map("output_duration_seconds") @db.Decimal(10, 2)
+  tokenCost             Int              @map("token_cost") @db.Integer
+  recordedAt            DateTime         @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  generationJob   GenerationJob    @relation(fields: [generationJobId], references: [id], onDelete: Restrict)
+  productionPlan  ProductionPlan   @relation("ProductionPlanUsage", fields: [productionPlanId], references: [id], onDelete: Restrict)
+  quotaAllocation QuotaAllocation? @relation("QuotaAllocationUsage", fields: [quotaAllocationId], references: [id], onDelete: SetNull)
+
+  @@index([productionPlanId])
+  @@index([quotaAllocationId])
+  @@map("ai_usage_ledger")
+}

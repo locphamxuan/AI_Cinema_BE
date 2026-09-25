@@ -10,4 +10,13 @@ export class CompleteGenerationJobRequestDto {
   @Min(0)
   @IsOptional()
   resourceCost?: number;
+
+  @ApiPropertyOptional({
+    example: 18,
+    description: 'Actual output length (seconds of audio/video, text/frame units) the cost was computed from.',
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  outputDurationSeconds?: number;
 }

@@ -6,6 +6,8 @@ enum AssetType {
     POSTER
     THUMBNAIL
     VIDEO
+    // Still frame generated for a scene (SCENE_IMAGE jobs)
+    IMAGE
 }
 
 enum GeneratedAssetStatus {

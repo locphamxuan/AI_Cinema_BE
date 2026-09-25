@@ -3,11 +3,12 @@ import { SceneModule } from 'src/modules/scene/scene.module';
 import { ProductionProjectModule } from 'src/modules/production-project/production-project.module';
 import { ProductionPlanController } from './production-plan.controller';
 import { ProductionPlanService } from './production-plan.service';
+import { PlanDraftService } from './plan-draft.service';
 
 @Module({
   imports: [ProductionProjectModule, SceneModule],
   controllers: [ProductionPlanController],
-  providers: [ProductionPlanService],
+  providers: [ProductionPlanService, PlanDraftService],
   exports: [ProductionPlanService],
 })
 export class ProductionPlanModule {}

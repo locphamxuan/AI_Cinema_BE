@@ -13,6 +13,11 @@ export class CreateMilestoneRequestDto {
   @IsOptional()
   description?: string;
 
+  @ApiPropertyOptional({ example: '2026-10-15T00:00:00.000Z', description: 'Day the milestone starts (ISO-8601).' })
+  @IsDateString()
+  @IsOptional()
+  startDate?: string;
+
   @ApiPropertyOptional({ example: '2026-11-01T00:00:00.000Z', description: 'Target date of the milestone (ISO-8601).' })
   @IsDateString()
   @IsOptional()

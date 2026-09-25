@@ -1,0 +1,30 @@
+enum QuotaRequestStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
+//A Creator's request for more AI tokens on a plan whose quota is running out (quota adjustment).
+//Approving it grants a TOP_UP allocation of the approved amount.
+model QuotaRequest {
+    id                String             @id @default(uuid()) @db.Uuid
+    productionPlanId  String             @map("production_plan_id") @db.Uuid
+    requestedById     String             @map("requested_by") @db.Uuid
+    requestedAmount   Int                @map("requested_amount") @db.Integer
+    reason            String             @db.Text
+    status            QuotaRequestStatus @default(PENDING)
+    decidedById       String?            @map("decided_by") @db.Uuid
+    decisionNote      String?            @map("decision_note") @db.Text
+    // TOP_UP allocation created when the request is approved
+    quotaAllocationId String?            @unique @map("quota_allocation_id") @db.Uuid
+    createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+    decidedAt         DateTime?          @map("decided_at") @db.Timestamptz(6)
+
+    productionPlan  ProductionPlan   @relation(fields: [productionPlanId], references: [id], onDelete: Cascade)
+    requestedBy     User             @relation("QuotaRequestRequestedBy", fields: [requestedById], references: [id])
+    decidedBy       User?            @relation("QuotaRequestDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+    quotaAllocation QuotaAllocation? @relation(fields: [quotaAllocationId], references: [id], onDelete: SetNull)
+
+    @@index([productionPlanId, status])
+    @@map("quota_requests")
+}

@@ -1,17 +1,19 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ProductionPlanStatus, QuotaAllocationStatus, QuotaAllocationType } from '@prisma/client';
+import { Prisma, ProductionPlanStatus, QuotaAllocationStatus, QuotaAllocationType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateQuotaAllocationRequestDto } from './dto/create-quota-allocation.request.dto';
+import {
+  activateProject,
+  assertProjectOpen,
+  OPEN_PROJECT_STATUSES,
+} from 'src/modules/production-project/project-lifecycle';
 
 @Injectable()
 export class QuotaAllocationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(planId: string, dto: CreateQuotaAllocationRequestDto) {
-    const plan = await this.prisma.productionPlan.findUnique({
-      where: { id: planId },
-      include: { productionProject: true },
-    });
+  async create(planId: string, dto: CreateQuotaAllocationRequestDto, allocatedById: string) {
+    const plan = await this.prisma.productionPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
     if (plan.status !== ProductionPlanStatus.APPROVED) {
       throw new ConflictException(
@@ -28,37 +30,47 @@ export class QuotaAllocationService {
       }
     }
 
-    const currentRemaining = Number(plan.productionProject.remainingAiQuotaBudget);
-    if (currentRemaining < dto.allocatedAmount) {
+    return this.prisma.$transaction((tx) =>
+      this.allocate(tx, plan, dto.allocationType, dto.allocatedAmount, allocatedById),
+    );
+  }
+
+  /** Moves tokens from the project budget into a new ACTIVE allocation of the plan. */
+  async allocate(
+    tx: Prisma.TransactionClient,
+    plan: { id: string; productionProjectId: string },
+    allocationType: QuotaAllocationType,
+    amount: number,
+    allocatedById: string,
+  ) {
+    // Conditional decrement in one statement: two concurrent allocations can no
+    // longer both read the same balance and overspend the project budget, and a
+    // project cancelled meanwhile hands out nothing.
+    const reserved = await tx.productionProject.updateMany({
+      where: {
+        id: plan.productionProjectId,
+        status: { in: OPEN_PROJECT_STATUSES },
+        remainingAiQuotaBudget: { gte: amount },
+      },
+      data: { remainingAiQuotaBudget: { decrement: amount } },
+    });
+    if (reserved.count === 0) {
+      const project = await tx.productionProject.findUniqueOrThrow({ where: { id: plan.productionProjectId } });
+      assertProjectOpen(project);
       throw new BadRequestException('quota_exceeded');
     }
+    await activateProject(tx, plan.productionProjectId);
 
-    // let allocatedById: string | undefined;
-    // if (dto.allocatedById) {
-    //   const user = await this.prisma.user.findUnique({ where: { id: dto.allocatedById } });
-    //   if (!user) throw new BadRequestException(`User with id "${dto.allocatedById}" does not exist`);
-    //   allocatedById = user.id;
-    // }
-
-    return this.prisma.$transaction(async (tx) => {
-      const allocation = await tx.quotaAllocation.create({
-        data: {
-          productionPlanId: planId,
-          productionProjectId: plan.productionProjectId,
-          allocationType: dto.allocationType,
-          allocatedAmount: dto.allocatedAmount,
-          remainingAmount: dto.allocatedAmount,
-          status: QuotaAllocationStatus.ACTIVE,
-          allocatedById: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
-        },
-      });
-
-      await tx.productionProject.update({
-        where: { id: plan.productionProjectId },
-        data: { remainingAiQuotaBudget: currentRemaining - dto.allocatedAmount },
-      });
-
-      return allocation;
+    return tx.quotaAllocation.create({
+      data: {
+        productionPlanId: plan.id,
+        productionProjectId: plan.productionProjectId,
+        allocationType,
+        allocatedAmount: amount,
+        remainingAmount: amount,
+        status: QuotaAllocationStatus.ACTIVE,
+        allocatedById,
+      },
     });
   }
 

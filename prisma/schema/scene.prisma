@@ -16,6 +16,8 @@ model Scene {
     scriptText            String?     @map("script_text") @db.Text
     description           String?     @db.Text
     targetDurationSeconds Int         @map("target_duration_seconds") @db.Integer
+    // BR-38: planning estimate only, never enforced as a hard quota
+    estimatedTokens       Int         @default(0) @map("estimated_tokens") @db.Integer
     status                SceneStatus @default(DRAFT)
     createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt             DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)

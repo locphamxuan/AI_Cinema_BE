@@ -1,6 +1,16 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsString, IsNotEmpty, IsInt, Min, IsNumber, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsInt,
+  Min,
+  IsNumber,
+  IsArray,
+  ArrayMinSize,
+  ValidateNested,
+} from 'class-validator';
 import { SubmitProductionPlanSceneDto } from 'src/modules/production-plan/dto/submit-production-plan-scene.request.dto';
 
 export class SubmitProductionPlanRequestDto {
@@ -11,12 +21,12 @@ export class SubmitProductionPlanRequestDto {
   @IsNotEmpty()
   scriptText: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'Sử dụng AI video generation theo phong cách cinematic...',
   })
   @IsString()
-  @IsNotEmpty()
-  productionApproach: string;
+  @IsOptional()
+  productionApproach?: string;
 
   @ApiProperty({
     example: 3000,
@@ -36,6 +46,7 @@ export class SubmitProductionPlanRequestDto {
     type: [SubmitProductionPlanSceneDto],
   })
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => SubmitProductionPlanSceneDto)
   scenes: SubmitProductionPlanSceneDto[];

@@ -1,36 +1,57 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { Public } from 'src/common/decorators/public.decorator';
 import { CreateCatalogRequestDto } from './dto/create-catalog.request.dto';
 import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.request.dto';
 import { CatalogService } from './catalog.service';
 
 @ApiTags('catalog')
+@ApiBearerAuth()
 @Controller()
 export class CatalogController {
   constructor(private readonly catalogService: CatalogService) {}
 
   @Post('episode-packages/:packageId/catalog')
-  async createFromPackage(@Param('packageId') packageId: string, @Body() dto: CreateCatalogRequestDto) {
-    return this.catalogService.createFromPackage(packageId, dto);
+  @RequirePermission(PERMISSION.MOVIE_PUBLISH)
+  async createFromPackage(
+    @Param('packageId') packageId: string,
+    @Body() dto: CreateCatalogRequestDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.catalogService.createFromPackage(packageId, dto, userId);
   }
 
   @Get('movies')
+  @Public()
   async findAllMovies(@Paginate() query: PaginateQuery) {
     return this.catalogService.findAllMovies(query);
   }
 
   @Get('movies/:movieId')
-  async findMovieById(@Param('movieId') movieId: string) {
+  @Public()
+  async findMovieById(@Param('movieId', ParseUUIDPipe) movieId: string) {
     return this.catalogService.findMovieById(movieId);
   }
 
   @Get('catalog/episodes/:episodeId')
+  @RequirePermission(PERMISSION.PRODUCTION_READ)
   async findEpisodeById(@Param('episodeId') episodeId: string) {
     return this.catalogService.findEpisodeById(episodeId);
   }
 
+  @Get('catalog/episodes/:episodeId/subtitles/:language')
+  @Public()
+  @Header('Content-Type', 'text/vtt; charset=utf-8')
+  async findEpisodeSubtitle(@Param('episodeId', ParseUUIDPipe) episodeId: string, @Param('language') language: string) {
+    return this.catalogService.findEpisodeSubtitle(episodeId, language);
+  }
+
   @Patch('catalog/episodes/:episodeId')
+  @RequirePermission(PERMISSION.MOVIE_PUBLISH)
   async updateEpisode(@Param('episodeId') episodeId: string, @Body() dto: UpdateCatalogEpisodeRequestDto) {
     return this.catalogService.updateEpisode(episodeId, dto);
   }

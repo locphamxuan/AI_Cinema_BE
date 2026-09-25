@@ -6,18 +6,11 @@ import { CreateAiContentLabelRequestDto } from './dto/create-ai-content-label.re
 export class AiContentLabelService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(packageId: string, dto: CreateAiContentLabelRequestDto) {
+  async create(packageId: string, dto: CreateAiContentLabelRequestDto, appliedById: string) {
     await this.requirePackage(packageId);
 
     const policy = await this.prisma.policy.findUnique({ where: { id: dto.policyId } });
     if (!policy) throw new BadRequestException(`Policy with id "${dto.policyId}" does not exist`);
-
-    // let appliedById: string | undefined;
-    // if (dto.appliedById) {
-    //   const user = await this.prisma.user.findUnique({ where: { id: dto.appliedById } });
-    //   if (!user) throw new BadRequestException(`User with id "${dto.appliedById}" does not exist`);
-    //   appliedById = user.id;
-    // }
 
     return this.prisma.aiContentLabel.create({
       data: {
@@ -25,7 +18,7 @@ export class AiContentLabelService {
         labelType: dto.labelType,
         labelText: dto.labelText,
         displayLocation: dto.displayLocation,
-        appliedById: '986e766b-4fc0-4764-aeb5-8232ea09e8b9',
+        appliedById,
         policyId: policy.id,
       },
       include: { policy: true, appliedBy: { select: { fullName: true } } },

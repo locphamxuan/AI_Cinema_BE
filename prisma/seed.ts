@@ -2,6 +2,9 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, PolicyType, UserRole } from '@prisma/client';
 import { Pool } from 'pg';
+import * as bcrypt from 'bcrypt';
+import { AI_MODEL_CATALOG } from '../src/modules/ai-model/ai-model-catalog';
+import { GENRE_CATALOG, genreStyleTriggerKeyword } from './genre-catalog';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -11,53 +14,51 @@ if (!connectionString) {
 const adapter = new PrismaPg(new Pool({ connectionString }));
 const prisma = new PrismaClient({ adapter });
 
+// Every seeded staff account signs in with this password (development only);
+// public sign-up can only create viewers, so these are the MF-1 actors.
+const SEED_USER_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';
+// Placeholder hashes an earlier seed stored; they are replaced so the account can sign in.
+const PLACEHOLDER_HASH_PREFIX = '$2b$10$dummy';
+
 const users = [
   // CONTENT CREATORS
   {
     email: 'creator01@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator01',
     fullName: 'Nguyễn Minh Anh',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator02@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator02',
     fullName: 'Trần Quốc Bảo',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator03@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator03',
     fullName: 'Lê Hoàng Nam',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator04@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator04',
     fullName: 'Phạm Gia Huy',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator05@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator05',
     fullName: 'Võ Thành Đạt',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator06@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator06',
     fullName: 'Đặng Nhật Minh',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator07@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator07',
     fullName: 'Bùi Đức Anh',
     role: UserRole.CONTENT_CREATOR,
   },
   {
     email: 'creator08@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.creator08',
     fullName: 'Ngô Tuấn Kiệt',
     role: UserRole.CONTENT_CREATOR,
   },
@@ -65,37 +66,31 @@ const users = [
   // CONTENT REVIEWERS
   {
     email: 'reviewer01@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer01',
     fullName: 'Nguyễn Thu Hà',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer02@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer02',
     fullName: 'Trần Ngọc Linh',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer03@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer03',
     fullName: 'Lê Thanh Hương',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer04@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer04',
     fullName: 'Phạm Khánh Vy',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer05@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer05',
     fullName: 'Vũ Minh Trang',
     role: UserRole.CONTENT_REVIEWER,
   },
   {
     email: 'reviewer06@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.reviewer06',
     fullName: 'Đỗ Hoàng Long',
     role: UserRole.CONTENT_REVIEWER,
   },
@@ -103,103 +98,18 @@ const users = [
   // STAFF / ADMIN / MEMBER
   {
     email: 'staff01@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.staff01',
     fullName: 'Nguyễn Văn Thành',
     role: UserRole.STAFF,
   },
   {
     email: 'admin@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.admin',
     fullName: 'AI Cinema Admin',
     role: UserRole.ADMIN,
   },
   {
     email: 'member01@aicinema.com',
-    passwordHash: '$2b$10$dummy.hash.member01',
     fullName: 'Nguyễn Hoàng Anh',
     role: UserRole.MEMBER,
-  },
-];
-
-const genres = [
-  {
-    name: 'Hành động',
-    description: 'Phim nổi bật với các màn chiến đấu, truy đuổi, pha hành động và những tình huống kịch tính.',
-  },
-  {
-    name: 'Phiêu lưu',
-    description: 'Phim xoay quanh những chuyến hành trình, khám phá và các cuộc phiêu lưu đầy thử thách.',
-  },
-  {
-    name: 'Hài',
-    description: 'Phim tập trung vào sự hài hước, các tình huống vui nhộn và nhằm mang lại tiếng cười cho khán giả.',
-  },
-  {
-    name: 'Tội phạm',
-    description:
-      'Phim xoay quanh tội phạm, điều tra, cảnh sát, các băng nhóm và những xung đột liên quan đến pháp luật.',
-  },
-  {
-    name: 'Chính kịch',
-    description: 'Phim tập trung vào cảm xúc, tâm lý nhân vật và những xung đột trong cuộc sống.',
-  },
-  {
-    name: 'Gia đình',
-    description: 'Phim phù hợp với nhiều độ tuổi, thường xoay quanh gia đình, tình cảm và các giá trị nhân văn.',
-  },
-  {
-    name: 'Giả tưởng',
-    description: 'Phim lấy bối cảnh trong những thế giới phép thuật, sinh vật huyền bí hoặc các hiện tượng siêu nhiên.',
-  },
-  {
-    name: 'Kinh dị',
-    description: 'Phim tạo cảm giác sợ hãi, bất an và căng thẳng thông qua các yếu tố kinh dị hoặc siêu nhiên.',
-  },
-  {
-    name: 'Bí ẩn',
-    description: 'Phim xoay quanh những bí mật, vụ án hoặc sự kiện khó giải thích được hé lộ dần trong câu chuyện.',
-  },
-  {
-    name: 'Lãng mạn',
-    description: 'Phim tập trung vào tình yêu, các mối quan hệ và hành trình cảm xúc của nhân vật.',
-  },
-  {
-    name: 'Khoa học viễn tưởng',
-    description: 'Phim khai thác khoa học, công nghệ tương lai, trí tuệ nhân tạo, không gian hoặc những thực tại khác.',
-  },
-  {
-    name: 'Giật gân',
-    description:
-      'Phim tạo ra sự hồi hộp và căng thẳng thông qua những tình tiết bất ngờ, nguy hiểm và các bước ngoặt trong cốt truyện.',
-  },
-  {
-    name: 'Tâm lý',
-    description: 'Phim tập trung vào suy nghĩ, cảm xúc, hành vi và những biến chuyển tâm lý phức tạp của nhân vật.',
-  },
-  {
-    name: 'Lịch sử',
-    description: 'Phim lấy cảm hứng từ hoặc tái hiện các sự kiện, nhân vật và giai đoạn lịch sử.',
-  },
-  {
-    name: 'Tài liệu',
-    description: 'Phim phi hư cấu trình bày con người, sự kiện, hiện tượng hoặc những câu chuyện có thật.',
-  },
-  {
-    name: 'Thể thao',
-    description: 'Phim xoay quanh vận động viên, các cuộc thi, quá trình luyện tập và hành trình theo đuổi thành tích.',
-  },
-  {
-    name: 'Chiến tranh',
-    description: 'Phim mô tả các cuộc chiến, xung đột vũ trang và ảnh hưởng của chiến tranh đến con người.',
-  },
-  {
-    name: 'Miền Tây',
-    description:
-      'Phim lấy bối cảnh miền Tây nước Mỹ, thường có cao bồi, thị trấn biên giới, kẻ ngoài vòng pháp luật và những cuộc đấu súng.',
-  },
-  {
-    name: 'Nhạc kịch',
-    description: 'Phim kết hợp âm nhạc, ca hát và vũ đạo trực tiếp vào quá trình kể chuyện.',
   },
 ];
 
@@ -224,11 +134,11 @@ const aiLabelingPolicy = {
 };
 
 async function main() {
-  for (const genre of genres) {
+  for (const { name, description } of GENRE_CATALOG) {
     await prisma.genre.upsert({
-      where: { name: genre.name },
-      update: { description: genre.description },
-      create: genre,
+      where: { name },
+      update: { description },
+      create: { name, description },
     });
   }
 
@@ -255,27 +165,66 @@ async function main() {
     });
   }
 
+  const passwordHash = await bcrypt.hash(SEED_USER_PASSWORD, 10);
   for (const user of users) {
-    await prisma.user.upsert({
-      where: {
-        email: user.email,
-      },
-      update: {
+    const existing = await prisma.user.findUnique({ where: { email: user.email } });
+    if (!existing) {
+      await prisma.user.create({ data: { ...user, passwordHash, isActive: true } });
+      continue;
+    }
+    // A password someone already set is kept; only placeholder hashes are replaced.
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: {
         fullName: user.fullName,
         role: user.role,
         isActive: true,
-      },
-      create: {
-        email: user.email,
-        passwordHash: user.passwordHash,
-        fullName: user.fullName,
-        role: user.role,
-        isActive: true,
+        ...(existing.passwordHash.startsWith(PLACEHOLDER_HASH_PREFIX) ? { passwordHash } : {}),
       },
     });
   }
 
-  console.log('Seeded genres, users and AI labeling policy.');
+  for (const entry of Object.values(AI_MODEL_CATALOG)) {
+    const provider = await prisma.aiProvider.upsert({
+      where: { name: entry.provider },
+      update: {},
+      create: { name: entry.provider },
+    });
+    await prisma.aiModel.upsert({
+      where: { aiProviderId_name_version: { aiProviderId: provider.id, name: entry.name, version: entry.version } },
+      update: { modality: entry.modality },
+      create: { aiProviderId: provider.id, name: entry.name, version: entry.version, modality: entry.modality },
+    });
+  }
+
+  const loraBase = AI_MODEL_CATALOG.image;
+  const fluxModel = await prisma.aiModel.findFirstOrThrow({
+    where: { name: loraBase.name, version: loraBase.version, provider: { name: loraBase.provider } },
+  });
+  const styleOwner = await prisma.user.findUniqueOrThrow({ where: { email: 'reviewer01@aicinema.com' } });
+  // One DRAFT style (and dataset folder) per genre; only the ones whose
+  // folder reaches minSampleThreshold ever get trained.
+  for (const entry of GENRE_CATALOG) {
+    const genre = await prisma.genre.findUniqueOrThrow({ where: { name: entry.name } });
+    const triggerKeyword = genreStyleTriggerKeyword(entry.styleKey);
+    const name = `${entry.name} Style`;
+    await prisma.genreStyleModel.upsert({
+      where: {
+        baseAiModelId_triggerKeyword_version: { baseAiModelId: fluxModel.id, triggerKeyword, version: 1 },
+      },
+      update: { name },
+      create: {
+        genreId: genre.id,
+        baseAiModelId: fluxModel.id,
+        name,
+        triggerKeyword,
+        trainingProvider: 'fal.ai',
+        createdById: styleOwner.id,
+      },
+    });
+  }
+
+  console.log('Seeded genres, users, AI labeling policy, AI model catalog and genre style LoRAs.');
 }
 
 main()

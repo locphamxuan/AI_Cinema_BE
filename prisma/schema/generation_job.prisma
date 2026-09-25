@@ -7,6 +7,11 @@ enum GenerationJobType {
     POSTER
     THUMBNAIL
     VIDEO_ASSEMBLY
+    // Scene-level generation functions of Step 8 (PROJECT_OVERVIEW.md §4.1.7)
+    SCENE_IMAGE
+    SCENE_VIDEO
+    // Creator-described function the catalog has no specialist for (routed to the general LLM)
+    CUSTOM
 }
 
 enum GenerationJobStatus {
@@ -31,12 +36,27 @@ model GenerationJob {
     attemptNumber        Int                 @default(1) @map("attempt_number") @db.Integer
     parentJobId          String?             @map("parent_job_id") @db.Uuid
     configSnapshot       Json?               @map("config_snapshot") @db.JsonB
+    // Raw, free-form prompt typed by the Creator; the text actually sent to the
+    // model is prompt.composedPrompt (Prompt Composer, §4.1.7.1).
+    rawPrompt            String?             @map("raw_prompt") @db.Text
+    customFunction       String?             @map("custom_function") @db.Text
+    // Output language of a SUBTITLE/TRANSLATION job (BCP-47 code)
+    language             String?             @db.VarChar(10)
+    // BR-41: estimate checked against quota before generating; the real cost
+    // (resourceCost) grows with outputDurationSeconds and is only known afterwards.
+    estimatedTokenCost   Int                 @default(0) @map("estimated_token_cost") @db.Integer
+    outputDurationSeconds Decimal?           @map("output_duration_seconds") @db.Decimal(10, 2)
     status               GenerationJobStatus @default(PENDING)
     externalJobReference String?             @map("external_job_reference") @db.VarChar(255)
     errorMessage         String?             @map("error_message") @db.Text
     resourceCost         Decimal?            @map("resource_cost") @db.Decimal
     quotaAllocationId    String?             @map("quota_allocation_id") @db.Uuid
     sceneId              String?             @db.Uuid
+    // Only meaningful for visual jobTypes (POSTER, THUMBNAIL, VIDEO_ASSEMBLY);
+    // null for SCRIPT/VOICE/BACKGROUND_AUDIO/SUBTITLE/TRANSLATION. Resolved
+    // from productionProject.primaryGenreId + the chosen base AiModel at
+    // job-creation time — see GenreStyleModelService.
+    genreStyleModelId    String?             @map("genre_style_model_id") @db.Uuid
     queuedAt             DateTime?           @map("queued_at") @db.Timestamptz(6)
     completedAt          DateTime?           @map("completed_at") @db.Timestamptz(6)
     createdById          String              @map("created_by_id") @db.Uuid
@@ -51,9 +71,13 @@ model GenerationJob {
     generatedAssets   GeneratedAsset[]
     assembledPackages EpisodePackage[] @relation("EpisodePackageAssemblyJob")
     scene             Scene?           @relation(fields: [sceneId], references: [id])
+    genreStyleModel   GenreStyleModel? @relation(fields: [genreStyleModelId], references: [id], onDelete: SetNull)
+    prompt            GenerationJobPrompt?
+    usageEntries      AiUsageLedger[]
 
     @@index([productionPlanId])
     @@index([quotaAllocationId])
     @@index([productionPlanId, jobType, status])
+    @@index([genreStyleModelId])
     @@map("generation_jobs")
 }

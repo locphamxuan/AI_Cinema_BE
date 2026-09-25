@@ -1,0 +1,10 @@
+/// Platform-wide limits the Admin configures; a single row with id "default".
+model PlatformSetting {
+    id                        String   @id @default("default") @db.VarChar(32)
+    /// Longest an episode may be allotted or planned, in seconds; null means no limit.
+    maxEpisodeDurationSeconds Int?     @map("max_episode_duration_seconds")
+    updatedById               String?  @map("updated_by") @db.Uuid
+    updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+    @@map("platform_settings")
+}

@@ -21,6 +21,26 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
+## Getting started (MF-1)
+
+Requires Node.js 20.19+ and a PostgreSQL database.
+
+```bash
+npm ci                      # also generates the Prisma client (postinstall)
+cp .env.example .env        # then set DATABASE_URL and JWT_SECRET
+npx prisma migrate deploy   # create or update the schema
+npx prisma db seed          # genres, AI labeling policy, AI model catalog, demo accounts
+npm run start:local         # API on http://localhost:3001/api, docs on /api/docs
+```
+
+- `DATABASE_URL` can point at the team database, or at a local one:
+  `npm run test:e2e:db` starts Postgres on `localhost:54329`
+  (`postgresql://postgres:postgres@localhost:54329/ai_cinema_e2e`).
+- On an empty database the seed creates `creator01`..`08@aicinema.com` and
+  `reviewer01`..`06@aicinema.com`, signing in with `SEED_USER_PASSWORD`
+  (default `Aicinema@123`). Accounts that already exist keep their password.
+- The frontend (`AI_Cinema_FE`) proxies `/api` to `http://localhost:3001`.
+
 ## Description
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
@@ -50,11 +70,35 @@ $ npm run start:prod
 # unit tests
 $ npm run test
 
-# e2e tests
-$ npm run test:e2e
+# e2e tests: the whole MF-1 flow against a throwaway local Postgres (Docker)
+$ npm run test:e2e:db        # start it (data lives in tmpfs)
+$ npm run test:e2e           # migrate + seed it, then run test/*.e2e-spec.ts
+$ npm run test:e2e:db:down   # drop it for a clean slate
 
 # test coverage
 $ npm run test:cov
+```
+
+The e2e suite only ever connects to `E2E_DATABASE_URL` (default
+`localhost:54329`) and refuses any non-local host, so the shared database is
+never touched.
+
+Seeded staff accounts (`creator01`..`08`, `reviewer01`..`06`, `admin`
+`@aicinema.com`) sign in with `SEED_USER_PASSWORD` (default `Aicinema@123`).
+Public registration always creates a `MEMBER`.
+
+### Renamed migrations (2026-09-25)
+
+The two genre-style migrations were renamed to sort after the initial one, so a
+fresh database can be built from `prisma/migrations`. A database that already
+applied them under the old names needs its history renamed once (schema and
+checksums are unchanged):
+
+```sql
+UPDATE _prisma_migrations SET migration_name = '20260920141200_add_genre_style_model'
+  WHERE migration_name = '20260920073113_add_genre_style_model';
+UPDATE _prisma_migrations SET migration_name = '20260920141300_fix_genre_style_model_unique_key'
+  WHERE migration_name = '20260920073500_fix_genre_style_model_unique_key';
 ```
 
 ## Deployment

@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
+import { AuthModule } from 'src/modules/auth/auth.module';
 import { GenreModule } from 'src/modules/genre/genre.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
+import { PlatformSettingModule } from 'src/modules/platform-setting/platform-setting.module';
 import { ProductionProjectModule } from 'src/modules/production-project/production-project.module';
 import { MilestoneModule } from 'src/modules/milestone/milestone.module';
 import { ProductionPlanModule } from 'src/modules/production-plan/production-plan.module';
@@ -18,6 +20,7 @@ import { ComplianceCheckModule } from 'src/modules/compliance-check/compliance-c
 import { UserModule } from 'src/modules/user/user.module';
 import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { PublicationModule } from 'src/modules/publication/publication.module';
+import { GenreStyleModelModule } from 'src/modules/genre-style-model/genre-style-model.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { PaginationModule } from '@nestarc/pagination';
@@ -32,8 +35,10 @@ import { PaginationModule } from '@nestarc/pagination';
       isGlobal: true,
     }),
     PrismaModule,
+    AuthModule,
     GenreModule,
     PolicyModule,
+    PlatformSettingModule,
     ProductionProjectModule,
     MilestoneModule,
     ProductionPlanModule,
@@ -49,6 +54,7 @@ import { PaginationModule } from '@nestarc/pagination';
     PublicationModule,
     AuthModule,
     UserModule,
+    GenreStyleModelModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  PlanReview,
+  PlanReviewField,
   PlanReviewStatus,
   Prisma,
   ProductionPlanStatus,
@@ -16,17 +18,18 @@ const DECIDABLE_STATUSES: PlanReviewStatus[] = [
   PlanReviewStatus.CHANGES_REQUESTED,
   PlanReviewStatus.REJECTED,
 ];
+
+// BR-39: besides every scene, a round reviews these plan-level fields.
+const PLAN_FIELDS: PlanReviewField[] = [
+  PlanReviewField.OVERALL_SCRIPT,
+  PlanReviewField.DURATION,
+  PlanReviewField.TOKEN_ESTIMATE,
+];
 @Injectable()
 export class PlanReviewService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(planId: string, dto: CreatePlanReviewRequestDto) {
-    // const reviewer = await this.prisma.user.findUnique({ where: { id: dto.reviewerId } });
-    // if (!reviewer) throw new BadRequestException(`User with id "${dto.reviewerId}" does not exist`);
-    // if (reviewer.role !== UserRole.CONTENT_REVIEWER) {
-    //   throw new ForbiddenException(`User with id "${dto.reviewerId}" must have role CONTENT_REVIEWER`);
-    // }
-
+  async create(planId: string, dto: CreatePlanReviewRequestDto, reviewerId: string) {
     const plan = await this.prisma.productionPlan.findUnique({
       where: { id: planId },
       include: { scenes: { select: { id: true } } },
@@ -49,31 +52,35 @@ export class PlanReviewService {
     }
 
     const open = await this.prisma.planReview.findFirst({
-      where: {
-        productionPlanId: planId,
-        sceneId: { in: sceneIds },
-        status: { in: [PlanReviewStatus.PENDING, PlanReviewStatus.IN_REVIEW] },
-      },
-      select: { sceneId: true },
+      where: { productionPlanId: planId, status: { in: [PlanReviewStatus.PENDING, PlanReviewStatus.IN_REVIEW] } },
+      select: { id: true },
     });
     if (open) {
-      throw new ConflictException(`A plan review for scene "${open.sceneId}" is still pending/in review`);
+      throw new ConflictException('A plan review round is still pending/in review');
     }
 
+    const targets: { field: PlanReviewField; sceneId: string | null }[] = [
+      ...sceneIds.map((sceneId) => ({ field: PlanReviewField.SCENE, sceneId })),
+      ...PLAN_FIELDS.map((field) => ({ field, sceneId: null })),
+    ];
+
     return this.prisma.$transaction(async (tx) => {
-      const reviews = await Promise.all(
-        sceneIds.map((sceneId) =>
-          tx.planReview.create({
+      // One statement at a time: a transaction runs on a single connection.
+      const reviews: PlanReview[] = [];
+      for (const { field, sceneId } of targets) {
+        reviews.push(
+          await tx.planReview.create({
             data: {
               productionPlanId: planId,
+              field,
               sceneId,
-              reviewerId: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
+              reviewerId,
               status: PlanReviewStatus.PENDING,
               comments: dto.comments,
             },
           }),
-        ),
-      );
+        );
+      }
 
       await tx.productionPlan.update({
         where: { id: planId },
@@ -120,8 +127,10 @@ export class PlanReviewService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.planReview.update({
-        where: { id: reviewId },
+      // Conditional on the row still being open, so two Reviewers deciding the
+      // same target at once cannot both record a verdict.
+      const decided = await tx.planReview.updateMany({
+        where: { id: reviewId, status: { in: [PlanReviewStatus.PENDING, PlanReviewStatus.IN_REVIEW] } },
         data: {
           status: dto.decision,
           comments: dto.comments,
@@ -129,6 +138,7 @@ export class PlanReviewService {
           decidedAt: new Date(),
         },
       });
+      if (decided.count === 0) throw new ConflictException(`Review with id "${reviewId}" has already been decided`);
 
       const state = await this.aggregatePlanState(tx, review.productionPlanId);
 
@@ -160,57 +170,52 @@ export class PlanReviewService {
         },
       });
 
-      return updated;
+      return tx.planReview.findUniqueOrThrow({ where: { id: reviewId } });
     });
   }
 
+  /**
+   * The latest review of every target (each scene, each plan field) decides the
+   * plan: the round stays UNDER_REVIEW until all are decided, then any change
+   * request sends the plan back to the Creator, otherwise it is APPROVED.
+   */
   private async aggregatePlanState(
     tx: Prisma.TransactionClient,
     planId: string,
   ): Promise<{ planStatus: ProductionPlanStatus; sceneStatuses: Map<string, SceneStatus> }> {
-    const scenes = await tx.scene.findMany({
-      where: { productionPlanId: planId },
-      select: { id: true },
-      orderBy: { sceneNumber: 'asc' },
-    });
-    if (scenes.length === 0) {
-      return { planStatus: ProductionPlanStatus.UNDER_REVIEW, sceneStatuses: new Map() };
-    }
-
     const reviews = await tx.planReview.findMany({
       where: { productionPlanId: planId },
       orderBy: { createdAt: 'asc' },
     });
 
+    const latestByTarget = new Map<string, (typeof reviews)[number]>();
+    for (const review of reviews) {
+      latestByTarget.set(review.field === PlanReviewField.SCENE ? `scene:${review.sceneId}` : review.field, review);
+    }
+
     const sceneStatuses = new Map<string, SceneStatus>();
     let changesRequested = false;
-    let anyPending = false;
+    let anyPending = latestByTarget.size === 0;
 
-    for (const scene of scenes) {
-      const sceneReviews = reviews.filter((r) => r.sceneId === scene.id);
-      const decided = sceneReviews.filter((r) => r.decidedAt !== null);
-      if (decided.length === 0) {
-        sceneStatuses.set(scene.id, SceneStatus.UNDER_REVIEW);
-        anyPending = true;
-        continue;
-      }
-      const latest = decided[decided.length - 1];
-      if (latest.status === PlanReviewStatus.APPROVED) {
-        sceneStatuses.set(scene.id, SceneStatus.APPROVED);
-      } else {
-        sceneStatuses.set(scene.id, SceneStatus.CHANGES_REQUESTED);
-        changesRequested = true;
+    for (const review of latestByTarget.values()) {
+      const decided = review.decidedAt !== null;
+      const approved = review.status === PlanReviewStatus.APPROVED;
+      if (!decided) anyPending = true;
+      else if (!approved) changesRequested = true;
+
+      if (review.field === PlanReviewField.SCENE && review.sceneId) {
+        sceneStatuses.set(
+          review.sceneId,
+          !decided ? SceneStatus.UNDER_REVIEW : approved ? SceneStatus.APPROVED : SceneStatus.CHANGES_REQUESTED,
+        );
       }
     }
 
-    let planStatus: ProductionPlanStatus;
-    if (changesRequested) {
-      planStatus = ProductionPlanStatus.CHANGES_REQUESTED;
-    } else if (anyPending) {
-      planStatus = ProductionPlanStatus.UNDER_REVIEW;
-    } else {
-      planStatus = ProductionPlanStatus.APPROVED;
-    }
+    const planStatus = anyPending
+      ? ProductionPlanStatus.UNDER_REVIEW
+      : changesRequested
+        ? ProductionPlanStatus.CHANGES_REQUESTED
+        : ProductionPlanStatus.APPROVED;
 
     return { planStatus, sceneStatuses };
   }

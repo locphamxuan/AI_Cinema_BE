@@ -8,22 +8,40 @@ import {
 import { paginate, PaginateQuery } from '@nestarc/pagination';
 import { GenerationJobStatus, Prisma, ProductionContentType, ProductionProjectStatus, UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { syncMilestoneClock } from 'src/modules/milestone/milestone-clock';
+import { PlatformSettingService } from 'src/modules/platform-setting/platform-setting.service';
+import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { DEFAULT_LANGUAGE } from 'src/common/validation/language-code';
 import { CreateProductionProjectRequestDto } from './dto/create-production-project.request.dto';
 import { UpdateProductionProjectRequestDto } from './dto/update-production-project.request.dto';
 import { CancelProductionProjectRequestDto } from './dto/cancel-production-project.request.dto';
 
+interface PlannedEpisode {
+  seasonNumber: number;
+  seasonEpisodeNumber: number;
+  allottedDurationSeconds: number | null;
+}
+
 @Injectable()
 export class ProductionProjectService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly platformSetting: PlatformSettingService,
+  ) {}
 
-  async create(dto: CreateProductionProjectRequestDto) {
-    // const user = await this.requireReviewer(dto.createdById);
+  async create(dto: CreateProductionProjectRequestDto, createdById: string) {
     await this.requireCreator(dto.assignedCreatorId);
 
     this.ensureReleaseFlow(dto.deadline, dto.plannedReleaseDate);
     this.ensureProductionStart(dto.productionStartDate, dto.deadline);
 
-    const episodeCount = this.resolveEpisodeCount(dto.contentType, dto.episodeCount);
+    const episodes = this.resolveEpisodes(dto);
+    const defaultEpisodeDurationSeconds =
+      dto.defaultEpisodeDurationSeconds ?? this.longestAllotted(episodes) ?? undefined;
+    await this.platformSetting.assertEpisodeDurationAllowed([
+      defaultEpisodeDurationSeconds,
+      ...episodes.map((e) => e.allottedDurationSeconds),
+    ]);
 
     const existing = await this.prisma.productionProject.findFirst({ where: { title: dto.title } });
     if (existing) {
@@ -37,17 +55,19 @@ export class ProductionProjectService {
 
     const milestones = dto.milestones ?? [];
     this.assertMilestones(milestones);
+    const subtitleLanguages = [...new Set(dto.subtitleLanguages ?? [DEFAULT_LANGUAGE])];
 
-    return this.prisma.$transaction(async (tx) => {
+    const projectId = await this.prisma.$transaction(async (tx) => {
       const project = await tx.productionProject.create({
         data: {
           title: dto.title,
           description: dto.description,
           contentType: dto.contentType,
-          defaultEpisodeDurationSeconds: dto.defaultEpisodeDurationSeconds,
-          createdById: '1deebe95-e8ca-49aa-bd4d-c44489f9964f',
+          defaultEpisodeDurationSeconds,
+          createdById,
           assignedCreatorId: dto.assignedCreatorId,
-          episodeCount,
+          episodeCount: episodes.length,
+          subtitleLanguages,
           productionStartDate: new Date(dto.productionStartDate),
           deadline: new Date(dto.deadline),
           plannedReleaseDate: new Date(dto.plannedReleaseDate),
@@ -78,40 +98,49 @@ export class ProductionProjectService {
         });
       }
 
-      for (let episodeNumber = 1; episodeNumber <= episodeCount; episodeNumber += 1) {
-        await tx.productionPlan.create({
-          data: {
-            productionProjectId: project.id,
-            episodeNumber,
-            planVersion: 1,
-            targetLanguages: [],
-            createdById: project.assignedCreatorId,
-          },
-        });
-      }
-
-      return tx.productionProject.findUnique({
-        where: { id: project.id },
-        include: {
-          ...this.projectInclude(),
-          productionPlans: {
-            select: {
-              id: true,
-              episodeNumber: true,
-              planVersion: true,
-              status: true,
-              totalSceneCount: true,
-              completedSceneCount: true,
-            },
-            orderBy: [{ episodeNumber: 'asc' }, { planVersion: 'desc' }],
-          },
-        },
+      // One statement for every episode: the database sits across the ocean and an
+      // interactive transaction is closed after 5s, so a round-trip per episode fails long series.
+      await tx.productionPlan.createMany({
+        data: episodes.map((episode, index) => ({
+          productionProjectId: project.id,
+          episodeNumber: index + 1,
+          seasonNumber: episode.seasonNumber,
+          seasonEpisodeNumber: episode.seasonEpisodeNumber,
+          allottedDurationSeconds: episode.allottedDurationSeconds ?? defaultEpisodeDurationSeconds,
+          planVersion: 1,
+          targetLanguages: subtitleLanguages,
+          createdById: project.assignedCreatorId,
+        })),
       });
+
+      return project.id;
+    });
+
+    return this.prisma.productionProject.findUnique({
+      where: { id: projectId },
+      include: {
+        ...this.projectInclude(),
+        productionPlans: {
+          select: {
+            id: true,
+            episodeNumber: true,
+            seasonNumber: true,
+            seasonEpisodeNumber: true,
+            planVersion: true,
+            status: true,
+            totalSceneCount: true,
+            completedSceneCount: true,
+          },
+          orderBy: [{ episodeNumber: 'asc' }, { planVersion: 'desc' }],
+        },
+      },
     });
   }
 
-  async findAll(query: PaginateQuery) {
+  /** Creators only see the projects assigned to them; reviewers and admins see all. */
+  async findAll(query: PaginateQuery, user: AuthenticatedUser) {
     return paginate(query, this.prisma.productionProject, {
+      where: user.role === UserRole.CONTENT_CREATOR ? { assignedCreatorId: user.id } : undefined,
       sortableColumns: [
         'id',
         'title',
@@ -142,20 +171,57 @@ export class ProductionProjectService {
   }
 
   async findDetail(id: string) {
+    await syncMilestoneClock(this.prisma, id);
     const project = await this.prisma.productionProject.findUnique({
       where: { id },
       include: {
         ...this.projectInclude(),
+        // Everything the workspace needs to show where each episode is in MF-1,
+        // newest plan version first per episode.
         productionPlans: {
-          select: {
-            id: true,
-            episodeNumber: true,
-            planVersion: true,
-            status: true,
-            totalSceneCount: true,
-            completedSceneCount: true,
-          },
           orderBy: [{ episodeNumber: 'asc' }, { planVersion: 'desc' }],
+          include: {
+            scenes: { orderBy: { sceneNumber: 'asc' } },
+            planReviews: {
+              orderBy: { createdAt: 'asc' },
+              include: { reviewer: { select: { id: true, fullName: true } } },
+            },
+            quotaAllocations: {
+              orderBy: { createdAt: 'asc' },
+              include: { allocatedBy: { select: { id: true, fullName: true } } },
+            },
+            // Top-up requests, newest first: the pending one is what the Reviewer decides.
+            quotaRequests: {
+              orderBy: { createdAt: 'desc' },
+              include: {
+                requestedBy: { select: { id: true, fullName: true } },
+                decidedBy: { select: { id: true, fullName: true } },
+              },
+            },
+            _count: { select: { generationJobs: true } },
+            // Newest package first; older ones keep their content reviews in the history.
+            episodePackages: {
+              orderBy: { packageVersion: 'desc' },
+              include: {
+                submissions: { orderBy: { createdAt: 'desc' }, take: 1 },
+                // Every content review, newest first: the Creator reads them as feedback history.
+                reviews: {
+                  orderBy: { createdAt: 'desc' },
+                  include: { reviewer: { select: { id: true, fullName: true } } },
+                },
+                complianceChecks: true,
+                aiContentLabels: true,
+                subtitles: { select: { language: true } },
+                currentForEpisode: {
+                  select: {
+                    id: true,
+                    productionStatus: true,
+                    publications: { orderBy: { publishedAt: 'desc' }, take: 1 },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -201,6 +267,7 @@ export class ProductionProjectService {
     }
 
     if (dto.defaultEpisodeDurationSeconds !== undefined) {
+      await this.platformSetting.assertEpisodeDurationAllowed([dto.defaultEpisodeDurationSeconds]);
       const maxTotal = await this.getMaxPlanSceneDuration(id);
       if (maxTotal > dto.defaultEpisodeDurationSeconds) {
         throw new BadRequestException(
@@ -217,9 +284,11 @@ export class ProductionProjectService {
           `totalAiQuotaBudget cannot be lower than the already allocated quota (${totalAllocated})`,
         );
       }
+      // Moved by the difference in the same statement as any concurrent allocation,
+      // instead of overwriting the balance read above.
       const diff = dto.totalAiQuotaBudget - Number(project.totalAiQuotaBudget);
       data.totalAiQuotaBudget = dto.totalAiQuotaBudget;
-      data.remainingAiQuotaBudget = Number(project.remainingAiQuotaBudget) + diff;
+      data.remainingAiQuotaBudget = { increment: diff };
     }
 
     const genreIds = dto.genreIds !== undefined ? [...new Set(dto.genreIds)] : null;
@@ -301,22 +370,14 @@ export class ProductionProjectService {
   private projectInclude() {
     return {
       assignedCreator: { select: { id: true, fullName: true } },
-      milestones: { orderBy: { createdAt: 'asc' as const } },
+      createdBy: { select: { id: true, fullName: true } },
+      milestones: {
+        orderBy: [{ targetDate: { sort: 'asc' as const, nulls: 'last' as const } }, { createdAt: 'asc' as const }],
+      },
       productionProjectGenres: { include: { genre: true } },
       projectPolicies: { include: { policy: true } },
     };
   }
-
-  // private async requireReviewer(userId: string) {
-  //   const user = await this.prisma.user.findUnique({ where: { id: userId } });
-  //   if (!user) {
-  //     throw new BadRequestException(`User with id "${userId}" does not exist`);
-  //   }
-  //   if (user.role !== UserRole.CONTENT_REVIEWER) {
-  //     throw new ForbiddenException(`User with id "${userId}" must have role CONTENT_REVIEWER`);
-  //   }
-  //   return user;
-  // }
 
   private async requireCreator(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -327,6 +388,55 @@ export class ProductionProjectService {
       throw new ForbiddenException(`User with id "${userId}" must have role CONTENT_CREATOR`);
     }
     return user;
+  }
+
+  /**
+   * The episodes to create a plan for, in order. `episodes` gives each one's
+   * season and allotted duration (seasons may differ in size); without it the
+   * project gets `episodeCount` episodes in a single season.
+   */
+  private resolveEpisodes(dto: CreateProductionProjectRequestDto): PlannedEpisode[] {
+    if (!dto.episodes) {
+      const count = this.resolveEpisodeCount(dto.contentType, dto.episodeCount);
+      return Array.from({ length: count }, (_, i) => ({
+        seasonNumber: 1,
+        seasonEpisodeNumber: i + 1,
+        allottedDurationSeconds: dto.defaultEpisodeDurationSeconds ?? null,
+      }));
+    }
+
+    if (dto.episodeCount !== undefined && dto.episodeCount !== dto.episodes.length) {
+      throw new BadRequestException(
+        `episodeCount (${dto.episodeCount}) does not match the ${dto.episodes.length} episodes given`,
+      );
+    }
+    const seasons = [...new Set(dto.episodes.map((e) => e.seasonNumber))].sort((a, b) => a - b);
+    if (seasons.some((season, i) => season !== i + 1)) {
+      throw new BadRequestException('Seasons must be numbered 1, 2, 3… without gaps');
+    }
+    if (dto.contentType === ProductionContentType.MOVIE && seasons.length > 1) {
+      throw new BadRequestException('A MOVIE has a single season');
+    }
+    const cap = dto.defaultEpisodeDurationSeconds;
+    if (cap !== undefined && dto.episodes.some((e) => e.targetDurationSeconds > cap)) {
+      throw new BadRequestException(`No episode may exceed defaultEpisodeDurationSeconds (${cap}s)`);
+    }
+
+    // Season by season, keeping the given order inside each season.
+    return seasons.flatMap((seasonNumber) =>
+      dto
+        .episodes!.filter((e) => e.seasonNumber === seasonNumber)
+        .map((e, i) => ({
+          seasonNumber,
+          seasonEpisodeNumber: i + 1,
+          allottedDurationSeconds: e.targetDurationSeconds,
+        })),
+    );
+  }
+
+  private longestAllotted(episodes: PlannedEpisode[]): number | null {
+    const durations = episodes.map((e) => e.allottedDurationSeconds).filter((d): d is number => d !== null);
+    return durations.length > 0 ? Math.max(...durations) : null;
   }
 
   private resolveEpisodeCount(contentType: ProductionContentType, episodeCount?: number): number {

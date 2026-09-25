@@ -1,4 +1,5 @@
 import {
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsEnum,
@@ -8,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
   ValidateNested,
@@ -15,6 +17,8 @@ import {
 import { Type } from 'class-transformer';
 import { ProductionContentType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LANGUAGE_CODE } from 'src/common/validation/language-code';
+import { CreateProjectEpisodeRequestDto } from './create-project-episode.request.dto';
 import { CreateProjectMilestoneRequestDto } from './create-project-milestone.request.dto';
 
 export class CreateProductionProjectRequestDto {
@@ -62,6 +66,18 @@ export class CreateProductionProjectRequestDto {
   @Min(1)
   @IsOptional()
   episodeCount?: number;
+
+  @ApiPropertyOptional({
+    type: [CreateProjectEpisodeRequestDto],
+    description:
+      'Every episode in order, with its season and allotted duration. Seasons may hold different episode counts. When given, episodeCount (if sent) must equal its length and defaultEpisodeDurationSeconds defaults to the longest episode.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateProjectEpisodeRequestDto)
+  @IsOptional()
+  episodes?: CreateProjectEpisodeRequestDto[];
 
   @ApiProperty({
     example: '2026-10-01T00:00:00.000Z',
@@ -112,6 +128,16 @@ export class CreateProductionProjectRequestDto {
   @IsOptional()
   policyIds?: string[];
 
+  @ApiPropertyOptional({
+    example: ['vi', 'en'],
+    description: 'Languages every episode must ship subtitles in (BCP-47). Defaults to ["vi"].',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @Matches(LANGUAGE_CODE, { each: true, message: 'each subtitle language must be a BCP-47 code such as "vi" or "en"' })
+  @IsOptional()
+  subtitleLanguages?: string[];
+
   @ApiProperty({
     example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
     description: 'UUID of the Content Creator assigned to execute this production project.',
@@ -119,13 +145,6 @@ export class CreateProductionProjectRequestDto {
   @IsNotEmpty()
   @IsUUID()
   assignedCreatorId: string;
-
-  // @ApiProperty({
-  //   example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-  //   description: 'UUID of the Content Reviewer who creates and owns this production project.',
-  // })
-  // @IsUUID()
-  // createdById: string;
 
   @ApiPropertyOptional({
     example: [

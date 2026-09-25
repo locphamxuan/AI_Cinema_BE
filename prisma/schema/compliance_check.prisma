@@ -3,6 +3,10 @@ enum ComplianceCheckType {
     CONTENT_POLICY
     COPYRIGHT
     LEGAL
+    // Watermark embedded in the video (docs: watermark_verified)
+    WATERMARK
+    // Passes only if nothing depicts a real person or event (BR-43)
+    REAL_PERSON_LIKENESS
 }
 
 enum ComplianceResult {

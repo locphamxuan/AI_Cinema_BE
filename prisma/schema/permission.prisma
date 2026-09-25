@@ -1,0 +1,22 @@
+/// A permission the backend checks, e.g. "production:plan.review" (src/common/auth/permissions.ts).
+model Permission {
+    key         String  @id @db.VarChar(64)
+    /// Area the permission belongs to, used to group it on the Admin screen.
+    area        String  @db.VarChar(32)
+    description String  @db.Text
+
+    roles RolePermission[]
+
+    @@map("permissions")
+}
+
+/// Which role holds which permission; the Admin edits these rows.
+model RolePermission {
+    role          UserRole
+    permissionKey String   @map("permission_key") @db.VarChar(64)
+
+    permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+    @@id([role, permissionKey])
+    @@map("role_permissions")
+}
