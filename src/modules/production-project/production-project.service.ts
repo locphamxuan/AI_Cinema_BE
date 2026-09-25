@@ -8,6 +8,7 @@ import {
 import { paginate, PaginateQuery } from '@nestarc/pagination';
 import { GenerationJobStatus, Prisma, ProductionContentType, ProductionProjectStatus, UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { PlatformSettingService } from 'src/modules/platform-setting/platform-setting.service';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { DEFAULT_LANGUAGE } from 'src/common/validation/language-code';
 import { CreateProductionProjectRequestDto } from './dto/create-production-project.request.dto';
@@ -22,7 +23,10 @@ interface PlannedEpisode {
 
 @Injectable()
 export class ProductionProjectService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly platformSetting: PlatformSettingService,
+  ) {}
 
   async create(dto: CreateProductionProjectRequestDto, createdById: string) {
     await this.requireCreator(dto.assignedCreatorId);
@@ -33,6 +37,10 @@ export class ProductionProjectService {
     const episodes = this.resolveEpisodes(dto);
     const defaultEpisodeDurationSeconds =
       dto.defaultEpisodeDurationSeconds ?? this.longestAllotted(episodes) ?? undefined;
+    await this.platformSetting.assertEpisodeDurationAllowed([
+      defaultEpisodeDurationSeconds,
+      ...episodes.map((e) => e.allottedDurationSeconds),
+    ]);
 
     const existing = await this.prisma.productionProject.findFirst({ where: { title: dto.title } });
     if (existing) {
@@ -257,6 +265,7 @@ export class ProductionProjectService {
     }
 
     if (dto.defaultEpisodeDurationSeconds !== undefined) {
+      await this.platformSetting.assertEpisodeDurationAllowed([dto.defaultEpisodeDurationSeconds]);
       const maxTotal = await this.getMaxPlanSceneDuration(id);
       if (maxTotal > dto.defaultEpisodeDurationSeconds) {
         throw new BadRequestException(

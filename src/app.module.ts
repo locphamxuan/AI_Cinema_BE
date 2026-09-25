@@ -5,6 +5,7 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
 import { GenreModule } from 'src/modules/genre/genre.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
+import { PlatformSettingModule } from 'src/modules/platform-setting/platform-setting.module';
 import { ProductionProjectModule } from 'src/modules/production-project/production-project.module';
 import { MilestoneModule } from 'src/modules/milestone/milestone.module';
 import { ProductionPlanModule } from 'src/modules/production-plan/production-plan.module';
@@ -36,6 +37,7 @@ import { PaginationModule } from '@nestarc/pagination';
     AuthModule,
     GenreModule,
     PolicyModule,
+    PlatformSettingModule,
     ProductionProjectModule,
     MilestoneModule,
     ProductionPlanModule,

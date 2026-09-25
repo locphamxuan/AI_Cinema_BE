@@ -3,6 +3,10 @@ import { GenerationJobStatus, ProductionContentType, ProductionProjectStatus, Us
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateProductionProjectRequestDto } from './dto/create-production-project.request.dto';
 import { ProductionProjectService } from './production-project.service';
+import type { PlatformSettingService } from 'src/modules/platform-setting/platform-setting.service';
+
+const assertEpisodeDurationAllowed = jest.fn().mockResolvedValue(undefined);
+const platformSetting = { assertEpisodeDurationAllowed } as unknown as PlatformSettingService;
 
 describe('ProductionProjectService.create — seasons and episode durations', () => {
   const tx = {
@@ -17,7 +21,7 @@ describe('ProductionProjectService.create — seasons and episode durations', ()
     productionProject: { findFirst: jest.fn(), findUnique: jest.fn() },
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
   };
-  const service = new ProductionProjectService(prisma as unknown as PrismaService);
+  const service = new ProductionProjectService(prisma as unknown as PrismaService, platformSetting);
 
   const baseDto = (overrides: Partial<CreateProductionProjectRequestDto>): CreateProductionProjectRequestDto => ({
     title: 'Saigon 2077',
@@ -64,6 +68,17 @@ describe('ProductionProjectService.create — seasons and episode durations', ()
       subtitleLanguages: ['vi'],
     });
     expect(createdPlans().every((p) => (p.targetLanguages as string[]).join() === 'vi')).toBe(true);
+  });
+
+  it('checks every episode against the platform duration limit before creating anything', async () => {
+    assertEpisodeDurationAllowed.mockRejectedValueOnce(new BadRequestException('too long'));
+
+    await expect(
+      service.create(baseDto({ episodes: [{ seasonNumber: 1, targetDurationSeconds: 4000 }] }), 'reviewer-id'),
+    ).rejects.toThrow('too long');
+
+    expect(assertEpisodeDurationAllowed).toHaveBeenCalledWith([4000, 4000]);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('subtitles every plan in the languages chosen for the project', async () => {
@@ -128,7 +143,7 @@ describe('ProductionProjectService.create — validation', () => {
     genre: { count: jest.fn() },
     policy: { count: jest.fn() },
   };
-  const service = new ProductionProjectService(prisma as unknown as PrismaService);
+  const service = new ProductionProjectService(prisma as unknown as PrismaService, platformSetting);
   const dto = (overrides: Partial<CreateProductionProjectRequestDto> = {}): CreateProductionProjectRequestDto => ({
     title: 'Saigon 2077',
     contentType: ProductionContentType.SERIES,
@@ -227,7 +242,7 @@ describe('ProductionProjectService.update and cancel', () => {
     genre: { count: jest.fn() },
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
   };
-  const service = new ProductionProjectService(prisma as unknown as PrismaService);
+  const service = new ProductionProjectService(prisma as unknown as PrismaService, platformSetting);
   const updatedData = () => (tx.productionProject.update.mock.calls[0] as [{ data: Record<string, unknown> }])[0].data;
 
   const givenProject = (overrides: object = {}) =>
