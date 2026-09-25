@@ -121,10 +121,6 @@ export function resolveCatalogKey(
   return specialist ? { key: specialist[0], match: 'specialist' } : { key: JOB_TYPE_ROUTING.CUSTOM, match: 'general' };
 }
 
-export function catalogEntryForJobType(jobType: GenerationJobType): AiModelCatalogEntry {
-  return AI_MODEL_CATALOG[JOB_TYPE_ROUTING[jobType]];
-}
-
 /** Planning estimate checked against quota before a job runs (BR-41). */
 export function estimateTokenCost(entry: AiModelCatalogEntry): number {
   return Math.round(entry.baseUnits * entry.tokensPerUnit);

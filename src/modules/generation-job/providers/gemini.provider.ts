@@ -94,7 +94,7 @@ export class GeminiProvider implements AiGenerationProvider {
 }
 
 /** Wraps raw 16-bit mono PCM in a WAV header so browsers can play it. */
-export function wavOf(pcm: Buffer): Buffer {
+function wavOf(pcm: Buffer): Buffer {
   const header = Buffer.alloc(44);
   header.write('RIFF', 0);
   header.writeUInt32LE(36 + pcm.byteLength, 4);

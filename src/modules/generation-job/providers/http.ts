@@ -23,8 +23,6 @@ export async function callProviderJson<T>(
   return (await response.json()) as T;
 }
 
-export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
  * The free tier of a provider is used up for now. The job fails without being charged;
  * the Creator can generate again once the free quota resets.
