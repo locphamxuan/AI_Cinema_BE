@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+test
+training-data
+.env
+.env.*
+!.env.example
+.git
+.claude*
+.codegraph
+*.log

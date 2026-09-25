@@ -1,0 +1,43 @@
+# Local stack: Postgres + migrations/seed + API.
+#   docker compose up -d --build     → API on http://localhost:3001/api (Swagger on /api/docs)
+#   docker compose down               → stop (data stays in the pg-data volume)
+#   docker compose down -v            → stop and wipe the database
+# Secrets and AI keys come from .env (copy .env.example); DATABASE_URL there is ignored here.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_cinema
+    ports:
+      - '54320:5432'
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d ai_cinema']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: { context: ., target: migrate }
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_cinema
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    build: { context: ., target: runtime }
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_cinema
+      PORT: 3001
+    ports:
+      - '3001:3001'
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+volumes:
+  pg-data:
