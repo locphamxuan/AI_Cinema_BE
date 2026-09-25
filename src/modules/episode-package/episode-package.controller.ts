@@ -1,20 +1,20 @@
 import { Body, Controller, Get, Header, Param, Post } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreateEpisodePackageRequestDto } from './dto/create-episode-package.request.dto';
 import { EpisodePackageService } from './episode-package.service';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { CREATOR_ROLES, MF1_ROLES } from 'src/common/auth/mf1-roles';
 
 @ApiTags('episode-packages')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller()
 export class EpisodePackageController {
   constructor(private readonly episodePackageService: EpisodePackageService) {}
 
   @Post('production-plans/:planId/episode-packages')
-  @Roles(...CREATOR_ROLES)
+  @RequirePermission(PERMISSION.EPISODE_SUBMIT)
   async assemble(
     @Param('planId') planId: string,
     @Body() dto: CreateEpisodePackageRequestDto,

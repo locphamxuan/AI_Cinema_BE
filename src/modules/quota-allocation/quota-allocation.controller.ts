@@ -1,20 +1,20 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateQuotaAllocationRequestDto } from './dto/create-quota-allocation.request.dto';
 import { QuotaAllocationService } from './quota-allocation.service';
-import { MF1_ROLES, REVIEWER_ROLES } from 'src/common/auth/mf1-roles';
 
 @ApiTags('quota-allocations')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller()
 export class QuotaAllocationController {
   constructor(private readonly quotaAllocationService: QuotaAllocationService) {}
 
   @Post('production-plans/:planId/quota-allocations')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.QUOTA_MANAGE)
   async create(
     @Param('planId') planId: string,
     @Body() dto: CreateQuotaAllocationRequestDto,

@@ -9,5 +9,5 @@ export class AuthSessionDto {
   refreshToken: string;
 
   @ApiProperty({ type: UserDto, description: 'Profile of the authenticated user.' })
-  user: UserDto;
+  user: UserDto & { permissions: string[] };
 }

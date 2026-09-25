@@ -1,21 +1,21 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { CREATOR_ROLES, MF1_ROLES, REVIEWER_ROLES } from 'src/common/auth/mf1-roles';
 import { CreateQuotaRequestRequestDto } from './dto/create-quota-request.request.dto';
 import { ApproveQuotaRequestRequestDto, RejectQuotaRequestRequestDto } from './dto/decide-quota-request.request.dto';
 import { QuotaRequestService } from './quota-request.service';
 
 @ApiTags('quota-requests')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller()
 export class QuotaRequestController {
   constructor(private readonly quotaRequestService: QuotaRequestService) {}
 
   @Post('production-plans/:planId/quota-requests')
-  @Roles(...CREATOR_ROLES)
+  @RequirePermission(PERMISSION.QUOTA_REQUEST)
   async create(
     @Param('planId', ParseUUIDPipe) planId: string,
     @Body() dto: CreateQuotaRequestRequestDto,
@@ -30,7 +30,7 @@ export class QuotaRequestController {
   }
 
   @Post('quota-requests/:quotaRequestId/approve')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.QUOTA_MANAGE)
   async approve(
     @Param('quotaRequestId', ParseUUIDPipe) requestId: string,
     @Body() dto: ApproveQuotaRequestRequestDto,
@@ -40,7 +40,7 @@ export class QuotaRequestController {
   }
 
   @Post('quota-requests/:quotaRequestId/reject')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.QUOTA_MANAGE)
   async reject(
     @Param('quotaRequestId', ParseUUIDPipe) requestId: string,
     @Body() dto: RejectQuotaRequestRequestDto,

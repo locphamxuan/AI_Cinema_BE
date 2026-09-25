@@ -1,22 +1,22 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CreateComplianceCheckRequestDto } from './dto/create-compliance-check.request.dto';
 import { DecideComplianceCheckRequestDto } from './dto/decide-compliance-check.request.dto';
 import { RecordComplianceReviewRequestDto } from './dto/record-compliance-review.request.dto';
 import { ComplianceCheckService } from './compliance-check.service';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { MF1_ROLES, REVIEWER_ROLES } from 'src/common/auth/mf1-roles';
 
 @ApiTags('compliance-checks')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller()
 export class ComplianceCheckController {
   constructor(private readonly complianceCheckService: ComplianceCheckService) {}
 
   @Post('episode-packages/:packageId/compliance-checks')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.EPISODE_REVIEW)
   async create(
     @Param('packageId') packageId: string,
     @Body() dto: CreateComplianceCheckRequestDto,
@@ -26,7 +26,7 @@ export class ComplianceCheckController {
   }
 
   @Post('episode-packages/:packageId/compliance-reviews')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.EPISODE_REVIEW)
   async recordReview(
     @Param('packageId') packageId: string,
     @Body() dto: RecordComplianceReviewRequestDto,
@@ -41,7 +41,7 @@ export class ComplianceCheckController {
   }
 
   @Patch('compliance-checks/:checkId')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.EPISODE_REVIEW)
   async decide(
     @Param('checkId') checkId: string,
     @Body() dto: DecideComplianceCheckRequestDto,

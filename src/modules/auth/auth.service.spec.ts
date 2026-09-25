@@ -5,6 +5,7 @@ import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AuthService } from './auth.service';
+import { AccessControlService } from 'src/modules/access-control/access-control.service';
 
 const reviewer = {
   id: 'f0f1a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b',
@@ -32,7 +33,14 @@ describe('AuthService', () => {
 
     const moduleRef = await Test.createTestingModule({
       imports: [JwtModule.register({ secret: 'test-secret' })],
-      providers: [AuthService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        AuthService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: AccessControlService,
+          useValue: { permissionsOf: () => Promise.resolve(new Set(['production:read'])) },
+        },
+      ],
     }).compile();
 
     service = moduleRef.get(AuthService);

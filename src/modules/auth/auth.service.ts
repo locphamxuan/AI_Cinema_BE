@@ -4,6 +4,7 @@ import { User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { JwtPayload } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { AccessControlService } from 'src/modules/access-control/access-control.service';
 import { AuthSessionDto } from './dto/auth-session.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
@@ -15,6 +16,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
@@ -71,7 +73,7 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Account no longer available');
     }
-    return this.toProfile(user);
+    return this.profileWithPermissions(user);
   }
 
   private async buildSession(user: User): Promise<AuthSessionDto> {
@@ -82,7 +84,7 @@ export class AuthService {
       this.jwtService.signAsync({ ...claims, type: 'refresh' }, this.lifetime('JWT_REFRESH_EXPIRES_IN', '30d')),
     ]);
 
-    return { accessToken, refreshToken, user: this.toProfile(user) };
+    return { accessToken, refreshToken, user: await this.profileWithPermissions(user) };
   }
 
   // Read from process.env rather than ConfigService: @nestjs/config v12 is ESM-only and cannot be
@@ -90,6 +92,12 @@ export class AuthService {
   // `expiresIn` is typed as the `ms` StringValue union, which a plain string cannot satisfy structurally.
   private lifetime(key: string, fallback: string): JwtSignOptions {
     return { expiresIn: process.env[key] ?? fallback } as JwtSignOptions;
+  }
+
+  // The web portal shows each account only the screens and actions its role may use.
+  private async profileWithPermissions(user: User) {
+    const permissions = [...(await this.accessControl.permissionsOf(user.role))].sort();
+    return { ...this.toProfile(user), permissions };
   }
 
   private toProfile(user: User) {

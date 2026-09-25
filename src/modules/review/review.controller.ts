@@ -1,22 +1,22 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateEpisodeSubmissionRequestDto } from './dto/create-episode-submission.request.dto';
 import { CreateReviewRequestDto } from './dto/create-review.request.dto';
 import { ReviewService } from './review.service';
 import { DecideReviewRequestDto } from 'src/modules/review/dto/decide-review.request.dto';
-import { CREATOR_ROLES, MF1_ROLES, REVIEWER_ROLES } from 'src/common/auth/mf1-roles';
 
 @ApiTags('reviews')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller()
 export class ReviewController {
   constructor(private readonly reviewService: ReviewService) {}
 
   @Post('episode-packages/:packageId/submissions')
-  @Roles(...CREATOR_ROLES)
+  @RequirePermission(PERMISSION.EPISODE_SUBMIT)
   async submit(
     @Param('packageId') packageId: string,
     @Body() dto: CreateEpisodeSubmissionRequestDto,
@@ -26,7 +26,7 @@ export class ReviewController {
   }
 
   @Post('episode-packages/:packageId/reviews')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.EPISODE_REVIEW)
   async createReview(
     @Param('packageId') packageId: string,
     @Body() dto: CreateReviewRequestDto,
@@ -41,7 +41,7 @@ export class ReviewController {
   }
 
   @Patch('reviews/:reviewId')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.EPISODE_REVIEW)
   async decide(@Param('reviewId') reviewId: string, @Body() dto: DecideReviewRequestDto) {
     return this.reviewService.decide(reviewId, dto);
   }

@@ -1,20 +1,20 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreatePublicationRequestDto } from './dto/create-publication.request.dto';
 import { PublicationService } from './publication.service';
-import { MF1_ROLES, REVIEWER_ROLES } from 'src/common/auth/mf1-roles';
 
 @ApiTags('publications')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller()
 export class PublicationController {
   constructor(private readonly publicationService: PublicationService) {}
 
   @Post('episodes/:episodeId/publications')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.MOVIE_PUBLISH)
   async create(
     @Param('episodeId') episodeId: string,
     @Body() dto: CreatePublicationRequestDto,
@@ -29,13 +29,13 @@ export class PublicationController {
   }
 
   @Post('publications/:publicationId/publish')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.MOVIE_PUBLISH)
   async publish(@Param('publicationId') publicationId: string) {
     return this.publicationService.publish(publicationId);
   }
 
   @Post('publications/:publicationId/unpublish')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.MOVIE_PUBLISH)
   async unpublish(@Param('publicationId') publicationId: string) {
     return this.publicationService.unpublish(publicationId);
   }

@@ -1,22 +1,22 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CreateMilestoneRequestDto } from './dto/create-milestone.request.dto';
 import { UpdateMilestoneRequestDto } from './dto/update-milestone.request.dto';
 import { MilestoneService } from './milestone.service';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { MF1_ROLES, REVIEWER_ROLES } from 'src/common/auth/mf1-roles';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 
 @ApiTags('milestones')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller()
 export class MilestoneController {
   constructor(private readonly milestoneService: MilestoneService) {}
 
   @Post('production-projects/:projectId/milestones')
-  @Roles(...REVIEWER_ROLES)
+  @RequirePermission(PERMISSION.PROJECT_MANAGE)
   async create(@Param('projectId', ParseUUIDPipe) projectId: string, @Body() dto: CreateMilestoneRequestDto) {
     return this.milestoneService.create(projectId, dto);
   }
@@ -32,6 +32,7 @@ export class MilestoneController {
   }
 
   @Patch('milestones/:milestoneId')
+  @RequirePermission(PERMISSION.MILESTONE_UPDATE)
   async update(
     @Param('milestoneId', ParseUUIDPipe) milestoneId: string,
     @Body() dto: UpdateMilestoneRequestDto,

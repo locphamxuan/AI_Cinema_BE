@@ -1,13 +1,13 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { MF1_ROLES } from 'src/common/auth/mf1-roles';
 import { AiModelRouterService } from './ai-model-router.service';
 import { ResolveRouteQueryDto } from './dto/resolve-route.query.dto';
 
 @ApiTags('ai-models')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller('ai-models')
 export class AiModelController {
   constructor(private readonly router: AiModelRouterService) {}

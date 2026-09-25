@@ -8,12 +8,10 @@ import { CreateProductionPlanRevisionRequestDto } from './dto/create-production-
 import { CreateSceneRequestDto } from 'src/modules/scene/dto/create-scene.request.dto';
 import { ProductionPlanService } from './production-plan.service';
 import { SceneService } from 'src/modules/scene/scene.service';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { CREATOR_ROLES, MF1_ROLES } from 'src/common/auth/mf1-roles';
 
 @ApiTags('production-plans')
 @ApiBearerAuth()
-@Roles(...MF1_ROLES)
+@RequirePermission(PERMISSION.PRODUCTION_READ)
 @Controller()
 export class ProductionPlanController {
   constructor(
@@ -32,19 +30,19 @@ export class ProductionPlanController {
   }
 
   @Patch('production-plans/:planId')
-  @Roles(...CREATOR_ROLES)
+  @RequirePermission(PERMISSION.PLAN_WRITE)
   async update(@Param('planId') planId: string, @Body() dto: UpdateProductionPlanRequestDto) {
     return this.productionPlanService.update(planId, dto);
   }
 
   @Post('production-plans/:planId/submit')
-  @Roles(...CREATOR_ROLES)
+  @RequirePermission(PERMISSION.PLAN_WRITE)
   async submit(@Param('planId') planId: string, @Body() dto: SubmitProductionPlanRequestDto) {
     return this.productionPlanService.submit(planId, dto);
   }
 
   @Post('production-projects/:projectId/plans/:planId/revisions')
-  @Roles(...CREATOR_ROLES)
+  @RequirePermission(PERMISSION.PLAN_WRITE)
   async createRevision(
     @Param('projectId') projectId: string,
     @Param('planId') planId: string,
@@ -55,7 +53,7 @@ export class ProductionPlanController {
   }
 
   @Post('production-plans/:planId/scenes')
-  @Roles(...CREATOR_ROLES)
+  @RequirePermission(PERMISSION.PLAN_WRITE)
   async addScene(@Param('planId') planId: string, @Body() dto: CreateSceneRequestDto) {
     return this.sceneService.create(planId, dto);
   }
