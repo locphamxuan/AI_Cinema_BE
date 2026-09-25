@@ -34,6 +34,7 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'max-lines': ['error', { max: 300, skipBlankLines: false, skipComments: false }],
     },
   },
 );
