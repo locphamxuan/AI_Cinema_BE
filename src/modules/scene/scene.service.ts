@@ -46,7 +46,7 @@ export class SceneService {
       });
       await tx.productionPlan.update({
         where: { id: planId },
-        data: { totalSceneCount: plan.totalSceneCount + 1 },
+        data: { totalSceneCount: { increment: 1 } },
       });
       return scene;
     });
