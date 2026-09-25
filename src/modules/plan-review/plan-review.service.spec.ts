@@ -26,7 +26,7 @@ const review = (
 
 describe('PlanReviewService', () => {
   const tx = {
-    planReview: { create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+    planReview: { create: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), findMany: jest.fn() },
     productionPlan: { update: jest.fn() },
     scene: { update: jest.fn(), updateMany: jest.fn() },
     submission: { updateMany: jest.fn() },
@@ -41,7 +41,7 @@ describe('PlanReviewService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     tx.planReview.create.mockImplementation(({ data }: { data: object }) => Promise.resolve(data));
-    tx.planReview.update.mockImplementation(({ data }: { data: object }) => Promise.resolve(data));
+    tx.planReview.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it('opens a round with one review per scene plus the three plan fields (BR-39)', async () => {
@@ -125,6 +125,15 @@ describe('PlanReviewService', () => {
       await service.decide('r-token', { decision: PlanReviewStatus.APPROVED });
 
       expect(planStatusAfter()).toBe(ProductionPlanStatus.APPROVED);
+    });
+
+    it('changes nothing when another Reviewer decided the row first', async () => {
+      tx.planReview.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.decide('r-token', { decision: PlanReviewStatus.APPROVED })).rejects.toThrow(
+        'already been decided',
+      );
+      expect(tx.productionPlan.update).not.toHaveBeenCalled();
     });
   });
 });

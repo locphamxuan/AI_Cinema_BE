@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  PlanReview,
   PlanReviewField,
   PlanReviewStatus,
   Prisma,
@@ -64,9 +65,11 @@ export class PlanReviewService {
     ];
 
     return this.prisma.$transaction(async (tx) => {
-      const reviews = await Promise.all(
-        targets.map(({ field, sceneId }) =>
-          tx.planReview.create({
+      // One statement at a time: a transaction runs on a single connection.
+      const reviews: PlanReview[] = [];
+      for (const { field, sceneId } of targets) {
+        reviews.push(
+          await tx.planReview.create({
             data: {
               productionPlanId: planId,
               field,
@@ -76,8 +79,8 @@ export class PlanReviewService {
               comments: dto.comments,
             },
           }),
-        ),
-      );
+        );
+      }
 
       await tx.productionPlan.update({
         where: { id: planId },
@@ -124,8 +127,10 @@ export class PlanReviewService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.planReview.update({
-        where: { id: reviewId },
+      // Conditional on the row still being open, so two Reviewers deciding the
+      // same target at once cannot both record a verdict.
+      const decided = await tx.planReview.updateMany({
+        where: { id: reviewId, status: { in: [PlanReviewStatus.PENDING, PlanReviewStatus.IN_REVIEW] } },
         data: {
           status: dto.decision,
           comments: dto.comments,
@@ -133,6 +138,7 @@ export class PlanReviewService {
           decidedAt: new Date(),
         },
       });
+      if (decided.count === 0) throw new ConflictException(`Review with id "${reviewId}" has already been decided`);
 
       const state = await this.aggregatePlanState(tx, review.productionPlanId);
 
@@ -164,7 +170,7 @@ export class PlanReviewService {
         },
       });
 
-      return updated;
+      return tx.planReview.findUniqueOrThrow({ where: { id: reviewId } });
     });
   }
 
