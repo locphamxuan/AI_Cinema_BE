@@ -21,6 +21,26 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
+## Getting started (MF-1)
+
+Requires Node.js 20.19+ and a PostgreSQL database.
+
+```bash
+npm ci                      # also generates the Prisma client (postinstall)
+cp .env.example .env        # then set DATABASE_URL and JWT_SECRET
+npx prisma migrate deploy   # create or update the schema
+npx prisma db seed          # genres, AI labeling policy, AI model catalog, demo accounts
+npm run start:local         # API on http://localhost:3001/api, docs on /api/docs
+```
+
+- `DATABASE_URL` can point at the team database, or at a local one:
+  `npm run test:e2e:db` starts Postgres on `localhost:54329`
+  (`postgresql://postgres:postgres@localhost:54329/ai_cinema_e2e`).
+- On an empty database the seed creates `creator01`..`08@aicinema.com` and
+  `reviewer01`..`06@aicinema.com`, signing in with `SEED_USER_PASSWORD`
+  (default `Aicinema@123`). Accounts that already exist keep their password.
+- The frontend (`AI_Cinema_FE`) proxies `/api` to `http://localhost:3001`.
+
 ## Description
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
