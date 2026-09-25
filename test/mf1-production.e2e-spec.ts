@@ -52,6 +52,11 @@ describe('MF-1 production workflow (e2e)', () => {
   });
 
   it('lets the Reviewer create a two-language project assigned to the Creator', async () => {
+    // The workspace offers only Creators as assignees.
+    const creators = await reviewer.get<Page<{ id: string; role: string }>>('/users?filter.role=$eq:CONTENT_CREATOR');
+    expect(creators.data.map((u) => u.id)).toContain(creator.id);
+    expect(creators.data.every((u) => u.role === 'CONTENT_CREATOR')).toBe(true);
+
     const genres = await reviewer.get<Page<Row>>('/genres?limit=5');
     const project = await reviewer.post<Project>('/production-projects', {
       title: `E2E Saigon 2077 ${RUN}`,
@@ -75,6 +80,7 @@ describe('MF-1 production workflow (e2e)', () => {
     projectId = project.id;
     planId = project.productionPlans[0].id;
     expect(project.productionPlans).toHaveLength(3);
+    expect(project.status).toBe('DRAFT');
   });
 
   it('keeps the project private to its assigned Creator', async () => {
@@ -134,6 +140,8 @@ describe('MF-1 production workflow (e2e)', () => {
     });
     const project = await reviewer.get<Project>(`/production-projects/${projectId}`);
     expect(Number(project.remainingAiQuotaBudget)).toBe(4400);
+    // The first quota starts production.
+    expect(project.status).toBe('ACTIVE');
   });
 
   it('lets the Creator generate a video for every scene against the quota', async () => {
@@ -245,10 +253,21 @@ describe('MF-1 production workflow (e2e)', () => {
     expect(published.currentForEpisode?.productionStatus).toBe('PUBLISHED');
   });
 
-  it('moves the milestone the Creator updates', async () => {
+  it('keeps the project ACTIVE while episodes remain unpublished', async () => {
+    const project = await reviewer.get<Project>(`/production-projects/${projectId}`);
+    expect(project.status).toBe('ACTIVE');
+  });
+
+  it('lets the Creator report milestone progress but not re-plan it', async () => {
     const project = await creator.get<Project>(`/production-projects/${projectId}`);
     const [milestone] = project.milestones;
-    const updated = await creator.patch(`/milestones/${milestone.id}`, { status: 'IN_PROGRESS' });
-    expect(updated.status).toBe('IN_PROGRESS');
+    const path = `/milestones/${milestone.id}`;
+
+    expect((await creator.patch(path, { status: 'IN_PROGRESS' })).status).toBe('IN_PROGRESS');
+    await creator.patch(path, { targetDate: day(60) }, 403);
+    await creator.patch(path, { status: 'COMPLETED' }, 400);
+    expect((await creator.patch(path, { status: 'COMPLETED', resultText: 'Xong kịch bản' })).status).toBe('COMPLETED');
+    await reviewer.patch(path, { status: 'IN_PROGRESS' }, 409);
+    await creator.get('/milestones/not-a-uuid', 400);
   });
 });

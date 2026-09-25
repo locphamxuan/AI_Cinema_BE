@@ -17,6 +17,7 @@ export interface Plan extends Row {
 
 export interface Project {
   id: string;
+  status: string;
   remainingAiQuotaBudget: string;
   productionPlans: Plan[];
   milestones: Row[];
