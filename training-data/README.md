@@ -1,6 +1,6 @@
 # Training data — Genre Style LoRA (Level 1.5)
 
-Dữ liệu train LoRA phong cách theo thể loại phim, xem `docs/PROJECT_OVERVIEW.md` §4.1.8.1. Mỗi `GenreStyleModel` (1 genre + 1 base model + 1 version) có đúng **1 thư mục** dataset riêng:
+Dữ liệu train LoRA phong cách theo thể loại phim, xem `docs/PROJECT_OVERVIEW.md` ở thư mục gốc (ngoài repo BE) §4.1.8.1. Mỗi `GenreStyleModel` (1 genre + 1 base model + 1 version) có đúng **1 thư mục** dataset riêng:
 
 ```text
 training-data/

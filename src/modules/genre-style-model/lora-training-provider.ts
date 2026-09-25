@@ -22,7 +22,7 @@ export interface LoraTrainingProvider {
 
 export const LORA_TRAINING_PROVIDER = 'LORA_TRAINING_PROVIDER';
 
-/** Dev/test stand-in — mirrors the MockAiProvider convention (docs/PROJECT_OVERVIEW.md §6). */
+/** Dev/test stand-in — mirrors the MockAiProvider convention (root docs/PROJECT_OVERVIEW.md §6). */
 export class MockLoraTrainingProvider implements LoraTrainingProvider {
   readonly name = 'mock';
 
