@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import {
   AssetType,
   GeneratedAssetStatus,
+  GenerationJobStatus,
   ProductionPlanStatus,
   SceneStatus,
   SubmissionStatus,
@@ -12,6 +13,9 @@ import { CreateSceneRequestDto } from './dto/create-scene.request.dto';
 import { UpdateSceneRequestDto } from './dto/update-scene.request.dto';
 import { SubmitSceneRequestDto } from './dto/submit-scene.request.dto';
 import { latestAttempts } from 'src/modules/generation-job/latest-attempts';
+import { assertProjectOpen } from 'src/modules/production-project/project-lifecycle';
+import { UpdateSceneDirectionRequestDto } from './dto/update-scene-direction.request.dto';
+import { assertCutOpen } from './cut-lock';
 
 @Injectable()
 export class SceneService {
@@ -118,8 +122,9 @@ export class SceneService {
     if (jobs.length === 0) {
       throw new BadRequestException('Scene has no generation jobs yet');
     }
-    const current = latestAttempts(jobs);
-    const hasPendingJob = current.some((job) => !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status));
+    // A cancelled job was removed from the scene by the Creator; its output no longer counts.
+    const current = latestAttempts(jobs).filter((job) => job.status !== GenerationJobStatus.CANCELLED);
+    const hasPendingJob = current.some((job) => !['COMPLETED', 'FAILED'].includes(job.status));
     if (hasPendingJob) {
       throw new ConflictException('Scene still has running/pending generation jobs');
     }
@@ -159,6 +164,50 @@ export class SceneService {
     });
   }
 
+  /**
+   * During production the approved script and duration stay fixed, but the Creator can
+   * still retitle a scene and refine its description, which steers its next generations.
+   */
+  async updateDirection(sceneId: string, dto: UpdateSceneDirectionRequestDto) {
+    const scene = await this.findById(sceneId);
+    await this.requireProductionPlan(scene.productionPlanId);
+    return this.prisma.scene.update({
+      where: { id: sceneId },
+      data: { title: dto.title?.trim(), description: dto.description },
+    });
+  }
+
+  /**
+   * Starts a scene over: every generation of it is cancelled (kept for audit, tokens are
+   * not refunded) and a finished scene goes back to APPROVED, ready to be generated again.
+   */
+  async reset(sceneId: string) {
+    const scene = await this.findById(sceneId);
+    await this.requireProductionPlan(scene.productionPlanId);
+
+    const jobs = await this.prisma.generationJob.findMany({
+      where: { sceneId, status: { not: GenerationJobStatus.CANCELLED } },
+      select: { id: true, status: true },
+    });
+    if (jobs.some((job) => job.status === GenerationJobStatus.RUNNING)) {
+      throw new ConflictException('A generation of this scene is still running');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.generationJob.updateMany({
+        where: { id: { in: jobs.map((job) => job.id) } },
+        data: { status: GenerationJobStatus.CANCELLED },
+      });
+      if (scene.status === SceneStatus.COMPLETED) {
+        await tx.productionPlan.updateMany({
+          where: { id: scene.productionPlanId, completedSceneCount: { gt: 0 } },
+          data: { completedSceneCount: { decrement: 1 } },
+        });
+      }
+      return tx.scene.update({ where: { id: sceneId }, data: { status: SceneStatus.APPROVED } });
+    });
+  }
+
   async findById(sceneId: string) {
     const scene = await this.prisma.scene.findUnique({
       where: { id: sceneId },
@@ -168,6 +217,21 @@ export class SceneService {
       throw new NotFoundException(`Scene with id "${sceneId}" does not exist`);
     }
     return scene;
+  }
+
+  /** A plan in production: approved, its project open and its cut not with the Reviewer. */
+  private async requireProductionPlan(planId: string) {
+    const plan = await this.prisma.productionPlan.findUnique({
+      where: { id: planId },
+      include: { productionProject: { select: { status: true } } },
+    });
+    if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
+    if (plan.status !== ProductionPlanStatus.APPROVED) {
+      throw new ConflictException('A scene can only be reworked in the Studio once its plan is APPROVED');
+    }
+    assertProjectOpen(plan.productionProject);
+    await assertCutOpen(this.prisma, planId);
+    return plan;
   }
 
   private async requireEditablePlan(planId: string) {
