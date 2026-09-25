@@ -21,7 +21,6 @@ import { UserModule } from 'src/modules/user/user.module';
 import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { PublicationModule } from 'src/modules/publication/publication.module';
 import { GenreStyleModelModule } from 'src/modules/genre-style-model/genre-style-model.module';
-import { AuthModule } from 'src/modules/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { PaginationModule } from '@nestarc/pagination';
 
@@ -52,7 +51,6 @@ import { PaginationModule } from '@nestarc/pagination';
     ComplianceCheckModule,
     CatalogModule,
     PublicationModule,
-    AuthModule,
     UserModule,
     GenreStyleModelModule,
   ],

@@ -13,15 +13,6 @@ describe('AuthController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     controller = new AuthController({ register, login } as unknown as AuthService);
-  let service: jest.Mocked<AuthService>;
-
-  beforeEach(() => {
-    service = {
-      register: jest.fn(),
-      login: jest.fn(),
-    } as unknown as jest.Mocked<AuthService>;
-
-    controller = new AuthController(service);
   });
 
   it('should delegate register to the auth service', async () => {
@@ -36,10 +27,6 @@ describe('AuthController', () => {
 
     await expect(controller.register(payload)).resolves.toEqual(result);
     expect(register).toHaveBeenCalledWith(payload);
-    service.register.mockResolvedValue(result as any);
-
-    await expect(controller.register(payload)).resolves.toEqual(result);
-    expect(service.register).toHaveBeenCalledWith(payload);
   });
 
   it('should delegate login to the auth service', async () => {
@@ -53,9 +40,5 @@ describe('AuthController', () => {
 
     await expect(controller.login(payload)).resolves.toEqual(result);
     expect(login).toHaveBeenCalledWith(payload);
-    service.login.mockResolvedValue(result as any);
-
-    await expect(controller.login(payload)).resolves.toEqual(result);
-    expect(service.login).toHaveBeenCalledWith(payload);
   });
 });
