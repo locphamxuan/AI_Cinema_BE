@@ -12,7 +12,7 @@ import { DEFAULT_VIDEO_SECONDS, HuggingFaceProvider } from './huggingface.provid
 import { MediaStorage } from './media-storage';
 
 /**
- * Sends each job to the free-tier service of its model (docs/ai-providers.md).
+ * Sends each job to the free-tier service of its model (README.md "AI providers").
  * Only free tiers are wired in, so no key can ever cost money. Real calls need
  * AI_PROVIDER_MODE=live and the service's key; audio, images and video also need media
  * storage. Any other job runs on the mock. A job whose free quota is used up fails

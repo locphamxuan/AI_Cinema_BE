@@ -6,7 +6,7 @@ import type { MediaStorage } from './media-storage';
 
 const IMAGE_MODEL_URL =
   'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-3-medium-diffusers';
-export const VIDEO_SPACE = 'Lightricks/ltx-video-distilled';
+const VIDEO_SPACE = 'Lightricks/ltx-video-distilled';
 const NEGATIVE_PROMPT = 'worst quality, inconsistent motion, blurry, jittery, distorted';
 // Longer clips spend more of the daily free GPU time; 4s keeps several clips a day possible.
 export const DEFAULT_VIDEO_SECONDS = 4;

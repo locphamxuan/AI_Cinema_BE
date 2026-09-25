@@ -1,12 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import {
-  AiUsageEntryType,
-  GenerationJobStatus,
-  GenerationJobType,
-  Prisma,
-  QuotaAllocationStatus,
-  SceneStatus,
-} from '@prisma/client';
+import { GenerationJobStatus, GenerationJobType, Prisma, SceneStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AiModelRouterService } from 'src/modules/ai-model/ai-model-router.service';
 import { AI_MODEL_CATALOG, resolveCatalogKey } from 'src/modules/ai-model/ai-model-catalog';
@@ -17,6 +10,20 @@ import { CreateGenerationJobRequestDto } from './dto/create-generation-job.reque
 import { CreateGeneratedAssetRequestDto } from './dto/create-generated-asset.request.dto';
 import { CompleteGenerationJobRequestDto } from './dto/complete-generation-job.request.dto';
 import { RetryGenerationJobRequestDto } from './dto/retry-generation-job.request.dto';
+import {
+  CANCELLABLE,
+  DISCARDABLE,
+  JOB_DETAIL_INCLUDE,
+  JOB_INCLUDE,
+  JOB_LIST_INCLUDE,
+  LANGUAGE_JOB_TYPES,
+  RUNNABLE,
+  VISUAL_JOB_TYPES,
+  assertAttemptInput,
+  type NewAttempt,
+} from './generation-job.rules';
+import { reserveAllocation, settleJob } from './generation-billing';
+import { composeInput, loraWeightsOf, requirePlan } from './generation-context';
 import { PROMPT_COMPOSER, type PromptComposer } from './prompt-composer';
 import {
   AI_GENERATION_PROVIDER,
@@ -25,37 +32,6 @@ import {
   type AiGenerationProvider,
   type AiGenerationResult,
 } from './ai-generation-provider';
-
-const CANCELLABLE: GenerationJobStatus[] = [GenerationJobStatus.PENDING, GenerationJobStatus.QUEUED];
-const RUNNABLE: GenerationJobStatus[] = [GenerationJobStatus.PENDING, GenerationJobStatus.QUEUED];
-const DISCARDABLE: GenerationJobStatus[] = [...CANCELLABLE, GenerationJobStatus.COMPLETED, GenerationJobStatus.FAILED];
-const LANGUAGE_JOB_TYPES: GenerationJobType[] = [GenerationJobType.SUBTITLE, GenerationJobType.TRANSLATION];
-const VISUAL_JOB_TYPES: GenerationJobType[] = [
-  GenerationJobType.SCENE_IMAGE,
-  GenerationJobType.SCENE_VIDEO,
-  GenerationJobType.POSTER,
-  GenerationJobType.THUMBNAIL,
-];
-
-const JOB_INCLUDE = {
-  aiModel: true,
-  prompt: true,
-  scene: { select: { id: true, title: true } },
-  generatedAssets: true,
-} satisfies Prisma.GenerationJobInclude;
-
-interface NewAttempt {
-  planId: string;
-  jobType: GenerationJobType;
-  rawPrompt: string | null;
-  customFunction: string | null;
-  language: string | null;
-  sceneId: string | null;
-  parentJobId: string | null;
-  attemptNumber: number;
-  configSnapshot: Prisma.InputJsonValue | undefined;
-  createdById: string;
-}
 
 @Injectable()
 export class GenerationJobService {
@@ -68,7 +44,7 @@ export class GenerationJobService {
   ) {}
 
   async create(planId: string, dto: CreateGenerationJobRequestDto, createdById: string) {
-    await this.requirePlan(planId);
+    await requirePlan(this.prisma, planId);
 
     let attemptNumber = 1;
     if (dto.parentJobId) {
@@ -94,26 +70,18 @@ export class GenerationJobService {
   }
 
   async findAll(planId: string) {
-    await this.requirePlan(planId);
+    await requirePlan(this.prisma, planId);
     return this.prisma.generationJob.findMany({
       where: { productionPlanId: planId },
       orderBy: { createdAt: 'desc' },
-      include: {
-        ...JOB_INCLUDE,
-        quotaAllocation: { select: { id: true, allocationType: true, remainingAmount: true } },
-      },
+      include: JOB_LIST_INCLUDE,
     });
   }
 
   async findById(jobId: string) {
     const job = await this.prisma.generationJob.findUnique({
       where: { id: jobId },
-      include: {
-        ...JOB_INCLUDE,
-        createdBy: { select: { fullName: true } },
-        quotaAllocation: { select: { id: true, allocationType: true, remainingAmount: true } },
-        usageEntries: { orderBy: { recordedAt: 'asc' } },
-      },
+      include: JOB_DETAIL_INCLUDE,
     });
     if (!job) throw new NotFoundException(`Generation job with id "${jobId}" does not exist`);
     return job;
@@ -165,7 +133,7 @@ export class GenerationJobService {
     if (!DISCARDABLE.includes(job.status)) {
       throw new ConflictException(`A ${job.status} job cannot be removed`);
     }
-    const plan = await this.requirePlan(job.productionPlanId);
+    const plan = await requirePlan(this.prisma, job.productionPlanId);
     assertProjectOpen(plan.productionProject);
     await assertCutOpen(this.prisma, plan.id);
     return this.prisma.generationJob.update({
@@ -195,7 +163,7 @@ export class GenerationJobService {
         model,
         composedPrompt: job.prompt?.composedPrompt ?? job.rawPrompt ?? '',
         seed: job.prompt?.seed,
-        loraWeights: job.genreStyleModelId ? this.loraWeights(job.configSnapshot) : null,
+        loraWeights: job.genreStyleModelId ? loraWeightsOf(job.configSnapshot) : null,
         language: job.language,
       });
     } catch (error) {
@@ -222,7 +190,7 @@ export class GenerationJobService {
           durationSeconds: result.durationSeconds,
         },
       });
-      return this.settle(tx, job, tokenCost, result.outputUnits);
+      return settleJob(tx, job, tokenCost, result.outputUnits);
     });
   }
 
@@ -259,23 +227,15 @@ export class GenerationJobService {
     }
 
     return this.prisma.$transaction((tx) =>
-      this.settle(tx, job, dto.resourceCost ?? 0, dto.outputDurationSeconds ?? null),
+      settleJob(tx, job, dto.resourceCost ?? 0, dto.outputDurationSeconds ?? null),
     );
   }
 
   private async createAttempt(attempt: NewAttempt) {
     const { planId, jobType, rawPrompt, customFunction, language, sceneId } = attempt;
-    if (jobType !== GenerationJobType.VIDEO_ASSEMBLY && !rawPrompt?.trim()) {
-      throw new BadRequestException('prompt is required');
-    }
-    if (jobType === GenerationJobType.CUSTOM && !customFunction?.trim()) {
-      throw new BadRequestException('customFunction is required for a CUSTOM job');
-    }
-    if (LANGUAGE_JOB_TYPES.includes(jobType) && !language) {
-      throw new BadRequestException(`language is required for a ${jobType} job`);
-    }
+    assertAttemptInput(attempt);
 
-    const plan = await this.requirePlan(planId);
+    const plan = await requirePlan(this.prisma, planId);
     assertProjectOpen(plan.productionProject);
     const scene = sceneId
       ? await this.prisma.scene.findFirst({ where: { id: sceneId, productionPlanId: planId } })
@@ -287,35 +247,12 @@ export class GenerationJobService {
       ? await this.genreStyleModelService.resolveActiveStyleForProject(plan.productionProjectId, model.id)
       : null;
 
-    const project = plan.productionProject;
-    const composed = await this.promptComposer.compose({
-      jobType,
-      rawPrompt: rawPrompt ?? '',
-      sceneTitle: scene?.title,
-      sceneDescription: scene?.description,
-      scriptText: jobType === GenerationJobType.SCRIPT ? plan.scriptText : null,
-      customFunction,
-      loraTriggerKeyword: genreStyle?.triggerKeyword,
-      projectTitle: project.title,
-      projectSynopsis: project.description,
-      genre: project.primaryGenre?.name,
-      previousScenePrompt:
-        scene && VISUAL_JOB_TYPES.includes(jobType) ? await this.previousScenePrompt(planId, scene.sceneNumber) : null,
-    });
+    const composed = await this.promptComposer.compose(
+      await composeInput(this.prisma, { plan, scene, attempt, loraTriggerKeyword: genreStyle?.triggerKeyword }),
+    );
 
-    // BR-15: the estimate must fit in the plan's active quota before anything is generated.
-    // With a top-up the plan holds several ACTIVE allocations; the oldest one that can cover it pays.
     const required = estimatedTokenCost + composed.composeTokenCost;
-    const allocation = await this.activeAllocation(this.prisma, planId, required);
-    if (!allocation) {
-      const active = await this.prisma.quotaAllocation.findMany({
-        where: { productionPlanId: planId, status: QuotaAllocationStatus.ACTIVE },
-        select: { remainingAmount: true },
-      });
-      if (active.length === 0) throw new ConflictException('The plan has no active AI quota allocation');
-      const left = Math.max(...active.map((a) => Number(a.remainingAmount)));
-      throw new ConflictException(`quota_exceeded: needs ${required} tokens, ${left} left`);
-    }
+    const allocation = await reserveAllocation(this.prisma, planId, required);
 
     const configSnapshot = genreStyle
       ? {
@@ -359,123 +296,5 @@ export class GenerationJobService {
       },
       include: JOB_INCLUDE,
     });
-  }
-
-  /**
-   * Books the actual cost: one ledger row for the generation and one for the
-   * Prompt Composer call, then an atomic decrement of the allocation. A cost the
-   * allocation can no longer cover still lands in the ledger (the output exists),
-   * and the allocation is closed at zero instead of hiding the overrun.
-   */
-  private async settle(
-    tx: Prisma.TransactionClient,
-    job: {
-      id: string;
-      productionPlanId: string;
-      quotaAllocationId: string | null;
-      prompt: { composeTokenCost: number } | null;
-    },
-    tokenCost: number,
-    outputUnits: number | null,
-  ) {
-    const allocation = job.quotaAllocationId
-      ? await tx.quotaAllocation.findUnique({ where: { id: job.quotaAllocationId } })
-      : await this.activeAllocation(tx, job.productionPlanId);
-    const composeCost = job.prompt?.composeTokenCost ?? 0;
-    const total = tokenCost + composeCost;
-
-    await tx.aiUsageLedger.createMany({
-      data: [
-        {
-          generationJobId: job.id,
-          productionPlanId: job.productionPlanId,
-          quotaAllocationId: allocation?.id,
-          entryType: AiUsageEntryType.GENERATION,
-          outputDurationSeconds: outputUnits,
-          tokenCost,
-        },
-        ...(composeCost > 0
-          ? [
-              {
-                generationJobId: job.id,
-                productionPlanId: job.productionPlanId,
-                quotaAllocationId: allocation?.id,
-                entryType: AiUsageEntryType.PROMPT_COMPOSE,
-                tokenCost: composeCost,
-              },
-            ]
-          : []),
-      ],
-    });
-
-    if (allocation && total > 0) {
-      const charged = await tx.quotaAllocation.updateMany({
-        where: { id: allocation.id, remainingAmount: { gte: total } },
-        data: { remainingAmount: { decrement: total } },
-      });
-      if (charged.count === 0) {
-        await tx.quotaAllocation.update({
-          where: { id: allocation.id },
-          data: { remainingAmount: 0, status: QuotaAllocationStatus.CONSUMED },
-        });
-      } else {
-        await tx.quotaAllocation.updateMany({
-          where: { id: allocation.id, remainingAmount: 0 },
-          data: { status: QuotaAllocationStatus.CONSUMED },
-        });
-      }
-    }
-
-    return tx.generationJob.update({
-      where: { id: job.id },
-      data: {
-        status: GenerationJobStatus.COMPLETED,
-        completedAt: new Date(),
-        resourceCost: total,
-        outputDurationSeconds: outputUnits,
-        quotaAllocationId: allocation?.id ?? null,
-      },
-      include: JOB_INCLUDE,
-    });
-  }
-
-  private activeAllocation(client: Prisma.TransactionClient | PrismaService, planId: string, required = 0) {
-    return client.quotaAllocation.findFirst({
-      where: { productionPlanId: planId, status: QuotaAllocationStatus.ACTIVE, remainingAmount: { gte: required } },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  private loraWeights(configSnapshot: Prisma.JsonValue): string | null {
-    const snapshot = configSnapshot as { loraWeights?: string } | null;
-    return snapshot?.loraWeights ?? null;
-  }
-
-  /** The visual prompt last generated for the scene before this one, for a continuous look. */
-  private async previousScenePrompt(planId: string, sceneNumber: number): Promise<string | null> {
-    const job = await this.prisma.generationJob.findFirst({
-      where: {
-        productionPlanId: planId,
-        status: GenerationJobStatus.COMPLETED,
-        jobType: { in: [GenerationJobType.SCENE_VIDEO, GenerationJobType.SCENE_IMAGE] },
-        scene: { sceneNumber: { lt: sceneNumber } },
-      },
-      orderBy: [{ scene: { sceneNumber: 'desc' } }, { createdAt: 'desc' }],
-      select: { prompt: { select: { composedPrompt: true } } },
-    });
-    return job?.prompt?.composedPrompt ?? null;
-  }
-
-  private async requirePlan(planId: string) {
-    const plan = await this.prisma.productionPlan.findUnique({
-      where: { id: planId },
-      include: {
-        productionProject: {
-          select: { status: true, title: true, description: true, primaryGenre: { select: { name: true } } },
-        },
-      },
-    });
-    if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
-    return plan;
   }
 }

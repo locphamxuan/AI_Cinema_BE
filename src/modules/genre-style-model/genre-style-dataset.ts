@@ -11,8 +11,8 @@ import * as path from 'node:path';
  * works for the local folder in dev (TRAINING_DATA_ROOT) and for an object
  * storage bucket later.
  */
-export const GENRE_STYLE_DATASET_PREFIX = 'genre-styles';
-export const TRAINING_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
+const GENRE_STYLE_DATASET_PREFIX = 'genre-styles';
+const TRAINING_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 
 export function slugify(value: string): string {
   return value

@@ -261,16 +261,16 @@ describe('MF-1 production workflow (e2e)', () => {
     expect(project.status).toBe('ACTIVE');
   });
 
-  it('lets the Creator report milestone progress but not re-plan it', async () => {
+  it('moves milestones on the clock and lets the Creator only note results', async () => {
     const project = await creator.get<Project>(`/production-projects/${projectId}`);
     const [milestone] = project.milestones;
     const path = `/milestones/${milestone.id}`;
 
-    expect((await creator.patch(path, { status: 'IN_PROGRESS' })).status).toBe('IN_PROGRESS');
+    await creator.patch(path, { status: 'IN_PROGRESS' }, 403);
     await creator.patch(path, { targetDate: day(60) }, 403);
-    await creator.patch(path, { status: 'COMPLETED' }, 400);
-    expect((await creator.patch(path, { status: 'COMPLETED', resultText: 'Xong kịch bản' })).status).toBe('COMPLETED');
-    await reviewer.patch(path, { status: 'IN_PROGRESS' }, 409);
+    const noted = await creator.patch<{ resultText: string }>(path, { resultText: 'Xong kịch bản' });
+    expect(noted.resultText).toBe('Xong kịch bản');
+    await reviewer.patch(path, { status: 'IN_PROGRESS' }, 400);
     await creator.get('/milestones/not-a-uuid', 400);
   });
 });

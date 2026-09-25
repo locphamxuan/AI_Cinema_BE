@@ -16,7 +16,7 @@ export interface ComplianceCheckLike {
   checkedAt: Date | null;
 }
 
-export function latestByType<T extends ComplianceCheckLike>(checks: T[]): Map<ComplianceCheckType, T> {
+function latestByType<T extends ComplianceCheckLike>(checks: T[]): Map<ComplianceCheckType, T> {
   const latest = new Map<ComplianceCheckType, T>();
   for (const check of checks) {
     const current = latest.get(check.checkType);

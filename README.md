@@ -1,98 +1,97 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# AI Cinema — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS 11 + Prisma 7 (PostgreSQL) API of AI Cinema. MF-1 (AI movie production & publishing)
+is implemented end to end; the business rules live in the root `docs/PROJECT_OVERVIEW.md`.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Run it
 
-## Getting started (MF-1)
+Requires Node.js 20.19+. Pick one of the two ways.
 
-Requires Node.js 20.19+ and a PostgreSQL database.
+### A. Docker (Postgres + API, nothing else to install)
+
+```bash
+cp .env.example .env          # set JWT_SECRET; DATABASE_URL is ignored by compose
+docker compose up -d --build  # migrates, seeds, then serves http://localhost:3001/api
+docker compose logs -f api
+docker compose down           # add -v to wipe the database
+```
+
+The database is published on `localhost:54320` (`postgres` / `postgres`, db `ai_cinema`).
+
+### B. Node on your machine
 
 ```bash
 npm ci                      # also generates the Prisma client (postinstall)
-cp .env.example .env        # then set DATABASE_URL and JWT_SECRET
+cp .env.example .env        # set DATABASE_URL and JWT_SECRET
 npx prisma migrate deploy   # create or update the schema
-npx prisma db seed          # genres, AI labeling policy, AI model catalog, demo accounts
-npm run start:local         # API on http://localhost:3001/api, docs on /api/docs
+npx prisma db seed          # genres, policies, AI model catalog, demo accounts
+npm run start:local         # http://localhost:3001/api, Swagger on /api/docs
 ```
 
-- `DATABASE_URL` can point at the team database, or at a local one:
-  `npm run test:e2e:db` starts Postgres on `localhost:54329`
-  (`postgresql://postgres:postgres@localhost:54329/ai_cinema_e2e`).
-- On an empty database the seed creates `creator01`..`08@aicinema.com` and
-  `reviewer01`..`06@aicinema.com`, signing in with `SEED_USER_PASSWORD`
-  (default `Aicinema@123`). Accounts that already exist keep their password.
-- The frontend (`AI_Cinema_FE`) proxies `/api` to `http://localhost:3001`.
+`DATABASE_URL` can point at the team database, or at the local one of `docker compose up -d postgres`
+(`postgresql://postgres:postgres@localhost:54320/ai_cinema`).
 
-## Description
+The seed creates `creator01`..`08`, `reviewer01`..`06` and `admin` `@aicinema.com` on an empty
+database, all signing in with `SEED_USER_PASSWORD` (default `Aicinema@123`). Existing accounts keep
+their password. Public registration always creates a `MEMBER`. The frontend proxies `/api` to
+`http://localhost:3001`.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Tests
 
 ```bash
-$ npm install
+npm test                    # unit tests
+npm run test:cov            # with coverage (writes coverage/, git-ignored)
+npm run lint                # ESLint + Prettier, max 300 lines per file
+
+npm run test:e2e:db         # throwaway Postgres on localhost:54329 (tmpfs)
+npm run test:e2e            # migrate + seed it, then the whole MF-1 flow
+npm run test:e2e:db:down
 ```
 
-## Compile and run the project
+The e2e suite only connects to `E2E_DATABASE_URL` and refuses any non-local host.
 
-```bash
-# development
-$ npm run start
+## Code layout
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```
+src/
+  common/        auth guards, decorators, permissions, validation helpers
+  prisma/        PrismaService (pg adapter)
+  modules/<name>/
+    <name>.controller.ts   HTTP only: routes, permissions, DTOs
+    <name>.service.ts      use cases (one transaction per write)
+    *.rules.ts, *-lookups.ts, *-includes.ts   pure rules, read checks, Prisma includes
+    dto/                   class-validator request DTOs
+    *.spec.ts              unit tests next to the code
+prisma/          schema/*.prisma (one file per table), migrations/, seed.ts
+test/            e2e suite (supertest against a real Postgres)
 ```
 
-## Run tests
+## AI providers
 
-```bash
-# unit tests
-$ npm run test
+Every generation job is routed to one model of `src/modules/ai-model/ai-model-catalog.ts` (the
+Creator never picks it). `RoutingAiGenerationProvider` sends the job to that model's service or to
+the mock. **Only free tiers are wired in, so running the platform never costs money.**
 
-# e2e tests: the whole MF-1 flow against a throwaway local Postgres (Docker)
-$ npm run test:e2e:db        # start it (data lives in tmpfs)
-$ npm run test:e2e           # migrate + seed it, then run test/*.e2e-spec.ts
-$ npm run test:e2e:db:down   # drop it for a clean slate
+| Catalog model | Jobs | Service | Env key |
+| --- | --- | --- | --- |
+| `gemini-2.5-flash-lite` | SCRIPT, SUBTITLE, TRANSLATION, Prompt Composer, scene advisor | Gemini API free tier | `GEMINI_API_KEY` |
+| `gemini-2.5-flash-preview-tts` | VOICE | Gemini API free tier | `GEMINI_API_KEY` |
+| `stable-diffusion-3-medium` | SCENE_IMAGE, POSTER, THUMBNAIL | Hugging Face Inference | `HF_TOKEN` |
+| `ltx-video-distilled` | SCENE_VIDEO | Hugging Face Space (ZeroGPU) | `HF_TOKEN` |
+| `sample-music` | BACKGROUND_AUDIO | none, always the mock | — |
 
-# test coverage
-$ npm run test:cov
-```
+- `AI_PROVIDER_MODE=mock` (default) calls nothing. `live` calls every service whose key is set;
+  voice, images and video also need the S3/R2 bucket (`S3_*`), where their output is stored.
+- A used-up free quota fails the job **without charging** production tokens; any other provider
+  error fails it too. Without a Gemini key the Prompt Composer and scene advisor use templates.
+- Keys go in `.env` only. Gemini: https://aistudio.google.com/apikey in a project **without
+  billing**. Hugging Face: a **Read** token. Cloudflare R2: bucket + *Object Read & Write* token.
+- Production tokens are the platform's own credits, not money: `tokenCostOf()` charges
+  `outputUnits × tokensPerUnit` of the catalog (BR-41).
 
-The e2e suite only ever connects to `E2E_DATABASE_URL` (default
-`localhost:54329`) and refuses any non-local host, so the shared database is
-never touched.
+## Renamed migrations (2026-09-25)
 
-Seeded staff accounts (`creator01`..`08`, `reviewer01`..`06`, `admin`
-`@aicinema.com`) sign in with `SEED_USER_PASSWORD` (default `Aicinema@123`).
-Public registration always creates a `MEMBER`.
-
-### Renamed migrations (2026-09-25)
-
-The two genre-style migrations were renamed to sort after the initial one, so a
-fresh database can be built from `prisma/migrations`. A database that already
-applied them under the old names needs its history renamed once (schema and
-checksums are unchanged):
+A database that applied the two genre-style migrations under their old names needs this once:
 
 ```sql
 UPDATE _prisma_migrations SET migration_name = '20260920141200_add_genre_style_model'
@@ -100,43 +99,3 @@ UPDATE _prisma_migrations SET migration_name = '20260920141200_add_genre_style_m
 UPDATE _prisma_migrations SET migration_name = '20260920141300_fix_genre_style_model_unique_key'
   WHERE migration_name = '20260920073500_fix_genre_style_model_unique_key';
 ```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).

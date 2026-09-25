@@ -29,7 +29,7 @@ const TIME_LABEL: Record<TimeOfDay, string> = { day: 'ban ngày', dusk: 'lúc ch
 
 const VISUAL_TYPES: GenerationJobType[] = [GenerationJobType.SCENE_VIDEO, GenerationJobType.SCENE_IMAGE];
 
-export const visualPrompts = (scene: SceneSnapshot) =>
+const visualPrompts = (scene: SceneSnapshot) =>
   scene.prompts
     .filter((p) => VISUAL_TYPES.includes(p.jobType))
     .map((p) => p.prompt)

@@ -7,6 +7,12 @@ import { AuthService } from './auth.service';
 
 describe('AuthController', () => {
   let controller: AuthController;
+  const register = jest.fn();
+  const login = jest.fn();
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    controller = new AuthController({ register, login } as unknown as AuthService);
   let service: jest.Mocked<AuthService>;
 
   beforeEach(() => {
@@ -26,6 +32,10 @@ describe('AuthController', () => {
     };
 
     const result = { user: { id: '1', email: payload.email, fullName: payload.fullName } };
+    register.mockResolvedValue(result);
+
+    await expect(controller.register(payload)).resolves.toEqual(result);
+    expect(register).toHaveBeenCalledWith(payload);
     service.register.mockResolvedValue(result as any);
 
     await expect(controller.register(payload)).resolves.toEqual(result);
@@ -39,6 +49,10 @@ describe('AuthController', () => {
     };
 
     const result = { accessToken: 'demo-token', user: { id: '1', email: payload.email } };
+    login.mockResolvedValue(result);
+
+    await expect(controller.login(payload)).resolves.toEqual(result);
+    expect(login).toHaveBeenCalledWith(payload);
     service.login.mockResolvedValue(result as any);
 
     await expect(controller.login(payload)).resolves.toEqual(result);
