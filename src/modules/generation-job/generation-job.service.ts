@@ -11,6 +11,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { AiModelRouterService } from 'src/modules/ai-model/ai-model-router.service';
 import { AI_MODEL_CATALOG, resolveCatalogKey } from 'src/modules/ai-model/ai-model-catalog';
 import { GenreStyleModelService } from 'src/modules/genre-style-model/genre-style-model.service';
+import { assertProjectOpen } from 'src/modules/production-project/project-lifecycle';
 import { CreateGenerationJobRequestDto } from './dto/create-generation-job.request.dto';
 import { CreateGeneratedAssetRequestDto } from './dto/create-generated-asset.request.dto';
 import { CompleteGenerationJobRequestDto } from './dto/complete-generation-job.request.dto';
@@ -253,6 +254,7 @@ export class GenerationJobService {
     }
 
     const plan = await this.requirePlan(planId);
+    assertProjectOpen(plan.productionProject);
     const scene = sceneId
       ? await this.prisma.scene.findFirst({ where: { id: sceneId, productionPlanId: planId } })
       : null;
@@ -421,7 +423,10 @@ export class GenerationJobService {
   }
 
   private async requirePlan(planId: string) {
-    const plan = await this.prisma.productionPlan.findUnique({ where: { id: planId } });
+    const plan = await this.prisma.productionPlan.findUnique({
+      where: { id: planId },
+      include: { productionProject: { select: { status: true } } },
+    });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
     return plan;
   }

@@ -4,6 +4,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateQuotaRequestRequestDto } from './dto/create-quota-request.request.dto';
 import { ApproveQuotaRequestRequestDto, RejectQuotaRequestRequestDto } from './dto/decide-quota-request.request.dto';
 import { QuotaAllocationService } from './quota-allocation.service';
+import { assertProjectOpen } from 'src/modules/production-project/project-lifecycle';
 
 const REQUEST_INCLUDE = {
   requestedBy: { select: { id: true, fullName: true } },
@@ -25,9 +26,14 @@ export class QuotaRequestService {
   async create(planId: string, dto: CreateQuotaRequestRequestDto, requestedById: string) {
     const plan = await this.prisma.productionPlan.findUnique({
       where: { id: planId },
-      include: { quotaAllocations: { select: { id: true } }, quotaRequests: { where: { status: 'PENDING' } } },
+      include: {
+        productionProject: { select: { status: true } },
+        quotaAllocations: { select: { id: true } },
+        quotaRequests: { where: { status: 'PENDING' } },
+      },
     });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
+    assertProjectOpen(plan.productionProject);
     if (plan.status !== ProductionPlanStatus.APPROVED || plan.quotaAllocations.length === 0) {
       throw new ConflictException('More quota can only be requested once the plan is approved and has a quota');
     }

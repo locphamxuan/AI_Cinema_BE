@@ -20,7 +20,7 @@ describe('ProductionPlanService.submit', () => {
       id: 'plan-id',
       status: ProductionPlanStatus.DRAFT,
       targetDurationSeconds: 600,
-      productionProject: { defaultEpisodeDurationSeconds: 1800 },
+      productionProject: { defaultEpisodeDurationSeconds: 1800, status: 'ACTIVE' },
       scenes: [scene('s1', 300), scene('s2', 300)],
       ...overrides,
     });
@@ -68,7 +68,7 @@ describe('ProductionPlanService.submit', () => {
   });
 
   it('refuses scenes longer than the episode limit of the project', async () => {
-    givenPlan({ productionProject: { defaultEpisodeDurationSeconds: 500 } });
+    givenPlan({ productionProject: { defaultEpisodeDurationSeconds: 500, status: 'ACTIVE' } });
     await expect(service.submit('plan-id', dto({ targetDurationSeconds: 900 }))).rejects.toThrow(
       'episode duration limit',
     );
@@ -95,6 +95,11 @@ describe('ProductionPlanService.submit', () => {
 
     givenPlan({ status: ProductionPlanStatus.CHANGES_REQUESTED });
     await expect(service.submit('plan-id', dto())).resolves.toBeDefined();
+  });
+
+  it('takes no plan for a completed project', async () => {
+    givenPlan({ productionProject: { defaultEpisodeDurationSeconds: 1800, status: 'COMPLETED' } });
+    await expect(service.submit('plan-id', dto())).rejects.toThrow('COMPLETED');
   });
 
   it('refuses a plan without scenes', async () => {

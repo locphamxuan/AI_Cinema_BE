@@ -2,6 +2,11 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma, ProductionPlanStatus, QuotaAllocationStatus, QuotaAllocationType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateQuotaAllocationRequestDto } from './dto/create-quota-allocation.request.dto';
+import {
+  activateProject,
+  assertProjectOpen,
+  OPEN_PROJECT_STATUSES,
+} from 'src/modules/production-project/project-lifecycle';
 
 @Injectable()
 export class QuotaAllocationService {
@@ -39,12 +44,22 @@ export class QuotaAllocationService {
     allocatedById: string,
   ) {
     // Conditional decrement in one statement: two concurrent allocations can no
-    // longer both read the same balance and overspend the project budget.
+    // longer both read the same balance and overspend the project budget, and a
+    // project cancelled meanwhile hands out nothing.
     const reserved = await tx.productionProject.updateMany({
-      where: { id: plan.productionProjectId, remainingAiQuotaBudget: { gte: amount } },
+      where: {
+        id: plan.productionProjectId,
+        status: { in: OPEN_PROJECT_STATUSES },
+        remainingAiQuotaBudget: { gte: amount },
+      },
       data: { remainingAiQuotaBudget: { decrement: amount } },
     });
-    if (reserved.count === 0) throw new BadRequestException('quota_exceeded');
+    if (reserved.count === 0) {
+      const project = await tx.productionProject.findUniqueOrThrow({ where: { id: plan.productionProjectId } });
+      assertProjectOpen(project);
+      throw new BadRequestException('quota_exceeded');
+    }
+    await activateProject(tx, plan.productionProjectId);
 
     return tx.quotaAllocation.create({
       data: {

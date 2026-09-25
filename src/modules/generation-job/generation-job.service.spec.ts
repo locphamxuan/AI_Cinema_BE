@@ -13,7 +13,12 @@ import { GenerationJobService } from './generation-job.service';
 import { MockPromptComposer } from './prompt-composer';
 import type { AiGenerationProvider } from './ai-generation-provider';
 
-const PLAN = { id: 'plan-id', productionProjectId: 'project-id', scriptText: 'Kịch bản tổng' };
+const PLAN = {
+  id: 'plan-id',
+  productionProjectId: 'project-id',
+  scriptText: 'Kịch bản tổng',
+  productionProject: { status: 'ACTIVE' },
+};
 const SCENE = { id: 'scene-id', title: 'Hẻm mưa', description: 'Đêm mưa neon', status: SceneStatus.APPROVED };
 const ALLOCATION = { id: 'alloc-id', remainingAmount: 100, status: QuotaAllocationStatus.ACTIVE };
 
@@ -142,6 +147,15 @@ describe('GenerationJobService', () => {
       await service.create('plan-id', { jobType: GenerationJobType.SCENE_VIDEO, prompt: 'rượt đuổi' }, 'creator-id');
 
       expect(createdJobData()).toMatchObject({ quotaAllocationId: 'top-up-id' });
+    });
+
+    it('queues nothing for a cancelled project', async () => {
+      prisma.productionPlan.findUnique.mockResolvedValue({ ...PLAN, productionProject: { status: 'CANCELLED' } });
+
+      await expect(
+        service.create('plan-id', { jobType: GenerationJobType.SCENE_VIDEO, prompt: 'x' }, 'creator-id'),
+      ).rejects.toThrow('CANCELLED');
+      expect(prisma.generationJob.create).not.toHaveBeenCalled();
     });
 
     it('requires a quota allocation and a prompt', async () => {

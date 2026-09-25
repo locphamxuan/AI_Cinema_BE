@@ -52,7 +52,7 @@ describe('EpisodePackageService.assemble', () => {
       status: ProductionPlanStatus.APPROVED,
       targetLanguages: ['vi', 'en'],
       scenes: [scene('s1', 10), scene('s2', 6)],
-      productionProject: { subtitleLanguages: ['vi'] },
+      productionProject: { subtitleLanguages: ['vi'], status: 'ACTIVE' },
       ...overrides,
     });
 

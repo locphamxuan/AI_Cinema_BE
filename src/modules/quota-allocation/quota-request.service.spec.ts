@@ -23,6 +23,7 @@ describe('QuotaRequestService', () => {
     prisma.productionPlan.findUnique.mockResolvedValue({
       ...PLAN,
       status: ProductionPlanStatus.APPROVED,
+      productionProject: { status: 'ACTIVE' },
       quotaAllocations: [{ id: 'initial-id' }],
       quotaRequests: [],
       ...overrides,
@@ -63,6 +64,7 @@ describe('QuotaRequestService', () => {
       ['the plan has no quota yet', { quotaAllocations: [] }],
       ['the plan is not approved', { status: ProductionPlanStatus.SUBMITTED }],
       ['a request is already waiting', { quotaRequests: [{ id: 'pending' }] }],
+      ['the project was cancelled', { productionProject: { status: 'CANCELLED' } }],
     ])('refuses when %s', async (_case, overrides) => {
       givenPlan(overrides);
       await expect(service.create('plan-id', { requestedAmount: 1, reason: 'x' }, 'creator-id')).rejects.toThrow(

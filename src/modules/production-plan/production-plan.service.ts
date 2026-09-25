@@ -3,6 +3,7 @@ import { Prisma, ProductionPlan, ProductionPlanStatus, SceneStatus } from '@pris
 import { PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ProductionProjectService } from 'src/modules/production-project/production-project.service';
+import { assertProjectOpen } from 'src/modules/production-project/project-lifecycle';
 import { UpdateProductionPlanRequestDto } from './dto/update-production-plan.request.dto';
 import { SubmitProductionPlanRequestDto } from './dto/submit-production-plan.request.dto';
 import { CreateProductionPlanRevisionRequestDto } from './dto/create-production-plan-revision.request.dto';
@@ -129,6 +130,7 @@ export class ProductionPlanService {
 
   async submit(planId: string, dto: SubmitProductionPlanRequestDto) {
     const plan = await this.findById(planId, true);
+    assertProjectOpen(plan.productionProject);
 
     if (plan.status !== ProductionPlanStatus.DRAFT && plan.status !== ProductionPlanStatus.CHANGES_REQUESTED) {
       throw new ConflictException(`Only DRAFT or CHANGES_REQUESTED plans can be submitted, current "${plan.status}"`);

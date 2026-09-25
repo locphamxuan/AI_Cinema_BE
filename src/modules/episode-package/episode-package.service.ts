@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { latestAttempts } from 'src/modules/generation-job/latest-attempts';
+import { assertProjectOpen } from 'src/modules/production-project/project-lifecycle';
 import { CreateEpisodePackageRequestDto } from './dto/create-episode-package.request.dto';
 import { EpisodeSubtitleService, type EpisodeScene } from './episode-subtitle.service';
 import { VIDEO_TRANSCODER, type SceneClip, type VideoTranscoder } from './video-transcoder';
@@ -39,10 +40,11 @@ export class EpisodePackageService {
       where: { id: planId },
       include: {
         scenes: { orderBy: { sceneNumber: 'asc' } },
-        productionProject: { select: { subtitleLanguages: true } },
+        productionProject: { select: { subtitleLanguages: true, status: true } },
       },
     });
     if (!plan) throw new NotFoundException(`Production plan with id "${planId}" does not exist`);
+    assertProjectOpen(plan.productionProject);
     if (plan.status !== ProductionPlanStatus.APPROVED) {
       throw new ConflictException(
         `An episode package can only be assembled for an APPROVED plan, current status "${plan.status}"`,

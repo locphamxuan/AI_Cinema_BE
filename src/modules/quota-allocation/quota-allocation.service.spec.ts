@@ -5,7 +5,7 @@ import { QuotaAllocationService } from './quota-allocation.service';
 
 describe('QuotaAllocationService.create', () => {
   const tx = {
-    productionProject: { updateMany: jest.fn() },
+    productionProject: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
     quotaAllocation: { create: jest.fn() },
   };
   const prisma = {
@@ -33,8 +33,13 @@ describe('QuotaAllocationService.create', () => {
     const allocation = await service.create('plan-id', dto, 'reviewer-id');
 
     expect(tx.productionProject.updateMany).toHaveBeenCalledWith({
-      where: { id: 'project-id', remainingAiQuotaBudget: { gte: 500 } },
+      where: { id: 'project-id', status: { in: ['DRAFT', 'ACTIVE'] }, remainingAiQuotaBudget: { gte: 500 } },
       data: { remainingAiQuotaBudget: { decrement: 500 } },
+    });
+    // The first quota starts production: a DRAFT project becomes ACTIVE.
+    expect(tx.productionProject.updateMany).toHaveBeenCalledWith({
+      where: { id: 'project-id', status: 'DRAFT' },
+      data: { status: 'ACTIVE' },
     });
     expect(allocation).toMatchObject({
       allocatedAmount: 500,
@@ -46,8 +51,17 @@ describe('QuotaAllocationService.create', () => {
 
   it('rejects the allocation when the budget no longer covers it (e.g. a concurrent allocation won)', async () => {
     tx.productionProject.updateMany.mockResolvedValue({ count: 0 });
+    tx.productionProject.findUniqueOrThrow.mockResolvedValue({ status: 'ACTIVE' });
 
     await expect(service.create('plan-id', dto, 'reviewer-id')).rejects.toThrow(BadRequestException);
+    expect(tx.quotaAllocation.create).not.toHaveBeenCalled();
+  });
+
+  it('grants nothing to a project cancelled meanwhile', async () => {
+    tx.productionProject.updateMany.mockResolvedValue({ count: 0 });
+    tx.productionProject.findUniqueOrThrow.mockResolvedValue({ status: 'CANCELLED' });
+
+    await expect(service.create('plan-id', dto, 'reviewer-id')).rejects.toThrow(ConflictException);
     expect(tx.quotaAllocation.create).not.toHaveBeenCalled();
   });
 

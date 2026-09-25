@@ -3,6 +3,7 @@ import { ComplianceResult, EpisodeProductionStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { complianceVerdict } from 'src/modules/compliance-check/compliance-verdict';
 import { CreatePublicationRequestDto } from './dto/create-publication.request.dto';
+import { syncProjectCompletion } from 'src/modules/production-project/project-lifecycle';
 
 @Injectable()
 export class PublicationService {
@@ -51,10 +52,11 @@ export class PublicationService {
         where: { id: publicationId },
         data: { publishedAt: new Date() },
       });
-      await tx.episode.update({
+      const episode = await tx.episode.update({
         where: { id: publication.episodeId },
         data: { productionStatus: EpisodeProductionStatus.PUBLISHED },
       });
+      await syncProjectCompletion(tx, episode.movieId);
       return updated;
     });
   }
@@ -67,10 +69,11 @@ export class PublicationService {
         where: { id: publicationId },
         data: { unpublishedAt: new Date() },
       });
-      await tx.episode.update({
+      const episode = await tx.episode.update({
         where: { id: publication.episodeId },
         data: { productionStatus: EpisodeProductionStatus.UNPUBLISHED },
       });
+      await syncProjectCompletion(tx, episode.movieId);
       return updated;
     });
   }

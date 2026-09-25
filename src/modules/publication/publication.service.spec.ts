@@ -12,7 +12,8 @@ const passing = Object.values(ComplianceCheckType).map((checkType) => ({
 describe('PublicationService', () => {
   const tx = {
     publication: { update: jest.fn() },
-    episode: { update: jest.fn() },
+    episode: { update: jest.fn(), count: jest.fn() },
+    productionProject: { findUnique: jest.fn(), update: jest.fn() },
   };
   const prisma = {
     episode: { findUnique: jest.fn() },
@@ -25,6 +26,8 @@ describe('PublicationService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.episode.findUnique.mockResolvedValue({ id: 'ep-id', currentPackageId: 'pkg-id' });
+    tx.episode.update.mockResolvedValue({ id: 'ep-id', movieId: 'movie-id' });
+    tx.productionProject.findUnique.mockResolvedValue({ id: 'project-id', status: 'ACTIVE', episodeCount: 2 });
   });
 
   it('creates a publication for the current, fully compliant package', async () => {
@@ -54,5 +57,28 @@ describe('PublicationService', () => {
 
     prisma.publication.findUnique.mockResolvedValue({ id: 'pub-id', episodeId: 'ep-id', publishedAt: new Date() });
     await expect(service.publish('pub-id')).rejects.toThrow(ConflictException);
+  });
+
+  it('completes the project when its last episode goes live, and reopens it when one is pulled', async () => {
+    prisma.publication.findUnique.mockResolvedValue({ id: 'pub-id', episodeId: 'ep-id', publishedAt: null });
+
+    tx.episode.count.mockResolvedValue(1);
+    await service.publish('pub-id');
+    expect(tx.productionProject.update).not.toHaveBeenCalled();
+
+    tx.episode.count.mockResolvedValue(2);
+    await service.publish('pub-id');
+    expect(tx.productionProject.update).toHaveBeenCalledWith({
+      where: { id: 'project-id' },
+      data: { status: 'COMPLETED' },
+    });
+
+    tx.productionProject.findUnique.mockResolvedValue({ id: 'project-id', status: 'COMPLETED', episodeCount: 2 });
+    tx.episode.count.mockResolvedValue(1);
+    await service.unpublish('pub-id');
+    expect(tx.productionProject.update).toHaveBeenLastCalledWith({
+      where: { id: 'project-id' },
+      data: { status: 'ACTIVE' },
+    });
   });
 });
