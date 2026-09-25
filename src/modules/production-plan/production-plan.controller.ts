@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -7,6 +9,8 @@ import { SubmitProductionPlanRequestDto } from './dto/submit-production-plan.req
 import { CreateProductionPlanRevisionRequestDto } from './dto/create-production-plan-revision.request.dto';
 import { CreateSceneRequestDto } from 'src/modules/scene/dto/create-scene.request.dto';
 import { ProductionPlanService } from './production-plan.service';
+import { PlanDraftService } from './plan-draft.service';
+import { SavePlanDraftRequestDto } from './dto/save-plan-draft.request.dto';
 import { SceneService } from 'src/modules/scene/scene.service';
 
 @ApiTags('production-plans')
@@ -17,6 +21,7 @@ export class ProductionPlanController {
   constructor(
     private readonly productionPlanService: ProductionPlanService,
     private readonly sceneService: SceneService,
+    private readonly planDraftService: PlanDraftService,
   ) {}
 
   @Get('production-projects/:projectId/plans')
@@ -33,6 +38,12 @@ export class ProductionPlanController {
   @RequirePermission(PERMISSION.PLAN_WRITE)
   async update(@Param('planId') planId: string, @Body() dto: UpdateProductionPlanRequestDto) {
     return this.productionPlanService.update(planId, dto);
+  }
+
+  @Put('production-plans/:planId/draft')
+  @RequirePermission(PERMISSION.PLAN_WRITE)
+  async saveDraft(@Param('planId') planId: string, @Body() dto: SavePlanDraftRequestDto) {
+    return this.planDraftService.save(planId, dto);
   }
 
   @Post('production-plans/:planId/submit')

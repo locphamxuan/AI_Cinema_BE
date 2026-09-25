@@ -162,11 +162,11 @@ export class ProductionPlanService {
         },
       });
 
-      for (const sceneDto of dto.scenes) {
-        await tx.scene.update({
-          where: { id: sceneDto.sceneId },
-          data: { scriptText: sceneDto.scriptText, status: SceneStatus.SUBMITTED },
-        });
+      // One statement for every scene; only a script that changed since the draft costs its own update.
+      await tx.scene.updateMany({ where: { productionPlanId: planId }, data: { status: SceneStatus.SUBMITTED } });
+      const saved = new Map(plan.scenes.map((scene) => [scene.id, scene.scriptText]));
+      for (const sceneDto of dto.scenes.filter((s) => saved.get(s.sceneId) !== s.scriptText)) {
+        await tx.scene.update({ where: { id: sceneDto.sceneId }, data: { scriptText: sceneDto.scriptText } });
       }
 
       return updatedPlan;

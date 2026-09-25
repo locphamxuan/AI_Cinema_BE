@@ -5,10 +5,14 @@ import { ProductionProjectService } from 'src/modules/production-project/product
 import { ProductionPlanService } from './production-plan.service';
 import { SubmitProductionPlanRequestDto } from './dto/submit-production-plan.request.dto';
 
-const scene = (id: string, targetDurationSeconds: number) => ({ id, targetDurationSeconds });
+const scene = (id: string, targetDurationSeconds: number, scriptText: string | null = null) => ({
+  id,
+  targetDurationSeconds,
+  scriptText,
+});
 
 describe('ProductionPlanService.submit', () => {
-  const tx = { productionPlan: { update: jest.fn() }, scene: { update: jest.fn() } };
+  const tx = { productionPlan: { update: jest.fn() }, scene: { update: jest.fn(), updateMany: jest.fn() } };
   const prisma = {
     productionPlan: { findUnique: jest.fn() },
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
@@ -50,11 +54,20 @@ describe('ProductionPlanService.submit', () => {
       where: { id: 'plan-id' },
       data: expect.objectContaining({ status: ProductionPlanStatus.SUBMITTED, totalSceneCount: 2 }) as object,
     });
-    expect(tx.scene.update).toHaveBeenCalledTimes(2);
-    expect(tx.scene.update).toHaveBeenCalledWith({
-      where: { id: 's1' },
-      data: { scriptText: 'Cảnh 1', status: SceneStatus.SUBMITTED },
+    expect(tx.scene.updateMany).toHaveBeenCalledWith({
+      where: { productionPlanId: 'plan-id' },
+      data: { status: SceneStatus.SUBMITTED },
     });
+    expect(tx.scene.update).toHaveBeenCalledTimes(2);
+    expect(tx.scene.update).toHaveBeenCalledWith({ where: { id: 's1' }, data: { scriptText: 'Cảnh 1' } });
+  });
+
+  it('only rewrites the scene scripts that changed since the draft was saved', async () => {
+    givenPlan({ scenes: [scene('s1', 300, 'Cảnh 1'), scene('s2', 300, 'Cũ')] });
+    await service.submit('plan-id', dto());
+
+    expect(tx.scene.update).toHaveBeenCalledTimes(1);
+    expect(tx.scene.update).toHaveBeenCalledWith({ where: { id: 's2' }, data: { scriptText: 'Cảnh 2' } });
   });
 
   it('checks the scenes against the duration being submitted, not the previous one', async () => {
