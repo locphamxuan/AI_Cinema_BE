@@ -11,7 +11,11 @@ const passing = Object.values(ComplianceCheckType).map((checkType) => ({
 
 describe('PublicationService', () => {
   const tx = {
-    publication: { update: jest.fn() },
+    publication: {
+      update: jest.fn(),
+      updateMany: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+    },
     episode: { update: jest.fn(), count: jest.fn() },
     productionProject: { findUnique: jest.fn(), update: jest.fn() },
   };
@@ -28,6 +32,8 @@ describe('PublicationService', () => {
     prisma.episode.findUnique.mockResolvedValue({ id: 'ep-id', currentPackageId: 'pkg-id' });
     tx.episode.update.mockResolvedValue({ id: 'ep-id', movieId: 'movie-id' });
     tx.productionProject.findUnique.mockResolvedValue({ id: 'project-id', status: 'ACTIVE', episodeCount: 2 });
+    tx.publication.updateMany.mockResolvedValue({ count: 1 });
+    tx.publication.findUniqueOrThrow.mockResolvedValue({ id: 'pub-id', episodeId: 'ep-id' });
   });
 
   it('creates a publication for the current, fully compliant package', async () => {
@@ -80,5 +86,25 @@ describe('PublicationService', () => {
       where: { id: 'project-id' },
       data: { status: 'ACTIVE' },
     });
+  });
+
+  it('waits for a scheduled time instead of publishing early (Schedule Film)', async () => {
+    const later = new Date(Date.now() + 3_600_000);
+    prisma.publication.findUnique.mockResolvedValue({
+      id: 'pub-id',
+      episodeId: 'ep-id',
+      publishedAt: null,
+      scheduledAt: later,
+    });
+
+    await expect(service.publish('pub-id')).rejects.toThrow('goes live then');
+    expect(tx.episode.update).not.toHaveBeenCalled();
+  });
+
+  it('lets only one of two concurrent publishers put the episode live', async () => {
+    tx.publication.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.goLive('pub-id')).resolves.toBeNull();
+    expect(tx.episode.update).not.toHaveBeenCalled();
   });
 });
