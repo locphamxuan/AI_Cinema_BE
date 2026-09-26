@@ -1,4 +1,7 @@
 # Local stack: Postgres + Redis (AI job queue) + migrations/seed + API.
+name: ai-cinema-be
+
+# Local stack: Postgres + migrations/seed + API.
 #   docker compose up -d --build     → API on http://localhost:3001/api (Swagger on /api/docs)
 #   docker compose down               → stop (data stays in the pg-data volume)
 #   docker compose down -v            → stop and wipe the database
