@@ -6,6 +6,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreateQuotaRequestRequestDto } from './dto/create-quota-request.request.dto';
 import { ApproveQuotaRequestRequestDto, RejectQuotaRequestRequestDto } from './dto/decide-quota-request.request.dto';
 import { QuotaRequestService } from './quota-request.service';
+import { Audit } from 'src/modules/audit-log/production-events';
 
 @ApiTags('quota-requests')
 @ApiBearerAuth()
@@ -15,6 +16,7 @@ export class QuotaRequestController {
   constructor(private readonly quotaRequestService: QuotaRequestService) {}
 
   @Post('production-plans/:planId/quota-requests')
+  @Audit.quotaRequested()
   @RequirePermission(PERMISSION.QUOTA_REQUEST)
   async create(
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -30,6 +32,7 @@ export class QuotaRequestController {
   }
 
   @Post('quota-requests/:quotaRequestId/approve')
+  @Audit.quotaApproved()
   @RequirePermission(PERMISSION.QUOTA_MANAGE)
   async approve(
     @Param('quotaRequestId', ParseUUIDPipe) requestId: string,
@@ -40,6 +43,7 @@ export class QuotaRequestController {
   }
 
   @Post('quota-requests/:quotaRequestId/reject')
+  @Audit.quotaRejected()
   @RequirePermission(PERMISSION.QUOTA_MANAGE)
   async reject(
     @Param('quotaRequestId', ParseUUIDPipe) requestId: string,

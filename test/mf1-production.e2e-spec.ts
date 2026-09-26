@@ -261,6 +261,23 @@ describe('MF-1 production workflow (e2e)', () => {
     expect(project.status).toBe('ACTIVE');
   });
 
+  it('records the production events of the whole flow (§4.1.4)', async () => {
+    const events = await reviewer.get<{ action: string; actorType: string }[]>(
+      `/production-projects/${projectId}/events`,
+    );
+    const actions = events.map((e) => e.action);
+
+    const expected = [
+      'PROJECT_CREATED',
+      'PRODUCTION_PLAN_SUBMITTED',
+      'PRODUCTION_PLAN_APPROVED',
+      'EPISODE_QUOTA_ALLOCATED',
+    ];
+    expected.push('GENERATION_COMPLETED', 'EPISODE_SUBMITTED', 'CONTENT_CHANGES_REQUESTED', 'EPISODE_PUBLISHED');
+    expect(actions).toEqual(expect.arrayContaining(expected));
+    expect(events.find((e) => e.action === 'GENERATION_COMPLETED')?.actorType).toBe('SYSTEM');
+  });
+
   it('moves milestones on the clock and lets the Creator only note results', async () => {
     const project = await creator.get<Project>(`/production-projects/${projectId}`);
     const [milestone] = project.milestones;

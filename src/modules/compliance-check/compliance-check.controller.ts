@@ -7,6 +7,7 @@ import { DecideComplianceCheckRequestDto } from './dto/decide-compliance-check.r
 import { RecordComplianceReviewRequestDto } from './dto/record-compliance-review.request.dto';
 import { ComplianceCheckService } from './compliance-check.service';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { Audit } from 'src/modules/audit-log/production-events';
 
 @ApiTags('compliance-checks')
 @ApiBearerAuth()
@@ -26,6 +27,7 @@ export class ComplianceCheckController {
   }
 
   @Post('episode-packages/:packageId/compliance-reviews')
+  @Audit.complianceReviewed()
   @RequirePermission(PERMISSION.EPISODE_REVIEW)
   async recordReview(
     @Param('packageId') packageId: string,

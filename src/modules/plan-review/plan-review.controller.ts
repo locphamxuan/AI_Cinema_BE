@@ -6,6 +6,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreatePlanReviewRequestDto } from './dto/create-plan-review.request.dto';
 import { DecidePlanReviewRequestDto } from './dto/decide-plan-review.request.dto';
 import { PlanReviewService } from './plan-review.service';
+import { Audit } from 'src/modules/audit-log/production-events';
 
 @ApiTags('plan-reviews')
 @ApiBearerAuth()
@@ -30,6 +31,7 @@ export class PlanReviewController {
   }
 
   @Patch('plan-reviews/:planReviewId')
+  @Audit.planReviewDecided()
   @RequirePermission(PERMISSION.PLAN_REVIEW)
   async decide(@Param('planReviewId') planReviewId: string, @Body() dto: DecidePlanReviewRequestDto) {
     return this.planReviewService.decide(planReviewId, dto);

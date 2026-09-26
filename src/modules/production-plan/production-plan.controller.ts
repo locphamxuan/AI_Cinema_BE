@@ -12,6 +12,7 @@ import { ProductionPlanService } from './production-plan.service';
 import { PlanDraftService } from './plan-draft.service';
 import { SavePlanDraftRequestDto } from './dto/save-plan-draft.request.dto';
 import { SceneService } from 'src/modules/scene/scene.service';
+import { Audit } from 'src/modules/audit-log/production-events';
 
 @ApiTags('production-plans')
 @ApiBearerAuth()
@@ -47,6 +48,7 @@ export class ProductionPlanController {
   }
 
   @Post('production-plans/:planId/submit')
+  @Audit.planSubmitted()
   @RequirePermission(PERMISSION.PLAN_WRITE)
   async submit(@Param('planId') planId: string, @Body() dto: SubmitProductionPlanRequestDto) {
     return this.productionPlanService.submit(planId, dto);

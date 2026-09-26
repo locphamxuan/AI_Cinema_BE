@@ -5,6 +5,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreateQuotaAllocationRequestDto } from './dto/create-quota-allocation.request.dto';
 import { QuotaAllocationService } from './quota-allocation.service';
+import { Audit } from 'src/modules/audit-log/production-events';
 
 @ApiTags('quota-allocations')
 @ApiBearerAuth()
@@ -14,6 +15,7 @@ export class QuotaAllocationController {
   constructor(private readonly quotaAllocationService: QuotaAllocationService) {}
 
   @Post('production-plans/:planId/quota-allocations')
+  @Audit.quotaAllocated()
   @RequirePermission(PERMISSION.QUOTA_MANAGE)
   async create(
     @Param('planId') planId: string,

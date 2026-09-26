@@ -7,6 +7,7 @@ import { CreateEpisodeSubmissionRequestDto } from './dto/create-episode-submissi
 import { CreateReviewRequestDto } from './dto/create-review.request.dto';
 import { ReviewService } from './review.service';
 import { DecideReviewRequestDto } from 'src/modules/review/dto/decide-review.request.dto';
+import { Audit } from 'src/modules/audit-log/production-events';
 
 @ApiTags('reviews')
 @ApiBearerAuth()
@@ -16,6 +17,7 @@ export class ReviewController {
   constructor(private readonly reviewService: ReviewService) {}
 
   @Post('episode-packages/:packageId/submissions')
+  @Audit.episodeSubmitted()
   @RequirePermission(PERMISSION.EPISODE_SUBMIT)
   async submit(
     @Param('packageId') packageId: string,
@@ -41,6 +43,7 @@ export class ReviewController {
   }
 
   @Patch('reviews/:reviewId')
+  @Audit.contentReviewed()
   @RequirePermission(PERMISSION.EPISODE_REVIEW)
   async decide(@Param('reviewId') reviewId: string, @Body() dto: DecideReviewRequestDto) {
     return this.reviewService.decide(reviewId, dto);
