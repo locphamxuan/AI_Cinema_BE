@@ -81,7 +81,8 @@ export class EpisodeSubtitleService {
       { jobType, language, sceneId: scene.id, prompt: scene.scriptText ?? scene.description ?? scene.title },
       requestedBy,
     );
-    const job = await this.generationJobs.run(queued.id);
+    // Run in place even with the job queue: the cut is assembled from the returned text.
+    const job = await this.generationJobs.runNow(queued.id);
     const text = job.generatedAssets.find((asset) => asset.contentText)?.contentText;
     if (job.status !== GenerationJobStatus.COMPLETED || !text) {
       throw new ConflictException(

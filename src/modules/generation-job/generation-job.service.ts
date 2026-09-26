@@ -138,6 +138,20 @@ export class GenerationJobService {
 
   /** Starts a queued job; the client polls the job until it is COMPLETED or FAILED. */
   async run(jobId: string) {
+    await this.assertRunnable(jobId);
+    // Queued and returned at once when a worker runs it; generated right here otherwise.
+    return (await this.queue.enqueue(jobId)) ?? this.findById(jobId);
+  }
+
+  /** Generates the job inside this call, even with a queue: for internal steps that need the output now. */
+  async runNow(jobId: string) {
+    await this.assertRunnable(jobId);
+    const job = await this.queue.runNow(jobId);
+    if (!job) throw new NotFoundException(`Generation job with id "${jobId}" does not exist`);
+    return job;
+  }
+
+  private async assertRunnable(jobId: string) {
     const job = await this.findById(jobId);
     if (!RUNNABLE.includes(job.status)) {
       throw new ConflictException(`Only ${RUNNABLE.join('/')} jobs can be run, current status "${job.status}"`);
@@ -145,9 +159,6 @@ export class GenerationJobService {
     if (job.jobType === GenerationJobType.VIDEO_ASSEMBLY) {
       throw new ConflictException('A VIDEO_ASSEMBLY job is finalized through the episode-package assemble endpoint');
     }
-
-    // Queued and returned at once when a worker runs it; generated right here otherwise.
-    return (await this.queue.enqueue(jobId)) ?? this.findById(jobId);
   }
 
   async createGeneratedAsset(jobId: string, dto: CreateGeneratedAssetRequestDto) {

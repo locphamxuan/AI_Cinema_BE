@@ -22,7 +22,7 @@ const completedJob = (sceneId: string, language: string, text: string, overrides
 
 describe('EpisodeSubtitleService', () => {
   const prisma = { generationJob: { findMany: jest.fn() } };
-  const generationJobs = { create: jest.fn(), run: jest.fn() };
+  const generationJobs = { create: jest.fn(), runNow: jest.fn() };
   const service = new EpisodeSubtitleService(
     prisma as unknown as PrismaService,
     generationJobs as unknown as GenerationJobService,
@@ -33,7 +33,7 @@ describe('EpisodeSubtitleService', () => {
     generationJobs.create.mockImplementation((_plan: string, dto: { sceneId: string; language: string }) =>
       Promise.resolve({ id: `${dto.sceneId}-${dto.language}` }),
     );
-    generationJobs.run.mockImplementation((id: string) => Promise.resolve(completedJob('x', 'x', `new ${id}`)));
+    generationJobs.runNow.mockImplementation((id: string) => Promise.resolve(completedJob('x', 'x', `new ${id}`)));
   });
 
   it('reuses lines already generated and generates only the missing ones', async () => {
@@ -78,7 +78,7 @@ describe('EpisodeSubtitleService', () => {
 
   it('fails the assembly when a line cannot be generated', async () => {
     prisma.generationJob.findMany.mockResolvedValue([]);
-    generationJobs.run.mockResolvedValue(
+    generationJobs.runNow.mockResolvedValue(
       completedJob('scene-1', 'vi', '', { status: GenerationJobStatus.FAILED, errorMessage: 'provider down' }),
     );
 

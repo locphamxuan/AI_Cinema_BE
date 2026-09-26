@@ -67,6 +67,11 @@ export class GenerationQueue implements OnModuleInit, OnModuleDestroy {
     await this.queue?.close();
   }
 
+  /** Runs the job in the caller, bypassing the queue (subtitles for an assembled cut). */
+  runNow(jobId: string) {
+    return this.runner.execute(jobId);
+  }
+
   /** Runs the job now and returns it, or queues it for the worker and returns null. */
   async enqueue(jobId: string) {
     if (!this.queue) return this.runner.execute(jobId);
