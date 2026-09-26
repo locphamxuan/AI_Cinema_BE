@@ -111,6 +111,25 @@ const users = [
     fullName: 'Nguyễn Hoàng Anh',
     role: UserRole.MEMBER,
   },
+  // Tester accounts with password 123456
+  {
+    email: 'adminn@gmail.com',
+    fullName: 'Admin Tester',
+    role: UserRole.ADMIN,
+    password: '123456',
+  },
+  {
+    email: 'creatorr@gmail.com',
+    fullName: 'Creator Tester',
+    role: UserRole.CONTENT_CREATOR,
+    password: '123456',
+  },
+  {
+    email: 'reviewerr@gmail.com',
+    fullName: 'Reviewer Tester',
+    role: UserRole.CONTENT_REVIEWER,
+    password: '123456',
+  },
 ];
 
 const aiLabelingPolicy = {
@@ -165,21 +184,23 @@ async function main() {
     });
   }
 
-  const passwordHash = await bcrypt.hash(SEED_USER_PASSWORD, 10);
+  const defaultPasswordHash = await bcrypt.hash(SEED_USER_PASSWORD, 10);
   for (const user of users) {
-    const existing = await prisma.user.findUnique({ where: { email: user.email } });
+    const { password, ...userData } = user as any;
+    const userHash = password ? await bcrypt.hash(password, 10) : defaultPasswordHash;
+    const existing = await prisma.user.findUnique({ where: { email: userData.email } });
     if (!existing) {
-      await prisma.user.create({ data: { ...user, passwordHash, isActive: true } });
+      await prisma.user.create({ data: { ...userData, passwordHash: userHash, isActive: true } });
       continue;
     }
-    // A password someone already set is kept; only placeholder hashes are replaced.
+    // A password someone already set is kept; only placeholder hashes or explicitly provided passwords are replaced.
     await prisma.user.update({
       where: { id: existing.id },
       data: {
-        fullName: user.fullName,
-        role: user.role,
+        fullName: userData.fullName,
+        role: userData.role,
         isActive: true,
-        ...(existing.passwordHash.startsWith(PLACEHOLDER_HASH_PREFIX) ? { passwordHash } : {}),
+        ...(password || existing.passwordHash.startsWith(PLACEHOLDER_HASH_PREFIX) ? { passwordHash: userHash } : {}),
       },
     });
   }
