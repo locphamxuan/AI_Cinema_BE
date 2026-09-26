@@ -34,14 +34,22 @@ export class MediaStorage {
     return this.client !== null;
   }
 
-  /** Uploads the bytes and returns the public URL the players load. */
-  async upload(bytes: Uint8Array, mimeType: string, extension: string): Promise<string> {
+  /** Uploads the bytes under a fresh key and returns the public URL the players load. */
+  upload(bytes: Uint8Array, mimeType: string, extension: string): Promise<string> {
+    return this.uploadAt(
+      `generated/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${extension}`,
+      bytes,
+      mimeType,
+    );
+  }
+
+  /** Uploads the bytes under `key` (e.g. the files of one HLS stream) and returns their public URL. */
+  async uploadAt(key: string, bytes: Uint8Array, mimeType: string): Promise<string> {
     if (!this.client) {
       throw new Error(
         'Media storage is not configured: set S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_BUCKET and S3_PUBLIC_BASE_URL',
       );
     }
-    const key = `generated/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${extension}`;
     await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: bytes, ContentType: mimeType }));
     return `${this.publicBaseUrl}/${key}`;
   }
