@@ -1,8 +1,8 @@
-# Local stack: Postgres + migrations/seed + API.
+# Local stack: Postgres + Redis (AI job queue) + migrations/seed + API.
 #   docker compose up -d --build     → API on http://localhost:3001/api (Swagger on /api/docs)
 #   docker compose down               → stop (data stays in the pg-data volume)
 #   docker compose down -v            → stop and wipe the database
-# Secrets and AI keys come from .env (copy .env.example); DATABASE_URL there is ignored here.
+# Secrets and AI keys come from .env (copy .env.example); DATABASE_URL and REDIS_URL there are ignored here.
 services:
   postgres:
     image: postgres:16-alpine
@@ -20,6 +20,16 @@ services:
       timeout: 3s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '63790:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
   migrate:
     build: { context: ., target: migrate }
     env_file: .env
@@ -33,11 +43,13 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_cinema
+      REDIS_URL: redis://redis:6379
       PORT: 3001
     ports:
       - '3001:3001'
     depends_on:
       migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
 
 volumes:
   pg-data:

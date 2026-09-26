@@ -1,8 +1,8 @@
 # API image: `docker compose up` builds it (see docker-compose.yml).
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
-# Prisma's query engine needs OpenSSL.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# Prisma's query engine needs OpenSSL; FFmpeg renders the HLS ladder (VIDEO_TRANSCODER=ffmpeg).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # All dependencies; `npm ci` also generates the Prisma client (postinstall).
 FROM base AS deps
