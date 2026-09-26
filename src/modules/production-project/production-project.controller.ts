@@ -9,6 +9,7 @@ import { CreateProductionProjectRequestDto } from './dto/create-production-proje
 import { UpdateProductionProjectRequestDto } from './dto/update-production-project.request.dto';
 import { CancelProductionProjectRequestDto } from './dto/cancel-production-project.request.dto';
 import { ProductionProjectService } from './production-project.service';
+import { Audit } from 'src/modules/audit-log/production-events';
 
 @ApiTags('production-projects')
 @ApiBearerAuth()
@@ -18,6 +19,7 @@ export class ProductionProjectController {
   constructor(private readonly productionProjectService: ProductionProjectService) {}
 
   @Post()
+  @Audit.projectCreated()
   @RequirePermission(PERMISSION.PROJECT_MANAGE)
   async create(@Body() dto: CreateProductionProjectRequestDto, @CurrentUser('id') userId: string) {
     return this.productionProjectService.create(dto, userId);
@@ -41,6 +43,7 @@ export class ProductionProjectController {
   }
 
   @Post(':projectId/cancel')
+  @Audit.projectCancelled()
   @RequirePermission(PERMISSION.PROJECT_MANAGE)
   @HttpCode(HttpStatus.OK)
   async cancel(@Param('projectId') projectId: string, @Body() dto: CancelProductionProjectRequestDto) {

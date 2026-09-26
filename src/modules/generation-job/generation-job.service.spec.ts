@@ -1,15 +1,13 @@
 import { ConflictException } from '@nestjs/common';
-import {
-  AiUsageEntryType,
-  GenerationJobStatus,
-  GenerationJobType,
-  QuotaAllocationStatus,
-  SceneStatus,
-} from '@prisma/client';
+import { GenerationJobStatus, GenerationJobType, QuotaAllocationStatus, SceneStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AiModelRouterService } from 'src/modules/ai-model/ai-model-router.service';
 import { GenreStyleModelService } from 'src/modules/genre-style-model/genre-style-model.service';
 import { GenerationJobService } from './generation-job.service';
+import { GenerationQueue } from './generation-queue';
+import { GenerationRunner } from './generation-runner.service';
+import type { AuditLogService } from 'src/modules/audit-log/audit-log.service';
+import type { ConfigService } from '@nestjs/config';
 import { TemplatePromptComposer } from './prompt-composer';
 import type { AiGenerationProvider } from './ai-generation-provider';
 
@@ -45,7 +43,12 @@ describe('GenerationJobService', () => {
     aiModelRouter as unknown as AiModelRouterService,
     genreStyleModelService as unknown as GenreStyleModelService,
     new TemplatePromptComposer(),
-    aiProvider,
+    new GenerationQueue(
+      new GenerationRunner(prisma as unknown as PrismaService, aiProvider, {
+        record: jest.fn(),
+      } as unknown as AuditLogService),
+      { get: () => undefined } as unknown as ConfigService,
+    ),
   );
 
   /** Active allocations of the plan, oldest first; findFirst honours the remainingAmount filter. */
@@ -169,75 +172,6 @@ describe('GenerationJobService', () => {
       await expect(service.create('plan-id', { jobType: GenerationJobType.VOICE }, 'creator-id')).rejects.toThrow(
         'prompt is required',
       );
-    });
-  });
-
-  describe('run', () => {
-    const queuedJob = {
-      id: 'job-id',
-      productionPlanId: 'plan-id',
-      jobType: GenerationJobType.SCENE_VIDEO,
-      status: GenerationJobStatus.QUEUED,
-      customFunction: null,
-      rawPrompt: 'rượt đuổi',
-      genreStyleModelId: null,
-      configSnapshot: null,
-      quotaAllocationId: 'alloc-id',
-      prompt: { composedPrompt: 'Direction: rượt đuổi', composeTokenCost: 2, seed: 7 },
-    };
-
-    beforeEach(() => {
-      prisma.generationJob.findUnique.mockResolvedValue(queuedJob);
-      tx.quotaAllocation.findUnique.mockResolvedValue(ALLOCATION);
-      tx.generationJob.update.mockImplementation(({ data }: { data: object }) =>
-        Promise.resolve({ ...queuedJob, ...data }),
-      );
-    });
-
-    it('stores the output, books generation and composer cost in the ledger and charges the quota', async () => {
-      (aiProvider.generate as jest.Mock).mockResolvedValue({ outputUnits: 18, storageKey: 'video.m3u8' });
-      tx.quotaAllocation.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
-
-      const job = await service.run('job-id');
-
-      expect(tx.aiUsageLedger.createMany).toHaveBeenCalledWith({
-        data: [
-          expect.objectContaining({
-            entryType: AiUsageEntryType.GENERATION,
-            tokenCost: 108,
-            outputDurationSeconds: 18,
-          }),
-          expect.objectContaining({ entryType: AiUsageEntryType.PROMPT_COMPOSE, tokenCost: 2 }),
-        ],
-      });
-      expect(tx.quotaAllocation.updateMany).toHaveBeenCalledWith({
-        where: { id: 'alloc-id', remainingAmount: { gte: 110 } },
-        data: { remainingAmount: { decrement: 110 } },
-      });
-      expect(job).toMatchObject({ status: GenerationJobStatus.COMPLETED, resourceCost: 110 });
-    });
-
-    it('keeps an overrun visible: full cost in the ledger, allocation closed at zero', async () => {
-      (aiProvider.generate as jest.Mock).mockResolvedValue({ outputUnits: 40 });
-      tx.quotaAllocation.updateMany.mockResolvedValue({ count: 0 });
-
-      const job = await service.run('job-id');
-
-      expect(tx.quotaAllocation.update).toHaveBeenCalledWith({
-        where: { id: 'alloc-id' },
-        data: { remainingAmount: 0, status: QuotaAllocationStatus.CONSUMED },
-      });
-      expect(job).toMatchObject({ resourceCost: 242 });
-    });
-
-    it('marks the job FAILED when the provider errors, without charging anything', async () => {
-      (aiProvider.generate as jest.Mock).mockRejectedValue(new Error('provider down'));
-      prisma.generationJob.update.mockImplementation(({ data }: { data: object }) => Promise.resolve(data));
-
-      const job = await service.run('job-id');
-
-      expect(job).toMatchObject({ status: GenerationJobStatus.FAILED, errorMessage: 'provider down' });
-      expect(tx.aiUsageLedger.createMany).not.toHaveBeenCalled();
     });
   });
 

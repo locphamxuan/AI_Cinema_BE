@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { GenerationJobController } from './generation-job.controller';
 import { GenerationJobService } from './generation-job.service';
+import { GenerationQueue } from './generation-queue';
+import { GenerationRunner } from './generation-runner.service';
 import { PROMPT_COMPOSER, GeminiPromptComposer } from './prompt-composer';
 import { GeminiTextClient } from './providers/gemini-text';
 import { AI_GENERATION_PROVIDER } from './ai-generation-provider';
@@ -14,11 +16,13 @@ import { GenreStyleModelModule } from 'src/modules/genre-style-model/genre-style
   controllers: [GenerationJobController],
   providers: [
     GenerationJobService,
+    GenerationRunner,
+    GenerationQueue,
     GeminiTextClient,
     { provide: PROMPT_COMPOSER, useClass: GeminiPromptComposer },
     MediaStorage,
     { provide: AI_GENERATION_PROVIDER, useClass: RoutingAiGenerationProvider },
   ],
-  exports: [GenerationJobService, GeminiTextClient],
+  exports: [GenerationJobService, GeminiTextClient, MediaStorage],
 })
 export class GenerationJobModule {}

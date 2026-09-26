@@ -46,14 +46,41 @@ export class PublicationService {
     if (publication.publishedAt) {
       throw new ConflictException(`Publication "${publicationId}" is already published`);
     }
+    if (publication.scheduledAt && publication.scheduledAt > new Date()) {
+      throw new ConflictException(
+        `Publication "${publicationId}" is scheduled for ${publication.scheduledAt.toISOString()} and goes live then`,
+      );
+    }
 
+    const published = await this.goLive(publicationId);
+    if (!published) throw new ConflictException(`Publication "${publicationId}" is already published`);
+    return published;
+  }
+
+  /** Scheduled publications whose time has come and that are still waiting (Schedule Film, step 14). */
+  findDue(now = new Date()) {
+    return this.prisma.publication.findMany({
+      where: { scheduledAt: { lte: now }, publishedAt: null, unpublishedAt: null },
+      select: { id: true },
+    });
+  }
+
+  /**
+   * Puts the episode live. The update only matches a publication that is not live yet,
+   * so the scheduler and a Reviewer publishing at the same moment cannot both win;
+   * the loser gets null.
+   */
+  async goLive(publicationId: string) {
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.publication.update({
-        where: { id: publicationId },
+      const claimed = await tx.publication.updateMany({
+        where: { id: publicationId, publishedAt: null },
         data: { publishedAt: new Date() },
       });
+      if (claimed.count === 0) return null;
+
+      const updated = await tx.publication.findUniqueOrThrow({ where: { id: publicationId } });
       const episode = await tx.episode.update({
-        where: { id: publication.episodeId },
+        where: { id: updated.episodeId },
         data: { productionStatus: EpisodeProductionStatus.PUBLISHED },
       });
       await syncProjectCompletion(tx, episode.movieId);

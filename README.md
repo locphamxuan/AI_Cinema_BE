@@ -7,7 +7,7 @@ is implemented end to end; the business rules live in the root `docs/PROJECT_OVE
 
 Requires Node.js 20.19+. Pick one of the two ways.
 
-### A. Docker (Postgres + API, nothing else to install)
+### A. Docker (Postgres + Redis + API, nothing else to install)
 
 ```bash
 cp .env.example .env          # set JWT_SECRET; DATABASE_URL is ignored by compose
@@ -16,7 +16,8 @@ docker compose logs -f api
 docker compose down           # add -v to wipe the database
 ```
 
-The database is published on `localhost:54320` (`postgres` / `postgres`, db `ai_cinema`).
+The database is published on `localhost:54320` (`postgres` / `postgres`, db `ai_cinema`), Redis on
+`localhost:63790`. The API container runs AI jobs on the Redis queue and has FFmpeg installed.
 
 ### B. Node on your machine
 
@@ -65,6 +66,16 @@ src/
 prisma/          schema/*.prisma (one file per table), migrations/, seed.ts
 test/            e2e suite (supertest against a real Postgres)
 ```
+
+
+## Background work
+
+| What | How it runs | Settings |
+| --- | --- | --- |
+| AI generation jobs | With `REDIS_URL`, `POST /generation-jobs/:id/run` only queues the job (BullMQ) and returns it `QUEUED`; a worker generates it and the client polls `GET /generation-jobs/:id`. Without Redis the job runs inside the request. | `REDIS_URL`, `GENERATION_CONCURRENCY` |
+| Schedule Film (step 14) | A publication with a future `scheduledAt` cannot be published by hand; a scheduler checks the database every 30 s and puts due episodes live. | `PUBLICATION_SWEEP_MS` (0 = off) |
+| Final cut (LI-02) | `VIDEO_TRANSCODER=ffmpeg` joins the scene clips and uploads an HLS master playlist with 1080p/720p/360p renditions to the bucket; otherwise the first clip is used as is. | `VIDEO_TRANSCODER`, `FFMPEG_PATH`, `S3_*` |
+| Production events (§4.1.4) | Every audited action (project, plan, quota, generation, review, compliance, publishing) is written to `audit_logs`; `GET /production-projects/:id/events` lists them. | — |
 
 ## AI providers
 

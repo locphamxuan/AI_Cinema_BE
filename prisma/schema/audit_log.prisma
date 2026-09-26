@@ -1,12 +1,17 @@
+//Append-only log of production events (PROJECT_OVERVIEW.md §4.1.4): who did what to which entity.
 model AuditLog {
-    id         String   @id @default(uuid()) @db.Uuid
-    entityType String   @map("entity_type") @db.VarChar(100)
-    entityId   String   @map("entity_id") @db.Uuid
-    action     String   @db.VarChar(100)
-    actorType  String   @map("actor_type") @db.VarChar(50)
-    actorId    String?  @map("actor_id") @db.Uuid
-    payload    Json?    @db.JsonB
-    createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+    id                  String   @id @default(uuid()) @db.Uuid
+    entityType          String   @map("entity_type") @db.VarChar(100)
+    entityId            String   @map("entity_id") @db.Uuid
+    action              String   @db.VarChar(100)
+    actorType           String   @map("actor_type") @db.VarChar(50)
+    actorId             String?  @map("actor_id") @db.Uuid
+    // The project the event belongs to, so a project's history is one indexed query.
+    productionProjectId String?  @map("production_project_id") @db.Uuid
+    payload             Json?    @db.JsonB
+    createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+    @@index([productionProjectId, createdAt])
+    @@index([entityType, entityId])
     @@map("audit_logs")
 }

@@ -5,6 +5,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { CreateEpisodePackageRequestDto } from './dto/create-episode-package.request.dto';
 import { EpisodePackageService } from './episode-package.service';
+import { Audit } from 'src/modules/audit-log/production-events';
 
 @ApiTags('episode-packages')
 @ApiBearerAuth()
@@ -14,6 +15,7 @@ export class EpisodePackageController {
   constructor(private readonly episodePackageService: EpisodePackageService) {}
 
   @Post('production-plans/:planId/episode-packages')
+  @Audit.episodeAssembled()
   @RequirePermission(PERMISSION.EPISODE_SUBMIT)
   async assemble(
     @Param('planId') planId: string,
