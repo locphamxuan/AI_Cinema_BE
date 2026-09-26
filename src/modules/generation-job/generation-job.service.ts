@@ -2,7 +2,6 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { GenerationJobStatus, GenerationJobType, Prisma, SceneStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AiModelRouterService } from 'src/modules/ai-model/ai-model-router.service';
-import { AI_MODEL_CATALOG, resolveCatalogKey } from 'src/modules/ai-model/ai-model-catalog';
 import { GenreStyleModelService } from 'src/modules/genre-style-model/genre-style-model.service';
 import { assertProjectOpen } from 'src/modules/production-project/project-lifecycle';
 import { assertCutOpen } from 'src/modules/scene/cut-lock';
@@ -23,15 +22,9 @@ import {
   type NewAttempt,
 } from './generation-job.rules';
 import { reserveAllocation, settleJob } from './generation-billing';
-import { composeInput, loraWeightsOf, requirePlan } from './generation-context';
+import { composeInput, requirePlan } from './generation-context';
 import { PROMPT_COMPOSER, type PromptComposer } from './prompt-composer';
-import {
-  AI_GENERATION_PROVIDER,
-  assetTypeFor,
-  tokenCostOf,
-  type AiGenerationProvider,
-  type AiGenerationResult,
-} from './ai-generation-provider';
+import { GenerationQueue } from './generation-queue';
 
 @Injectable()
 export class GenerationJobService {
@@ -40,7 +33,7 @@ export class GenerationJobService {
     private readonly aiModelRouter: AiModelRouterService,
     private readonly genreStyleModelService: GenreStyleModelService,
     @Inject(PROMPT_COMPOSER) private readonly promptComposer: PromptComposer,
-    @Inject(AI_GENERATION_PROVIDER) private readonly aiProvider: AiGenerationProvider,
+    private readonly queue: GenerationQueue,
   ) {}
 
   async create(planId: string, dto: CreateGenerationJobRequestDto, createdById: string) {
@@ -143,7 +136,7 @@ export class GenerationJobService {
     });
   }
 
-  /** Runs a queued job through the AI provider, stores its output and charges the quota. */
+  /** Starts a queued job; the client polls the job until it is COMPLETED or FAILED. */
   async run(jobId: string) {
     const job = await this.findById(jobId);
     if (!RUNNABLE.includes(job.status)) {
@@ -153,45 +146,8 @@ export class GenerationJobService {
       throw new ConflictException('A VIDEO_ASSEMBLY job is finalized through the episode-package assemble endpoint');
     }
 
-    await this.prisma.generationJob.update({ where: { id: jobId }, data: { status: GenerationJobStatus.RUNNING } });
-
-    const { key } = resolveCatalogKey(job.jobType, job.customFunction);
-    const model = AI_MODEL_CATALOG[key];
-    let result: AiGenerationResult;
-    try {
-      result = await this.aiProvider.generate({
-        model,
-        composedPrompt: job.prompt?.composedPrompt ?? job.rawPrompt ?? '',
-        seed: job.prompt?.seed,
-        loraWeights: job.genreStyleModelId ? loraWeightsOf(job.configSnapshot) : null,
-        language: job.language,
-      });
-    } catch (error) {
-      return this.prisma.generationJob.update({
-        where: { id: jobId },
-        data: {
-          status: GenerationJobStatus.FAILED,
-          errorMessage: error instanceof Error ? error.message : 'AI provider error',
-        },
-        include: JOB_INCLUDE,
-      });
-    }
-
-    const tokenCost = tokenCostOf(model, result.outputUnits);
-    return this.prisma.$transaction(async (tx) => {
-      await tx.generatedAsset.create({
-        data: {
-          generationJobId: jobId,
-          assetType: assetTypeFor(job.jobType, model.modality),
-          language: job.language,
-          contentText: result.contentText,
-          storageKey: result.storageKey,
-          mimeType: result.mimeType,
-          durationSeconds: result.durationSeconds,
-        },
-      });
-      return settleJob(tx, job, tokenCost, result.outputUnits);
-    });
+    // Queued and returned at once when a worker runs it; generated right here otherwise.
+    return (await this.queue.enqueue(jobId)) ?? this.findById(jobId);
   }
 
   async createGeneratedAsset(jobId: string, dto: CreateGeneratedAssetRequestDto) {
