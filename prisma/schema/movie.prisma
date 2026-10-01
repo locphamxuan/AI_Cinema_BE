@@ -3,6 +3,8 @@ enum MovieStatus {
   ASSIGNED
   IN_PRODUCTION
   COMPLETED
+  /// BR-56: a completed movie with episodes taken down to be fixed
+  UNDER_REVISION
   CANCELLED
 }
 
@@ -161,6 +163,8 @@ model Episode {
   approvedMediaAssetId  String?       @unique @map("approved_media_asset_id") @db.Uuid
   /// BR-29: null until the Reviewer prices the episode.
   coinPrice             Int?          @map("coin_price")
+  /// BR-56: taken down to be fixed; players show it as under maintenance. Null once released again.
+  revisionStartedAt     DateTime?     @map("revision_started_at") @db.Timestamptz(6)
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 

@@ -4,6 +4,12 @@ enum UnpublishReason {
   BROKEN_SOURCE
 }
 
+/// BR-56: REVISION = taken down to be fixed and released again; REMOVAL = taken down for good (BR-52 refund).
+enum UnpublishMode {
+  REVISION
+  REMOVAL
+}
+
 enum PriceAlertStatus {
   OPEN
   CHANGE_REQUESTED
@@ -21,6 +27,7 @@ model Publication {
   unpublishedAt   DateTime?        @map("unpublished_at") @db.Timestamptz(6)
   unpublishReason UnpublishReason? @map("unpublish_reason")
   unpublishNote   String?          @map("unpublish_note") @db.Text
+  unpublishMode   UnpublishMode?   @map("unpublish_mode")
   publishedById   String           @map("published_by_id") @db.Uuid
   unpublishedById String?          @map("unpublished_by_id") @db.Uuid
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
