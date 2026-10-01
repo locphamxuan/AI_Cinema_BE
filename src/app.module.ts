@@ -10,6 +10,7 @@ import { QueueModule } from 'src/infrastructure/queue/queue.module';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
+import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { ContentReviewModule } from 'src/modules/content-review/content-review.module';
 import { EmailModule } from 'src/modules/email/email.module';
 import { GenreModule } from 'src/modules/genre/genre.module';
@@ -50,6 +51,7 @@ import { AppController } from './app.controller';
     MediaIngestModule,
     ContentReviewModule,
     PublishingModule,
+    CatalogModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
