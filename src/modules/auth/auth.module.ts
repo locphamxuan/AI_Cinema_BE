@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { AccessControlModule } from 'src/modules/access-control/access-control.module';
 import { PermissionsGuard } from 'src/modules/access-control/permissions.guard';
@@ -13,11 +13,8 @@ import { AuthService } from './auth.service';
   imports: [
     AccessControlModule,
     JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>('JWT_SECRET'),
-      }),
+      inject: [APP_CONFIG],
+      useFactory: (config: AppConfig) => ({ secret: config.jwt.secret }),
     }),
   ],
   controllers: [AuthController],

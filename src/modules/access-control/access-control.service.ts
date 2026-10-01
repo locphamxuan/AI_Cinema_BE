@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ALL_PERMISSIONS, LOCKED_ADMIN_PERMISSIONS, type PermissionKey } from 'src/common/auth/permissions';
 
 export interface AccountState {

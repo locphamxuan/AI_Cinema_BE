@@ -1,7 +1,7 @@
 import { BadRequestException, ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '@prisma/client';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { IS_PUBLIC_KEY } from 'src/common/decorators/public.decorator';
 import { PERMISSIONS_KEY } from 'src/common/decorators/require-permission.decorator';

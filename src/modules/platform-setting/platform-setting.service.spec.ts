@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from './platform-setting.service';
 
 describe('PlatformSettingService', () => {

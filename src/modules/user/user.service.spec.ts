@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PERMISSION } from 'src/common/auth/permissions';
 import type { AccessControlService } from 'src/modules/access-control/access-control.service';
 import { UserService } from './user.service';

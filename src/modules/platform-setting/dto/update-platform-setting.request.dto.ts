@@ -3,7 +3,10 @@ import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 /** Only the fields sent are changed. */
 export class UpdatePlatformSettingRequestDto {
-  @ApiPropertyOptional({ example: 2, description: 'First episodes of every movie Guests and Free members watch (BR-03).' })
+  @ApiPropertyOptional({
+    example: 2,
+    description: 'First episodes of every movie Guests and Free members watch (BR-03).',
+  })
   @IsInt()
   @Min(0)
   @Max(20)
@@ -40,7 +43,10 @@ export class UpdatePlatformSettingRequestDto {
   @IsOptional()
   bonusCoinExpiryDays?: number;
 
-  @ApiPropertyOptional({ example: 90, description: 'Seconds without a heartbeat before a playback session times out (BR-36).' })
+  @ApiPropertyOptional({
+    example: 90,
+    description: 'Seconds without a heartbeat before a playback session times out (BR-36).',
+  })
   @IsInt()
   @Min(10)
   @IsOptional()

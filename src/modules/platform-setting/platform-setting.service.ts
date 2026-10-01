@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { PlatformSetting } from '@prisma/client';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { UpdatePlatformSettingRequestDto } from './dto/update-platform-setting.request.dto';
 
 const SETTING_ID = 'default';

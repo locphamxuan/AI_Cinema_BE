@@ -3,7 +3,7 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { JwtPayload } from 'src/common/auth/authenticated-user';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AccessControlService } from 'src/modules/access-control/access-control.service';
 import { AuthSessionDto } from './dto/auth-session.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
