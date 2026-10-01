@@ -24,6 +24,8 @@ process.env.JWT_SECRET ??= 'e2e-secret';
 // Jobs run inside the request and media is not really transcoded, so each step is done when it returns.
 process.env.REDIS_URL = '';
 process.env.MEDIA_PIPELINE = 'mock';
+// The studio CDN of the media suite runs on 127.0.0.1.
+process.env.MEDIA_ALLOW_PRIVATE_URLS = 'true';
 process.env.SMTP_HOST = '';
 process.env.STORAGE_DRIVER = 'local';
 process.env.STORAGE_LOCAL_ROOT = join(tmpdir(), 'ai-cinema-e2e-storage');

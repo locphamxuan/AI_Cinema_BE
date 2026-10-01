@@ -12,6 +12,7 @@ import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
 import { EmailModule } from 'src/modules/email/email.module';
 import { GenreModule } from 'src/modules/genre/genre.module';
+import { MediaIngestModule } from 'src/modules/media-ingest/media-ingest.module';
 import { MovieProjectModule } from 'src/modules/movie-project/movie-project.module';
 import { NotificationModule } from 'src/modules/notification/notification.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
@@ -44,6 +45,7 @@ import { AppController } from './app.controller';
     ProjectAccessModule,
     MovieProjectModule,
     StudioHandoffModule,
+    MediaIngestModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
