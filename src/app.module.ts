@@ -12,8 +12,10 @@ import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
 import { EmailModule } from 'src/modules/email/email.module';
 import { GenreModule } from 'src/modules/genre/genre.module';
+import { MovieProjectModule } from 'src/modules/movie-project/movie-project.module';
 import { NotificationModule } from 'src/modules/notification/notification.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
+import { ProjectAccessModule } from 'src/modules/project-access/project-access.module';
 import { PlatformSettingModule } from 'src/modules/platform-setting/platform-setting.module';
 import { UserModule } from 'src/modules/user/user.module';
 import { AppController } from './app.controller';
@@ -38,6 +40,8 @@ import { AppController } from './app.controller';
     PolicyModule,
     PlatformSettingModule,
     UserModule,
+    ProjectAccessModule,
+    MovieProjectModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

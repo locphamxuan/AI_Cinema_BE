@@ -8,7 +8,7 @@ import { configureApp } from 'src/app.setup';
 /** The fields of an API response the suite reads. */
 export type Row = Record<string, unknown> & { id: string };
 
-/** Password of every seeded staff account (prisma/seed.ts). */
+/** Password of every seeded account (prisma/seed.ts). */
 export const SEED_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';
 
 export async function bootApp(): Promise<INestApplication<App>> {
@@ -19,7 +19,9 @@ export async function bootApp(): Promise<INestApplication<App>> {
   return app;
 }
 
-type Method = 'get' | 'post' | 'patch' | 'delete';
+type Method = 'get' | 'post' | 'patch' | 'put' | 'delete';
+
+const DEFAULT_STATUS: Record<Method, number> = { get: 200, post: 201, patch: 200, put: 200, delete: 200 };
 
 /** A signed-in actor: every call goes to /api with its bearer token and expects `status`. */
 export class Actor {
@@ -29,17 +31,12 @@ export class Actor {
     readonly id: string,
   ) {}
 
-  async call<T = Row>(method: Method, path: string, body?: object, status = method === 'post' ? 201 : 200): Promise<T> {
+  async call<T = Row>(method: Method, path: string, body?: object, status = DEFAULT_STATUS[method]): Promise<T> {
     const res = await request(this.app.getHttpServer())
       [method](`/api${path}`)
       .set('Authorization', `Bearer ${this.token}`)
       .send(body);
-    if (res.status !== status) {
-      throw new Error(
-        `${method.toUpperCase()} ${path} -> ${res.status} (expected ${status}): ${JSON.stringify(res.body)}`,
-      );
-    }
-    return res.body as T;
+    return this.expect<T>(res, `${method.toUpperCase()} ${path}`, status);
   }
 
   get<T = Row>(path: string, status?: number) {
@@ -52,6 +49,47 @@ export class Actor {
 
   patch<T = Row>(path: string, body: object, status?: number) {
     return this.call<T>('patch', path, body, status);
+  }
+
+  put<T = Row>(path: string, body: object, status?: number) {
+    return this.call<T>('put', path, body, status);
+  }
+
+  /** multipart/form-data upload of one file plus text fields. */
+  async upload<T = Row>(
+    path: string,
+    file: { field: string; name: string; content: Buffer },
+    fields: Record<string, string> = {},
+    status = 201,
+  ): Promise<T> {
+    let req = request(this.app.getHttpServer())
+      .post(`/api${path}`)
+      .set('Authorization', `Bearer ${this.token}`)
+      .attach(file.field, file.content, file.name);
+    for (const [key, value] of Object.entries(fields)) req = req.field(key, value);
+    return this.expect<T>(await req, `UPLOAD ${path}`, status);
+  }
+
+  /** Raw download, for endpoints that stream a file. */
+  async download(path: string): Promise<{ body: Buffer; type: string }> {
+    const res = await request(this.app.getHttpServer())
+      .get(`/api${path}`)
+      .set('Authorization', `Bearer ${this.token}`)
+      .buffer(true)
+      .parse((response, done) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => done(null, Buffer.concat(chunks)));
+      });
+    if (res.status !== 200) throw new Error(`GET ${path} -> ${res.status}`);
+    return { body: res.body as Buffer, type: String(res.headers['content-type']) };
+  }
+
+  private expect<T>(res: request.Response, what: string, status: number): T {
+    if (res.status !== status) {
+      throw new Error(`${what} -> ${res.status} (expected ${status}): ${JSON.stringify(res.body)}`);
+    }
+    return res.body as T;
   }
 }
 

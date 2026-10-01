@@ -3,6 +3,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { ApiExceptionFilter } from 'src/common/http/api-exception.filter';
+import { BigIntJsonInterceptor } from 'src/common/http/bigint-json.interceptor';
 import { requestIdMiddleware } from 'src/common/http/request-id.middleware';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { LocalObjectStorage } from 'src/infrastructure/storage/local-storage';
@@ -29,6 +30,7 @@ export function configureApp(app: INestApplication) {
     }),
   );
   app.useGlobalFilters(new ApiExceptionFilter());
+  app.useGlobalInterceptors(new BigIntJsonInterceptor());
   app.enableShutdownHooks();
 
   // With the local storage driver the API itself serves the public objects (HLS, artwork).
