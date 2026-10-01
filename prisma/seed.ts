@@ -109,6 +109,7 @@ const users = [
     email: 'member01@aicinema.com',
     fullName: 'Nguyễn Hoàng Anh',
     role: UserRole.MEMBER,
+    dateOfBirth: new Date('2002-08-15'),
   },
 ];
 

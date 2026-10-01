@@ -1,14 +1,16 @@
 import { UserRole } from '@prisma/client';
 
-export interface JwtPayload {
+/** Claims of an access token. The refresh token is an opaque string, not a JWT. */
+export interface AccessTokenPayload {
   sub: string;
-  email: string;
   role: UserRole;
-  type: 'access' | 'refresh';
+  type: 'access';
 }
 
+/** The caller of a request, as JwtAuthGuard and PermissionsGuard leave it on `request.user`. */
 export interface AuthenticatedUser {
   id: string;
-  email: string;
   role: UserRole;
 }
+
+export const JWT_ALGORITHM = 'HS256';
