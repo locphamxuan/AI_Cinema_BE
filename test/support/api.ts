@@ -4,7 +4,9 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from 'src/app.module';
 import { configureApp } from 'src/app.setup';
-import type { Row } from './types';
+
+/** The fields of an API response the suite reads. */
+export type Row = Record<string, unknown> & { id: string };
 
 /** Password of every seeded staff account (prisma/seed.ts). */
 export const SEED_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';

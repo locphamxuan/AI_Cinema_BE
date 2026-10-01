@@ -5,7 +5,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { AccessControlModule } from 'src/modules/access-control/access-control.module';
 import { PermissionsGuard } from 'src/modules/access-control/permissions.guard';
-import { ProjectOwnershipGuard } from 'src/common/guards/project-ownership.guard';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 
@@ -26,7 +25,6 @@ import { AuthService } from './auth.service';
     AuthService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
-    { provide: APP_GUARD, useClass: ProjectOwnershipGuard },
   ],
   exports: [JwtModule],
 })

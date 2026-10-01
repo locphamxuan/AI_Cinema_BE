@@ -3,8 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, PolicyType, UserRole } from '@prisma/client';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
-import { AI_MODEL_CATALOG } from '../src/modules/ai-model/ai-model-catalog';
-import { GENRE_CATALOG, genreStyleTriggerKeyword } from './genre-catalog';
+import { GENRE_CATALOG } from './genre-catalog';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -184,47 +183,7 @@ async function main() {
     });
   }
 
-  for (const entry of Object.values(AI_MODEL_CATALOG)) {
-    const provider = await prisma.aiProvider.upsert({
-      where: { name: entry.provider },
-      update: {},
-      create: { name: entry.provider },
-    });
-    await prisma.aiModel.upsert({
-      where: { aiProviderId_name_version: { aiProviderId: provider.id, name: entry.name, version: entry.version } },
-      update: { modality: entry.modality },
-      create: { aiProviderId: provider.id, name: entry.name, version: entry.version, modality: entry.modality },
-    });
-  }
-
-  const loraBase = AI_MODEL_CATALOG.image;
-  const fluxModel = await prisma.aiModel.findFirstOrThrow({
-    where: { name: loraBase.name, version: loraBase.version, provider: { name: loraBase.provider } },
-  });
-  const styleOwner = await prisma.user.findUniqueOrThrow({ where: { email: 'reviewer01@aicinema.com' } });
-  // One DRAFT style (and dataset folder) per genre; only the ones whose
-  // folder reaches minSampleThreshold ever get trained.
-  for (const entry of GENRE_CATALOG) {
-    const genre = await prisma.genre.findUniqueOrThrow({ where: { name: entry.name } });
-    const triggerKeyword = genreStyleTriggerKeyword(entry.styleKey);
-    const name = `${entry.name} Style`;
-    await prisma.genreStyleModel.upsert({
-      where: {
-        baseAiModelId_triggerKeyword_version: { baseAiModelId: fluxModel.id, triggerKeyword, version: 1 },
-      },
-      update: { name },
-      create: {
-        genreId: genre.id,
-        baseAiModelId: fluxModel.id,
-        name,
-        triggerKeyword,
-        trainingProvider: 'fal.ai',
-        createdById: styleOwner.id,
-      },
-    });
-  }
-
-  console.log('Seeded genres, users, AI labeling policy, AI model catalog and genre style LoRAs.');
+  console.log('Seeded genres, users and the AI labeling policy.');
 }
 
 main()

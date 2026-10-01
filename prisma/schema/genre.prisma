@@ -3,10 +3,6 @@ model Genre {
     name        String  @unique @db.VarChar(100)
     description String? @db.Text
 
-    movies                  MovieGenre[]
-    productionProjectGenres ProductionProjectGenre[]
-    styleModels             GenreStyleModel[]
-    primaryForProjects      ProductionProject[]      @relation("ProductionProjectPrimaryGenre")
 
     @@map("genres")
 }
