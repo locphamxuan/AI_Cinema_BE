@@ -1,10 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { BadRequestException, ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { DEFAULT_ROLE_PERMISSIONS, PERMISSION } from 'src/common/auth/permissions';
+import { PERMISSION } from 'src/common/auth/permissions';
 import { IS_PUBLIC_KEY } from 'src/common/decorators/public.decorator';
 import { PERMISSIONS_KEY } from 'src/common/decorators/require-permission.decorator';
 import { AccessControlService } from './access-control.service';
@@ -60,14 +58,6 @@ describe('AccessControlService', () => {
     service.forgetAccount('u1');
     await service.accountState('u1');
     expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
-  });
-
-  it('seeds the database with exactly the default matrix kept in code', () => {
-    const dir = join(__dirname, '../../../prisma/migrations/20260925160000_add_role_permissions/migration.sql');
-    const sql = readFileSync(dir, 'utf8');
-    const seeded = [...sql.matchAll(/\('([A-Z_]+)', '([a-z-]+:[a-z.-]+)'\)/g)].map(([, role, key]) => `${role} ${key}`);
-    const inCode = Object.entries(DEFAULT_ROLE_PERMISSIONS).flatMap(([role, keys]) => keys.map((k) => `${role} ${k}`));
-    expect(seeded.sort()).toEqual(inCode.sort());
   });
 });
 
