@@ -8,8 +8,11 @@ import { MailerModule } from 'src/infrastructure/mailer/mailer.module';
 import { PrismaModule } from 'src/infrastructure/prisma/prisma.module';
 import { QueueModule } from 'src/infrastructure/queue/queue.module';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
+import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
+import { EmailModule } from 'src/modules/email/email.module';
 import { GenreModule } from 'src/modules/genre/genre.module';
+import { NotificationModule } from 'src/modules/notification/notification.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
 import { PlatformSettingModule } from 'src/modules/platform-setting/platform-setting.module';
 import { UserModule } from 'src/modules/user/user.module';
@@ -28,6 +31,9 @@ import { AppController } from './app.controller';
     QueueModule,
     MailerModule,
     AuthModule,
+    NotificationModule,
+    EmailModule,
+    AuditLogModule,
     GenreModule,
     PolicyModule,
     PlatformSettingModule,

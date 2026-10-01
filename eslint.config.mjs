@@ -37,4 +37,9 @@ export default tseslint.config(
       'max-lines': ['error', { max: 300, skipBlankLines: false, skipComments: false }],
     },
   },
+  {
+    // Jest's asymmetric matchers (expect.objectContaining, expect.any) are typed `any`.
+    files: ['**/*.spec.ts', 'test/**/*.ts'],
+    rules: { '@typescript-eslint/no-unsafe-assignment': 'off' },
+  },
 );
