@@ -16,6 +16,7 @@ import { MovieProjectModule } from 'src/modules/movie-project/movie-project.modu
 import { NotificationModule } from 'src/modules/notification/notification.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
 import { ProjectAccessModule } from 'src/modules/project-access/project-access.module';
+import { StudioHandoffModule } from 'src/modules/studio-handoff/studio-handoff.module';
 import { PlatformSettingModule } from 'src/modules/platform-setting/platform-setting.module';
 import { UserModule } from 'src/modules/user/user.module';
 import { AppController } from './app.controller';
@@ -42,6 +43,7 @@ import { AppController } from './app.controller';
     UserModule,
     ProjectAccessModule,
     MovieProjectModule,
+    StudioHandoffModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
