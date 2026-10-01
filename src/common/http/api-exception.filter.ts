@@ -32,10 +32,10 @@ function fromHttpException(exception: HttpException): { status: number; message:
   const status = exception.getStatus();
   const body = exception.getResponse();
   if (typeof body === 'string') return { status, message: body };
-  const { message } = body as { message?: string | string[] };
+  const { message, details } = body as { message?: string | string[]; details?: unknown };
   // ValidationPipe reports one message per invalid field.
   if (Array.isArray(message)) return { status, message: 'The request is invalid', details: message };
-  return { status, message: message ?? exception.message };
+  return { status, message: message ?? exception.message, details };
 }
 
 /**

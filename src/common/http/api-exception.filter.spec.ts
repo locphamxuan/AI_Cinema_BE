@@ -1,4 +1,4 @@
-import { ArgumentsHost, BadRequestException, NotFoundException } from '@nestjs/common';
+import { ArgumentsHost, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ApiExceptionFilter } from './api-exception.filter';
 
@@ -35,6 +35,13 @@ describe('ApiExceptionFilter', () => {
       expect.objectContaining({
         error: { code: 'BAD_REQUEST', message: 'The request is invalid', details: ['title must be a string'] },
       }),
+    );
+  });
+
+  it('keeps the details a service attaches to its error', () => {
+    filter.catch(new ConflictException({ message: 'Not ready', details: ['a Coin price'] }), hostFor(response));
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: { code: 'CONFLICT', message: 'Not ready', details: ['a Coin price'] } }),
     );
   });
 
