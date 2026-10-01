@@ -3,7 +3,7 @@ import { IsArray, IsString } from 'class-validator';
 
 export class SetRolePermissionsRequestDto {
   @ApiProperty({
-    example: ['production:read', 'production:plan.write'],
+    example: ['studio:handoff', 'media:ingest'],
     description: 'Every permission the role holds from now on.',
   })
   @IsArray()

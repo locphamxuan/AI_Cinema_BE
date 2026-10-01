@@ -1,32 +1,25 @@
 import { UserRole } from '@prisma/client';
 
 /**
- * Every permission the platform checks (PROJECT_OVERVIEW.md §2.2). The keys are stored in
- * the `permissions` table; which role holds which key lives in `role_permissions` and is
- * edited by the Admin. Endpoints name the keys they need with @RequirePermission().
+ * Every permission the API checks (PROJECT_OVERVIEW.md §2.2). The keys live in the
+ * `permissions` table; which role holds which key lives in `role_permissions` and is edited
+ * by the Admin. Endpoints name the keys they need with @RequirePermission(). Ownership
+ * (a Reviewer's own projects, a Creator's assigned ones) is checked on top of these.
  */
 export const PERMISSION = {
-  // MF-1 — production
-  PRODUCTION_READ: 'production:read',
-  PROJECT_MANAGE: 'production:project.manage',
-  MILESTONE_UPDATE: 'production:milestone.update',
-  PLAN_WRITE: 'production:plan.write',
-  PLAN_REVIEW: 'production:plan.review',
-  QUOTA_REQUEST: 'production:quota.request',
-  QUOTA_MANAGE: 'production:quota.manage',
-  PRODUCTION_GENERATE: 'production:generate',
-  EPISODE_SUBMIT: 'episode:submit',
-  EPISODE_REVIEW: 'episode:review',
-  MOVIE_PUBLISH: 'movie:publish',
+  // MF-1 — movie projects
+  PROJECT_MANAGE: 'project:manage',
+  PROJECT_FEE_ALLOCATE: 'project:fee.allocate',
+  PROJECT_READ_ALL: 'project:read.all',
+  PROJECT_SUGGEST: 'project:suggest',
+  STUDIO_HANDOFF: 'studio:handoff',
+  MEDIA_INGEST: 'media:ingest',
+  CONTENT_REVIEW: 'content:review',
+  EPISODE_PUBLISH: 'episode:publish',
+  PRICE_ALERT_MANAGE: 'price-alert:manage',
   GENRE_MANAGE: 'genre:manage',
-  GENRE_STYLE_MANAGE: 'genre-style:manage',
-  // MF-5 — operations
-  FILM_ANALYTICS_READ: 'film:analytics.read',
-  MEMBER_OPS_READ: 'member:ops.read',
-  BILLING_READ: 'billing:read',
-  SUPPORT_MANAGE: 'support:manage',
-  MARKETING_MANAGE: 'marketing:manage',
   // Administration
+  MEMBER_OPS_READ: 'member:ops.read',
   USER_READ: 'user:read',
   USER_MANAGE: 'user:manage',
   ROLE_MANAGE: 'role:manage',
@@ -35,7 +28,38 @@ export const PERMISSION = {
 
 export type PermissionKey = (typeof PERMISSION)[keyof typeof PERMISSION];
 
-export const ALL_PERMISSIONS = Object.values(PERMISSION) as PermissionKey[];
+/** Area (groups the Admin screen) and description of every permission, seeded into `permissions`. */
+export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; description: string }> = {
+  'project:manage': {
+    area: 'movie-project',
+    description: 'Create movie projects, edit their seasons, episodes and idea files, assign a Creator, cancel them',
+  },
+  'project:fee.allocate': {
+    area: 'movie-project',
+    description: 'Allocate, top up and correct production fees (Token)',
+  },
+  'project:read.all': { area: 'movie-project', description: "Read every movie project, not only one's own" },
+  'project:suggest': { area: 'movie-project', description: 'Propose changes to a movie project (BR-55)' },
+  'studio:handoff': { area: 'studio', description: 'Hand an assigned project off to a studio, change the studio' },
+  'media:ingest': { area: 'media', description: 'Upload the episodes, subtitles and artwork a studio delivers' },
+  'content:review': {
+    area: 'review',
+    description: 'Review delivered episodes, apply the AI label, run the compliance check',
+  },
+  'episode:publish': { area: 'publishing', description: 'Price, schedule, publish and unpublish episodes' },
+  'price-alert:manage': { area: 'publishing', description: 'Follow out-of-range Coin prices and ask for a change' },
+  'genre:manage': { area: 'catalog', description: 'Add genres' },
+  'member:ops.read': { area: 'administration', description: 'Read member accounts (read-only, BR-20)' },
+  'user:read': { area: 'administration', description: 'Read every account, staff included' },
+  'user:manage': { area: 'administration', description: 'Create staff accounts, change roles, lock accounts' },
+  'role:manage': { area: 'administration', description: 'Choose the permissions of every role' },
+  'platform:settings.manage': {
+    area: 'administration',
+    description: 'Change platform policies (rates, price range, free episodes)',
+  },
+};
+
+export const ALL_PERMISSIONS = Object.keys(PERMISSION_CATALOG) as PermissionKey[];
 
 /**
  * The Admin can never take these away from ADMIN, so an Admin cannot lock every
@@ -43,44 +67,25 @@ export const ALL_PERMISSIONS = Object.values(PERMISSION) as PermissionKey[];
  */
 export const LOCKED_ADMIN_PERMISSIONS: PermissionKey[] = [PERMISSION.USER_MANAGE, PERMISSION.ROLE_MANAGE];
 
-/** Defaults seeded by the migration (the §2.2 matrix); kept here for tests and for resetting a role. */
+/** The §2.2 matrix, seeded for a role that has no permission yet. */
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
   MEMBER: [],
-  CONTENT_CREATOR: [
-    PERMISSION.PRODUCTION_READ,
-    PERMISSION.MILESTONE_UPDATE,
-    PERMISSION.PLAN_WRITE,
-    PERMISSION.QUOTA_REQUEST,
-    PERMISSION.PRODUCTION_GENERATE,
-    PERMISSION.EPISODE_SUBMIT,
-  ],
+  CONTENT_CREATOR: [PERMISSION.STUDIO_HANDOFF, PERMISSION.MEDIA_INGEST],
   CONTENT_REVIEWER: [
-    PERMISSION.PRODUCTION_READ,
     PERMISSION.PROJECT_MANAGE,
-    PERMISSION.MILESTONE_UPDATE,
-    PERMISSION.PLAN_REVIEW,
-    PERMISSION.QUOTA_MANAGE,
-    PERMISSION.EPISODE_REVIEW,
-    PERMISSION.MOVIE_PUBLISH,
+    PERMISSION.PROJECT_FEE_ALLOCATE,
+    PERMISSION.CONTENT_REVIEW,
+    PERMISSION.EPISODE_PUBLISH,
     PERMISSION.GENRE_MANAGE,
-    PERMISSION.GENRE_STYLE_MANAGE,
     PERMISSION.USER_READ,
   ],
-  STAFF: [
-    PERMISSION.FILM_ANALYTICS_READ,
-    PERMISSION.MEMBER_OPS_READ,
-    PERMISSION.BILLING_READ,
-    PERMISSION.SUPPORT_MANAGE,
-    PERMISSION.MARKETING_MANAGE,
-  ],
-  // Oversight only in production (§2.2): the Admin reads projects but never plans, reviews or publishes.
+  STAFF: [PERMISSION.MEMBER_OPS_READ],
+  // Oversight only in MF-1: the Admin reads every project and proposes changes, never edits them (BR-55).
   ADMIN: [
-    PERMISSION.PRODUCTION_READ,
-    PERMISSION.FILM_ANALYTICS_READ,
-    PERMISSION.MEMBER_OPS_READ,
-    PERMISSION.BILLING_READ,
-    PERMISSION.SUPPORT_MANAGE,
-    PERMISSION.MARKETING_MANAGE,
+    PERMISSION.PROJECT_READ_ALL,
+    PERMISSION.PROJECT_SUGGEST,
+    PERMISSION.PRICE_ALERT_MANAGE,
+    PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
     PERMISSION.USER_MANAGE,
     PERMISSION.ROLE_MANAGE,

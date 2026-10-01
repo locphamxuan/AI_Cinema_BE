@@ -8,7 +8,7 @@ import { PolicyService } from './policy.service';
 
 @ApiTags('policies')
 @ApiBearerAuth()
-@RequirePermission(PERMISSION.PRODUCTION_READ)
+@RequirePermission(PERMISSION.CONTENT_REVIEW, PERMISSION.PLATFORM_SETTINGS_MANAGE)
 @Controller('policies')
 export class PolicyController {
   constructor(private readonly policyService: PolicyService) {}
