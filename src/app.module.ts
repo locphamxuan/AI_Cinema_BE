@@ -4,7 +4,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PaginationModule } from '@nestarc/pagination';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { AppConfigModule } from 'src/config/config.module';
+import { MailerModule } from 'src/infrastructure/mailer/mailer.module';
 import { PrismaModule } from 'src/infrastructure/prisma/prisma.module';
+import { QueueModule } from 'src/infrastructure/queue/queue.module';
+import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
 import { GenreModule } from 'src/modules/genre/genre.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
@@ -21,6 +24,9 @@ import { AppController } from './app.controller';
     }),
     PaginationModule.forRoot({ defaultLimit: 20, maxLimit: 100 }),
     PrismaModule,
+    StorageModule,
+    QueueModule,
+    MailerModule,
     AuthModule,
     GenreModule,
     PolicyModule,
