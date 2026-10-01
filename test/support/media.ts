@@ -20,3 +20,20 @@ export function deliver(creator: Actor, episodeId: string, status = 201) {
     status,
   );
 }
+
+/** Delivered, approved, labeled and compliance-checked: ready to be priced and released. */
+export async function compliantEpisode(reviewer: Actor, creator: Actor, episodeId: string) {
+  const asset = await deliver(creator, episodeId);
+  await reviewer.post(`/media-assets/${asset.id}/reviews`, { decision: 'APPROVED' }, 200);
+  await reviewer.post(
+    `/media-assets/${asset.id}/ai-content-labels`,
+    { labelType: 'AI_GENERATED', labelText: 'Phim được tạo bằng trí tuệ nhân tạo (AI)' },
+    200,
+  );
+  await reviewer.post(
+    `/media-assets/${asset.id}/compliance-checks`,
+    { decree142Notice: { result: 'PASS' }, contentSafety: { result: 'PASS' }, depictsRealPersonOrEvent: false },
+    200,
+  );
+  return asset;
+}

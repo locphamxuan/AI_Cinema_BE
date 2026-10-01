@@ -16,6 +16,7 @@ import { GenreModule } from 'src/modules/genre/genre.module';
 import { MediaIngestModule } from 'src/modules/media-ingest/media-ingest.module';
 import { MovieProjectModule } from 'src/modules/movie-project/movie-project.module';
 import { NotificationModule } from 'src/modules/notification/notification.module';
+import { PublishingModule } from 'src/modules/publishing/publishing.module';
 import { PolicyModule } from 'src/modules/policy/policy.module';
 import { ProjectAccessModule } from 'src/modules/project-access/project-access.module';
 import { StudioHandoffModule } from 'src/modules/studio-handoff/studio-handoff.module';
@@ -48,6 +49,7 @@ import { AppController } from './app.controller';
     StudioHandoffModule,
     MediaIngestModule,
     ContentReviewModule,
+    PublishingModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
