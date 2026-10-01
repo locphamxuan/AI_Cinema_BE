@@ -6,6 +6,7 @@ import {
   type Episode,
   type Movie,
   type Publication,
+  UnpublishMode,
 } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -15,8 +16,13 @@ import { ProjectLifecycleService } from 'src/modules/movie-project/project-lifec
 import { NotificationService } from 'src/modules/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/notification/notification-types';
 import { ProjectAccessService } from 'src/modules/project-access/project-access.service';
-import { assertEpisodeStatus, assertProjectStatus } from 'src/modules/project-access/project-rules';
+import {
+  assertEpisodeStatus,
+  assertProjectStatus,
+  DELIVERY_PROJECT_STATUSES,
+} from 'src/modules/project-access/project-rules';
 import type { PublishEpisodeRequestDto, UnpublishRequestDto } from './dto/publishing.request.dto';
+import { EpisodeRevisionService } from './episode-revision.service';
 
 /** Releasable: checked and never released, taken down earlier, or already scheduled (reschedule). */
 const RELEASABLE: EpisodeStatus[] = [
@@ -44,11 +50,12 @@ export class PublicationService {
     private readonly lifecycle: ProjectLifecycleService,
     private readonly auditLog: AuditLogService,
     private readonly notifications: NotificationService,
+    private readonly revisions: EpisodeRevisionService,
   ) {}
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'reviewer');
-    assertProjectStatus(episode.movie.status, [MovieStatus.IN_PRODUCTION, MovieStatus.COMPLETED], 'publish');
+    assertProjectStatus(episode.movie.status, [...DELIVERY_PROJECT_STATUSES, MovieStatus.COMPLETED], 'publish');
     assertEpisodeStatus(episode.status, RELEASABLE, 'publish');
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
     if (scheduledAt && scheduledAt <= new Date()) {
@@ -86,7 +93,10 @@ export class PublicationService {
     return this.list(episodeId, user);
   }
 
-  /** Takes a published episode down, or cancels a release that is still scheduled. */
+  /**
+   * Takes a published episode down, to be fixed (REVISION, BR-56) or for good (REMOVAL, BR-52),
+   * or cancels a release that is still scheduled.
+   */
   async unpublish(publicationId: string, dto: UnpublishRequestDto, user: AuthenticatedUser) {
     const publication = await this.prisma.publication.findUnique({ where: { id: publicationId } });
     if (!publication) throw new NotFoundException('Publication not found');
@@ -95,6 +105,12 @@ export class PublicationService {
 
     const live = publication.publishedAt !== null;
     assertEpisodeStatus(episode.status, [live ? EpisodeStatus.PUBLISHED : EpisodeStatus.SCHEDULED], 'unpublish');
+    if (live && !dto.mode) {
+      throw new BadRequestException(
+        'Say whether the episode is taken down to be fixed (REVISION) or for good (REMOVAL)',
+      );
+    }
+    const mode = live ? dto.mode! : null;
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.publication.updateMany({
         where: { id: publicationId, unpublishedAt: null, publishedAt: live ? { not: null } : null },
@@ -102,13 +118,18 @@ export class PublicationService {
           unpublishedAt: new Date(),
           unpublishReason: dto.reason,
           unpublishNote: dto.note.trim(),
+          unpublishMode: mode,
           unpublishedById: user.id,
         },
       });
       if (count === 0) throw new ConflictException('The release changed meanwhile; reload it');
-      // A cancelled schedule goes back to the checked state; a taken-down episode can be released again.
-      // BR-52 (refunding Members who unlocked it) belongs to MF-2's entitlements and hooks in here.
-      await this.moveEpisode(tx, episode, live ? EpisodeStatus.UNPUBLISHED : EpisodeStatus.COMPLIANCE_PASSED);
+      if (mode === UnpublishMode.REVISION) {
+        await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
+      } else {
+        // A cancelled schedule goes back to the checked state; a removed episode can be released again.
+        // BR-52 (refunding Members who unlocked a removed episode) hooks in here with MF-2's entitlements.
+        await this.moveEpisode(tx, episode, live ? EpisodeStatus.UNPUBLISHED : EpisodeStatus.COMPLIANCE_PASSED);
+      }
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.EPISODE_UNPUBLISHED,
@@ -116,7 +137,7 @@ export class PublicationService {
           entityId: publicationId,
           movieId: episode.movieId,
           actorId: user.id,
-          payload: { episodeId: episode.id, reason: dto.reason, note: dto.note.trim(), cancelledSchedule: !live },
+          payload: { episodeId: episode.id, mode, reason: dto.reason, note: dto.note.trim(), cancelledSchedule: !live },
         },
         tx,
       );
@@ -187,6 +208,10 @@ export class PublicationService {
       include: { movie: true },
     });
     await this.moveEpisode(tx, episode, EpisodeStatus.PUBLISHED);
+    if (episode.revisionStartedAt) {
+      // The fixed version is out: no longer shown as under maintenance (BR-56).
+      await tx.episode.update({ where: { id: episode.id }, data: { revisionStartedAt: null } });
+    }
     await this.auditLog.record(
       {
         action: CONTENT_EVENT.EPISODE_PUBLISHED,
@@ -194,7 +219,12 @@ export class PublicationService {
         entityId: publication.id,
         movieId: episode.movieId,
         actorId,
-        payload: { episodeId: episode.id, mediaAssetId: publication.mediaAssetId, coinPrice: episode.coinPrice },
+        payload: {
+          episodeId: episode.id,
+          mediaAssetId: publication.mediaAssetId,
+          coinPrice: episode.coinPrice,
+          afterRevision: episode.revisionStartedAt !== null,
+        },
       },
       tx,
     );

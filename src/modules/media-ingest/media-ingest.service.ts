@@ -1,14 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
-import {
-  EpisodeStatus,
-  MediaIngestStatus,
-  MediaSourceMethod,
-  MovieStatus,
-  type MediaAsset,
-  type Prisma,
-} from '@prisma/client';
+import { EpisodeStatus, MediaIngestStatus, MediaSourceMethod, type MediaAsset, type Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind } from 'src/common/validation/uploaded-file';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
@@ -18,7 +11,11 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/project-access/project-access.service';
-import { assertEpisodeStatus, assertProjectStatus } from 'src/modules/project-access/project-rules';
+import {
+  assertEpisodeStatus,
+  assertProjectStatus,
+  DELIVERY_PROJECT_STATUSES,
+} from 'src/modules/project-access/project-rules';
 import type {
   AiDisclosureDto,
   SubmitMediaLinkRequestDto,
@@ -134,7 +131,7 @@ export class MediaIngestService {
     if (asset.ingestStatus !== MediaIngestStatus.FAILED) {
       throw new ConflictException('Only a failed delivery can be processed again');
     }
-    assertProjectStatus(asset.episode.movie.status, [MovieStatus.IN_PRODUCTION], 'process media');
+    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'process media');
     assertEpisodeStatus(asset.episode.status, SUBMITTABLE, 'process media');
 
     await this.prisma.$transaction(async (tx) => {
@@ -155,7 +152,7 @@ export class MediaIngestService {
 
   private async assertCanSubmit(episodeId: string, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'creator');
-    assertProjectStatus(episode.movie.status, [MovieStatus.IN_PRODUCTION], 'deliver media');
+    assertProjectStatus(episode.movie.status, DELIVERY_PROJECT_STATUSES, 'deliver media');
     if (episode.status === EpisodeStatus.PROCESSING) {
       throw new ConflictException('The previous delivery of this episode is still being processed');
     }

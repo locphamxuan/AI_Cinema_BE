@@ -29,7 +29,13 @@ export class ChangeRequestService {
     const movie = await this.access.movie(movieId, user, 'read');
     assertProjectStatus(
       movie.status,
-      [MovieStatus.DRAFT, MovieStatus.ASSIGNED, MovieStatus.IN_PRODUCTION, MovieStatus.COMPLETED],
+      [
+        MovieStatus.DRAFT,
+        MovieStatus.ASSIGNED,
+        MovieStatus.IN_PRODUCTION,
+        MovieStatus.COMPLETED,
+        MovieStatus.UNDER_REVISION,
+      ],
       'propose a change',
     );
     if (dto.episodeId && !(await this.prisma.episode.count({ where: { id: dto.episodeId, movieId } }))) {

@@ -9,7 +9,7 @@ import { NotificationService } from 'src/modules/notification/notification.servi
 import { NOTIFICATION_TYPE } from 'src/modules/notification/notification-types';
 import { PlatformSettingService } from 'src/modules/platform-setting/platform-setting.service';
 import { ProjectAccessService } from 'src/modules/project-access/project-access.service';
-import { assertProjectStatus } from 'src/modules/project-access/project-rules';
+import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
 
 const UNRESOLVED: PriceAlertStatus[] = [PriceAlertStatus.OPEN, PriceAlertStatus.CHANGE_REQUESTED];
 
@@ -31,7 +31,7 @@ export class PricingService {
     const episode = await this.access.episode(episodeId, user, 'reviewer');
     assertProjectStatus(
       episode.movie.status,
-      [MovieStatus.DRAFT, MovieStatus.ASSIGNED, MovieStatus.IN_PRODUCTION, MovieStatus.COMPLETED],
+      [...OPEN_PROJECT_STATUSES, MovieStatus.COMPLETED, MovieStatus.UNDER_REVISION],
       'price an episode',
     );
     const { episodeCoinPriceMin: rangeMin, episodeCoinPriceMax: rangeMax } = await this.settings.get();

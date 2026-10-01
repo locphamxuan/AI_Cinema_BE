@@ -1,10 +1,11 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
-import { EpisodeStatus, MovieStatus } from '@prisma/client';
+import { EpisodeStatus } from '@prisma/client';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { NotificationService } from 'src/modules/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/notification/notification-types';
+import { DELIVERY_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
 
 /**
  * BR-38: an episode past its due date without a delivery is flagged once, to its Creator and
@@ -32,7 +33,7 @@ export class OverdueEpisodesJob implements OnModuleInit {
       where: {
         status: EpisodeStatus.AWAITING_MEDIA,
         dueDate: { lt: startOfToday },
-        movie: { status: MovieStatus.IN_PRODUCTION },
+        movie: { status: { in: DELIVERY_PROJECT_STATUSES } },
       },
       include: { movie: { select: { id: true, title: true, reviewerId: true, creatorId: true } } },
     });

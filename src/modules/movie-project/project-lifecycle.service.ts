@@ -8,7 +8,11 @@ import { NotificationService } from 'src/modules/notification/notification.servi
 import { NOTIFICATION_TYPE } from 'src/modules/notification/notification-types';
 import { ProductionFeeService } from 'src/modules/production-fee/production-fee.service';
 import { ProjectAccessService } from 'src/modules/project-access/project-access.service';
-import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
+import {
+  assertProjectStatus,
+  DELIVERY_PROJECT_STATUSES,
+  OPEN_PROJECT_STATUSES,
+} from 'src/modules/project-access/project-rules';
 
 const projectLink = (movieId: string) => `/projects/${movieId}`;
 
@@ -114,12 +118,18 @@ export class ProjectLifecycleService {
     });
   }
 
-  /** Step 16: the project is COMPLETED once every episode of every season is published (BR-38). */
+  /**
+   * Step 16: the project is COMPLETED once every episode is out (BR-38), and again once the
+   * episodes taken down to be fixed are back (BR-56). An episode taken down for good does not
+   * hold the project open.
+   */
   async completeIfAllPublished(movieId: string, tx: PrismaTx): Promise<boolean> {
-    const pending = await tx.episode.count({ where: { movieId, status: { not: EpisodeStatus.PUBLISHED } } });
+    const pending = await tx.episode.count({
+      where: { movieId, status: { notIn: [EpisodeStatus.PUBLISHED, EpisodeStatus.UNPUBLISHED] } },
+    });
     if (pending) return false;
     const { count } = await tx.movie.updateMany({
-      where: { id: movieId, status: MovieStatus.IN_PRODUCTION },
+      where: { id: movieId, status: { in: DELIVERY_PROJECT_STATUSES } },
       data: { status: MovieStatus.COMPLETED, completedAt: new Date() },
     });
     if (count) {

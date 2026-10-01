@@ -3,7 +3,6 @@ import {
   ContentReviewDecision,
   EpisodeStatus,
   MediaIngestStatus,
-  MovieStatus,
   type Episode,
   type MediaAsset,
   type Movie,
@@ -15,7 +14,11 @@ import { CONTENT_EVENT } from 'src/modules/audit-log/content-events';
 import { NotificationService } from 'src/modules/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/notification/notification-types';
 import { ProjectAccessService } from 'src/modules/project-access/project-access.service';
-import { assertEpisodeStatus, assertProjectStatus } from 'src/modules/project-access/project-rules';
+import {
+  assertEpisodeStatus,
+  assertProjectStatus,
+  DELIVERY_PROJECT_STATUSES,
+} from 'src/modules/project-access/project-rules';
 import type { ReviewMediaRequestDto } from './dto/content-review.request.dto';
 
 /** Until it is scheduled, a reviewed episode can still be sent back to the studio. */
@@ -42,7 +45,7 @@ export class ContentReviewService {
 
   async review(mediaAssetId: string, dto: ReviewMediaRequestDto, user: AuthenticatedUser) {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
-    assertProjectStatus(asset.episode.movie.status, [MovieStatus.IN_PRODUCTION], 'review media');
+    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'review media');
 
     if (dto.decision === ContentReviewDecision.CHANGES_REQUESTED) {
       this.assertUnderReview(asset, [EpisodeStatus.IN_REVIEW, ...REVIEWED_STATUSES]);
@@ -57,7 +60,7 @@ export class ContentReviewService {
   /**
    * Sends the version back: the episode waits for a new delivery and loses its approved version,
    * so a later delivery is reviewed, labeled and checked again (BR-18). Also used by a failed
-   * compliance check (BR-42).
+   * compliance check (BR-42) and by a published episode taken down to be fixed (BR-56).
    */
   async requestChanges(tx: PrismaTx, asset: ReviewedAsset, reviewerId: string, comments: string): Promise<void> {
     const { episode } = asset;
@@ -66,7 +69,7 @@ export class ContentReviewService {
         id: episode.id,
         OR: [
           { status: EpisodeStatus.IN_REVIEW },
-          { status: { in: REVIEWED_STATUSES }, approvedMediaAssetId: asset.id },
+          { status: { in: [...REVIEWED_STATUSES, EpisodeStatus.PUBLISHED] }, approvedMediaAssetId: asset.id },
         ],
       },
       data: { status: EpisodeStatus.CHANGES_REQUESTED, approvedMediaAssetId: null },

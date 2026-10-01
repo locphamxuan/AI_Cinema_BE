@@ -7,7 +7,7 @@ import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/audit-log/content-events';
 import { EMAIL_TEMPLATE, EmailOutboxService } from 'src/modules/email/email-outbox.service';
 import { ProjectAccessService } from 'src/modules/project-access/project-access.service';
-import { assertProjectStatus } from 'src/modules/project-access/project-rules';
+import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
 import { BriefService, type PreparedBrief, type StudioInfo } from './brief.service';
 import type { ChangeStudioRequestDto, EpisodeDueDateDto, HandOffRequestDto } from './dto/studio-handoff.request.dto';
 
@@ -61,7 +61,7 @@ export class StudioHandoffService {
 
   async changeStudio(movieId: string, dto: ChangeStudioRequestDto, user: AuthenticatedUser) {
     const movie = await this.access.movie(movieId, user, 'creator');
-    assertProjectStatus(movie.status, [MovieStatus.IN_PRODUCTION], 'change the studio');
+    assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'change the studio');
     const brief = await this.briefs.prepare(movieId, dto);
     const emailId = await this.prisma.$transaction(async (tx) => {
       await tx.movie.update({ where: { id: movieId }, data: this.studioColumns(dto) });
@@ -74,7 +74,7 @@ export class StudioHandoffService {
   /** Deadlines of episodes added after the hand-off, or moved with the studio. */
   async setDueDates(movieId: string, dueDates: EpisodeDueDateDto[], user: AuthenticatedUser) {
     const movie = await this.access.movie(movieId, user, 'creator');
-    assertProjectStatus(movie.status, [MovieStatus.IN_PRODUCTION], 'set due dates');
+    assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'set due dates');
     const episodes = await this.prisma.episode.findMany({ where: { movieId }, select: { id: true, status: true } });
     const parsed = this.parseDueDates(
       dueDates,

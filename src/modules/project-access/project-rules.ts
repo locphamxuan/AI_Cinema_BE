@@ -8,6 +8,12 @@ export const OPEN_PROJECT_STATUSES: MovieStatus[] = [
   MovieStatus.IN_PRODUCTION,
 ];
 
+/**
+ * The studio is working on the movie: deliveries, review, labels, compliance and releases happen
+ * while it is IN_PRODUCTION, or UNDER_REVISION once a completed movie has episodes to fix (BR-56).
+ */
+export const DELIVERY_PROJECT_STATUSES: MovieStatus[] = [MovieStatus.IN_PRODUCTION, MovieStatus.UNDER_REVISION];
+
 /** Before the Reviewer approves a delivery the studio can still be asked for another length (BR-31). */
 export const EPISODE_STATUSES_BEFORE_APPROVAL: EpisodeStatus[] = [
   EpisodeStatus.DRAFT,

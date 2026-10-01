@@ -1,11 +1,11 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { ComplianceResult, EpisodeStatus, MovieStatus, PolicyType } from '@prisma/client';
+import { ComplianceResult, EpisodeStatus, PolicyType } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/project-access/project-access.service';
-import { assertProjectStatus } from 'src/modules/project-access/project-rules';
+import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
 import { activePolicyId } from './active-policy';
 import { ContentReviewService, REVIEWED_STATUSES } from './content-review.service';
 import type { ApplyAiLabelRequestDto } from './dto/content-review.request.dto';
@@ -26,7 +26,7 @@ export class AiLabelService {
 
   async apply(mediaAssetId: string, dto: ApplyAiLabelRequestDto, user: AuthenticatedUser) {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
-    assertProjectStatus(asset.episode.movie.status, [MovieStatus.IN_PRODUCTION], 'label media');
+    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'label media');
     this.reviews.assertUnderReview(asset, REVIEWED_STATUSES);
 
     await this.prisma.$transaction(async (tx) => {

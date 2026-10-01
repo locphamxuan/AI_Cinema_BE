@@ -7,5 +7,6 @@ import { ContentReviewService } from './content-review.service';
 @Module({
   controllers: [ContentReviewController],
   providers: [ContentReviewService, AiLabelService, ComplianceService],
+  exports: [ContentReviewService],
 })
 export class ContentReviewModule {}

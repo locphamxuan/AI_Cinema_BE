@@ -1,11 +1,11 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { ComplianceCheckType, ComplianceResult, EpisodeStatus, MovieStatus, PolicyType } from '@prisma/client';
+import { ComplianceCheckType, ComplianceResult, EpisodeStatus, PolicyType } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/project-access/project-access.service';
-import { assertProjectStatus } from 'src/modules/project-access/project-rules';
+import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
 import { activePolicyId } from './active-policy';
 import { ContentReviewService, type ReviewedAsset } from './content-review.service';
 import type { RunComplianceRequestDto } from './dto/content-review.request.dto';
@@ -82,7 +82,7 @@ export class ComplianceService {
 
   async run(mediaAssetId: string, dto: RunComplianceRequestDto, user: AuthenticatedUser) {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
-    assertProjectStatus(asset.episode.movie.status, [MovieStatus.IN_PRODUCTION], 'check compliance');
+    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'check compliance');
     this.reviews.assertUnderReview(asset, [EpisodeStatus.LABELED]);
 
     await this.prisma.$transaction(async (tx) => {

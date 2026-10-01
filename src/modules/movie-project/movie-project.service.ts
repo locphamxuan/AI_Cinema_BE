@@ -110,12 +110,17 @@ export class MovieProjectService {
       genres: genres.map(({ genre }) => genre),
       productionFeeTokens: await this.fees.totalTokens(movieId),
       openChangeRequests: _count.changeRequests,
+      revision: revisionSummary(movie.seasons),
     };
   }
 
   async update(movieId: string, dto: UpdateMovieProjectRequestDto, user: AuthenticatedUser) {
     const movie = await this.access.movie(movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, [...OPEN_PROJECT_STATUSES, MovieStatus.COMPLETED], 'edit the project');
+    assertProjectStatus(
+      movie.status,
+      [...OPEN_PROJECT_STATUSES, MovieStatus.COMPLETED, MovieStatus.UNDER_REVISION],
+      'edit the project',
+    );
     if (dto.genreIds) await this.assertGenresExist(dto.genreIds);
 
     const { genreIds, ...fields } = dto;
@@ -151,4 +156,20 @@ export class MovieProjectService {
     const found = await this.prisma.genre.count({ where: { id: { in: genreIds } } });
     if (found !== genreIds.length) throw new BadRequestException('One of the genres does not exist');
   }
+}
+
+/**
+ * BR-56: the episodes taken down to be fixed, by season ("fixing 2 episodes — season 1: 3;
+ * season 2: 1"). Derived from the episodes, never stored on the project status.
+ */
+export function revisionSummary(
+  seasons: { seasonNumber: number; episodes: { episodeNumber: number; revisionStartedAt: Date | null }[] }[],
+) {
+  const bySeason = seasons
+    .map((season) => ({
+      seasonNumber: season.seasonNumber,
+      episodeNumbers: season.episodes.filter((e) => e.revisionStartedAt).map((e) => e.episodeNumber),
+    }))
+    .filter((season) => season.episodeNumbers.length > 0);
+  return { episodeCount: bySeason.reduce((sum, s) => sum + s.episodeNumbers.length, 0), bySeason };
 }

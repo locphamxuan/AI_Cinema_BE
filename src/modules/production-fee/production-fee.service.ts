@@ -91,7 +91,8 @@ export class ProductionFeeService {
       if (dto.amountTokens <= 0) throw new BadRequestException('The production fee must be more than 0 Token');
       return;
     }
-    assertProjectStatus(status, OPEN_PROJECT_STATUSES, 'change the production fee');
+    // A studio may charge for fixing taken-down episodes (BR-56).
+    assertProjectStatus(status, [...OPEN_PROJECT_STATUSES, MovieStatus.UNDER_REVISION], 'change the production fee');
     if (total === 0) throw new ConflictException('Allocate the initial production fee first');
     if (!dto.reason?.trim()) throw new BadRequestException('A top-up or a correction needs a reason (BR-46)');
     if (dto.entryType === TokenEntryType.TOP_UP && dto.amountTokens <= 0) {

@@ -12,6 +12,7 @@ interface Publication {
   publishedAt: string | null;
   unpublishedAt: string | null;
   unpublishReason: string | null;
+  unpublishMode: string | null;
 }
 interface PriceResult {
   coinPrice: number;
@@ -140,16 +141,22 @@ describe('Pricing and publishing (e2e)', () => {
   it('takes an episode down with a reason and releases it again', async () => {
     const [live] = await reviewer.get<Publication[]>(`/episodes/${episodeId(0)}/publications`);
     await reviewer.post(`/publications/${live.id}/unpublish`, { reason: 'MANUAL' }, 400);
+    // A published episode must say whether it is taken down to be fixed or for good.
+    await reviewer.post(`/publications/${live.id}/unpublish`, { reason: 'MANUAL', note: 'Gỡ tập này.' }, 400);
     await creator.post(`/publications/${live.id}/unpublish`, { reason: 'MANUAL', note: 'Gỡ thử.' }, 403);
 
     const after = await reviewer.post<Publication[]>(
       `/publications/${live.id}/unpublish`,
-      { reason: 'COMPLIANCE_ISSUE', note: 'Khán giả báo cảnh gây nhầm lẫn với người thật.' },
+      { mode: 'REMOVAL', reason: 'COMPLIANCE_ISSUE', note: 'Khán giả báo cảnh gây nhầm lẫn với người thật.' },
       200,
     );
-    expect(after[0]).toMatchObject({ unpublishReason: 'COMPLIANCE_ISSUE' });
+    expect(after[0]).toMatchObject({ unpublishReason: 'COMPLIANCE_ISSUE', unpublishMode: 'REMOVAL' });
     expect(await statusOf(0)).toBe('UNPUBLISHED');
-    await reviewer.post(`/publications/${live.id}/unpublish`, { reason: 'MANUAL', note: 'Lần hai.' }, 409);
+    await reviewer.post(
+      `/publications/${live.id}/unpublish`,
+      { mode: 'REMOVAL', reason: 'MANUAL', note: 'Lần hai.' },
+      409,
+    );
 
     const releases = await reviewer.post<Publication[]>(`/episodes/${episodeId(0)}/publications`, {});
     expect(releases).toHaveLength(2);

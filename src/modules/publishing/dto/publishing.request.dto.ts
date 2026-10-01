@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UnpublishReason } from '@prisma/client';
+import { UnpublishMode, UnpublishReason } from '@prisma/client';
 import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 /** Step 12 (BR-29): the Coin price of one episode; outside the Admin's range it is kept and flagged (BR-47). */
@@ -21,11 +21,24 @@ export class PublishEpisodeRequestDto {
 
 /** Takes a published episode down, or cancels a scheduled release. */
 export class UnpublishRequestDto {
+  @ApiPropertyOptional({
+    enum: UnpublishMode,
+    description:
+      'Required for a published episode: REVISION = back to the Creator to be fixed, buyers keep access (BR-56); ' +
+      'REMOVAL = taken down for good, buyers refunded (BR-52). Ignored when cancelling a schedule.',
+  })
+  @IsEnum(UnpublishMode)
+  @IsOptional()
+  mode?: UnpublishMode;
+
   @ApiProperty({ enum: UnpublishReason })
   @IsEnum(UnpublishReason)
   reason: UnpublishReason;
 
-  @ApiProperty({ example: 'Studio báo nhạc nền tập này chưa xử lý xong bản quyền.' })
+  @ApiProperty({
+    example: 'Studio báo nhạc nền tập này chưa xử lý xong bản quyền.',
+    description: 'With REVISION it is the feedback the Creator forwards to the studio',
+  })
   @IsString()
   @MinLength(5)
   @MaxLength(2000)

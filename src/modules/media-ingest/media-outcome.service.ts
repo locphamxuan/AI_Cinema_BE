@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ContentReviewDecision, EpisodeStatus, MediaIngestStatus, MovieStatus, type MediaAsset } from '@prisma/client';
+import { ContentReviewDecision, EpisodeStatus, MediaIngestStatus, type MediaAsset } from '@prisma/client';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/audit-log/content-events';
 import { NotificationService } from 'src/modules/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/notification/notification-types';
+import { DELIVERY_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
 
 /** Ingest states a delivery no longer leaves. */
 export const DONE: MediaIngestStatus[] = [
@@ -72,7 +73,7 @@ export class MediaOutcomeService {
         tx,
       );
       // Nothing to review on a project cancelled meanwhile.
-      if (!moved.count || episode.movie.status !== MovieStatus.IN_PRODUCTION) return;
+      if (!moved.count || !DELIVERY_PROJECT_STATUSES.includes(episode.movie.status)) return;
       await this.notifications.notify(
         [episode.movie.reviewerId, episode.movie.creatorId],
         {
@@ -120,7 +121,7 @@ export class MediaOutcomeService {
         },
         tx,
       );
-      if (!moved.count || movie.status !== MovieStatus.IN_PRODUCTION) return;
+      if (!moved.count || !DELIVERY_PROJECT_STATUSES.includes(movie.status)) return;
       await this.notifications.notify(
         [movie.creatorId],
         {
