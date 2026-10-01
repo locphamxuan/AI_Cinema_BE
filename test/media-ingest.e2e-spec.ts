@@ -9,6 +9,7 @@ import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { HlsLinkCheckJob } from 'src/modules/media-ingest/hls-link-check.job';
 import { type Actor, bootApp, signIn } from './support/api';
+import { DISCLOSURE, MP4 } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface MediaAsset {
@@ -28,16 +29,6 @@ interface MediaAsset {
 const MASTER =
   '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\nlow.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\nhigh.m3u8\n';
 const VOD = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\na.ts\n#EXTINF:6.0,\nb.ts\n#EXT-X-ENDLIST\n';
-// The first bytes of an MP4: the pipeline is mocked, only the signature is checked.
-const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(64)]);
-
-const disclosure = {
-  aiTools: ['Kling', 'ElevenLabs'],
-  aiGeneratedParts: ['video', 'voice'],
-  humanEdited: true,
-  noRealPersonLikeness: true,
-  noCopyrightedMaterial: true,
-};
 
 describe('Media ingest (e2e)', () => {
   let app: INestApplication<App>;
@@ -84,15 +75,16 @@ describe('Media ingest (e2e)', () => {
     sourceMethod: 'HLS_URL',
     sourceUrl: `${cdn}${path}`,
     proposedLabelType: 'AI_GENERATED',
-    aiDisclosure: disclosure,
+    aiDisclosure: DISCLOSURE,
   });
 
   it('takes deliveries only from the assigned Creator, with the full AI Disclosure (BR-41)', async () => {
     const path = `/episodes/${episode(0).id}/media`;
     await otherCreator.post(path, hlsLink(), 404);
     await reviewer.post(path, hlsLink(), 403);
-    await creator.post(path, { ...hlsLink(), aiDisclosure: { ...disclosure, noCopyrightedMaterial: false } }, 400);
-    await creator.post(path, { ...hlsLink(), aiDisclosure: { ...disclosure, aiTools: [] } }, 400);
+    await creator.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, noCopyrightedMaterial: false } }, 400);
+    await creator.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, aiTools: [] } }, 400);
+    await creator.post(path, { ...hlsLink(), aiDisclosure: undefined }, 400);
     await creator.post(path, { ...hlsLink(), sourceUrl: 'file:///etc/passwd' }, 400);
   });
 
@@ -120,7 +112,7 @@ describe('Media ingest (e2e)', () => {
     const asset = await creator.upload<MediaAsset>(
       `/episodes/${episode(0).id}/media/upload`,
       { field: 'file', name: 'tap-1-v2.mp4', content: MP4 },
-      { aiDisclosure: JSON.stringify(disclosure), proposedLabelType: 'AI_EDITED' },
+      { aiDisclosure: JSON.stringify(DISCLOSURE), proposedLabelType: 'AI_EDITED' },
     );
     expect(asset).toMatchObject({ version: 2, sourceMethod: 'UPLOAD', ingestStatus: 'READY', isSelfHosted: true });
     expect(asset.qualities).toEqual(['360p', '720p', '1080p']);
@@ -144,7 +136,7 @@ describe('Media ingest (e2e)', () => {
     await creator.upload(
       `/episodes/${episode(0).id}/media/upload`,
       { field: 'file', name: 'tap-1.mp4', content: Buffer.from('not a video at all') },
-      { aiDisclosure: JSON.stringify(disclosure), proposedLabelType: 'AI_EDITED' },
+      { aiDisclosure: JSON.stringify(DISCLOSURE), proposedLabelType: 'AI_EDITED' },
       400,
     );
     await creator.upload(

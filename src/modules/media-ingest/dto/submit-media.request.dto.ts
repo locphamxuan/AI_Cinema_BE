@@ -9,8 +9,10 @@ import {
   Equals,
   IsArray,
   IsBoolean,
+  IsDefined,
   IsEnum,
   IsIn,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -77,6 +79,8 @@ export class SubmitMediaLinkRequestDto extends MediaMetadataDto {
   sourceUrl: string;
 
   @ApiProperty({ type: AiDisclosureDto })
+  @IsDefined({ message: 'aiDisclosure is required (BR-41)' })
+  @IsObject()
   @ValidateNested()
   @Type(() => AiDisclosureDto)
   aiDisclosure: AiDisclosureDto;
