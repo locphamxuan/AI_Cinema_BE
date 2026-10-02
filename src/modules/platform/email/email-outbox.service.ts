@@ -7,7 +7,7 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 
-export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF' } as const;
+export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF', STUDIO_PORTAL_LINK: 'STUDIO_PORTAL_LINK' } as const;
 
 export interface EmailAttachment {
   /** Private storage key of the file. */

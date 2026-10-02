@@ -30,7 +30,7 @@ export class MediaIngestController {
     @Body() dto: SubmitMediaLinkRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.media.submitLink(episodeId, dto, user);
+    return this.media.submitLink(episodeId, dto, { user });
   }
 
   @Post('episodes/:episodeId/media/upload')
@@ -56,7 +56,7 @@ export class MediaIngestController {
     @Body() dto: SubmitMediaUploadRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.media.submitUpload(episodeId, file, dto, parseAiDisclosure(dto.aiDisclosure), user);
+    return this.media.submitUpload(episodeId, file, dto, parseAiDisclosure(dto.aiDisclosure), { user });
   }
 
   @Get('episodes/:episodeId/media')

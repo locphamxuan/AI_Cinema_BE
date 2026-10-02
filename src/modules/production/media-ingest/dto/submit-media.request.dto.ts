@@ -24,7 +24,7 @@ import {
 
 const AI_GENERATED_PARTS = ['image', 'video', 'voice', 'music', 'script', 'subtitle'] as const;
 
-/** BR-41: what the studio declares about its use of AI, typed in by the Creator (§4.1.5). */
+/** BR-41: what the studio declares about its use of AI, through its portal (or typed in by the Creator on its behalf). */
 export class AiDisclosureDto {
   @ApiProperty({ example: ['Kling', 'ElevenLabs'], description: 'AI tools and models the studio used' })
   @IsArray()
@@ -56,7 +56,10 @@ export class AiDisclosureDto {
 }
 
 class MediaMetadataDto {
-  @ApiProperty({ enum: LabelType, description: 'AI label the Creator proposes; the Reviewer decides (BR-40)' })
+  @ApiProperty({
+    enum: LabelType,
+    description: 'AI label the studio or Creator proposes; the Reviewer decides (BR-40)',
+  })
   @IsEnum(LabelType)
   proposedLabelType: LabelType;
 

@@ -8,8 +8,10 @@ export interface AuditEntry {
   entityType: AuditEntity;
   entityId: string;
   movieId: string;
-  /** null for events the system raises on its own (queue worker, scheduler). */
+  /** null for events the system raises on its own (queue worker, scheduler) or a studio raises. */
   actorId: string | null;
+  /** 'STUDIO' for what an outside studio does through its portal link (no account). */
+  actorType?: 'STUDIO';
   payload?: Record<string, unknown>;
 }
 
@@ -27,7 +29,7 @@ export class AuditLogService {
         entityType: entry.entityType,
         entityId: entry.entityId,
         movieId: entry.movieId,
-        actorType: entry.actorId ? 'USER' : 'SYSTEM',
+        actorType: entry.actorType ?? (entry.actorId ? 'USER' : 'SYSTEM'),
         actorId: entry.actorId,
         payload: entry.payload as Prisma.InputJsonValue | undefined,
       },

@@ -110,6 +110,7 @@ export class ContentReviewService {
       include: {
         episode: { include: { movie: { select: { id: true, title: true, status: true } } } },
         submittedBy: { select: { id: true, fullName: true } },
+        studioHandoff: { select: { id: true, studioName: true } },
         contentReviews: {
           orderBy: { createdAt: 'desc' },
           include: { reviewer: { select: { id: true, fullName: true } } },
