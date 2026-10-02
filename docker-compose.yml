@@ -3,6 +3,8 @@
 #   docker compose down               → stop (data stays in the pg-data volume)
 #   docker compose down -v            → stop and wipe the database
 # Secrets come from .env (copy .env.example); DATABASE_URL and REDIS_URL there are ignored here.
+# Fixed project name: the folder name (AI-_Cinema_BE) is not a valid image or volume prefix.
+name: ai-cinema
 services:
   postgres:
     image: postgres:16-alpine
@@ -47,9 +49,13 @@ services:
       PORT: 3001
     ports:
       - '3001:3001'
+    volumes:
+      # STORAGE_DRIVER=local keeps uploads and HLS renditions here; they survive a rebuild.
+      - media-storage:/app/storage
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
 
 volumes:
   pg-data:
+  media-storage:
