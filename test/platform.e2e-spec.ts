@@ -17,7 +17,7 @@ describe('Platform (e2e)', () => {
 
   it('reports healthy while the database answers', async () => {
     const res = await request(app.getHttpServer()).get('/api/health').expect(200);
-    expect(res.body).toEqual({ status: 'ok' });
+    expect(res.body).toEqual({ status: 'ok', database: 'up', redis: 'off' });
   });
 
   it('sends security headers and a request id', async () => {

@@ -38,13 +38,17 @@ describe('JobQueue without Redis', () => {
     expect(onFailed).not.toHaveBeenCalled();
   });
 
+  it('reports Redis as off when no REDIS_URL is set', async () => {
+    await expect(queue.redisStatus()).resolves.toBe('off');
+  });
+
   it('refuses a job nobody handles', async () => {
     await expect(queue.add('unknown', {})).rejects.toThrow('No handler');
   });
 
-  it('does not schedule anything with a zero interval', async () => {
+  it('does not schedule anything with a zero interval', () => {
     const handler = jest.fn();
-    await queue.every('off', 0, handler);
+    queue.every('off', 0, handler);
     expect(queue['timers']).toHaveLength(0);
   });
 });
