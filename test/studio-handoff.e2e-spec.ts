@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { OverdueEpisodesJob } from 'src/modules/studio-handoff/overdue-episodes.job';
+import { OverdueEpisodesJob } from 'src/modules/production/studio-handoff/overdue-episodes.job';
 import { type Actor, bootApp, signIn } from './support/api';
 import { assignedProject, episodesOf, inDays, type ProjectDetail } from './support/projects';
 

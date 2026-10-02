@@ -7,7 +7,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { HlsLinkCheckJob } from 'src/modules/media-ingest/hls-link-check.job';
+import { HlsLinkCheckJob } from 'src/modules/production/media-ingest/hls/hls-link-check.job';
 import { type Actor, bootApp, signIn } from './support/api';
 import { DISCLOSURE, MP4 } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
