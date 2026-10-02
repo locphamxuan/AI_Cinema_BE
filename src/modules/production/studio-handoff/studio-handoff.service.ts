@@ -9,6 +9,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { EMAIL_TEMPLATE, EmailOutboxService } from 'src/modules/platform/email/email-outbox.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import { isWithinMilestone } from 'src/modules/production/movie-project/episode-milestone';
 import { BriefService, type PreparedBrief, type StudioInfo } from './brief/brief.service';
 import type { ChangeStudioRequestDto, EpisodeDueDateDto, HandOffRequestDto } from './dto/studio-handoff.request.dto';
 
@@ -20,6 +21,9 @@ const DEADLINE_STATUSES: EpisodeStatus[] = [
   EpisodeStatus.IN_REVIEW,
   EpisodeStatus.CHANGES_REQUESTED,
 ];
+
+const EPISODE_MILESTONE = { id: true, episodeNumber: true, milestoneDate: true } as const;
+type EpisodeMilestone = { id: string; episodeNumber: number; milestoneDate: Date | null };
 
 /** MF-1 steps 3–4: hand the project to a studio outside the platform, or change studio (BR-13, BR-38). */
 @Injectable()
@@ -36,11 +40,9 @@ export class StudioHandoffService {
   async handOff(movieId: string, dto: HandOffRequestDto, user: AuthenticatedUser) {
     const movie = await this.access.movie(movieId, user, 'creator');
     assertProjectStatus(movie.status, [MovieStatus.ASSIGNED], 'hand the project off');
-    const episodeIds = (await this.prisma.episode.findMany({ where: { movieId }, select: { id: true } })).map(
-      (e) => e.id,
-    );
-    const dueDates = this.parseDueDates(dto.dueDates, episodeIds);
-    if (dueDates.size !== episodeIds.length) throw new BadRequestException('Give a due date for every episode');
+    const episodes = await this.prisma.episode.findMany({ where: { movieId }, select: EPISODE_MILESTONE });
+    const dueDates = this.parseDueDates(dto.dueDates, episodes);
+    if (dueDates.size !== episodes.length) throw new BadRequestException('Give a due date for every episode');
 
     const brief = await this.briefs.prepare(movieId, dto, dueDates);
     const emailId = await this.prisma.$transaction(async (tx) => {
@@ -74,11 +76,11 @@ export class StudioHandoffService {
   async setDueDates(movieId: string, dueDates: EpisodeDueDateDto[], user: AuthenticatedUser) {
     const movie = await this.access.movie(movieId, user, 'creator');
     assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'set due dates');
-    const episodes = await this.prisma.episode.findMany({ where: { movieId }, select: { id: true, status: true } });
-    const parsed = this.parseDueDates(
-      dueDates,
-      episodes.map((e) => e.id),
-    );
+    const episodes = await this.prisma.episode.findMany({
+      where: { movieId },
+      select: { ...EPISODE_MILESTONE, status: true },
+    });
+    const parsed = this.parseDueDates(dueDates, episodes);
     const locked = episodes.filter((e) => parsed.has(e.id) && !DEADLINE_STATUSES.includes(e.status));
     if (locked.length) throw new ConflictException('An approved episode no longer has a deadline to move');
 
@@ -160,12 +162,19 @@ export class StudioHandoffService {
     };
   }
 
-  private parseDueDates(entries: EpisodeDueDateDto[], episodeIds: string[]): Map<string, Date> {
+  /** Due dates of this project's episodes: not in the past and never after the Reviewer's milestone. */
+  private parseDueDates(entries: EpisodeDueDateDto[], episodes: EpisodeMilestone[]): Map<string, Date> {
+    const byId = new Map(episodes.map((e) => [e.id, e]));
     const parsed = new Map<string, Date>();
     for (const { episodeId, dueDate } of entries) {
-      if (!episodeIds.includes(episodeId)) throw new BadRequestException(`Episode ${episodeId} is not in this project`);
+      const episode = byId.get(episodeId);
+      if (!episode) throw new BadRequestException(`Episode ${episodeId} is not in this project`);
       const date = new Date(dueDate);
       if (date < businessDay()) throw new BadRequestException('A due date cannot be in the past');
+      if (!isWithinMilestone(date, episode.milestoneDate)) {
+        const milestone = episode.milestoneDate?.toISOString().slice(0, 10);
+        throw new BadRequestException(`Episode ${episode.episodeNumber} is due after its milestone (${milestone})`);
+      }
       parsed.set(episodeId, date);
     }
     return parsed;
