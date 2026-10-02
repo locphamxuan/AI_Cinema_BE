@@ -13,7 +13,8 @@ export class PlatformSettingController {
   constructor(private readonly platformSettingService: PlatformSettingService) {}
 
   @Get()
-  @RequirePermission(PERMISSION.PRODUCTION_READ)
+  // Reviewers need the rates and the valid price range while funding and pricing.
+  @RequirePermission(PERMISSION.PLATFORM_SETTINGS_MANAGE, PERMISSION.PROJECT_FEE_ALLOCATE, PERMISSION.EPISODE_PUBLISH)
   async get() {
     return this.platformSettingService.get();
   }

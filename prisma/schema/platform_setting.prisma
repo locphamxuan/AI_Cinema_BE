@@ -1,10 +1,22 @@
-/// Platform-wide limits the Admin configures; a single row with id "default".
+/// One row (id = 'default') holding the platform policies only the Admin configures.
 model PlatformSetting {
-    id                        String   @id @default("default") @db.VarChar(32)
-    /// Longest an episode may be allotted or planned, in seconds; null means no limit.
-    maxEpisodeDurationSeconds Int?     @map("max_episode_duration_seconds")
-    updatedById               String?  @map("updated_by") @db.Uuid
-    updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                              String   @id @default("default") @db.VarChar(32)
+  /// BR-03
+  freeStarterEpisodeCount         Int      @default(2) @map("free_starter_episode_count")
+  /// BR-45: VND value of one Token (production fee) and of one main Coin (revenue).
+  tokenRateVnd                    Int      @default(1000) @map("token_rate_vnd")
+  coinRateVnd                     Int      @default(1000) @map("coin_rate_vnd")
+  /// BR-47: valid Coin price of one episode; a price outside it alerts the Admin.
+  episodeCoinPriceMin             Int      @default(1) @map("episode_coin_price_min")
+  episodeCoinPriceMax             Int      @default(50) @map("episode_coin_price_max")
+  /// BR-28, BR-52
+  bonusCoinExpiryDays             Int      @default(30) @map("bonus_coin_expiry_days")
+  /// BR-36
+  playbackHeartbeatTimeoutSeconds Int      @default(90) @map("playback_heartbeat_timeout_seconds")
+  updatedById                     String?  @map("updated_by") @db.Uuid
+  updatedAt                       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-    @@map("platform_settings")
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("platform_settings")
 }

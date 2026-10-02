@@ -1,21 +1,15 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient, PolicyType, UserRole } from '@prisma/client';
-import { Pool } from 'pg';
+import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { AI_MODEL_CATALOG } from '../src/modules/ai-model/ai-model-catalog';
-import { GENRE_CATALOG, genreStyleTriggerKeyword } from './genre-catalog';
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
+import { GENRE_CATALOG } from './genre-catalog';
+import { SEED_POLICIES, SEED_USERS } from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error('DATABASE_URL is not set');
-}
+if (!connectionString) throw new Error('DATABASE_URL is not set');
 
-const adapter = new PrismaPg(new Pool({ connectionString }));
-const prisma = new PrismaClient({ adapter });
-
-// Every seeded staff account signs in with this password (development only);
-// public sign-up can only create viewers, so these are the MF-1 actors.
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const SEED_USER_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';
 // Placeholder hashes an earlier seed stored; they are replaced so the account can sign in.
 const PLACEHOLDER_HASH_PREFIX = '$2b$10$dummy';
@@ -132,58 +126,29 @@ const users = [
   },
 ];
 
-const aiLabelingPolicy = {
-  name: 'AI-Generated Content Labeling Policy',
-  type: PolicyType.AI_LABELING,
-  version: '1.0.0',
-  documentReference: 'Điều 44 Luật số 134/2025/QH15 và Điều 18 Nghị định số 142/2026/NĐ-CP',
-  content: {
-    summary:
-      'Mọi nội dung do AI tạo ra hoặc chỉnh sửa khi phát hành cho công chúng phải được ghi nhãn rõ ràng và niêm yết theo yêu cầu của Điều 44 Luật số 134/2025/QH15 và Điều 18 Nghị định số 142/2026/NĐ-CP.',
-    requirements: [
-      'Visible on-screen label identifying the content as AI-generated or AI-edited on every published episode.',
-      'A persistent metadata tag marking AI-generated or AI-edited content for all catalog items.',
-      'Label verification before any movie becomes publicly viewable.',
-      'An audit log of labeling actions for regulatory reporting.',
-    ],
-  },
-  effectiveFrom: new Date('2026-05-01T00:00:00.000Z'),
-  effectiveTo: null,
-  isActive: true,
-};
-
-async function main() {
-  for (const { name, description } of GENRE_CATALOG) {
-    await prisma.genre.upsert({
-      where: { name },
-      update: { description },
-      create: { name, description },
+/** Permission catalog from code; a role gets the default matrix only while it has no permission at all. */
+async function seedPermissions() {
+  for (const [key, { area, description }] of Object.entries(PERMISSION_CATALOG)) {
+    await prisma.permission.upsert({
+      where: { key },
+      update: { area, description },
+      create: { key, area, description },
     });
   }
+  await prisma.permission.deleteMany({ where: { key: { notIn: Object.keys(PERMISSION_CATALOG) } } });
 
-  const existingPolicy = await prisma.policy.findFirst({
-    where: { documentReference: aiLabelingPolicy.documentReference },
-  });
-
-  if (existingPolicy) {
-    await prisma.policy.update({
-      where: { id: existingPolicy.id },
-      data: {
-        name: aiLabelingPolicy.name,
-        type: aiLabelingPolicy.type,
-        version: aiLabelingPolicy.version,
-        content: aiLabelingPolicy.content,
-        effectiveFrom: aiLabelingPolicy.effectiveFrom,
-        effectiveTo: aiLabelingPolicy.effectiveTo,
-        isActive: aiLabelingPolicy.isActive,
-      },
-    });
-  } else {
-    await prisma.policy.create({
-      data: aiLabelingPolicy,
-    });
+  for (const [role, keys] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+    const typedRole = role as keyof typeof DEFAULT_ROLE_PERMISSIONS;
+    if (await prisma.rolePermission.count({ where: { role: typedRole } })) continue;
+    await prisma.rolePermission.createMany({ data: keys.map((permissionKey) => ({ role: typedRole, permissionKey })) });
   }
+}
 
+async function seedPolicies() {
+  for (const policy of SEED_POLICIES) {
+    const existing = await prisma.policy.findFirst({ where: { name: policy.name, version: policy.version } });
+    if (existing) continue;
+    await prisma.policy.create({ data: { ...policy, effectiveFrom: new Date('2026-05-01T00:00:00.000Z') } });
   const defaultPasswordHash = await bcrypt.hash(SEED_USER_PASSWORD, 10);
   for (const user of users) {
     const { password, ...userData } = user as any;
@@ -204,48 +169,28 @@ async function main() {
       },
     });
   }
+}
 
-  for (const entry of Object.values(AI_MODEL_CATALOG)) {
-    const provider = await prisma.aiProvider.upsert({
-      where: { name: entry.provider },
-      update: {},
-      create: { name: entry.provider },
-    });
-    await prisma.aiModel.upsert({
-      where: { aiProviderId_name_version: { aiProviderId: provider.id, name: entry.name, version: entry.version } },
-      update: { modality: entry.modality },
-      create: { aiProviderId: provider.id, name: entry.name, version: entry.version, modality: entry.modality },
-    });
-  }
-
-  const loraBase = AI_MODEL_CATALOG.image;
-  const fluxModel = await prisma.aiModel.findFirstOrThrow({
-    where: { name: loraBase.name, version: loraBase.version, provider: { name: loraBase.provider } },
-  });
-  const styleOwner = await prisma.user.findUniqueOrThrow({ where: { email: 'reviewer01@aicinema.com' } });
-  // One DRAFT style (and dataset folder) per genre; only the ones whose
-  // folder reaches minSampleThreshold ever get trained.
-  for (const entry of GENRE_CATALOG) {
-    const genre = await prisma.genre.findUniqueOrThrow({ where: { name: entry.name } });
-    const triggerKeyword = genreStyleTriggerKeyword(entry.styleKey);
-    const name = `${entry.name} Style`;
-    await prisma.genreStyleModel.upsert({
-      where: {
-        baseAiModelId_triggerKeyword_version: { baseAiModelId: fluxModel.id, triggerKeyword, version: 1 },
-      },
-      update: { name },
-      create: {
-        genreId: genre.id,
-        baseAiModelId: fluxModel.id,
-        name,
-        triggerKeyword,
-        trainingProvider: 'fal.ai',
-        createdById: styleOwner.id,
-      },
+/** Creates missing accounts; a password someone already changed is kept. */
+async function seedUsers() {
+  const passwordHash = await bcrypt.hash(SEED_USER_PASSWORD, 12);
+  for (const user of SEED_USERS) {
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: { fullName: user.fullName, role: user.role },
+      create: { ...user, passwordHash },
     });
   }
+}
 
-  console.log('Seeded genres, users, AI labeling policy, AI model catalog and genre style LoRAs.');
+async function main() {
+  for (const { name, description } of GENRE_CATALOG) {
+    await prisma.genre.upsert({ where: { name }, update: { description }, create: { name, description } });
+  }
+  await seedPermissions();
+  await seedPolicies();
+  await seedUsers();
+  console.log('Seeded genres, permissions, policies and development accounts.');
 }
 
 main()
@@ -253,6 +198,4 @@ main()
     console.error(error);
     process.exit(1);
   })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .finally(() => prisma.$disconnect());

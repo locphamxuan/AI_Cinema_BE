@@ -1,62 +1,59 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { PrismaModule } from 'src/prisma/prisma.module';
-import { AuthModule } from 'src/modules/auth/auth.module';
-import { GenreModule } from 'src/modules/genre/genre.module';
-import { PolicyModule } from 'src/modules/policy/policy.module';
-import { PlatformSettingModule } from 'src/modules/platform-setting/platform-setting.module';
-import { ProductionProjectModule } from 'src/modules/production-project/production-project.module';
-import { MilestoneModule } from 'src/modules/milestone/milestone.module';
-import { ProductionPlanModule } from 'src/modules/production-plan/production-plan.module';
-import { SceneModule } from 'src/modules/scene/scene.module';
-import { PlanReviewModule } from 'src/modules/plan-review/plan-review.module';
-import { QuotaAllocationModule } from 'src/modules/quota-allocation/quota-allocation.module';
-import { GenerationJobModule } from 'src/modules/generation-job/generation-job.module';
-import { EpisodePackageModule } from 'src/modules/episode-package/episode-package.module';
-import { ReviewModule } from 'src/modules/review/review.module';
-import { AiContentLabelModule } from 'src/modules/ai-content-label/ai-content-label.module';
-import { ComplianceCheckModule } from 'src/modules/compliance-check/compliance-check.module';
-import { UserModule } from 'src/modules/user/user.module';
-import { CatalogModule } from 'src/modules/catalog/catalog.module';
-import { PublicationModule } from 'src/modules/publication/publication.module';
-import { GenreStyleModelModule } from 'src/modules/genre-style-model/genre-style-model.module';
-import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
-import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PaginationModule } from '@nestarc/pagination';
+import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
+import { AppConfigModule } from 'src/config/config.module';
+import { MailerModule } from 'src/infrastructure/mailer/mailer.module';
+import { PrismaModule } from 'src/infrastructure/prisma/prisma.module';
+import { QueueModule } from 'src/infrastructure/queue/queue.module';
+import { StorageModule } from 'src/infrastructure/storage/storage.module';
+import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
+import { AuthModule } from 'src/modules/auth/auth.module';
+import { CatalogModule } from 'src/modules/catalog/catalog.module';
+import { ContentReviewModule } from 'src/modules/content-review/content-review.module';
+import { EmailModule } from 'src/modules/email/email.module';
+import { GenreModule } from 'src/modules/genre/genre.module';
+import { MediaIngestModule } from 'src/modules/media-ingest/media-ingest.module';
+import { MovieProjectModule } from 'src/modules/movie-project/movie-project.module';
+import { NotificationModule } from 'src/modules/notification/notification.module';
+import { PublishingModule } from 'src/modules/publishing/publishing.module';
+import { PolicyModule } from 'src/modules/policy/policy.module';
+import { ProjectAccessModule } from 'src/modules/project-access/project-access.module';
+import { StudioHandoffModule } from 'src/modules/studio-handoff/studio-handoff.module';
+import { PlatformSettingModule } from 'src/modules/platform-setting/platform-setting.module';
+import { UserModule } from 'src/modules/user/user.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
-    PaginationModule.forRoot({
-      defaultLimit: 20,
-      maxLimit: 100,
+    AppConfigModule,
+    ThrottlerModule.forRootAsync({
+      inject: [APP_CONFIG],
+      useFactory: (config: AppConfig) => [{ ttl: config.rateLimit.ttlMs, limit: config.rateLimit.limit }],
     }),
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
+    PaginationModule.forRoot({ defaultLimit: 20, maxLimit: 100 }),
     PrismaModule,
-    AuditLogModule,
+    StorageModule,
+    QueueModule,
+    MailerModule,
     AuthModule,
+    NotificationModule,
+    EmailModule,
+    AuditLogModule,
     GenreModule,
     PolicyModule,
     PlatformSettingModule,
-    ProductionProjectModule,
-    MilestoneModule,
-    ProductionPlanModule,
-    SceneModule,
-    PlanReviewModule,
-    QuotaAllocationModule,
-    GenerationJobModule,
-    EpisodePackageModule,
-    ReviewModule,
-    AiContentLabelModule,
-    ComplianceCheckModule,
-    CatalogModule,
-    PublicationModule,
     UserModule,
-    GenreStyleModelModule,
+    ProjectAccessModule,
+    MovieProjectModule,
+    StudioHandoffModule,
+    MediaIngestModule,
+    ContentReviewModule,
+    PublishingModule,
+    CatalogModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

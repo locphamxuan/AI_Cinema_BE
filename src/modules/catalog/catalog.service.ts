@@ -1,211 +1,165 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ComplianceResult, EpisodeProductionStatus, ProductionContentType, ReviewStatus, Prisma } from '@prisma/client';
-import { PaginateQuery } from '@nestarc/pagination';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { complianceVerdict } from 'src/modules/compliance-check/compliance-verdict';
-import { CreateCatalogRequestDto } from './dto/create-catalog.request.dto';
-import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.request.dto';
-import { DEFAULT_LANGUAGE } from 'src/common/validation/language-code';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { EpisodeStatus, type Prisma } from '@prisma/client';
+import { paginate, type PaginateQuery } from '@nestarc/pagination';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { PlatformSettingService } from 'src/modules/platform-setting/platform-setting.service';
 
-// Viewer-facing reads only ever expose PUBLISHED episodes, and never the
-// internal production data (packages, reviews, creators).
-const PUBLISHED_EPISODES = {
-  where: { productionStatus: EpisodeProductionStatus.PUBLISHED },
-  orderBy: { episodeNumber: 'asc' },
-  include: { currentPackage: { select: { subtitles: { select: { language: true } } } } },
-} satisfies Prisma.Movie$episodesArgs;
+/** Shown on an episode taken down to be fixed (BR-56). */
+export const REVISION_NOTICE = 'Tập đang được bảo trì / sửa đổi nội dung';
 
-const PUBLIC_MOVIE_INCLUDE = {
-  genres: { include: { genre: true } },
-  seasons: { orderBy: { seasonNumber: 'asc' } },
-  episodes: PUBLISHED_EPISODES,
-} satisfies Prisma.MovieInclude;
+/**
+ * Episodes viewers see: released ones, and the ones taken down to be fixed, which stay listed
+ * with a maintenance notice (BR-56). Scheduled, removed and unfinished episodes stay hidden.
+ */
+const VISIBLE_EPISODE: Prisma.EpisodeWhereInput = {
+  OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }],
+};
 
+/** A movie is listed once one of its episodes is out (MF-1 step 14). */
+const LISTED_MOVIE: Prisma.MovieWhereInput = { episodes: { some: VISIBLE_EPISODE } };
+
+const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
+
+const EPISODE_DETAIL = {
+  season: { select: { seasonNumber: true, title: true } },
+  approvedMediaAsset: {
+    select: {
+      durationSeconds: true,
+      qualities: true,
+      aiContentLabel: { select: { labelType: true, labelText: true, displayLocation: true } },
+    },
+  },
+  publications: {
+    where: { publishedAt: { not: null } },
+    orderBy: { publishedAt: 'desc' },
+    take: 1,
+    select: { publishedAt: true },
+  },
+} satisfies Prisma.EpisodeInclude;
+
+type MovieRow = Prisma.MovieGetPayload<{ include: typeof GENRES }>;
+type EpisodeRow = Prisma.EpisodeGetPayload<{ include: typeof EPISODE_DETAIL }>;
+
+/**
+ * The public catalog Guests and Members browse (BR-07). Only catalog fields leave this
+ * service: never the studio, the fee, the people in charge or the idea, and never a stream
+ * URL, which playback hands out after checking access (MF-3).
+ */
 @Injectable()
 export class CatalogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: PlatformSettingService,
+  ) {}
 
-  async createFromPackage(packageId: string, dto: CreateCatalogRequestDto, createdById: string) {
-    const pkg = await this.prisma.episodePackage.findUnique({
-      where: { id: packageId },
-      include: {
-        productionPlan: true,
-        complianceChecks: true,
-        reviews: { where: { status: ReviewStatus.APPROVED } },
-        subtitles: { select: { language: true } },
-      },
+  async listMovies(query: PaginateQuery, genreId?: string) {
+    const page = await paginate(query, this.prisma.movie, {
+      where: genreId ? { ...LISTED_MOVIE, genres: { some: { genreId } } } : LISTED_MOVIE,
+      relations: GENRES,
+      sortableColumns: ['title', 'releaseYear', 'createdAt'],
+      defaultSortBy: [['createdAt', 'DESC']],
+      searchableColumns: ['title'],
+      filterableColumns: { ageRating: ['$eq', '$in'], releaseYear: ['$eq', '$gte', '$lte'] },
     });
-    if (!pkg) throw new NotFoundException(`Episode package with id "${packageId}" does not exist`);
-    if (pkg.reviews.length === 0) {
-      throw new ConflictException('The package must have an APPROVED review before entering the catalog');
-    }
-    if (complianceVerdict(pkg.complianceChecks) !== ComplianceResult.PASS) {
-      throw new ConflictException(
-        'Every compliance check of the package must PASS before it enters the catalog (BR-42)',
-      );
-    }
-
-    const project = await this.prisma.productionProject.findUnique({
-      where: { id: pkg.productionPlan.productionProjectId },
-      include: { productionProjectGenres: true },
-    });
-    if (!project) throw new NotFoundException('Production project does not exist');
-
-    const plan = pkg.productionPlan;
-    if (!pkg.streamUrl || pkg.qualities.length === 0) {
-      throw new ConflictException('The package has no transcoded cut yet - re-assemble it before cataloguing');
-    }
-    const subtitled = new Set(pkg.subtitles.map((s) => s.language));
-    const missing = plan.targetLanguages.filter((language) => !subtitled.has(language));
-    if (missing.length > 0) {
-      throw new ConflictException(`The package is missing subtitles in: ${missing.join(', ')}`);
-    }
-
-    const isSeries = project.contentType === ProductionContentType.SERIES;
-    const seasonNumber = dto.seasonNumber ?? (isSeries ? plan.seasonNumber : undefined);
-    const episodeNumber = dto.episodeNumber ?? plan.seasonEpisodeNumber;
-
-    return this.prisma.$transaction(async (tx) => {
-      // Every episode of a project is published under one catalog title.
-      let movieId = project.movieId;
-      if (!movieId) {
-        const movie = await tx.movie.create({
-          data: {
-            title: dto.title ?? project.title,
-            synopsis: dto.synopsis ?? project.description,
-            description: dto.description,
-            defaultLanguage: dto.defaultLanguage ?? DEFAULT_LANGUAGE,
-            createdById,
-          },
-        });
-        movieId = movie.id;
-        await tx.productionProject.update({ where: { id: project.id }, data: { movieId } });
-
-        const genreIds = project.productionProjectGenres.map((g) => g.genreId);
-        if (genreIds.length > 0) {
-          await tx.movieGenre.createMany({ data: genreIds.map((genreId) => ({ movieId: movieId!, genreId })) });
-        }
-      }
-
-      let seasonId: string | null = null;
-      if (seasonNumber) {
-        const season = await tx.season.upsert({
-          where: { movieId_seasonNumber: { movieId, seasonNumber } },
-          create: { movieId, seasonNumber },
-          update: {},
-        });
-        seasonId = season.id;
-      }
-
-      // A re-assembled package replaces the episode's current cut instead of adding a duplicate.
-      const cut = {
-        currentPackageId: pkg.id,
-        streamUrl: pkg.streamUrl,
-        durationSeconds: pkg.durationSeconds,
-        qualities: pkg.qualities,
-      };
-      const existing = await tx.episode.findFirst({ where: { movieId, seasonId, episodeNumber } });
-      if (existing) {
-        await tx.episode.update({ where: { id: existing.id }, data: cut });
-      } else {
-        const label = seasonNumber ? `Mùa ${seasonNumber} · Tập ${episodeNumber}` : `Tập ${episodeNumber}`;
-        await tx.episode.create({
-          data: {
-            movieId,
-            seasonId,
-            episodeNumber,
-            title: dto.episodeTitle ?? `${dto.title ?? project.title} - ${label}`,
-            productionStatus: EpisodeProductionStatus.DRAFT,
-            ...cut,
-          },
-        });
-      }
-
-      return tx.movie.findUnique({
-        where: { id: movieId },
-        include: {
-          genres: { include: { genre: true } },
-          seasons: { include: { episodes: true } },
-          episodes: { include: { currentPackage: true, publications: true } },
-        },
-      });
-    });
+    return { ...page, data: (page.data as MovieRow[]).map(movieCard) };
   }
 
-  async findAllMovies(query: PaginateQuery) {
-    const where: Prisma.MovieWhereInput = { episodes: { some: PUBLISHED_EPISODES.where } };
-    const title = typeof query.search === 'string' && query.search.trim() ? query.search.trim() : null;
-    if (title) where.title = { contains: title, mode: 'insensitive' };
+  async movie(movieId: string) {
+    const movie = await this.prisma.movie.findFirst({ where: { id: movieId, ...LISTED_MOVIE }, include: GENRES });
+    if (!movie) throw new NotFoundException('Movie not found');
+    const seasons = await this.seasons(movieId);
+    return {
+      ...movieCard(movie),
+      seasons,
+      episodeCount: seasons.reduce((sum, season) => sum + season.episodeCount, 0),
+    };
+  }
 
-    const extra = query.filter as Record<string, string> | Record<string, string[]> | undefined;
-    const genreId = typeof extra?.genreId === 'string' ? extra.genreId : undefined;
-    if (genreId) where.genres = { some: { genreId } };
+  /** Seasons that have something to show, with how many episodes they show. */
+  async seasons(movieId: string) {
+    await this.assertListed(movieId);
+    const seasons = await this.prisma.season.findMany({
+      where: { movieId, episodes: { some: VISIBLE_EPISODE } },
+      orderBy: { seasonNumber: 'asc' },
+      select: { seasonNumber: true, title: true, _count: { select: { episodes: { where: VISIBLE_EPISODE } } } },
+    });
+    return seasons.map(({ _count, ...season }) => ({ ...season, episodeCount: _count.episodes }));
+  }
 
-    const limit = query.limit && query.limit > 0 && query.limit <= 100 ? query.limit : 20;
-    const page = query.page && query.page > 0 ? query.page : 1;
-
-    // Two plain reads — a batch $transaction adds nothing here and times out
-    // waiting for a connection on the remote Neon pool.
-    const [total, items] = await Promise.all([
-      this.prisma.movie.count({ where }),
-      this.prisma.movie.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: PUBLIC_MOVIE_INCLUDE,
+  async episodes(movieId: string, seasonNumber?: number) {
+    await this.assertListed(movieId);
+    const [episodes, freeStarter] = await Promise.all([
+      this.prisma.episode.findMany({
+        where: { movieId, ...VISIBLE_EPISODE, ...(seasonNumber ? { season: { seasonNumber } } : {}) },
+        orderBy: { episodeNumber: 'asc' },
+        include: EPISODE_DETAIL,
       }),
+      this.freeStarterCount(),
     ]);
-
-    return { items, total, page, limit };
+    return episodes.map((episode) => episodeView(episode, freeStarter));
   }
 
-  async findMovieById(movieId: string) {
-    const movie = await this.prisma.movie.findFirst({
-      where: { id: movieId, episodes: { some: PUBLISHED_EPISODES.where } },
-      include: PUBLIC_MOVIE_INCLUDE,
+  async episode(episodeId: string) {
+    const episode = await this.prisma.episode.findFirst({
+      where: { id: episodeId, ...VISIBLE_EPISODE },
+      include: { ...EPISODE_DETAIL, movie: { include: GENRES } },
     });
-    if (!movie) throw new NotFoundException(`Movie with id "${movieId}" does not exist`);
-    return movie;
+    if (!episode) throw new NotFoundException('Episode not found');
+    return { ...episodeView(episode, await this.freeStarterCount()), movie: movieCard(episode.movie) };
   }
 
-  async findEpisodeById(episodeId: string) {
-    const episode = await this.prisma.episode.findUnique({
-      where: { id: episodeId },
-      include: {
-        movie: { include: { genres: { include: { genre: true } } } },
-        season: true,
-        currentPackage: {
-          include: {
-            assets: { include: { generatedAsset: true } },
-            reviews: true,
-            complianceChecks: true,
-            aiContentLabels: true,
-          },
-        },
-        publications: { orderBy: { publishedAt: 'desc' } },
-      },
-    });
-    if (!episode) throw new NotFoundException(`Episode with id "${episodeId}" does not exist`);
-    return episode;
+  private async assertListed(movieId: string) {
+    if (!(await this.prisma.movie.count({ where: { id: movieId, ...LISTED_MOVIE } }))) {
+      throw new NotFoundException('Movie not found');
+    }
   }
 
-  /** WebVTT track of a published episode, served to the player. */
-  async findEpisodeSubtitle(episodeId: string, language: string) {
-    const subtitle = await this.prisma.episodePackageSubtitle.findFirst({
-      where: {
-        language,
-        episodePackage: {
-          currentForEpisode: { id: episodeId, productionStatus: EpisodeProductionStatus.PUBLISHED },
-        },
-      },
-    });
-    if (!subtitle) throw new NotFoundException(`Episode "${episodeId}" has no published "${language}" subtitles`);
-    return subtitle.content;
+  private async freeStarterCount(): Promise<number> {
+    return (await this.settings.get()).freeStarterEpisodeCount;
   }
+}
 
-  async updateEpisode(episodeId: string, dto: UpdateCatalogEpisodeRequestDto) {
-    await this.findEpisodeById(episodeId);
-    return this.prisma.episode.update({ where: { id: episodeId }, data: { title: dto.title } });
-  }
+export function movieCard(movie: MovieRow) {
+  return {
+    id: movie.id,
+    title: movie.title,
+    synopsis: movie.synopsis,
+    ageRating: movie.ageRating,
+    releaseYear: movie.releaseYear,
+    defaultLanguage: movie.defaultLanguage,
+    posterUrl: movie.posterUrl,
+    bannerUrl: movie.bannerUrl,
+    trailerUrl: movie.trailerUrl,
+    // The whole catalog is AI-made; the per-episode label says how (BR-40).
+    aiGenerated: movie.aiGenerated,
+    genres: movie.genres.map(({ genre }) => genre),
+  };
+}
+
+/**
+ * What a viewer sees of an episode. Under revision it shows the notice and can't be played;
+ * its AI label and length come back with the fixed version (BR-56).
+ */
+export function episodeView(episode: EpisodeRow, freeStarterCount: number) {
+  const underRevision = episode.revisionStartedAt !== null;
+  const media = underRevision ? null : episode.approvedMediaAsset;
+  return {
+    id: episode.id,
+    movieId: episode.movieId,
+    seasonNumber: episode.season.seasonNumber,
+    seasonTitle: episode.season.title,
+    episodeNumber: episode.episodeNumber,
+    title: episode.title,
+    synopsis: episode.synopsis,
+    thumbnailUrl: episode.thumbnailUrl,
+    availability: underRevision ? 'UNDER_REVISION' : 'AVAILABLE',
+    notice: underRevision ? REVISION_NOTICE : null,
+    // BR-03: the first episodes of every movie, counted across seasons.
+    isFreeStarter: episode.episodeNumber <= freeStarterCount,
+    coinPrice: episode.coinPrice,
+    durationSeconds: media?.durationSeconds ?? null,
+    qualities: media?.qualities ?? [],
+    aiLabel: media?.aiContentLabel ?? null,
+    publishedAt: episode.publications[0]?.publishedAt ?? null,
+  };
 }

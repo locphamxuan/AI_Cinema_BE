@@ -1,58 +1,48 @@
-import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
-import { PERMISSION } from 'src/common/auth/permissions';
-import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Query } from '@nestjs/common';
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
-import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
-import { CreateCatalogRequestDto } from './dto/create-catalog.request.dto';
-import { UpdateCatalogEpisodeRequestDto } from './dto/update-catalog-episode.request.dto';
 import { CatalogService } from './catalog.service';
 
+const ID = new ParseUUIDPipe({ version: '4' });
+
 @ApiTags('catalog')
-@ApiBearerAuth()
+@Public()
 @Controller()
 export class CatalogController {
-  constructor(private readonly catalogService: CatalogService) {}
-
-  @Post('episode-packages/:packageId/catalog')
-  @RequirePermission(PERMISSION.MOVIE_PUBLISH)
-  async createFromPackage(
-    @Param('packageId') packageId: string,
-    @Body() dto: CreateCatalogRequestDto,
-    @CurrentUser('id') userId: string,
-  ) {
-    return this.catalogService.createFromPackage(packageId, dto, userId);
-  }
+  constructor(private readonly catalog: CatalogService) {}
 
   @Get('movies')
-  @Public()
-  async findAllMovies(@Paginate() query: PaginateQuery) {
-    return this.catalogService.findAllMovies(query);
+  @ApiQuery({ name: 'genreId', required: false })
+  @ApiOperation({ summary: 'Movies with at least one released episode; search, filter by genre and age rating' })
+  movies(@Paginate() query: PaginateQuery, @Query('genreId', new ParseUUIDPipe({ optional: true })) genreId?: string) {
+    return this.catalog.listMovies(query, genreId);
   }
 
   @Get('movies/:movieId')
-  @Public()
-  async findMovieById(@Param('movieId', ParseUUIDPipe) movieId: string) {
-    return this.catalogService.findMovieById(movieId);
+  @ApiOperation({ summary: 'A listed movie with its seasons' })
+  movie(@Param('movieId', ID) movieId: string) {
+    return this.catalog.movie(movieId);
   }
 
-  @Get('catalog/episodes/:episodeId')
-  @RequirePermission(PERMISSION.PRODUCTION_READ)
-  async findEpisodeById(@Param('episodeId') episodeId: string) {
-    return this.catalogService.findEpisodeById(episodeId);
+  @Get('movies/:movieId/seasons')
+  seasons(@Param('movieId', ID) movieId: string) {
+    return this.catalog.seasons(movieId);
   }
 
-  @Get('catalog/episodes/:episodeId/subtitles/:language')
-  @Public()
-  @Header('Content-Type', 'text/vtt; charset=utf-8')
-  async findEpisodeSubtitle(@Param('episodeId', ParseUUIDPipe) episodeId: string, @Param('language') language: string) {
-    return this.catalogService.findEpisodeSubtitle(episodeId, language);
+  @Get('movies/:movieId/episodes')
+  @ApiQuery({ name: 'season', required: false, type: Number })
+  @ApiOperation({ summary: 'Released episodes, with free-starter flag, AI label and the under-maintenance notice' })
+  episodes(
+    @Param('movieId', ID) movieId: string,
+    @Query('season', new ParseIntPipe({ optional: true })) season?: number,
+  ) {
+    return this.catalog.episodes(movieId, season);
   }
 
-  @Patch('catalog/episodes/:episodeId')
-  @RequirePermission(PERMISSION.MOVIE_PUBLISH)
-  async updateEpisode(@Param('episodeId') episodeId: string, @Body() dto: UpdateCatalogEpisodeRequestDto) {
-    return this.catalogService.updateEpisode(episodeId, dto);
+  @Get('episodes/:episodeId')
+  @ApiOperation({ summary: 'A released episode, or one under maintenance (BR-56)' })
+  episode(@Param('episodeId', ID) episodeId: string) {
+    return this.catalog.episode(episodeId);
   }
 }

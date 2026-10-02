@@ -1,30 +1,79 @@
-enum ReviewStatus {
-    PENDING
-    IN_REVIEW
-    APPROVED
-    REJECTED
-    CHANGES_REQUESTED
+enum ContentReviewDecision {
+  APPROVED
+  CHANGES_REQUESTED
 }
 
-/**
- * One review cycle by a Content Reviewer for an episode package (final content review).
- * Unlike `plan_review`, this is a review gate that occurs *after* resources have been
- * expended—verifying whether the final product aligns with the plan.
- */
-model Review {
-    id               String       @id @default(uuid()) @db.Uuid
-    episodePackageId String       @map("episode_package_id") @db.Uuid
-    reviewerId       String       @map("reviewer_id") @db.Uuid
-    status           ReviewStatus @default(PENDING)
-    comments         String?      @db.Text
-    rejectionReason  String?      @map("rejection_reason") @db.Text
-    decidedAt        DateTime?    @map("decided_at") @db.Timestamptz(6)
-    createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-    submissionId     String?      @db.Uuid
+enum LabelType {
+  AI_GENERATED
+  AI_EDITED
+  AI_ASSISTED
+}
 
-    episodePackage EpisodePackage @relation(fields: [episodePackageId], references: [id])
-    reviewer       User           @relation("ReviewReviewer", fields: [reviewerId], references: [id])
-    submission     Submission?    @relation(fields: [submissionId], references: [id])
+enum ComplianceCheckType {
+  AI_LABEL_PRESENCE
+  DECREE_142_NOTICE
+  CONTENT_SAFETY
+  REAL_PERSON_LIKENESS
+}
 
-    @@map("reviews")
+enum ComplianceResult {
+  PENDING
+  PASS
+  FAIL
+}
+
+/// The Reviewer approves a media version or asks for changes (BR-16, BR-18).
+model ContentReview {
+  id           String                @id @default(uuid()) @db.Uuid
+  mediaAssetId String                @map("media_asset_id") @db.Uuid
+  reviewerId   String                @map("reviewer_id") @db.Uuid
+  decision     ContentReviewDecision
+  /// Required when changes are requested.
+  comments     String?               @db.Text
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  reviewer   User       @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([mediaAssetId])
+  @@map("content_reviews")
+}
+
+/// The AI label the Reviewer decides (BR-40), one per media version, shown over the player.
+model AiContentLabel {
+  id              String    @id @default(uuid()) @db.Uuid
+  mediaAssetId    String    @unique @map("media_asset_id") @db.Uuid
+  labelType       LabelType @map("label_type")
+  labelText       String    @map("label_text") @db.VarChar(500)
+  /// e.g. TOP_RIGHT, INTRO_NOTICE
+  displayLocation String?   @map("display_location") @db.VarChar(100)
+  appliedById     String    @map("applied_by_id") @db.Uuid
+  policyId        String    @map("policy_id") @db.Uuid
+  appliedAt       DateTime  @default(now()) @map("applied_at") @db.Timestamptz(6)
+
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  appliedBy  User       @relation(fields: [appliedById], references: [id], onDelete: Restrict)
+  policy     Policy     @relation(fields: [policyId], references: [id], onDelete: Restrict)
+
+  @@map("ai_content_labels")
+}
+
+/// One compliance item of a media version (BR-42); all four must PASS.
+model ComplianceCheck {
+  id            String              @id @default(uuid()) @db.Uuid
+  mediaAssetId  String              @map("media_asset_id") @db.Uuid
+  checkType     ComplianceCheckType @map("check_type")
+  result        ComplianceResult    @default(PENDING)
+  checkedById   String?             @map("checked_by_id") @db.Uuid
+  /// Required when the result is FAIL.
+  failureReason String?             @map("failure_reason") @db.Text
+  checkedAt     DateTime?           @map("checked_at") @db.Timestamptz(6)
+  policyId      String              @map("policy_id") @db.Uuid
+
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  checkedBy  User?      @relation(fields: [checkedById], references: [id], onDelete: SetNull)
+  policy     Policy     @relation(fields: [policyId], references: [id], onDelete: Restrict)
+
+  @@unique([mediaAssetId, checkType])
+  @@map("compliance_checks")
 }

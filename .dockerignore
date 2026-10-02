@@ -2,7 +2,6 @@ node_modules
 dist
 coverage
 test
-training-data
 .env
 .env.*
 !.env.example
@@ -10,3 +9,8 @@ training-data
 .claude*
 .codegraph
 *.log
+coverage-e2e
+.scannerwork
+sonar-project.properties
+.github
+docker-compose.sonar.yml

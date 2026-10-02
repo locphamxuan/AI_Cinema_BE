@@ -1,36 +1,63 @@
 enum UserRole {
-    MEMBER
-    CONTENT_CREATOR
-    CONTENT_REVIEWER
-    STAFF
-    ADMIN
+  MEMBER
+  CONTENT_CREATOR
+  CONTENT_REVIEWER
+  STAFF
+  ADMIN
 }
 
 model User {
-    id           String   @id @default(uuid()) @db.Uuid
-    email        String   @unique @db.VarChar(255)
-    passwordHash String   @map("password_hash") @db.VarChar(255)
-    fullName     String   @map("full_name") @db.VarChar(255)
-    role         UserRole
-    isActive     Boolean  @default(true) @map("is_active")
-    createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-    updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String    @id @default(uuid()) @db.Uuid
+  email           String    @unique @db.VarChar(255)
+  passwordHash    String    @map("password_hash") @db.VarChar(255)
+  fullName        String    @map("full_name") @db.VarChar(255)
+  /// BR-54: required for members, who must be 18 or older; staff accounts may leave it empty.
+  dateOfBirth     DateTime? @map("date_of_birth") @db.Date
+  role            UserRole  @default(MEMBER)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-    moviesCreated             Movie[]             @relation("MovieCreatedBy")
-    productionPlansCreated    ProductionPlan[]    @relation("ProductionPlanCreatedBy")
-    generationJobs            GenerationJob[]     @relation("GenerationJobCreatedBy")
-    reviews                   Review[]            @relation("ReviewReviewer")
-    complianceChecks          ComplianceCheck[]   @relation("ComplianceCheckedBy")
-    appliedLabels             AiContentLabel[]    @relation("LabelAppliedBy")
-    publications              Publication[]       @relation("PublicationPublishedBy")
-    planReviews               PlanReview[]        @relation("PlanReviewReviewer")
-    quotaAllocationsCreated   QuotaAllocation[]   @relation("QuotaAllocationCreatedBy")
-    quotaRequestsMade         QuotaRequest[]      @relation("QuotaRequestRequestedBy")
-    quotaRequestsDecided      QuotaRequest[]      @relation("QuotaRequestDecidedBy")
-    productionProjectsCreated ProductionProject[] @relation("ProductionProjectCreatedBy")
-    submissions               Submission[]        @relation("SubmissionSubmittedBy")
-    productionProjects        ProductionProject[] @relation("ProductionProjectAssignedCreator")
-    genreStyleModelsCreated   GenreStyleModel[]   @relation("GenreStyleModelCreatedBy")
+  refreshTokens           RefreshToken[]
+  auditLogs               AuditLog[]
+  platformSettingsUpdated PlatformSetting[]
+  moviesReviewed          Movie[]                @relation("MovieReviewer")
+  moviesCreated           Movie[]                @relation("MovieCreator")
+  ideaFilesUploaded       MovieIdeaFile[]
+  studioHandoffs          StudioHandoff[]
+  changeRequestsMade      ProjectChangeRequest[] @relation("ChangeRequestRequestedBy")
+  changeRequestsResolved  ProjectChangeRequest[] @relation("ChangeRequestResolvedBy")
+  tokenEntries            TokenLedgerEntry[]
+  mediaSubmitted          MediaAsset[]
+  contentReviews          ContentReview[]
+  labelsApplied           AiContentLabel[]
+  complianceChecked       ComplianceCheck[]
+  publicationsPublished   Publication[]          @relation("PublicationPublishedBy")
+  publicationsUnpublished Publication[]          @relation("PublicationUnpublishedBy")
+  priceAlertsSet          PriceAlert[]           @relation("PriceAlertSetBy")
+  priceAlertsHandled      PriceAlert[]           @relation("PriceAlertHandledBy")
+  notifications           Notification[]
 
-    @@map("users")
+  @@index([role])
+  @@map("users")
+}
+
+/// Refresh tokens are opaque random strings; only their SHA-256 hash is stored. Each refresh
+/// rotates the token (replaced_by_id), so reusing an old one reveals a stolen token.
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash") @db.VarChar(255)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshToken?  @relation("RefreshTokenRotation", fields: [replacedById], references: [id], onDelete: SetNull)
+  replaces   RefreshToken[] @relation("RefreshTokenRotation")
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }

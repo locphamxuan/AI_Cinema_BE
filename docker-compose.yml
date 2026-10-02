@@ -1,3 +1,4 @@
+# Local stack: Postgres + Redis (media and scheduling queue) + migrations/seed + API.
 # Local stack: Postgres + Redis (AI job queue) + migrations/seed + API.
 name: ai-cinema-be
 
@@ -5,7 +6,7 @@ name: ai-cinema-be
 #   docker compose up -d --build     → API on http://localhost:3001/api (Swagger on /api/docs)
 #   docker compose down               → stop (data stays in the pg-data volume)
 #   docker compose down -v            → stop and wipe the database
-# Secrets and AI keys come from .env (copy .env.example); DATABASE_URL and REDIS_URL there are ignored here.
+# Secrets come from .env (copy .env.example); DATABASE_URL and REDIS_URL there are ignored here.
 services:
   postgres:
     image: postgres:16-alpine

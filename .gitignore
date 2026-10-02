@@ -30,6 +30,9 @@ lib-cov
 
 # Coverage directory used by tools like istanbul
 coverage
+coverage-e2e
+# SonarScanner work files
+.scannerwork
 *.lcov
 
 # nyc test coverage
@@ -153,6 +156,9 @@ vite.config.ts.timestamp-*
 .vite/
 
 /generated/prisma
+
+# Files of the local storage driver (STORAGE_DRIVER=local)
+/storage/
 
 # Genre Style LoRA datasets — keep folder layout + captions in git, not the images
 training-data/**/*.png

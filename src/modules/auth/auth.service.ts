@@ -1,107 +1,81 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { JwtService, JwtSignOptions } from '@nestjs/jwt';
-import { User, UserRole } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
-import { JwtPayload } from 'src/common/auth/authenticated-user';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AccessControlService } from 'src/modules/access-control/access-control.service';
-import { AuthSessionDto } from './dto/auth-session.dto';
+import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/user/user-profile';
+import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
+import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
-
-const PASSWORD_SALT_ROUNDS = 10;
+import { SessionTokenService } from './session-token.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
+    private readonly tokens: SessionTokenService,
     private readonly accessControl: AccessControlService,
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (existing) {
+    const dateOfBirth = new Date(dto.dateOfBirth);
+    if (!isAdult(dateOfBirth)) {
+      throw new ForbiddenException('AI Cinema is only for viewers aged 18 or older');
+    }
+    const email = normalizeEmail(dto.email);
+    if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
       throw new ConflictException('An account with this email already exists');
     }
 
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email,
-        passwordHash: await bcrypt.hash(dto.password, PASSWORD_SALT_ROUNDS),
-        fullName: dto.fullName,
+        email,
+        passwordHash: await hashPassword(dto.password),
+        fullName: dto.fullName.trim(),
+        dateOfBirth,
         role: UserRole.MEMBER,
       },
+      select: USER_PROFILE_SELECT,
     });
-
-    return this.buildSession(user);
+    return this.session(user);
   }
 
   async login(dto: LoginRequestDto): Promise<AuthSessionDto> {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
-      throw new UnauthorizedException('Incorrect email or password');
-    }
-    if (!user.isActive) {
-      throw new UnauthorizedException('This account has been deactivated');
-    }
+    const found = await this.prisma.user.findUnique({
+      where: { email: normalizeEmail(dto.email) },
+      select: { ...USER_PROFILE_SELECT, passwordHash: true },
+    });
+    // The hash is always compared so an unknown email takes as long as a wrong password.
+    const passwordMatches = await verifyPassword(dto.password, found?.passwordHash);
+    if (!found || !passwordMatches) throw new UnauthorizedException('Incorrect email or password');
+    if (!found.isActive) throw new ForbiddenException('This account has been deactivated');
 
-    return this.buildSession(user);
+    const { passwordHash: _hash, ...user } = found;
+    return this.session(user);
   }
 
   async refresh(refreshToken: string): Promise<AuthSessionDto> {
-    let payload: JwtPayload;
-    try {
-      payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken);
-    } catch {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
-    if (payload.type !== 'refresh') {
-      throw new UnauthorizedException('Access token cannot be used to refresh a session');
-    }
-
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user || !user.isActive) {
-      throw new UnauthorizedException('Account no longer available');
-    }
-
-    return this.buildSession(user);
+    const { userId, tokens } = await this.tokens.rotate(refreshToken);
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: USER_PROFILE_SELECT });
+    return { ...tokens, user: await this.withPermissions(user) };
   }
 
-  async me(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new UnauthorizedException('Account no longer available');
-    }
-    return this.profileWithPermissions(user);
+  logout(refreshToken: string): Promise<void> {
+    return this.tokens.revoke(refreshToken);
   }
 
-  private async buildSession(user: User): Promise<AuthSessionDto> {
-    const claims = { sub: user.id, email: user.email, role: user.role };
-
-    const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync({ ...claims, type: 'access' }, this.lifetime('JWT_ACCESS_EXPIRES_IN', '1h')),
-      this.jwtService.signAsync({ ...claims, type: 'refresh' }, this.lifetime('JWT_REFRESH_EXPIRES_IN', '30d')),
-    ]);
-
-    return { accessToken, refreshToken, user: await this.profileWithPermissions(user) };
+  async me(userId: string): Promise<AuthProfileDto> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: USER_PROFILE_SELECT });
+    if (!user) throw new UnauthorizedException('Account no longer available');
+    return this.withPermissions(user);
   }
 
-  // Read from process.env rather than ConfigService: @nestjs/config v12 is ESM-only and cannot be
-  // required by Jest, which would make this service untestable. ConfigModule still populates env.
-  // `expiresIn` is typed as the `ms` StringValue union, which a plain string cannot satisfy structurally.
-  private lifetime(key: string, fallback: string): JwtSignOptions {
-    return { expiresIn: process.env[key] ?? fallback } as JwtSignOptions;
+  private async session(user: UserProfile): Promise<AuthSessionDto> {
+    return { ...(await this.tokens.issue(user)), user: await this.withPermissions(user) };
   }
 
   // The web portal shows each account only the screens and actions its role may use.
-  private async profileWithPermissions(user: User) {
-    const permissions = [...(await this.accessControl.permissionsOf(user.role))].sort();
-    return { ...this.toProfile(user), permissions };
-  }
-
-  private toProfile(user: User) {
-    const { passwordHash: _passwordHash, ...profile } = user;
-    return profile;
+  private async withPermissions(user: UserProfile): Promise<AuthProfileDto> {
+    return { ...user, permissions: [...(await this.accessControl.permissionsOf(user.role))].sort() };
   }
 }
