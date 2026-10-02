@@ -44,6 +44,9 @@ export class ProjectLifecycleService {
     if (!(await this.prisma.episode.count({ where: { movieId } }))) {
       throw new ConflictException('The project needs at least one episode');
     }
+    if (await this.prisma.episode.count({ where: { movieId, milestoneDate: null } })) {
+      throw new ConflictException('Set a milestone for every episode before assigning a Creator');
+    }
 
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.movie.updateMany({

@@ -11,6 +11,7 @@ import { UpdateMovieProjectRequestDto } from './dto/update-movie-project.request
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { revisionSummary } from './revision-summary';
+import { milestoneDay } from './episode-milestone';
 
 const PERSON = { select: { id: true, fullName: true, email: true } } as const;
 
@@ -73,6 +74,7 @@ export class MovieProjectService {
             title: episode.title.trim(),
             synopsis: episode.synopsis,
             targetDurationSeconds: episode.targetDurationSeconds,
+            milestoneDate: milestoneDay(episode.milestoneDate),
           })),
         });
       }

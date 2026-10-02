@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsDateString,
   IsInt,
   IsOptional,
   IsString,
@@ -33,6 +34,13 @@ export class NewEpisodeDto {
   @Min(1)
   @Max(MAX_TARGET_DURATION_SECONDS)
   targetDurationSeconds: number;
+
+  @ApiProperty({
+    example: '2026-11-30',
+    description: 'Day the episode must be done; the studio due date the Creator sets cannot be later.',
+  })
+  @IsDateString({ strict: true })
+  milestoneDate: string;
 
   @ApiPropertyOptional({ example: 'Một cô gái nhận được cuộc gọi lạ…' })
   @IsString()
