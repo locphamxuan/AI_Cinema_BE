@@ -97,7 +97,7 @@ describe('Public catalog (e2e)', () => {
     expect(episodes.map((e) => e.isFreeStarter)).toEqual([true, true, false]);
     expect(episodes[2]).toMatchObject({ availability: 'AVAILABLE', notice: null, coinPrice: 12, durationSeconds: 60 });
     expect(episodes[0].aiLabel).toMatchObject({ labelType: 'AI_GENERATED' });
-    for (const internal of ['streamUrl', 'approvedMediaAssetId', 'status', 'dueDate']) {
+    for (const internal of ['streamUrl', 'approvedMediaAssetId', 'status', 'dueDate', 'milestoneDate']) {
       expect(episodes[0]).not.toHaveProperty(internal);
     }
 

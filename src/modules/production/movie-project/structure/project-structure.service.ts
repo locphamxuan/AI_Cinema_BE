@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Episode } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -12,6 +12,7 @@ import {
 } from 'src/modules/production/project-access/project-rules';
 import type { NewEpisodeDto, NewSeasonDto } from '../dto/create-movie-project.request.dto';
 import type { UpdateEpisodeRequestDto } from '../dto/project-actions.request.dto';
+import { isWithinMilestone, milestoneDay } from '../episode-milestone';
 
 /** Seasons and episodes of a project; numbering goes on where the movie left off (BR-37). */
 @Injectable()
@@ -56,7 +57,16 @@ export class ProjectStructureService {
     if (dto.targetDurationSeconds !== undefined) {
       assertEpisodeStatus(episode.status, EPISODE_STATUSES_BEFORE_APPROVAL, 'change the target duration');
     }
-    return this.prisma.episode.update({ where: { id: episodeId }, data: dto });
+    const { milestoneDate, ...fields } = dto;
+    let milestone: Date | undefined;
+    if (milestoneDate !== undefined) {
+      assertEpisodeStatus(episode.status, EPISODE_STATUSES_BEFORE_APPROVAL, 'move the milestone');
+      milestone = milestoneDay(milestoneDate);
+      if (episode.dueDate && !isWithinMilestone(episode.dueDate, milestone)) {
+        throw new ConflictException('The studio is due after that day; the Creator must move the due date first');
+      }
+    }
+    return this.prisma.episode.update({ where: { id: episodeId }, data: { ...fields, milestoneDate: milestone } });
   }
 
   /** Episode numbers are unique per movie, so concurrent additions are serialised on the movie row. */
@@ -84,6 +94,7 @@ export class ProjectStructureService {
             title: episode.title.trim(),
             synopsis: episode.synopsis,
             targetDurationSeconds: episode.targetDurationSeconds,
+            milestoneDate: milestoneDay(episode.milestoneDate),
             status,
           },
         }),

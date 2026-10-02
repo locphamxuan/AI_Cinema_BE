@@ -48,6 +48,12 @@ describe('Studio hand-off (e2e)', () => {
       { ...studio, dueDates: [dueDates[0], { episodeId: second.id, dueDate: '2020-01-01' }] },
       400,
     );
+    // The Reviewer's milestone is 30 days out; the studio cannot be due later.
+    await creator.post(
+      `/projects/${project.id}/handoff`,
+      { ...studio, dueDates: [dueDates[0], { episodeId: second.id, dueDate: inDays(31) }] },
+      400,
+    );
 
     const history = await creator.post<Handoff[]>(`/projects/${project.id}/handoff`, { ...studio, dueDates });
     expect(history).toHaveLength(1);
@@ -58,6 +64,25 @@ describe('Studio hand-off (e2e)', () => {
     const detail = await reviewer.get<ProjectDetail & { studioEmail: string }>(`/projects/${project.id}`);
     expect(detail).toMatchObject({ status: 'IN_PRODUCTION', studioEmail: 'contact@anhtrang.example' });
     expect(episodesOf(detail).map((e) => e.status)).toEqual(['AWAITING_MEDIA', 'AWAITING_MEDIA']);
+  });
+
+  it('keeps every studio due date within the Reviewer milestone', async () => {
+    const [, second] = episodesOf(project);
+    await creator.put(
+      `/projects/${project.id}/due-dates`,
+      { dueDates: [{ episodeId: second.id, dueDate: inDays(31) }] },
+      400,
+    );
+    await creator.put(`/projects/${project.id}/due-dates`, {
+      dueDates: [{ episodeId: second.id, dueDate: inDays(30) }],
+    });
+    // Studio due in 30 days: the Reviewer cannot pull the milestone in before that…
+    await reviewer.patch(`/episodes/${second.id}`, { milestoneDate: inDays(20) }, 409);
+    // …until the Creator moves the deadline first.
+    await creator.put(`/projects/${project.id}/due-dates`, {
+      dueDates: [{ episodeId: second.id, dueDate: inDays(14) }],
+    });
+    await reviewer.patch(`/episodes/${second.id}`, { milestoneDate: inDays(20) });
   });
 
   it('serves the brief PDF to the people of the project', async () => {

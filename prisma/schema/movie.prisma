@@ -157,6 +157,9 @@ model Episode {
   status                EpisodeStatus @default(DRAFT)
   /// BR-31: set by the Reviewer, no platform limit.
   targetDurationSeconds Int           @map("target_duration_seconds")
+  /// Set by the Reviewer when creating the project; the studio due date cannot be later.
+  /// Null only on episodes created before milestones existed.
+  milestoneDate         DateTime?     @map("milestone_date") @db.Date
   /// BR-38: when the studio must deliver.
   dueDate               DateTime?     @map("due_date") @db.Date
   /// BR-14: the reviewed version that gets published.

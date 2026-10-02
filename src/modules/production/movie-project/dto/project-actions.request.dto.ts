@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { MAX_TARGET_DURATION_SECONDS } from './create-movie-project.request.dto';
 
 export class AssignCreatorRequestDto {
@@ -36,4 +36,12 @@ export class UpdateEpisodeRequestDto {
   @Max(MAX_TARGET_DURATION_SECONDS)
   @IsOptional()
   targetDurationSeconds?: number;
+
+  @ApiPropertyOptional({
+    example: '2026-11-30',
+    description: 'Moves the milestone; not into the past nor before the studio due date already set.',
+  })
+  @IsDateString({ strict: true })
+  @IsOptional()
+  milestoneDate?: string;
 }

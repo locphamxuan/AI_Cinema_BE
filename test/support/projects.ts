@@ -18,7 +18,11 @@ export async function assignedProject(reviewer: Actor, creator: Actor, episodes 
     genreIds: [genreId],
     seasons: [
       {
-        episodes: Array.from({ length: episodes }, (_, i) => ({ title: `Tập ${i + 1}`, targetDurationSeconds: 900 })),
+        episodes: Array.from({ length: episodes }, (_, i) => ({
+          title: `Tập ${i + 1}`,
+          targetDurationSeconds: 900,
+          milestoneDate: inDays(30),
+        })),
       },
     ],
   });
