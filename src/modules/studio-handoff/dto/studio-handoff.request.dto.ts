@@ -24,7 +24,7 @@ export class EpisodeDueDateDto {
   dueDate: string;
 }
 
-export class StudioDto {
+class StudioDto {
   @ApiProperty({ example: 'Studio Ánh Trăng' })
   @IsString()
   @MinLength(2)

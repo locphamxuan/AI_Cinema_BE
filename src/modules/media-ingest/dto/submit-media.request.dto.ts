@@ -22,7 +22,7 @@ import {
   validateSync,
 } from 'class-validator';
 
-export const AI_GENERATED_PARTS = ['image', 'video', 'voice', 'music', 'script', 'subtitle'] as const;
+const AI_GENERATED_PARTS = ['image', 'video', 'voice', 'music', 'script', 'subtitle'] as const;
 
 /** BR-41: what the studio declares about its use of AI, typed in by the Creator (§4.1.5). */
 export class AiDisclosureDto {

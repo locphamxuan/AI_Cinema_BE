@@ -6,6 +6,8 @@
 .claude-mem/
 CLAUDE.md
 TESTING.md
+# Context file of the current code state, read before every task
+PROJECT_OVERVIEW.md
 .codegraph/
 
 # Logs

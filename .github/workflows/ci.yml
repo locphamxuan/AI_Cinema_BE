@@ -52,7 +52,7 @@ jobs:
           retention-days: 7
 
   e2e:
-    name: E2E tests (Postgres)
+    name: E2E tests (Postgres, Redis)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -67,8 +67,16 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres -d ai_cinema_e2e"
           --health-interval 2s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 63799:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
     env:
       E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:54329/ai_cinema_e2e
+      E2E_REDIS_URL: redis://localhost:63799
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

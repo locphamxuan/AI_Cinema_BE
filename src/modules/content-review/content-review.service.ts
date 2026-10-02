@@ -29,7 +29,7 @@ export const REVIEWED_STATUSES: EpisodeStatus[] = [
 ];
 
 /** BR-31: an actual length this far from the target is flagged on the review sheet. */
-export const DURATION_WARNING_RATIO = 0.2;
+const DURATION_WARNING_RATIO = 0.2;
 
 export type ReviewedAsset = MediaAsset & { episode: Episode & { movie: Movie } };
 

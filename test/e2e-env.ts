@@ -8,16 +8,20 @@ import { join } from 'node:path';
 export const E2E_DATABASE_URL =
   process.env.E2E_DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:54329/ai_cinema_e2e';
 
+/** Redis of the queue suite (redis-queue.e2e-spec.ts); every other suite runs jobs inline. */
+export const E2E_REDIS_URL = process.env.E2E_REDIS_URL ?? 'redis://127.0.0.1:63799';
+
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
 
 export function assertLocalDatabase(url: string) {
   const host = new URL(url).hostname;
   if (!LOCAL_HOSTS.has(host)) {
-    throw new Error(`Refusing to run e2e tests against a non-local database (${host})`);
+    throw new Error(`Refusing to run e2e tests against a non-local server (${host})`);
   }
 }
 
 assertLocalDatabase(E2E_DATABASE_URL);
+assertLocalDatabase(E2E_REDIS_URL);
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = E2E_DATABASE_URL;
 process.env.JWT_SECRET ??= 'e2e-secret';

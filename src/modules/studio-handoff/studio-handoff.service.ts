@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, StreamableFile } from '@nestjs/common';
 import { EpisodeStatus, MovieStatus } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { businessDay } from 'src/common/time/business-day';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -10,8 +11,6 @@ import { ProjectAccessService } from 'src/modules/project-access/project-access.
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
 import { BriefService, type PreparedBrief, type StudioInfo } from './brief.service';
 import type { ChangeStudioRequestDto, EpisodeDueDateDto, HandOffRequestDto } from './dto/studio-handoff.request.dto';
-
-const today = () => new Date(new Date().toISOString().slice(0, 10));
 
 // Deadlines can move while the studio has not delivered an accepted version yet.
 const DEADLINE_STATUSES: EpisodeStatus[] = [
@@ -166,7 +165,7 @@ export class StudioHandoffService {
     for (const { episodeId, dueDate } of entries) {
       if (!episodeIds.includes(episodeId)) throw new BadRequestException(`Episode ${episodeId} is not in this project`);
       const date = new Date(dueDate);
-      if (date < today()) throw new BadRequestException('A due date cannot be in the past');
+      if (date < businessDay()) throw new BadRequestException('A due date cannot be in the past');
       parsed.set(episodeId, date);
     }
     return parsed;

@@ -1,6 +1,7 @@
 # Self-hosted SonarQube for an offline analysis, when SonarCloud is not an option.
 #   docker compose -f docker-compose.sonar.yml up -d      → http://localhost:9000 (admin / admin)
 #   then follow "Analyse locally" in README.md
+name: ai-cinema-sonar
 services:
   sonarqube:
     image: sonarqube:community

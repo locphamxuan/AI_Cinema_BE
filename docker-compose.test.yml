@@ -1,5 +1,6 @@
-# Throwaway Postgres for the e2e suite (npm run test:e2e). Data lives in tmpfs,
+# Throwaway Postgres and Redis for the e2e suite (npm run test:e2e). Data lives in tmpfs,
 # so every `down` starts the next run from an empty database.
+name: ai-cinema-e2e
 services:
   postgres-e2e:
     image: postgres:16-alpine
@@ -13,6 +14,16 @@ services:
       - /var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres -d ai_cinema_e2e']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  redis-e2e:
+    image: redis:7-alpine
+    ports:
+      - '63799:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 2s
       timeout: 3s
       retries: 20

@@ -16,6 +16,9 @@ export abstract class ObjectStorage {
 
   abstract stream(key: string, visibility: Visibility): Promise<Readable>;
 
+  /** Deletes an object; a missing one is not an error. */
+  abstract remove(key: string, visibility: Visibility): Promise<void>;
+
   /** Where players load a public object from. */
   abstract publicUrl(key: string): string;
 }

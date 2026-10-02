@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { AppConfig } from 'src/config/app-config';
 import { assertSafeKey, ObjectStorage, type Visibility } from './object-storage';
 
@@ -58,6 +58,10 @@ export class S3ObjectStorage extends ObjectStorage {
   async stream(key: string, visibility: Visibility): Promise<Readable> {
     const body = await this.body(key, visibility);
     return Readable.fromWeb(body.transformToWebStream() as Parameters<typeof Readable.fromWeb>[0]);
+  }
+
+  async remove(key: string, visibility: Visibility): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.objectKey(key, visibility) }));
   }
 
   publicUrl(key: string): string {
