@@ -29,6 +29,16 @@ export const SEED_USERS: { email: string; fullName: string; role: UserRole; date
   },
 ];
 
+/** Shared test accounts with a fixed password; the seed resets it on every run so testers can always sign in. */
+export const SEED_TEST_USERS: { email: string; fullName: string; role: UserRole; password: string }[] = [
+  { email: 'creator@gmail.com', fullName: 'Creator Test', role: UserRole.CONTENT_CREATOR, password: '12345678' },
+  { email: 'reviewer@gmail.com', fullName: 'Reviewer Test', role: UserRole.CONTENT_REVIEWER, password: '12345678' },
+  { email: 'admin@gmail.com', fullName: 'Admin Test', role: UserRole.ADMIN, password: '12345678' },
+  { email: 'creatorr@gmail.com', fullName: 'Creator Tester', role: UserRole.CONTENT_CREATOR, password: '123456' },
+  { email: 'reviewerr@gmail.com', fullName: 'Reviewer Tester', role: UserRole.CONTENT_REVIEWER, password: '123456' },
+  { email: 'adminn@gmail.com', fullName: 'Admin Tester', role: UserRole.ADMIN, password: '123456' },
+];
+
 /** The legal texts AI labels and the compliance checks refer to (BR-40, BR-42). */
 export const SEED_POLICIES = [
   {
