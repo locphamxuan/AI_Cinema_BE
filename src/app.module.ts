@@ -22,6 +22,7 @@ import { PolicyModule } from 'src/modules/platform/policy/policy.module';
 import { ProjectAccessModule } from 'src/modules/production/project-access/project-access.module';
 import { StudioHandoffModule } from 'src/modules/production/studio-handoff/studio-handoff.module';
 import { StudioPortalModule } from 'src/modules/production/studio-portal/studio-portal.module';
+import { ReviewerTokenModule } from 'src/modules/production/reviewer-token/reviewer-token.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { UserModule } from 'src/modules/identity/user/user.module';
 import { AppController } from './app.controller';
@@ -51,6 +52,7 @@ import { AppController } from './app.controller';
     StudioHandoffModule,
     MediaIngestModule,
     StudioPortalModule,
+    ReviewerTokenModule,
     ContentReviewModule,
     PublishingModule,
     CatalogModule,

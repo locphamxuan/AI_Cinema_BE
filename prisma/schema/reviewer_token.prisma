@@ -1,0 +1,27 @@
+enum ReviewerTokenEntryType {
+  GRANT
+  REVOKE
+}
+
+/// Token budget the Admin gives each Reviewer, append-only. A Reviewer's balance is the sum of these
+/// entries minus the production fees the Reviewer allocated (token_ledger.created_by_id).
+model ReviewerTokenEntry {
+  id           String                 @id @default(uuid()) @db.Uuid
+  reviewerId   String                 @map("reviewer_id") @db.Uuid
+  entryType    ReviewerTokenEntryType @map("entry_type")
+  /// Positive for GRANT, negative for REVOKE.
+  amountTokens BigInt                 @map("amount_tokens")
+  /// Token rate when the entry was written (BR-50).
+  rateVnd      Int                    @map("rate_vnd")
+  /// Required for REVOKE.
+  reason       String?                @db.Text
+  /// The Admin; null only for the opening balance the migration wrote.
+  createdById  String?                @map("created_by_id") @db.Uuid
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  reviewer  User  @relation("ReviewerTokenBudget", fields: [reviewerId], references: [id], onDelete: Restrict)
+  createdBy User? @relation("ReviewerTokenGrantedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([reviewerId, createdAt])
+  @@map("reviewer_token_ledger")
+}

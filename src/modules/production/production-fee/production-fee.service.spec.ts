@@ -4,6 +4,7 @@ import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
+import type { ReviewerTokenService } from 'src/modules/production/reviewer-token/reviewer-token.service';
 import { ProductionFeeService } from './production-fee.service';
 
 describe('ProductionFeeService.addEntry', () => {
@@ -19,11 +20,13 @@ describe('ProductionFeeService.addEntry', () => {
   const access = { movie: jest.fn() };
   const settings = { get: jest.fn().mockResolvedValue({ tokenRateVnd: 1000 }) };
   const auditLog = { record: jest.fn() };
+  const budgets = { assertCanSpend: jest.fn(), notifyAllocation: jest.fn() };
   const service = new ProductionFeeService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
     settings as unknown as PlatformSettingService,
     auditLog as unknown as AuditLogService,
+    budgets as unknown as ReviewerTokenService,
   );
 
   const withState = (status: MovieStatus, total: number) => {

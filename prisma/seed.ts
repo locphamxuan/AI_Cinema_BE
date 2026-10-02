@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ReviewerTokenEntryType, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
@@ -58,6 +58,37 @@ async function seedUsers() {
   }
 }
 
+/** Development Reviewers always have at least this many Token to allocate as production fees. */
+const DEV_REVIEWER_BUDGET = 1_000_000;
+
+/** Tops every seeded Reviewer's budget back up to DEV_REVIEWER_BUDGET, granted by the seeded Admin. */
+async function seedReviewerBudgets() {
+  const emails = [...SEED_USERS, ...SEED_TEST_USERS]
+    .filter((u) => u.role === UserRole.CONTENT_REVIEWER)
+    .map((u) => u.email);
+  const reviewers = await prisma.user.findMany({ where: { email: { in: emails } }, select: { id: true } });
+  const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@aicinema.com' }, select: { id: true } });
+  const settings = await prisma.platformSetting.findUnique({ where: { id: 'default' } });
+  for (const { id } of reviewers) {
+    const [granted, allocated] = await Promise.all([
+      prisma.reviewerTokenEntry.aggregate({ where: { reviewerId: id }, _sum: { amountTokens: true } }),
+      prisma.tokenLedgerEntry.aggregate({ where: { createdById: id }, _sum: { amountTokens: true } }),
+    ]);
+    const balance = Number(granted._sum.amountTokens ?? 0n) - Number(allocated._sum.amountTokens ?? 0n);
+    if (balance >= DEV_REVIEWER_BUDGET) continue;
+    await prisma.reviewerTokenEntry.create({
+      data: {
+        reviewerId: id,
+        entryType: ReviewerTokenEntryType.GRANT,
+        amountTokens: BigInt(DEV_REVIEWER_BUDGET - balance),
+        rateVnd: settings?.tokenRateVnd ?? 1000,
+        reason: 'Ngân sách Token cho môi trường phát triển',
+        createdById: admin.id,
+      },
+    });
+  }
+}
+
 async function main() {
   for (const { name, description } of GENRE_CATALOG) {
     await prisma.genre.upsert({ where: { name }, update: { description }, create: { name, description } });
@@ -65,7 +96,8 @@ async function main() {
   await seedPermissions();
   await seedPolicies();
   await seedUsers();
-  console.log('Seeded genres, permissions, policies and development accounts.');
+  await seedReviewerBudgets();
+  console.log('Seeded genres, permissions, policies, development accounts and Reviewer budgets.');
 }
 
 main()

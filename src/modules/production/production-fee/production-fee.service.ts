@@ -7,6 +7,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { ReviewerTokenService } from 'src/modules/production/reviewer-token/reviewer-token.service';
 import { AddFeeEntryRequestDto } from './dto/add-fee-entry.request.dto';
 
 const EVENT_BY_TYPE = {
@@ -17,7 +18,7 @@ const EVENT_BY_TYPE = {
 
 /**
  * Production fee of a movie in Token (BR-45, BR-46): an append-only ledger whose sum is the
- * fee. The first allocation (INITIAL) happens while the project is a DRAFT; top-ups and
+ * fee, paid out of the Reviewer's Token budget. The first allocation (INITIAL) happens while the project is a DRAFT; top-ups and
  * corrections need a reason, and a correction may never bring the fee to zero or below.
  */
 @Injectable()
@@ -27,6 +28,7 @@ export class ProductionFeeService {
     private readonly access: ProjectAccessService,
     private readonly settings: PlatformSettingService,
     private readonly auditLog: AuditLogService,
+    private readonly budgets: ReviewerTokenService,
   ) {}
 
   async totalTokens(movieId: string, tx?: PrismaTx): Promise<number> {
@@ -58,6 +60,8 @@ export class ProductionFeeService {
       const movie = await this.access.movie(movieId, user, 'reviewer', tx);
       const total = await this.totalTokens(movieId, tx);
       this.assertAllowed(dto, movie.status, total);
+      // The fee comes out of the Reviewer's own Token budget, granted by the Admin.
+      await this.budgets.assertCanSpend(tx, user.id, dto.amountTokens);
 
       const entry = await tx.tokenLedgerEntry.create({
         data: {
@@ -80,6 +84,7 @@ export class ProductionFeeService {
         },
         tx,
       );
+      await this.budgets.notifyAllocation(tx, { reviewer: user, movie, type: dto.entryType, amount: dto.amountTokens });
     });
     return this.ledger(movieId, user);
   }
