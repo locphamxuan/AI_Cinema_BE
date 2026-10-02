@@ -34,28 +34,17 @@ describe('Studio hand-off (e2e)', () => {
 
   const studio = { studioName: 'Studio Ánh Trăng', studioEmail: 'Contact@AnhTrang.example' };
 
-  it('is reserved to the assigned Creator and needs a future deadline for every episode', async () => {
+  it('is reserved to the assigned Creator and dues each episode on its Reviewer deadline', async () => {
     const [first, second] = episodesOf(project);
-    const dueDates = [
-      { episodeId: first.id, dueDate: inDays(7) },
-      { episodeId: second.id, dueDate: inDays(14) },
-    ];
-    await otherCreator.post(`/projects/${project.id}/handoff`, { ...studio, dueDates }, 404);
-    await reviewer.post(`/projects/${project.id}/handoff`, { ...studio, dueDates }, 403);
-    await creator.post(`/projects/${project.id}/handoff`, { ...studio, dueDates: dueDates.slice(0, 1) }, 400);
-    await creator.post(
-      `/projects/${project.id}/handoff`,
-      { ...studio, dueDates: [dueDates[0], { episodeId: second.id, dueDate: '2020-01-01' }] },
-      400,
-    );
-    // The Reviewer's milestone is 30 days out; the studio cannot be due later.
-    await creator.post(
-      `/projects/${project.id}/handoff`,
-      { ...studio, dueDates: [dueDates[0], { episodeId: second.id, dueDate: inDays(31) }] },
-      400,
-    );
+    await otherCreator.post(`/projects/${project.id}/handoff`, studio, 404);
+    await reviewer.post(`/projects/${project.id}/handoff`, studio, 403);
+    // A deadline already past has to be moved by the Reviewer before the hand-off.
+    const prisma = app.get(PrismaService);
+    await prisma.episode.update({ where: { id: second.id }, data: { milestoneDate: new Date('2026-01-01') } });
+    await creator.post(`/projects/${project.id}/handoff`, studio, 409);
+    await reviewer.patch(`/episodes/${second.id}`, { milestoneDate: inDays(14) });
 
-    const history = await creator.post<Handoff[]>(`/projects/${project.id}/handoff`, { ...studio, dueDates });
+    const history = await creator.post<Handoff[]>(`/projects/${project.id}/handoff`, studio);
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ studioName: 'Studio Ánh Trăng', productionFeeTokens: 20000 });
     // Without SMTP the mailer only logs, so the brief counts as sent.
@@ -63,26 +52,19 @@ describe('Studio hand-off (e2e)', () => {
 
     const detail = await reviewer.get<ProjectDetail & { studioEmail: string }>(`/projects/${project.id}`);
     expect(detail).toMatchObject({ status: 'IN_PRODUCTION', studioEmail: 'contact@anhtrang.example' });
-    expect(episodesOf(detail).map((e) => e.status)).toEqual(['AWAITING_MEDIA', 'AWAITING_MEDIA']);
+    const episodes = await prisma.episode.findMany({ where: { id: { in: [first.id, second.id] } } });
+    for (const episode of episodes) {
+      expect(episode.status).toBe('AWAITING_MEDIA');
+      expect(episode.dueDate).toEqual(episode.milestoneDate);
+    }
   });
 
-  it('keeps every studio due date within the Reviewer milestone', async () => {
+  it('moves the studio due date with the Reviewer deadline', async () => {
     const [, second] = episodesOf(project);
-    await creator.put(
-      `/projects/${project.id}/due-dates`,
-      { dueDates: [{ episodeId: second.id, dueDate: inDays(31) }] },
-      400,
-    );
-    await creator.put(`/projects/${project.id}/due-dates`, {
-      dueDates: [{ episodeId: second.id, dueDate: inDays(30) }],
-    });
-    // Studio due in 30 days: the Reviewer cannot pull the milestone in before that…
-    await reviewer.patch(`/episodes/${second.id}`, { milestoneDate: inDays(20) }, 409);
-    // …until the Creator moves the deadline first.
-    await creator.put(`/projects/${project.id}/due-dates`, {
-      dueDates: [{ episodeId: second.id, dueDate: inDays(14) }],
-    });
+    await creator.patch(`/episodes/${second.id}`, { milestoneDate: inDays(20) }, 403);
     await reviewer.patch(`/episodes/${second.id}`, { milestoneDate: inDays(20) });
+    const episode = await app.get(PrismaService).episode.findUniqueOrThrow({ where: { id: second.id } });
+    expect(episode.dueDate?.toISOString().slice(0, 10)).toBe(inDays(20));
   });
 
   it('serves the brief PDF to the people of the project', async () => {

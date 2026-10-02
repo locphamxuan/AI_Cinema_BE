@@ -31,13 +31,12 @@ export async function assignedProject(reviewer: Actor, creator: Actor, episodes 
   return reviewer.get<ProjectDetail>(`/projects/${project.id}`);
 }
 
-/** The project above, handed off to a studio with deadlines in a week. */
+/** The project above, handed off to a studio, due on the Reviewer deadlines (30 days out). */
 export async function projectInProduction(reviewer: Actor, creator: Actor, episodes = 2): Promise<ProjectDetail> {
   const project = await assignedProject(reviewer, creator, episodes);
   await creator.post(`/projects/${project.id}/handoff`, {
     studioName: 'Studio Ánh Trăng',
     studioEmail: 'contact@anhtrang.example',
-    dueDates: episodesOf(project).map((episode) => ({ episodeId: episode.id, dueDate: inDays(7) })),
   });
   return reviewer.get<ProjectDetail>(`/projects/${project.id}`);
 }

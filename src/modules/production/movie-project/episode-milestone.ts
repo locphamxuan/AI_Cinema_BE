@@ -7,8 +7,3 @@ export function milestoneDay(value: string, now: Date = new Date()): Date {
   if (day < businessDay(now)) throw new BadRequestException('A milestone cannot be in the past');
   return day;
 }
-
-/** The studio due date must fall on or before the Reviewer's milestone, when the episode has one. */
-export function isWithinMilestone(dueDate: Date, milestoneDate: Date | null): boolean {
-  return !milestoneDate || dueDate.getTime() <= milestoneDate.getTime();
-}
