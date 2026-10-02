@@ -176,15 +176,15 @@ export class StudioPortalService {
         accept
           ? {
               type: NOTIFICATION_TYPE.STUDIO_ACCEPTED,
-              title: `${handoff.studioName} accepted "${handoff.movie.title}"`,
-              body: 'The studio agreed to the brief and the due dates.',
+              title: `${handoff.studioName} đã nhận dự án "${handoff.movie.title}"`,
+              body: 'Studio đồng ý brief và thời hạn từng tập.',
               link: `/projects/${handoff.movieId}/studio`,
               payload: { movieId: handoff.movieId, handoffId: handoff.id },
             }
           : {
               type: NOTIFICATION_TYPE.STUDIO_DECLINED,
-              title: `${handoff.studioName} declined "${handoff.movie.title}"`,
-              body: `${reason} Hand the project to another studio.`,
+              title: `${handoff.studioName} từ chối dự án "${handoff.movie.title}"`,
+              body: `${reason} Hãy bàn giao cho studio khác.`,
               link: `/projects/${handoff.movieId}/studio`,
               payload: { movieId: handoff.movieId, handoffId: handoff.id },
             },

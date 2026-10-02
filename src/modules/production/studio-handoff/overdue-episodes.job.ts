@@ -47,8 +47,8 @@ export class OverdueEpisodesJob implements OnModuleInit {
       if (alreadyFlagged) continue;
       await this.notifications.notify([episode.movie.creatorId, episode.movie.reviewerId], {
         type: NOTIFICATION_TYPE.EPISODE_OVERDUE,
-        title: `Episode ${episode.episodeNumber} of "${episode.movie.title}" is overdue`,
-        body: `The studio was due to deliver it on ${episode.dueDate?.toISOString().slice(0, 10)}.`,
+        title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã trễ hạn`,
+        body: `Studio phải giao tập này trước ngày ${episode.dueDate?.toISOString().slice(0, 10)}.`,
         link: `/projects/${episode.movie.id}`,
         payload: { movieId: episode.movie.id, episodeId: episode.id },
       });

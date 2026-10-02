@@ -78,8 +78,8 @@ export class MediaOutcomeService {
         [episode.movie.reviewerId, episode.movie.creatorId],
         {
           type: NOTIFICATION_TYPE.MEDIA_READY,
-          title: `Episode ${episode.episodeNumber} of "${episode.movie.title}" is ready for review`,
-          body: `Version ${asset.version}, ${formatDuration(result.durationSeconds)}.`,
+          title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" sẵn sàng để duyệt`,
+          body: `Bản ${asset.version}, dài ${formatDuration(result.durationSeconds)}.`,
           link: `/projects/${episode.movieId}/episodes/${episode.id}`,
           payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
         },
@@ -126,8 +126,8 @@ export class MediaOutcomeService {
         [movie.creatorId],
         {
           type: NOTIFICATION_TYPE.MEDIA_FAILED,
-          title: `Episode ${asset.episode.episodeNumber} of "${movie.title}" could not be processed`,
-          body: `${reason} Deliver the episode again or retry once the source is fixed.`,
+          title: `Không xử lý được tập ${asset.episode.episodeNumber} của phim "${movie.title}"`,
+          body: `${reason} Hãy giao lại tập hoặc xử lý lại khi nguồn đã được sửa.`,
           link: `/projects/${movie.id}/episodes/${asset.episodeId}`,
           payload: { movieId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
         },

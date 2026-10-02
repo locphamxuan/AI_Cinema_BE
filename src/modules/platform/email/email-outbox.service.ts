@@ -119,7 +119,7 @@ export class EmailOutboxService implements OnModuleInit {
     const payload = message.payload as unknown as StoredPayload;
     await this.notifications.notify([payload.notifyOnFailureId], {
       type: NOTIFICATION_TYPE.BRIEF_EMAIL_FAILED,
-      title: `Email "${message.subject}" to ${message.toEmail} could not be delivered`,
+      title: `Không gửi được email "${message.subject}" tới ${message.toEmail}`,
       body: error.message,
       link: payload.link,
       payload: { emailMessageId },

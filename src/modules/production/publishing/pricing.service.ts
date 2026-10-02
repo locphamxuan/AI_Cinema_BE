@@ -103,7 +103,7 @@ export class PricingService {
         [movie.reviewerId],
         {
           type: NOTIFICATION_TYPE.PRICE_CHANGE_REQUEST,
-          title: `Please review the price of episode ${alert.episode.episodeNumber} of "${movie.title}"`,
+          title: `Admin đề nghị xem lại giá tập ${alert.episode.episodeNumber} của phim "${movie.title}"`,
           body: note.trim(),
           link: `/projects/${movie.id}/episodes/${alert.episodeId}`,
           payload: { movieId: movie.id, episodeId: alert.episodeId, priceAlertId: alertId },
@@ -151,8 +151,8 @@ export class PricingService {
       await this.notifications.adminIds(tx),
       {
         type: NOTIFICATION_TYPE.PRICE_OUT_OF_RANGE,
-        title: `Episode ${episode.episodeNumber} of "${episode.movie.title}" is priced outside the range`,
-        body: `${episode.coinPrice} Coin, the range is ${rangeMin}–${rangeMax}.`,
+        title: `Giá tập ${episode.episodeNumber} của phim "${episode.movie.title}" nằm ngoài khoảng cho phép`,
+        body: `${episode.coinPrice} Coin, khoảng cho phép ${rangeMin}–${rangeMax} Coin.`,
         link: `/admin/price-alerts`,
         payload: { movieId: episode.movieId, episodeId: episode.id, priceAlertId: alert.id },
       },

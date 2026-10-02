@@ -62,8 +62,8 @@ export class HlsLinkCheckJob implements OnModuleInit {
         const { movie } = asset.episode;
         await this.notifications.notify([movie.creatorId, movie.reviewerId], {
           type: NOTIFICATION_TYPE.HLS_LINK_DEAD,
-          title: `The video link of episode ${asset.episode.episodeNumber} of "${movie.title}" stopped working`,
-          body: `${(error as Error).message}. Ask the studio to fix the link or deliver the episode again.`,
+          title: `Link video tập ${asset.episode.episodeNumber} của phim "${movie.title}" không còn hoạt động`,
+          body: `${(error as Error).message}. Hãy nhờ studio sửa link hoặc giao lại tập.`,
           link: `/projects/${movie.id}/episodes/${asset.episodeId}`,
           payload: { movieId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
         });
