@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { PlatformSettingModule } from 'src/modules/platform-setting/platform-setting.module';
+import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
 

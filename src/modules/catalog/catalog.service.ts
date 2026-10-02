@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { EpisodeStatus, MovieStatus, type Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { PlatformSettingService } from 'src/modules/platform-setting/platform-setting.service';
+import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 
 /** Shown on an episode taken down to be fixed (BR-56). */
 export const REVISION_NOTICE = 'Tập đang được bảo trì / sửa đổi nội dung';

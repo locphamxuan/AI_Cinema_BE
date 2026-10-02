@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import type { AuthSessionDto } from 'src/modules/auth/dto/auth-session.dto';
+import type { AuthSessionDto } from 'src/modules/identity/auth/dto/auth-session.dto';
 import { bootApp } from './support/api';
 
 describe('Auth (e2e)', () => {

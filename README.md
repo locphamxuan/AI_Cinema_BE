@@ -101,15 +101,29 @@ npx @sonar/scan -Dsonar.host.url=http://localhost:9000 -Dsonar.token=<token>
 
 ```
 src/
-  common/          auth, permissions, HTTP envelope and validation helpers
-  config/          typed configuration, checked at start-up
-  infrastructure/  Prisma, object storage (local / S3-R2), job queue (BullMQ or in-process), mailer
-  modules/<name>/  controller (HTTP only), services (one transaction per write), dto/, *.spec.ts
-prisma/            schema/*.prisma (one file per area), migrations/, seed.ts
-test/              e2e suite (supertest against a real Postgres)
+  common/            auth, permissions, decorators, guards, HTTP envelope, validation,
+                     security (SSRF-safe URL fetching), time (business day in Vietnam)
+  config/            typed configuration, checked at start-up
+  infrastructure/    Prisma, object storage (local / S3-R2), job queue (BullMQ or in-process), mailer
+  modules/
+    identity/        auth, user, access-control (accounts, sessions, RBAC)
+    platform/        notification, audit-log, email outbox, genre, policy, platform-setting
+    production/      MF-1: movie-project, production-fee, project-access, studio-handoff,
+                     media-ingest, content-review, publishing
+    catalog/         public catalog (Guests and Members)
+prisma/              schema/*.prisma (one file per area), migrations/, seed.ts
+test/                e2e suite (supertest against a real Postgres, plus Redis for the queue suite)
 ```
 
+A module keeps its controller (HTTP only), services (one transaction per write), `dto/` and unit
+specs (`<file>.spec.ts` next to the file they test) together; a large module splits into
+sub-folders by concern, e.g. `media-ingest/pipeline`, `media-ingest/hls`,
+`movie-project/change-request`. Imports inside a module are relative, across modules they start
+with `src/`. A new main flow (MF-2…MF-5) gets its own group under `modules/`.
+
 ## MF-1 modules
+
+All under `src/modules/production/` except `catalog`.
 
 | Module | Steps | What it does |
 | --- | --- | --- |

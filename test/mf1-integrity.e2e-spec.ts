@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { PublicationService } from 'src/modules/publishing/publication.service';
+import { PublicationService } from 'src/modules/production/publishing/publication.service';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode, deliver } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
