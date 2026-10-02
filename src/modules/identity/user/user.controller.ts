@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiPaginatedResponse, Paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
@@ -39,5 +39,13 @@ export class UserController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.userService.update(userId, dto, user);
+  }
+
+  @Delete(':userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission(PERMISSION.USER_MANAGE)
+  @ApiOperation({ summary: 'Delete an account with no activity yet; one with history must be locked instead' })
+  remove(@Param('userId', ParseUUIDPipe) userId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.userService.remove(userId, user);
   }
 }
