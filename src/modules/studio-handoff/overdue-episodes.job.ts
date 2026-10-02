@@ -6,6 +6,7 @@ import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { NotificationService } from 'src/modules/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/notification/notification-types';
 import { DELIVERY_PROJECT_STATUSES } from 'src/modules/project-access/project-rules';
+import { businessDay } from 'src/common/time/business-day';
 
 /**
  * BR-38: an episode past its due date without a delivery is flagged once, to its Creator and
@@ -28,7 +29,7 @@ export class OverdueEpisodesJob implements OnModuleInit {
 
   /** Notifies about every newly overdue episode; returns how many were flagged. */
   async sweep(now = new Date()): Promise<number> {
-    const startOfToday = new Date(now.toISOString().slice(0, 10));
+    const startOfToday = businessDay(now);
     const overdue = await this.prisma.episode.findMany({
       where: {
         status: EpisodeStatus.AWAITING_MEDIA,
