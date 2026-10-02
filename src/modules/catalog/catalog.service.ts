@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, type Prisma } from '@prisma/client';
+import { EpisodeStatus, MovieStatus, type Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform-setting/platform-setting.service';
@@ -15,8 +15,11 @@ const VISIBLE_EPISODE: Prisma.EpisodeWhereInput = {
   OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }],
 };
 
-/** A movie is listed once one of its episodes is out (MF-1 step 14). */
-const LISTED_MOVIE: Prisma.MovieWhereInput = { episodes: { some: VISIBLE_EPISODE } };
+/** A movie is listed once one of its episodes is out (MF-1 step 14), never once cancelled. */
+const LISTED_MOVIE: Prisma.MovieWhereInput = {
+  status: { not: MovieStatus.CANCELLED },
+  episodes: { some: VISIBLE_EPISODE },
+};
 
 const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
 
@@ -119,7 +122,7 @@ export class CatalogService {
   }
 }
 
-export function movieCard(movie: MovieRow) {
+function movieCard(movie: MovieRow) {
   return {
     id: movie.id,
     title: movie.title,

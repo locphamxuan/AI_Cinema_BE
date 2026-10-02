@@ -24,6 +24,9 @@ import {
 import type { PublishEpisodeRequestDto, UnpublishRequestDto } from './dto/publishing.request.dto';
 import { EpisodeRevisionService } from './episode-revision.service';
 
+/** A project releases episodes while the studio delivers, while it is fixed, and once complete. */
+const RELEASING_PROJECT: MovieStatus[] = [...DELIVERY_PROJECT_STATUSES, MovieStatus.COMPLETED];
+
 /** Releasable: checked and never released, taken down earlier, or already scheduled (reschedule). */
 const RELEASABLE: EpisodeStatus[] = [
   EpisodeStatus.COMPLIANCE_PASSED,
@@ -55,7 +58,7 @@ export class PublicationService {
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'reviewer');
-    assertProjectStatus(episode.movie.status, [...DELIVERY_PROJECT_STATUSES, MovieStatus.COMPLETED], 'publish');
+    assertProjectStatus(episode.movie.status, RELEASING_PROJECT, 'publish');
     assertEpisodeStatus(episode.status, RELEASABLE, 'publish');
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
     if (scheduledAt && scheduledAt <= new Date()) {
@@ -207,6 +210,8 @@ export class PublicationService {
       where: { id: publication.episodeId },
       include: { movie: true },
     });
+    // A scheduled release of a project cancelled meanwhile never goes out (BR-39).
+    assertProjectStatus(episode.movie.status, RELEASING_PROJECT, 'publish');
     await this.moveEpisode(tx, episode, EpisodeStatus.PUBLISHED);
     if (episode.revisionStartedAt) {
       // The fixed version is out: no longer shown as under maintenance (BR-56).

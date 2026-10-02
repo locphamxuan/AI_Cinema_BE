@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { EpisodeStatus, MovieStatus, UserRole } from '@prisma/client';
+import { EpisodeStatus, MovieStatus, UnpublishReason, UserRole } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -79,7 +79,10 @@ export class ProjectLifecycleService {
     });
   }
 
-  /** BR-39: cancel while no episode was ever published; the Token spent stays a cost. */
+  /**
+   * BR-39: cancel while no episode was ever published; the Token spent stays a cost. Releases
+   * still scheduled are withdrawn with it, so the scheduler never puts them out.
+   */
   async cancel(movieId: string, reason: string, user: AuthenticatedUser): Promise<void> {
     const movie = await this.access.movie(movieId, user, 'reviewer');
     assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'cancel the project');
@@ -94,6 +97,7 @@ export class ProjectLifecycleService {
         data: { status: MovieStatus.CANCELLED, cancelReason: reason.trim(), cancelledAt: new Date() },
       });
       if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
+      const withdrawn = await this.withdrawScheduledReleases(tx, movieId, reason, user.id);
       await this.notifications.notify(
         [movie.creatorId],
         {
@@ -111,11 +115,29 @@ export class ProjectLifecycleService {
           entityId: movieId,
           movieId,
           actorId: user.id,
-          payload: { reason },
+          payload: { reason, withdrawnReleases: withdrawn },
         },
         tx,
       );
     });
+  }
+
+  /** Withdraws the scheduled releases of a cancelled project; returns how many there were. */
+  private async withdrawScheduledReleases(tx: PrismaTx, movieId: string, reason: string, actorId: string) {
+    const { count } = await tx.publication.updateMany({
+      where: { episode: { movieId }, publishedAt: null, unpublishedAt: null },
+      data: {
+        unpublishedAt: new Date(),
+        unpublishReason: UnpublishReason.MANUAL,
+        unpublishNote: `Project cancelled: ${reason.trim()}`,
+        unpublishedById: actorId,
+      },
+    });
+    await tx.episode.updateMany({
+      where: { movieId, status: EpisodeStatus.SCHEDULED },
+      data: { status: EpisodeStatus.COMPLIANCE_PASSED },
+    });
+    return count;
   }
 
   /**
