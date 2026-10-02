@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
-import { SEED_POLICIES, SEED_USERS } from './seed-data';
+import { SEED_POLICIES, SEED_TEST_USERS, SEED_USERS } from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
@@ -46,6 +46,14 @@ async function seedUsers() {
       where: { email: user.email },
       update: { fullName: user.fullName, role: user.role },
       create: { ...user, passwordHash },
+    });
+  }
+  for (const { password, ...user } of SEED_TEST_USERS) {
+    const hash = await bcrypt.hash(password, 12);
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: { fullName: user.fullName, role: user.role, passwordHash: hash, isActive: true },
+      create: { ...user, passwordHash: hash },
     });
   }
 }
