@@ -1,5 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Episode } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { EpisodeStatus, type Episode } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
@@ -12,7 +12,7 @@ import {
 } from 'src/modules/production/project-access/project-rules';
 import type { NewEpisodeDto, NewSeasonDto } from '../dto/create-movie-project.request.dto';
 import type { UpdateEpisodeRequestDto } from '../dto/project-actions.request.dto';
-import { isWithinMilestone, milestoneDay } from '../episode-milestone';
+import { milestoneDay } from '../episode-milestone';
 
 /** Seasons and episodes of a project; numbering goes on where the movie left off (BR-37). */
 @Injectable()
@@ -58,15 +58,14 @@ export class ProjectStructureService {
       assertEpisodeStatus(episode.status, EPISODE_STATUSES_BEFORE_APPROVAL, 'change the target duration');
     }
     const { milestoneDate, ...fields } = dto;
-    let milestone: Date | undefined;
+    let deadline: { milestoneDate: Date; dueDate?: Date } | undefined;
     if (milestoneDate !== undefined) {
-      assertEpisodeStatus(episode.status, EPISODE_STATUSES_BEFORE_APPROVAL, 'move the milestone');
-      milestone = milestoneDay(milestoneDate);
-      if (episode.dueDate && !isWithinMilestone(episode.dueDate, milestone)) {
-        throw new ConflictException('The studio is due after that day; the Creator must move the due date first');
-      }
+      assertEpisodeStatus(episode.status, EPISODE_STATUSES_BEFORE_APPROVAL, 'move the deadline');
+      const day = milestoneDay(milestoneDate);
+      // Once handed off the studio is due that day too: one deadline per episode (BR-38).
+      deadline = { milestoneDate: day, ...(episode.dueDate ? { dueDate: day } : {}) };
     }
-    return this.prisma.episode.update({ where: { id: episodeId }, data: { ...fields, milestoneDate: milestone } });
+    return this.prisma.episode.update({ where: { id: episodeId }, data: { ...fields, ...deadline } });
   }
 
   /** Episode numbers are unique per movie, so concurrent additions are serialised on the movie row. */
@@ -95,6 +94,8 @@ export class ProjectStructureService {
             synopsis: episode.synopsis,
             targetDurationSeconds: episode.targetDurationSeconds,
             milestoneDate: milestoneDay(episode.milestoneDate),
+            // Added after the hand-off: the studio is due on the deadline right away.
+            ...(status === EpisodeStatus.AWAITING_MEDIA ? { dueDate: milestoneDay(episode.milestoneDate) } : {}),
             status,
           },
         }),

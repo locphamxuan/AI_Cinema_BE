@@ -40,7 +40,9 @@ describe('MediaIngestService.submitUpload', () => {
     const file = { path, originalname: 'tap.mp4', size: MP4.length } as Express.Multer.File;
 
     await expect(
-      service.submitUpload('episode', file, { proposedLabelType: 'AI_GENERATED' } as never, {} as never, USER),
+      service.submitUpload('episode', file, { proposedLabelType: 'AI_GENERATED' } as never, {} as never, {
+        user: USER,
+      }),
     ).rejects.toThrow('The episode changed');
 
     const [storedKey] = storage.putFile.mock.calls[0] as [string];

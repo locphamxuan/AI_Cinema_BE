@@ -24,6 +24,7 @@ export const PERMISSION = {
   USER_MANAGE: 'user:manage',
   ROLE_MANAGE: 'role:manage',
   PLATFORM_SETTINGS_MANAGE: 'platform:settings.manage',
+  TOKEN_BUDGET_MANAGE: 'token-budget:manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSION)[keyof typeof PERMISSION];
@@ -56,6 +57,10 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'platform:settings.manage': {
     area: 'administration',
     description: 'Change platform policies (rates, price range, free episodes)',
+  },
+  'token-budget:manage': {
+    area: 'administration',
+    description: 'Grant Token to Reviewers and take back what they have not allocated',
   },
 };
 
@@ -90,5 +95,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.USER_MANAGE,
     PERMISSION.ROLE_MANAGE,
     PERMISSION.PLATFORM_SETTINGS_MANAGE,
+    PERMISSION.TOKEN_BUDGET_MANAGE,
   ],
 };

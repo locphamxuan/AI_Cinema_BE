@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { ChangeStudioRequestDto, HandOffRequestDto, SetDueDatesRequestDto } from './dto/studio-handoff.request.dto';
+import { ChangeStudioRequestDto, HandOffRequestDto } from './dto/studio-handoff.request.dto';
 import { StudioHandoffService } from './studio-handoff.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -17,7 +17,10 @@ export class StudioHandoffController {
 
   @Post('handoff')
   @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @ApiOperation({ summary: 'Hand the project to a studio: deadlines, brief PDF and email; IN_PRODUCTION (steps 3–4)' })
+  @ApiOperation({
+    summary:
+      'Hand the project to a studio, due on the Reviewer deadlines: brief PDF and email; IN_PRODUCTION (steps 3–4)',
+  })
   handOff(
     @Param('movieId', ID) movieId: string,
     @Body() dto: HandOffRequestDto,
@@ -37,15 +40,11 @@ export class StudioHandoffController {
     return this.handoffs.changeStudio(movieId, dto, user);
   }
 
-  @Put('due-dates')
+  @Post('handoffs/portal-link')
   @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @ApiOperation({ summary: 'Set or move episode deadlines (BR-38)' })
-  setDueDates(
-    @Param('movieId', ID) movieId: string,
-    @Body() dto: SetDueDatesRequestDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.handoffs.setDueDates(movieId, dto.dueDates, user);
+  @ApiOperation({ summary: 'Email the current studio a new portal link; the previous link stops working' })
+  resendPortalLink(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.handoffs.resendPortalLink(movieId, user);
   }
 
   @Get('handoffs')

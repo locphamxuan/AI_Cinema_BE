@@ -1,28 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import {
-  ArrayMaxSize,
-  ArrayMinSize,
-  IsArray,
-  IsDateString,
-  IsEmail,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  MinLength,
-  ValidateNested,
-} from 'class-validator';
-
-export class EpisodeDueDateDto {
-  @ApiProperty()
-  @IsUUID('4')
-  episodeId: string;
-
-  @ApiProperty({ example: '2026-11-15', description: 'Day the studio must deliver the episode (BR-38).' })
-  @IsDateString({ strict: true })
-  dueDate: string;
-}
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 class StudioDto {
   @ApiProperty({ example: 'Studio Ánh Trăng' })
@@ -43,16 +20,8 @@ class StudioDto {
   studioContact?: string;
 }
 
-/** Step 3: the studio and the deadline of every episode. */
-export class HandOffRequestDto extends StudioDto {
-  @ApiProperty({ type: [EpisodeDueDateDto] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(2000)
-  @ValidateNested({ each: true })
-  @Type(() => EpisodeDueDateDto)
-  dueDates: EpisodeDueDateDto[];
-}
+/** Step 3: the studio; each episode is due on the deadline the Reviewer set. */
+export class HandOffRequestDto extends StudioDto {}
 
 export class ChangeStudioRequestDto extends StudioDto {
   @ApiProperty({ example: 'The first studio missed two deadlines.' })
@@ -60,14 +29,4 @@ export class ChangeStudioRequestDto extends StudioDto {
   @MinLength(5)
   @MaxLength(2000)
   reason: string;
-}
-
-export class SetDueDatesRequestDto {
-  @ApiProperty({ type: [EpisodeDueDateDto] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(2000)
-  @ValidateNested({ each: true })
-  @Type(() => EpisodeDueDateDto)
-  dueDates: EpisodeDueDateDto[];
 }

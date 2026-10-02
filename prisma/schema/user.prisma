@@ -29,6 +29,8 @@ model User {
   changeRequestsMade      ProjectChangeRequest[] @relation("ChangeRequestRequestedBy")
   changeRequestsResolved  ProjectChangeRequest[] @relation("ChangeRequestResolvedBy")
   tokenEntries            TokenLedgerEntry[]
+  tokenBudget             ReviewerTokenEntry[]   @relation("ReviewerTokenBudget")
+  tokenBudgetGranted      ReviewerTokenEntry[]   @relation("ReviewerTokenGrantedBy")
   mediaSubmitted          MediaAsset[]
   contentReviews          ContentReview[]
   labelsApplied           AiContentLabel[]

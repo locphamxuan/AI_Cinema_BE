@@ -7,6 +7,8 @@ export interface AppConfig {
   isProduction: boolean;
   port: number;
   corsOrigins: string[];
+  /** Web app origin, for links sent by email (the studio portal). */
+  webAppUrl: string;
   swaggerEnabled: boolean;
   trustProxy: boolean;
   databaseUrl: string;
@@ -129,6 +131,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
+    webAppUrl: read.string('WEB_APP_URL', 'http://localhost:3000').replace(/\/+$/, ''),
     swaggerEnabled: read.bool('SWAGGER_ENABLED', !isProduction),
     trustProxy: read.bool('TRUST_PROXY', false),
     databaseUrl: read.string('DATABASE_URL'),

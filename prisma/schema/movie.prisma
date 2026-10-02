@@ -22,6 +22,12 @@ enum EpisodeStatus {
   UNPUBLISHED
 }
 
+/// The studio's answer to a hand-off, given through its portal link.
+enum StudioResponse {
+  ACCEPTED
+  DECLINED
+}
+
 enum ChangeRequestStatus {
   OPEN
   ACCEPTED
@@ -107,23 +113,32 @@ model MovieIdeaFile {
 
 /// Every hand-off and studio change (BR-13, SF-J); the newest row is the current studio.
 model StudioHandoff {
-  id                  String   @id @default(uuid()) @db.Uuid
-  movieId             String   @map("movie_id") @db.Uuid
-  studioName          String   @map("studio_name") @db.VarChar(255)
-  studioEmail         String   @map("studio_email") @db.VarChar(255)
-  studioContact       String?  @map("studio_contact") @db.VarChar(255)
+  id                  String          @id @default(uuid()) @db.Uuid
+  movieId             String          @map("movie_id") @db.Uuid
+  studioName          String          @map("studio_name") @db.VarChar(255)
+  studioEmail         String          @map("studio_email") @db.VarChar(255)
+  studioContact       String?         @map("studio_contact") @db.VarChar(255)
   /// Production fee printed in the brief when it was sent.
-  productionFeeTokens BigInt   @map("production_fee_tokens")
+  productionFeeTokens BigInt          @map("production_fee_tokens")
   /// Required when the studio is changed.
-  changeReason        String?  @map("change_reason") @db.Text
-  briefFileKey        String?  @map("brief_file_key") @db.VarChar(500)
-  emailMessageId      String?  @map("email_message_id") @db.Uuid
-  createdById         String   @map("created_by_id") @db.Uuid
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  changeReason        String?         @map("change_reason") @db.Text
+  briefFileKey        String?         @map("brief_file_key") @db.VarChar(500)
+  emailMessageId      String?         @map("email_message_id") @db.Uuid
+  createdById         String          @map("created_by_id") @db.Uuid
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// SHA-256 of the studio's portal link token; the token itself is only ever in the email.
+  portalTokenHash     String?         @unique @map("portal_token_hash") @db.Char(64)
+  /// Set when the studio is changed or the Creator sends a new link.
+  portalRevokedAt     DateTime?       @map("portal_revoked_at") @db.Timestamptz(6)
+  studioResponse      StudioResponse? @map("studio_response")
+  respondedAt         DateTime?       @map("responded_at") @db.Timestamptz(6)
+  /// Required when the studio declines.
+  declineReason       String?         @map("decline_reason") @db.Text
 
   movie        Movie         @relation(fields: [movieId], references: [id], onDelete: Cascade)
   emailMessage EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: SetNull)
   createdBy    User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  deliveries   MediaAsset[]
 
   @@index([movieId, createdAt])
   @@map("studio_handoffs")
