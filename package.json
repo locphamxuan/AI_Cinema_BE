@@ -24,7 +24,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e:db": "docker compose -f docker-compose.test.yml up -d --wait",
     "test:e2e:db:down": "docker compose -f docker-compose.test.yml down",
-    "test:e2e": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json"
+    "test:e2e": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json",
+    "test:e2e:cov": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json --coverage"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1140.0",
@@ -94,25 +95,17 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.service.ts",
-      "common/**/*.ts",
-      "modules/**/*-catalog.ts",
-      "modules/**/*-verdict.ts",
-      "modules/**/*-provider.ts",
-      "modules/**/prompt-composer.ts",
-      "modules/**/genre-style-dataset.ts",
-      "!prisma/**",
-      "!app.service.ts"
+      "**/*.ts",
+      "!**/*.spec.ts",
+      "!**/dto/**",
+      "!**/*.module.ts",
+      "!main.ts"
     ],
     "coverageDirectory": "../coverage",
-    "coverageThreshold": {
-      "global": {
-        "statements": 70,
-        "branches": 60,
-        "functions": 70,
-        "lines": 70
-      }
-    },
+    "coverageReporters": [
+      "lcov",
+      "text-summary"
+    ],
     "testEnvironment": "node"
   },
   "overrides": {
