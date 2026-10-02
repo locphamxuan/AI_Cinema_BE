@@ -9,7 +9,7 @@ const isPlainData = (value: unknown): value is object =>
   !Buffer.isBuffer(value);
 
 /** Recursively turns BigInt (Token amounts, file sizes) into numbers, which JSON can encode. */
-export function withoutBigInt(value: unknown): unknown {
+function withoutBigInt(value: unknown): unknown {
   if (typeof value === 'bigint') return Number(value);
   if (Array.isArray(value)) return value.map(withoutBigInt);
   if (isPlainData(value)) {

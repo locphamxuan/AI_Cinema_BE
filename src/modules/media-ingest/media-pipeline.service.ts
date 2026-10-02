@@ -25,7 +25,7 @@ export interface MediaIngestJobData {
 }
 
 /** A delivery that can never succeed as it is (bad link, not a video): failed at once, not retried. */
-export class MediaRejectedError extends Error {}
+class MediaRejectedError extends Error {}
 
 /**
  * MF-1 step 6 (§4.1.3): HLS_URL → VALIDATING; UPLOAD → TRANSCODING; REMOTE_FILE →

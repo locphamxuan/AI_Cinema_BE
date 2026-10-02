@@ -55,7 +55,7 @@ export class ApplyAiLabelRequestDto {
 const DECIDED = [ComplianceResult.PASS, ComplianceResult.FAIL] as const;
 
 /** One compliance item the Reviewer judges by watching the episode. */
-export class ComplianceItemDto {
+class ComplianceItemDto {
   @ApiProperty({ enum: DECIDED })
   @IsIn(DECIDED)
   result: 'PASS' | 'FAIL';

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 
 /** The HLS ladder of LI-02, highest first: output height, video and audio bitrate. */
-export const HLS_LADDER = [
+const HLS_LADDER = [
   { name: '1080p', height: 1080, bitrate: '5000k' },
   { name: '720p', height: 720, bitrate: '2800k' },
   { name: '360p', height: 360, bitrate: '800k' },
