@@ -1,5 +1,5 @@
 # API image: `docker compose up` builds it locally; CI builds the `runtime` target and pushes it to GHCR.
-FROM node:22-bookworm-slim AS base
+FROM node:24-bookworm-slim AS base
 WORKDIR /app
 # Prisma needs OpenSSL; FFmpeg/ffprobe turn delivered episodes into the HLS ladder (MEDIA_PIPELINE=ffmpeg).
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ffmpeg && rm -rf /var/lib/apt/lists/*
