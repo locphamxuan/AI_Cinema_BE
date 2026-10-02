@@ -50,7 +50,7 @@ export class ChangeRequestService {
         [movie.reviewerId],
         {
           type: NOTIFICATION_TYPE.CHANGE_REQUESTED,
-          title: `The Admin proposed a change to "${movie.title}"`,
+          title: `Admin đề xuất sửa phim "${movie.title}"`,
           body: dto.content,
           link: `/projects/${movieId}/change-requests`,
           payload: { movieId, changeRequestId: request.id },
@@ -101,7 +101,7 @@ export class ChangeRequestService {
         [request.requestedById],
         {
           type: NOTIFICATION_TYPE.CHANGE_RESOLVED,
-          title: `Your proposal for "${movie.title}" was ${accept ? 'accepted' : 'rejected'}`,
+          title: `Đề xuất của bạn cho phim "${movie.title}" đã được ${accept ? 'chấp nhận' : 'từ chối'}`,
           body: dto.response,
           link: `/projects/${movie.id}/change-requests`,
           payload: { movieId: movie.id, changeRequestId },

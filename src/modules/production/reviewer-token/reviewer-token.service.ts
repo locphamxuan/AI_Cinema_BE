@@ -9,6 +9,12 @@ import type { AddReviewerTokenEntryRequestDto } from './dto/reviewer-token.reque
 
 const HISTORY_LIMIT = 200;
 
+const FEE_ENTRY_LABEL: Record<TokenEntryType, string> = {
+  INITIAL: 'Cấp phí lần đầu',
+  TOP_UP: 'Cấp thêm',
+  CORRECTION: 'Điều chỉnh',
+};
+
 export interface TokenBalance {
   /** Granted minus taken back by the Admin. */
   grantedTokens: number;
@@ -65,8 +71,8 @@ export class ReviewerTokenService {
       admins.map((a) => a.id),
       {
         type: NOTIFICATION_TYPE.TOKEN_ALLOCATED,
-        title: `${reviewer.fullName} allocated ${entry.amount} Token to "${entry.movie.title}"`,
-        body: `${entry.type} entry. ${reviewer.fullName} has ${balanceTokens} Token left.`,
+        title: `${reviewer.fullName} cấp ${entry.amount} Token cho phim "${entry.movie.title}"`,
+        body: `${FEE_ENTRY_LABEL[entry.type]}. ${reviewer.fullName} còn ${balanceTokens} Token.`,
         link: `/projects/${entry.movie.id}/fee`,
         payload: { movieId: entry.movie.id, reviewerId: entry.reviewer.id, amountTokens: entry.amount, balanceTokens },
       },
@@ -182,8 +188,8 @@ export class ReviewerTokenService {
         [reviewerId],
         {
           type: revoke ? NOTIFICATION_TYPE.TOKEN_REVOKED : NOTIFICATION_TYPE.TOKEN_GRANTED,
-          title: revoke ? `${dto.amountTokens} Token were taken back` : `You received ${dto.amountTokens} Token`,
-          body: reason ?? 'Granted by the Admin for production fees.',
+          title: revoke ? `Admin thu hồi ${dto.amountTokens} Token` : `Bạn được cấp ${dto.amountTokens} Token`,
+          body: reason ?? 'Admin cấp để chi phí sản xuất phim.',
           link: '/tokens',
           payload: { amountTokens: dto.amountTokens },
         },

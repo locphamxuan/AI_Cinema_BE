@@ -62,7 +62,7 @@ export class ProjectLifecycleService {
         [creatorId],
         {
           type: NOTIFICATION_TYPE.PROJECT_ASSIGNED,
-          title: `You were assigned the movie project "${movie.title}"`,
+          title: `Bạn được giao dự án phim "${movie.title}"`,
           link: projectLink(movieId),
           payload: { movieId },
         },
@@ -105,7 +105,7 @@ export class ProjectLifecycleService {
         [movie.creatorId],
         {
           type: NOTIFICATION_TYPE.PROJECT_CANCELLED,
-          title: `The movie project "${movie.title}" was cancelled`,
+          title: `Dự án phim "${movie.title}" đã bị huỷ`,
           body: reason,
           link: projectLink(movieId),
         },

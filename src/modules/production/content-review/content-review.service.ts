@@ -93,8 +93,8 @@ export class ContentReviewService {
       [episode.movie.creatorId],
       {
         type: NOTIFICATION_TYPE.CONTENT_CHANGES_REQUESTED,
-        title: `Changes requested on episode ${episode.episodeNumber} of "${episode.movie.title}"`,
-        body: `Forward this to the studio and deliver a new version: ${comments}`,
+        title: `Yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
+        body: `Studio xem góp ý trên cổng studio và giao bản mới: ${comments}`,
         link: `/projects/${episode.movieId}/episodes/${episode.id}`,
         payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },
@@ -174,8 +174,8 @@ export class ContentReviewService {
       [episode.movie.creatorId],
       {
         type: NOTIFICATION_TYPE.CONTENT_APPROVED,
-        title: `Episode ${episode.episodeNumber} of "${episode.movie.title}" was approved`,
-        body: `Version ${asset.version} goes on to labeling and the compliance check.`,
+        title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã được duyệt`,
+        body: `Bản ${asset.version} chuyển sang gắn nhãn AI và kiểm tra tuân thủ.`,
         link: `/projects/${episode.movieId}/episodes/${episode.id}`,
         payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },

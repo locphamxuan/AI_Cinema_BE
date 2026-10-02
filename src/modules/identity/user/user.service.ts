@@ -50,19 +50,56 @@ export class UserService {
     if (userId === caller.id && (dto.role !== undefined || dto.isActive === false)) {
       throw new BadRequestException('You cannot change your own role or lock your own account');
     }
-    const existing = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const existing = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true, email: true } });
     if (!existing) throw new NotFoundException(`User with id "${userId}" does not exist`);
+    const email = dto.email === undefined ? undefined : normalizeEmail(dto.email);
+    if (
+      email &&
+      email !== existing.email &&
+      (await this.prisma.user.findUnique({ where: { email }, select: { id: true } }))
+    ) {
+      throw new ConflictException('An account with this email already exists');
+    }
 
     const user = await this.prisma.user.update({
       where: { id: userId },
-      data: { role: dto.role, isActive: dto.isActive },
+      data: {
+        fullName: dto.fullName?.trim(),
+        email,
+        role: dto.role,
+        isActive: dto.isActive,
+        ...(dto.password ? { passwordHash: await hashPassword(dto.password) } : {}),
+      },
       select: USER_PROFILE_SELECT,
     });
     this.accessControl.forgetAccount(userId);
-    // A locked account or a new role must not keep the sessions issued before.
-    if (dto.isActive === false || (dto.role !== undefined && dto.role !== existing.role)) {
+    // A locked account, a new role or a new password must not keep the sessions issued before.
+    if (dto.isActive === false || dto.password || (dto.role !== undefined && dto.role !== existing.role)) {
       await this.sessions.revokeAll(userId);
     }
     return user;
+  }
+
+  /**
+   * Deletes an account that never did anything in the platform (its notifications and sessions go with it).
+   * An account that already owns projects, reviews, deliveries or Token entries is part of that history:
+   * lock it instead.
+   */
+  async remove(userId: string, caller: AuthenticatedUser): Promise<void> {
+    if (userId === caller.id) throw new BadRequestException('You cannot delete your own account');
+    if (!(await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } }))) {
+      throw new NotFoundException(`User with id "${userId}" does not exist`);
+    }
+    try {
+      await this.prisma.user.delete({ where: { id: userId } });
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2003') {
+        throw new ConflictException(
+          'This account already has activity in the platform; lock it instead of deleting it',
+        );
+      }
+      throw error;
+    }
+    this.accessControl.forgetAccount(userId);
   }
 }

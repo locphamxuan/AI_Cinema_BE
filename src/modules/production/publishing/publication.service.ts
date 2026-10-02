@@ -237,7 +237,7 @@ export class PublicationService {
       [episode.movie.reviewerId, episode.movie.creatorId],
       {
         type: NOTIFICATION_TYPE.EPISODE_PUBLISHED,
-        title: `Episode ${episode.episodeNumber} of "${episode.movie.title}" is now live`,
+        title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã phát hành`,
         link: `/projects/${episode.movieId}/episodes/${episode.id}`,
         payload: { movieId: episode.movieId, episodeId: episode.id, publicationId: publication.id },
       },
