@@ -106,6 +106,10 @@ export class MediaIngestService {
       aiDisclosure: disclosure,
       proposedLabelType: dto.proposedLabelType,
       submissionNote: dto.submissionNote?.trim() || undefined,
+    }).catch(async (error: unknown) => {
+      // No version points at the stored file (e.g. a concurrent delivery won): do not leave it behind.
+      await this.storage.remove(storageKey, 'private').catch(() => undefined);
+      throw error;
     });
     return this.enqueue(asset.id);
   }

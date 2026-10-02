@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { access, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Readable } from 'node:stream';
 import { assertSafeKey, ObjectStorage, type Visibility } from './object-storage';
@@ -36,6 +36,10 @@ export class LocalObjectStorage extends ObjectStorage {
     const file = this.pathOf(key, visibility);
     await access(file);
     return createReadStream(file);
+  }
+
+  async remove(key: string, visibility: Visibility): Promise<void> {
+    await rm(this.pathOf(key, visibility), { force: true });
   }
 
   publicUrl(key: string): string {
