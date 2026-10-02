@@ -1,12 +1,16 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
+import { inDays } from './support/projects';
 
 interface Project extends Row {
   status: string;
   productionFeeTokens: number;
   openChangeRequests: number;
-  seasons: { seasonNumber: number; episodes: { id: string; episodeNumber: number; status: string }[] }[];
+  seasons: {
+    seasonNumber: number;
+    episodes: { id: string; episodeNumber: number; status: string; milestoneDate: string | null }[];
+  }[];
 }
 
 const PDF = Buffer.from('%PDF-1.7\n1 0 obj\n<<>>\nendobj\n');
@@ -33,25 +37,41 @@ describe('Movie projects (e2e)', () => {
 
   afterAll(() => app.close());
 
+  const newProject = (episodes: object[]) => ({
+    title: 'Căn Hộ Số 13',
+    ideaDescription: 'Phim kinh dị tâm lý về một căn hộ không ai dám thuê.',
+    genreIds: [genreId],
+    seasons: [{ title: 'Mùa 1', episodes: episodes.slice(0, 2) }, { episodes: episodes.slice(2) }],
+  });
+
   it('creates a project whose episodes are numbered across seasons (BR-37)', async () => {
-    const project = await reviewer.post<Project>('/projects', {
-      title: 'Căn Hộ Số 13',
-      ideaDescription: 'Phim kinh dị tâm lý về một căn hộ không ai dám thuê.',
-      genreIds: [genreId],
-      seasons: [
-        {
-          title: 'Mùa 1',
-          episodes: [
-            { title: 'Tập 1', targetDurationSeconds: 900 },
-            { title: 'Tập 2', targetDurationSeconds: 2700 },
-          ],
-        },
-        { episodes: [{ title: 'Tập 3', targetDurationSeconds: 600 }] },
-      ],
-    });
+    const project = await reviewer.post<Project>(
+      '/projects',
+      newProject([
+        { title: 'Tập 1', targetDurationSeconds: 900, milestoneDate: inDays(20) },
+        { title: 'Tập 2', targetDurationSeconds: 2700, milestoneDate: inDays(27) },
+        { title: 'Tập 3', targetDurationSeconds: 600, milestoneDate: inDays(34) },
+      ]),
+    );
     projectId = project.id;
     expect(project.status).toBe('DRAFT');
     expect(project.seasons.map((s) => s.episodes.map((e) => e.episodeNumber))).toEqual([[1, 2], [3]]);
+    expect(project.seasons[0].episodes[0].milestoneDate).toContain(inDays(20));
+  });
+
+  it('needs a milestone, today or later, for every episode', async () => {
+    const episode = { title: 'Tập 1', targetDurationSeconds: 900 };
+    await reviewer.post('/projects', newProject([episode]), 400);
+    await reviewer.post('/projects', newProject([{ ...episode, milestoneDate: '2020-01-01' }]), 400);
+    await reviewer.post(`/projects/${projectId}/seasons`, { episodes: [episode] }, 400);
+
+    const [first] = (await reviewer.get<Project>(`/projects/${projectId}`)).seasons[0].episodes;
+    await reviewer.patch(`/episodes/${first.id}`, { milestoneDate: '2020-01-01' }, 400);
+    const moved = await reviewer.patch<{ milestoneDate: string }>(`/episodes/${first.id}`, {
+      milestoneDate: inDays(21),
+    });
+    expect(moved.milestoneDate).toContain(inDays(21));
+    await creator.patch(`/episodes/${first.id}`, { milestoneDate: inDays(40) }, 403);
   });
 
   it('keeps projects private to their Reviewer and away from Creators who are not assigned', async () => {
