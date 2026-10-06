@@ -40,7 +40,7 @@ const EPISODE_DETAIL = {
   },
 } satisfies Prisma.EpisodeInclude;
 
-type MovieRow = Prisma.MovieGetPayload<{ include: typeof GENRES }> & { seriesCoinPrice: number | null };
+type MovieRow = Prisma.MovieGetPayload<{ include: typeof GENRES }>;
 type EpisodeRow = Prisma.EpisodeGetPayload<{ include: typeof EPISODE_DETAIL }>;
 
 /**
@@ -58,24 +58,21 @@ export class CatalogService {
   async listMovies(query: PaginateQuery, genreId?: string) {
     const page = await paginate(query, this.prisma.movie, {
       where: genreId ? { ...LISTED_MOVIE, genres: { some: { genreId } } } : LISTED_MOVIE,
-      relations: { genres: { include: { genre: { select: { id: true, name: true } } } } },
+      relations: GENRES,
       sortableColumns: ['title', 'releaseYear', 'createdAt'],
       defaultSortBy: [['createdAt', 'DESC']],
       searchableColumns: ['title'],
       filterableColumns: { ageRating: ['$eq', '$in'], releaseYear: ['$eq', '$gte', '$lte'] },
     });
-    return { ...page, data: (page.data as any[]).map((movie) => movieCard(movie)) };
+    return { ...page, data: (page.data as MovieRow[]).map(movieCard) };
   }
 
   async movie(movieId: string) {
-    const movie = await this.prisma.movie.findFirst({
-      where: { id: movieId, ...LISTED_MOVIE },
-      include: { genres: { include: { genre: { select: { id: true, name: true } } } } },
-    });
+    const movie = await this.prisma.movie.findFirst({ where: { id: movieId, ...LISTED_MOVIE }, include: GENRES });
     if (!movie) throw new NotFoundException('Movie not found');
     const seasons = await this.seasons(movieId);
     return {
-      ...movieCard(movie as any),
+      ...movieCard(movie),
       seasons,
       episodeCount: seasons.reduce((sum, season) => sum + season.episodeCount, 0),
     };
@@ -125,7 +122,7 @@ export class CatalogService {
   }
 }
 
-function movieCard(movie: MovieRow & { seriesCoinPrice: number | null }) {
+function movieCard(movie: MovieRow) {
   return {
     id: movie.id,
     title: movie.title,
@@ -138,9 +135,6 @@ function movieCard(movie: MovieRow & { seriesCoinPrice: number | null }) {
     trailerUrl: movie.trailerUrl,
     // The whole catalog is AI-made; the per-episode label says how (BR-40).
     aiGenerated: movie.aiGenerated,
-    // MF-2: the bundle price, so the series-purchase screen knows the movie is sold as a whole.
-    // null means it is not, whatever the per-episode prices are.
-    seriesCoinPrice: movie.seriesCoinPrice,
     genres: movie.genres.map(({ genre }) => genre),
   };
 }
