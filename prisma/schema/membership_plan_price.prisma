@@ -1,0 +1,19 @@
+/// Coin price of a plan over time. A subscription copies the price in force when its cycle
+/// started, so a new price never rewrites what a member has already paid. Exactly one row per
+/// plan has no effectiveTo: the price in force.
+model MembershipPlanPrice {
+  id            String    @id @default(uuid()) @db.Uuid
+  planId        String    @map("plan_id") @db.Uuid
+  priceCoins    Int       @map("price_coins")
+  effectiveFrom DateTime  @map("effective_from") @db.Timestamptz(6)
+  /// Null while this is the price in force.
+  effectiveTo   DateTime? @map("effective_to") @db.Timestamptz(6)
+  setById       String    @map("set_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  plan  MembershipPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  setBy User           @relation("MembershipPlanPriceSetBy", fields: [setById], references: [id], onDelete: Restrict)
+
+  @@index([planId, effectiveFrom])
+  @@map("membership_plan_prices")
+}

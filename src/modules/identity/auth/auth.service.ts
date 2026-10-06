@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
 import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
@@ -15,6 +16,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly tokens: SessionTokenService,
     private readonly accessControl: AccessControlService,
+    private readonly wallets: WalletService,
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
@@ -27,15 +29,16 @@ export class AuthService {
       throw new ConflictException('An account with this email already exists');
     }
 
-    const user = await this.prisma.user.create({
-      data: {
-        email,
-        passwordHash: await hashPassword(dto.password),
-        fullName: dto.fullName.trim(),
-        dateOfBirth,
-        role: UserRole.MEMBER,
-      },
-      select: USER_PROFILE_SELECT,
+    const passwordHash = await hashPassword(dto.password);
+    // The account, its wallet and the welcome bonus all commit together: a member that exists
+    // always has a wallet, so no purchase screen ever has to open one on the spot.
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: { email, passwordHash, fullName: dto.fullName.trim(), dateOfBirth, role: UserRole.MEMBER },
+        select: USER_PROFILE_SELECT,
+      });
+      await this.wallets.openForNewAccount(tx, created.id);
+      return created;
     });
     return this.session(user);
   }

@@ -40,6 +40,16 @@ model User {
   priceAlertsSet          PriceAlert[]           @relation("PriceAlertSetBy")
   priceAlertsHandled      PriceAlert[]           @relation("PriceAlertHandledBy")
   notifications           Notification[]
+  coinWallet              CoinWallet?
+  coinEntriesWritten      CoinTransaction[]      @relation("CoinTransactionCreatedBy")
+  coinTopUps              CoinTopUp[]
+  dailyCheckIns           DailyCheckIn[]
+  membershipPlansCreated  MembershipPlan[]      @relation("MembershipPlanCreatedBy")
+  planPricesSet           MembershipPlanPrice[] @relation("MembershipPlanPriceSetBy")
+  rewardRulesCreated      RewardRule[]          @relation("RewardRuleCreatedBy")
+  subscriptions           Subscription[]
+  episodeAccesses         EpisodeAccess[]
+  seriesAccesses          SeriesAccess[]
 
   @@index([role])
   @@map("users")

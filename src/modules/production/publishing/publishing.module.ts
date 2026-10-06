@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { EntitlementModule } from 'src/modules/episode-access/entitlement/entitlement.module';
 import { ContentReviewModule } from 'src/modules/production/content-review/content-review.module';
 import { MovieProjectModule } from 'src/modules/production/movie-project/movie-project.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
@@ -10,7 +11,7 @@ import { PublicationService } from './publication.service';
 import { PublishingController } from './publishing.controller';
 
 @Module({
-  imports: [MovieProjectModule, PlatformSettingModule, ContentReviewModule],
+  imports: [MovieProjectModule, PlatformSettingModule, ContentReviewModule, EntitlementModule],
   controllers: [PublishingController, PriceAlertController],
   providers: [PricingService, PublicationService, EpisodeRevisionService, PublicationSweepJob],
 })

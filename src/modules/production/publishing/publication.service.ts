@@ -10,8 +10,10 @@ import {
 } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import { EntitlementService } from 'src/modules/episode-access/entitlement/entitlement.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
+import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { ProjectLifecycleService } from 'src/modules/production/movie-project/project-lifecycle.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
@@ -54,6 +56,8 @@ export class PublicationService {
     private readonly auditLog: AuditLogService,
     private readonly notifications: NotificationService,
     private readonly revisions: EpisodeRevisionService,
+    private readonly entitlements: EntitlementService,
+    private readonly settings: PlatformSettingService,
   ) {}
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
@@ -130,8 +134,12 @@ export class PublicationService {
         await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
       } else {
         // A cancelled schedule goes back to the checked state; a removed episode can be released again.
-        // BR-52 (refunding Members who unlocked a removed episode) hooks in here with MF-2's entitlements.
         await this.moveEpisode(tx, episode, live ? EpisodeStatus.UNPUBLISHED : EpisodeStatus.COMPLIANCE_PASSED);
+        // BR-52: an episode taken down for good is paid back, so nobody keeps Coins for content
+        // that is gone. The refunds commit with the take-down, never after it.
+        if (mode === UnpublishMode.REMOVAL && live && (await this.settings.get()).refundOnRemoval) {
+          await this.entitlements.refundEpisodeRemoval(tx, episode.id, dto.reason);
+        }
       }
       await this.auditLog.record(
         {

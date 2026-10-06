@@ -13,6 +13,19 @@ model PlatformSetting {
   bonusCoinExpiryDays             Int      @default(30) @map("bonus_coin_expiry_days")
   /// BR-36
   playbackHeartbeatTimeoutSeconds Int      @default(90) @map("playback_heartbeat_timeout_seconds")
+  /// Hours before the renewal date a member may still stop auto-renew; a later request is
+  /// refused and the renewal goes through.
+  subscriptionCancelWindowHours   Int      @default(24) @map("subscription_cancel_window_hours")
+  /// Hours auto-renew keeps retrying a cycle the wallet could not cover before the membership
+  /// ends. Access runs on until the end of the period already paid for.
+  planRenewalGraceHours           Int      @default(48) @map("plan_renewal_grace_hours")
+  /// Bonus Coins a new account is given; 0 = none.
+  newMemberBonusCoins             Int      @default(0) @map("new_member_bonus_coins")
+  /// VND a single top-up has to be between.
+  coinTopUpMinVnd                 Int      @default(10000) @map("coin_top_up_min_vnd")
+  coinTopUpMaxVnd                 Int      @default(2000000) @map("coin_top_up_max_vnd")
+  /// A purchase of an episode taken down for good is refunded in main Coins.
+  refundOnRemoval                 Boolean  @default(true) @map("refund_on_removal")
   updatedById                     String?  @map("updated_by") @db.Uuid
   updatedAt                       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

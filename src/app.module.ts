@@ -11,6 +11,7 @@ import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/identity/auth/auth.module';
 import { CatalogModule } from 'src/modules/catalog/catalog.module';
+import { EpisodeAccessModule } from 'src/modules/episode-access/episode-access.module';
 import { ContentReviewModule } from 'src/modules/production/content-review/content-review.module';
 import { EmailModule } from 'src/modules/platform/email/email.module';
 import { GenreModule } from 'src/modules/platform/genre/genre.module';
@@ -56,6 +57,7 @@ import { AppController } from './app.controller';
     ContentReviewModule,
     PublishingModule,
     CatalogModule,
+    EpisodeAccessModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

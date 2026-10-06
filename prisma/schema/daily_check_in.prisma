@@ -1,0 +1,28 @@
+/// One day's check-in, keyed by the business day in Vietnam so a reward can be claimed once a day
+/// whatever the client's clock says. The Coins are bonus Coins: they carry the expiry of the lot
+/// the ledger entry created.
+model DailyCheckIn {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  walletId          String   @map("wallet_id") @db.Uuid
+  /// The business day in Vietnam (Asia/Ho_Chi_Minh), not the UTC instant.
+  checkInDate       DateTime @map("check_in_date") @db.Date
+  /// 1 on the first day, one more on each day in a row, back to 1 after a missed day.
+  streakDay         Int      @map("streak_day")
+  /// Whether this day continues the streak of the day before.
+  streakContinued   Boolean  @map("streak_continued")
+  coinsGranted      Int      @map("coins_granted")
+  bonusGranted      Int      @default(0) @map("bonus_granted")
+  /// The ledger entry that credited the Coins; null while the reward has not been paid out.
+  coinTransactionId String?  @unique @map("coin_transaction_id") @db.Uuid
+  ruleId            String?  @map("rule_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet          CoinWallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  coinTransaction CoinTransaction? @relation(fields: [coinTransactionId], references: [id], onDelete: Restrict)
+  rule            RewardRule?      @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, checkInDate])
+  @@map("daily_check_ins")
+}

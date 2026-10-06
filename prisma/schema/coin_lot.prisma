@@ -1,0 +1,30 @@
+/// Where a batch of bonus Coins came from.
+enum CoinLotSource {
+  /// A promotion an Admin set up on a top-up; a plain top-up credits main Coins only.
+  TOP_UP_PROMO
+  SIGNUP_BONUS
+  DAILY_REWARD
+  REFUND
+  ADJUSTMENT
+}
+
+/// One batch of bonus Coins with its own expiry, so every bonus Coin the member holds knows when
+/// it runs out. Bonus Coins are spent batch by batch, the one that expires first; main Coins
+/// never expire and have no batch, so spending them needs no bookkeeping. A batch is closed when
+/// its last Coin was spent, expired or written off.
+model CoinLot {
+  id              String        @id @default(uuid()) @db.Uuid
+  walletId        String        @map("wallet_id") @db.Uuid
+  source          CoinLotSource
+  originalAmount  Int           @map("original_amount")
+  remainingAmount Int           @map("remaining_amount")
+  grantedAt       DateTime      @default(now()) @map("granted_at") @db.Timestamptz(6)
+  expiresAt       DateTime      @map("expires_at") @db.Timestamptz(6)
+  closedAt        DateTime?     @map("closed_at") @db.Timestamptz(6)
+
+  wallet  CoinWallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  entries CoinTransaction[] @relation("CoinLotSpentBy")
+
+  @@index([walletId, expiresAt])
+  @@map("coin_lots")
+}

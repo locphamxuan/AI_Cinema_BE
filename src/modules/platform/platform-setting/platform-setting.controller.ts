@@ -8,7 +8,8 @@ import { PlatformSettingService } from './platform-setting.service';
 
 @ApiTags('platform-settings')
 @ApiBearerAuth()
-@Controller('platform-settings')
+// Served on both paths: MF-2 Admin clients use `admin/platform-settings`, older callers the plain one.
+@Controller(['platform-settings', 'admin/platform-settings'])
 export class PlatformSettingController {
   constructor(private readonly platformSettingService: PlatformSettingService) {}
 

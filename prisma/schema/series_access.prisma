@@ -1,0 +1,23 @@
+/// Unlocking a whole series at once: every episode of the movie is then free for that member, so
+/// no per-episode rows are written. A movie whose series_coin_price is null is not sold as a
+/// bundle. Revoked the same way as a single episode, when the whole movie is taken down.
+model SeriesAccess {
+  id                String       @id @default(uuid()) @db.Uuid
+  userId            String       @map("user_id") @db.Uuid
+  movieId           String       @map("movie_id") @db.Uuid
+  source            AccessSource @default(SERIES_PURCHASE)
+  paidCoins         Int          @map("paid_coins")
+  rateVnd           Int          @map("rate_vnd")
+  coinTransactionId String?      @unique @map("coin_transaction_id") @db.Uuid
+  grantedAt         DateTime     @default(now()) @map("granted_at") @db.Timestamptz(6)
+  revokedAt         DateTime?    @map("revoked_at") @db.Timestamptz(6)
+  revokeReason      String?      @map("revoke_reason") @db.Text
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie           Movie            @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  coinTransaction CoinTransaction? @relation(fields: [coinTransactionId], references: [id], onDelete: Restrict)
+
+  @@index([userId, movieId])
+  @@index([movieId])
+  @@map("series_accesses")
+}

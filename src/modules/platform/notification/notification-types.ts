@@ -1,5 +1,6 @@
-/** Kinds of in-app notifications MF-1 raises (the `notifications.type` column). */
+/** Kinds of in-app notifications the platform raises (the `notifications.type` column). */
 export const NOTIFICATION_TYPE = {
+  // MF-1 — movie projects
   PROJECT_ASSIGNED: 'PROJECT_ASSIGNED',
   PROJECT_CANCELLED: 'PROJECT_CANCELLED',
   CHANGE_REQUESTED: 'PROJECT_CHANGE_REQUESTED',
@@ -19,6 +20,15 @@ export const NOTIFICATION_TYPE = {
   PRICE_OUT_OF_RANGE: 'PRICE_OUT_OF_RANGE',
   PRICE_CHANGE_REQUEST: 'PRICE_CHANGE_REQUEST',
   EPISODE_PUBLISHED: 'EPISODE_PUBLISHED',
+  // MF-2 — Coin, daily reward and monthly plan
+  COIN_TOPUP_SUCCESS: 'COIN_TOPUP_SUCCESS',
+  COIN_BONUS_EXPIRING: 'COIN_BONUS_EXPIRING',
+  COIN_LOW_BALANCE: 'COIN_LOW_BALANCE',
+  SUB_RENEWED: 'SUB_RENEWED',
+  SUB_RENEWAL_FAILED: 'SUB_RENEWAL_FAILED',
+  SUB_EXPIRING: 'SUB_EXPIRING',
+  SUBSCRIPTION_CANCELLED: 'SUBSCRIPTION_CANCELLED',
+  EPISODE_ACCESS_REFUNDED: 'EPISODE_ACCESS_REFUNDED',
 } as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];

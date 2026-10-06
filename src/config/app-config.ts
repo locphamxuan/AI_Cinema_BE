@@ -32,7 +32,16 @@ export interface AppConfig {
     allowPrivateUrls: boolean;
     concurrency: number;
   };
-  schedules: { publicationSweepMs: number; overdueSweepMs: number; hlsCheckMs: number };
+  schedules: {
+    publicationSweepMs: number;
+    overdueSweepMs: number;
+    hlsCheckMs: number;
+    /** MF-2: subscription auto-renew, bonus lot expiry, top-up expiry and reconciliation. */
+    subscriptionRenewalSweepMs: number;
+    coinExpirySweepMs: number;
+    coinTopUpSweepMs: number;
+    paymentReconcileSweepMs: number;
+  };
   briefFontPath: string | null;
 }
 
@@ -170,6 +179,10 @@ export function loadConfig(env: Env = process.env): AppConfig {
       publicationSweepMs: read.int('PUBLICATION_SWEEP_MS', 30_000),
       overdueSweepMs: read.int('OVERDUE_SWEEP_MS', 60 * 60_000),
       hlsCheckMs: read.int('HLS_CHECK_MS', 6 * 60 * 60_000),
+      subscriptionRenewalSweepMs: read.int('SUBSCRIPTION_RENEWAL_SWEEP_MS', 60_000),
+      coinExpirySweepMs: read.int('COIN_EXPIRY_SWEEP_MS', 24 * 60 * 60_000),
+      coinTopUpSweepMs: read.int('COIN_TOPUP_SWEEP_MS', 5 * 60_000),
+      paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
     },
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
   };

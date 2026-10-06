@@ -1,0 +1,55 @@
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  /// Auto-renew found no Coins; the grace period is running and access continues until the end
+  /// of the period already paid for.
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum SubscriptionEndReason {
+  CANCELLED_BY_MEMBER
+  CANCELLED_BY_ADMIN
+  PAYMENT_FAILED
+  NOT_RENEWED
+}
+
+/// One member's membership; a member has at most one open subscription. While it runs, the plan
+/// grants access to every published episode, so no per-episode access rows are written. Auto-renew
+/// asks for Coins at nextRenewalAt; a member may still stop it until cancelWindowEndsAt, which is
+/// nextRenewalAt - subscriptionCancelWindowHours. A request after that moment is refused and the
+/// renewal goes through.
+model Subscription {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  userId             String                 @map("user_id") @db.Uuid
+  planId             String                 @map("plan_id") @db.Uuid
+  status             SubscriptionStatus     @default(PENDING)
+  autoRenew          Boolean                @default(true) @map("auto_renew")
+  /// Coin price of one cycle, copied from the plan price in force when the cycle started.
+  priceCoins         Int                    @map("price_coins")
+  startedAt          DateTime               @map("started_at") @db.Timestamptz(6)
+  currentPeriodStart DateTime               @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd   DateTime               @map("current_period_end") @db.Timestamptz(6)
+  /// When auto-renew runs next; equals the end of the current period while auto-renew is on.
+  nextRenewalAt      DateTime?              @map("next_renewal_at") @db.Timestamptz(6)
+  /// When the member asked to stop auto-renewing; null while auto-renew is on.
+  cancelRequestedAt  DateTime?              @map("cancel_requested_at") @db.Timestamptz(6)
+  /// The last moment a cancellation is still accepted, i.e. the renewal date minus the window.
+  cancelWindowEndsAt DateTime?              @map("cancel_window_ends_at") @db.Timestamptz(6)
+  cancelledAt        DateTime?              @map("cancelled_at") @db.Timestamptz(6)
+  endedAt            DateTime?              @map("ended_at") @db.Timestamptz(6)
+  endReason          SubscriptionEndReason? @map("end_reason")
+  renewalsCompleted  Int                    @default(0) @map("renewals_completed")
+  lastRenewedAt      DateTime?              @map("last_renewed_at") @db.Timestamptz(6)
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user   User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan   MembershipPlan      @relation(fields: [planId], references: [id], onDelete: Restrict)
+  cycles SubscriptionCycle[]
+
+  @@index([userId, status])
+  @@index([status, nextRenewalAt])
+  @@map("subscriptions")
+}

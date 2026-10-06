@@ -45,6 +45,8 @@ model Movie {
   /// BR-54: T16 or T18
   ageRating       String?     @map("age_rating") @db.VarChar(10)
   releaseYear     Int?        @map("release_year")
+  /// Coin price of unlocking every episode of this movie at once; null = not sold as a bundle.
+  seriesCoinPrice Int?        @map("series_coin_price")
   status          MovieStatus @default(DRAFT)
   aiGenerated     Boolean     @default(true) @map("ai_generated")
   posterUrl       String?     @map("poster_url") @db.VarChar(500)
@@ -74,6 +76,7 @@ model Movie {
   tokenEntries   TokenLedgerEntry[]
   changeRequests ProjectChangeRequest[]
   auditLogs      AuditLog[]
+  seriesAccesses SeriesAccess[]
 
   @@index([status])
   @@index([reviewerId])
@@ -193,6 +196,7 @@ model Episode {
   publications       Publication[]
   priceAlerts        PriceAlert[]
   changeRequests     ProjectChangeRequest[]
+  accesses           EpisodeAccess[]
 
   @@unique([movieId, episodeNumber])
   @@index([movieId, status])

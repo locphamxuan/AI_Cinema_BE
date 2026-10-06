@@ -1,0 +1,20 @@
+/// One callback delivery of a payment gateway, kept so the same one arriving twice is recognised
+/// and answered without crediting the wallet a second time.
+model PaymentCallback {
+  id           String          @id @default(uuid()) @db.Uuid
+  topUpId      String?         @map("top_up_id") @db.Uuid
+  provider     PaymentProvider
+  /// Gateway event id; unique together with the provider.
+  eventId      String          @map("event_id") @db.VarChar(150)
+  signature    String?         @db.VarChar(255)
+  payload      Json            @db.JsonB
+  handledAt    DateTime?       @map("handled_at") @db.Timestamptz(6)
+  errorMessage String?         @map("error_message") @db.Text
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  topUp CoinTopUp? @relation(fields: [topUpId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, eventId])
+  @@index([topUpId])
+  @@map("payment_callbacks")
+}

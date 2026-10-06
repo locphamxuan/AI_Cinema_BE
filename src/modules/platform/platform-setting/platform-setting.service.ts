@@ -22,6 +22,11 @@ export class PlatformSettingService {
     if (min > max) {
       throw new BadRequestException(`The lowest episode price (${min}) cannot exceed the highest (${max})`);
     }
+    const topUpMin = dto.coinTopUpMinVnd ?? current.coinTopUpMinVnd;
+    const topUpMax = dto.coinTopUpMaxVnd ?? current.coinTopUpMaxVnd;
+    if (topUpMin > topUpMax) {
+      throw new BadRequestException(`The lowest top-up amount (${topUpMin}) cannot exceed the highest (${topUpMax})`);
+    }
     return this.prisma.platformSetting.update({ where: { id: SETTING_ID }, data: { ...dto, updatedById } });
   }
 }

@@ -1,0 +1,50 @@
+enum PaymentProvider {
+  VNPAY
+  MOMO
+}
+
+enum TopUpStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/// Coins the member bought with a payment gateway (VNPay or MoMo). The request row is written
+/// before the redirect and settled from the callback, so the amount agreed on and the amount
+/// actually credited never drift apart. Main Coins are credited: bonus Coins only come from a
+/// promotion the Admin sets up on purpose.
+model CoinTopUp {
+  id                String          @id @default(uuid()) @db.Uuid
+  userId            String          @map("user_id") @db.Uuid
+  walletId          String          @map("wallet_id") @db.Uuid
+  provider          PaymentProvider
+  amountVnd         Int             @map("amount_vnd")
+  /// Coins credited, rounded down from amountVnd / rateVnd at the rate the request was made at.
+  coinsGranted      Int             @map("coins_granted")
+  rateVnd           Int             @map("rate_vnd")
+  status            TopUpStatus     @default(PENDING)
+  /// Gateway order id; unique per provider so a replayed callback cannot credit twice.
+  providerTxnId     String?         @map("provider_txn_id") @db.VarChar(100)
+  /// Gateway transaction id of the settled payment.
+  providerPaymentId String?         @map("provider_payment_id") @db.VarChar(100)
+  redirectUrl       String?         @map("redirect_url") @db.VarChar(1000)
+  /// The ledger entry that credited the wallet; null until PAID.
+  coinTransactionId String?         @unique @map("coin_transaction_id") @db.Uuid
+  failureReason     String?         @map("failure_reason") @db.Text
+  paidAt            DateTime?       @map("paid_at") @db.Timestamptz(6)
+  expiresAt         DateTime?       @map("expires_at") @db.Timestamptz(6)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  wallet          CoinWallet        @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  coinTransaction CoinTransaction?  @relation(fields: [coinTransactionId], references: [id], onDelete: Restrict)
+  callbacks       PaymentCallback[]
+
+  @@unique([provider, providerTxnId])
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
+  @@map("coin_top_ups")
+}
