@@ -5,10 +5,11 @@ import { NotificationModule } from 'src/modules/platform/notification/notificati
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { CoinWalletModule } from '../coin-wallet/coin-wallet.module';
 import { MembershipPlanModule } from '../membership-plan/membership-plan.module';
-import { AdminSubscriptionController, SubscriptionController } from './subscription.controller';
+import { SubscriptionController } from './subscription.controller';
 import { SubscriptionRenewalService } from './subscription-renewal.service';
 import { SubscriptionRenewalSweep } from './subscription-renewal.sweep';
 import { SubscriptionService } from './subscription.service';
+import { AdminSubscriptionController } from 'src/modules/episode-access/subscription/admin-subscription.controller';
 
 /** Steps 9, 10 and 19: joining a plan, stopping auto-renew and letting the sweeper renew it. */
 @Module({

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- a data list, one entry per Commons file */
 /**
  * AI films for the demo catalog, all from Wikimedia Commons under a licence that allows reuse
  * (public domain or CC BY / CC BY 3.0 / 4.0, which only ask for attribution: author, licence and source

@@ -1,25 +1,15 @@
-import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Paginate, paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import {
-  AdminSubscriptionFilterDto,
-  CancelSubscriptionRequestDto,
-  SubscribeRequestDto,
-  SubscriptionActivationView,
-  SubscriptionIntentView,
-  SubscriptionView,
-} from '../membership-plan/dto/membership-plan.request.dto';
 import { SubscriptionService } from './subscription.service';
+import { SubscriptionView } from 'src/modules/episode-access/subscription/dto/subscription-view.dto';
+import { SubscriptionIntentView } from 'src/modules/episode-access/subscription/dto/subscription-intent-view.dto';
+import { SubscribeRequestDto } from 'src/modules/episode-access/subscription/dto/subscribe.request.dto';
+import { SubscriptionActivationView } from 'src/modules/episode-access/subscription/dto/subscription-activation-view.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
-
-/** The Admin list shows which plan and which member a row belongs to. */
-const PLAN_OF_SUBSCRIPTION = { id: true, code: true, name: true };
-const MEMBER_OF_SUBSCRIPTION = { id: true, fullName: true, email: true };
 
 @ApiTags('membership')
 @ApiBearerAuth()
@@ -88,54 +78,5 @@ export class SubscriptionController {
   @ApiOperation({ summary: 'Change the mind before the period ends' })
   resume(@CurrentUser('id') userId: string, @Param('id', ID) subscriptionId: string) {
     return this.subscriptions.resumeAutoRenew(userId, subscriptionId);
-  }
-}
-
-@ApiTags('admin-subscriptions')
-@ApiBearerAuth()
-@Controller('admin/subscriptions')
-export class AdminSubscriptionController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly subscriptions: SubscriptionService,
-  ) {}
-
-  @Get()
-  @RequirePermission(PERMISSION.BILLING_SUBSCRIPTION_READ)
-  @ApiOperation({ summary: 'Every subscription; filter by status, plan, member or date range' })
-  list(@Paginate() query: PaginateQuery, @Query() filter: AdminSubscriptionFilterDto) {
-    return paginate(query, this.prisma.subscription, {
-      where: {
-        ...(filter.status ? { status: filter.status } : {}),
-        ...(filter.planId ? { planId: filter.planId } : {}),
-        ...(filter.userId ? { userId: filter.userId } : {}),
-        ...(filter.from || filter.to
-          ? {
-              createdAt: {
-                ...(filter.from ? { gte: new Date(filter.from) } : {}),
-                ...(filter.to ? { lte: new Date(filter.to) } : {}),
-              },
-            }
-          : {}),
-      },
-      relations: { plan: { select: PLAN_OF_SUBSCRIPTION }, user: { select: MEMBER_OF_SUBSCRIPTION } },
-      sortableColumns: ['createdAt', 'currentPeriodEnd', 'status'],
-      defaultSortBy: [['createdAt', 'DESC']],
-      filterableColumns: { status: ['$eq', '$in'], planId: ['$eq'], userId: ['$eq'] },
-    });
-  }
-
-  @Get(':id')
-  @RequirePermission(PERMISSION.BILLING_SUBSCRIPTION_READ)
-  @ApiOperation({ summary: 'One subscription with its billing cycles' })
-  detail(@Param('id', ID) id: string) {
-    return this.subscriptions.detail(id);
-  }
-
-  @Post(':id/cancel')
-  @RequirePermission(PERMISSION.BILLING_SUBSCRIPTION_CANCEL)
-  @ApiOperation({ summary: 'End a member plan with Admin rights' })
-  cancel(@Param('id', ID) id: string, @CurrentUser('id') actorId: string, @Body() dto: CancelSubscriptionRequestDto) {
-    return this.subscriptions.cancelByAdmin(id, actorId, dto.reason);
   }
 }

@@ -56,6 +56,24 @@ describe('vnpay signing', () => {
     expect(url).toMatch(/vnp_SecureHash=[0-9a-f]{128}$/);
   });
 
+  it('encodes values before hashing, like the official VNPay sample', () => {
+    // Pinned vector: `:` and `/` in the return URL must reach the hash as %3A/%2F,
+    // otherwise the gateway computes a different checksum ("sai chữ ký").
+    const url = buildVnpayPayUrl('https://sandbox.vnpayment.vn/paymentv2/vpcpay.html', PAY_PARAMS, SECRET);
+    expect(url).toContain('vnp_ReturnUrl=https%3A%2F%2Fapi.example.com%2Fapi%2Fpayments%2Fvnpay%2Freturn');
+    expect(url).toContain(
+      'vnp_SecureHash=5b5733d84a6120d13b4f21054cce7db47edbb468cc20f548d98150418310831d1aaeb1432ead12d0351a8907a36382d9dc07bf223f9116bade4931657eefcaa1',
+    );
+    // ... including an IPv6 loopback IP, which is all colons.
+    const v6 = buildVnpayPayUrl(
+      'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+      { ...PAY_PARAMS, vnp_IpAddr: '::1' },
+      SECRET,
+    );
+    expect(v6).toContain('vnp_IpAddr=%3A%3A1');
+    expect(verifyVnpaySignature(Object.fromEntries(new URL(v6).searchParams.entries()), SECRET)).toBe(true);
+  });
+
   it('verifies its own URLs and rejects anything else', () => {
     const url = buildVnpayPayUrl('https://sandbox.vnpayment.vn/paymentv2/vpcpay.html', PAY_PARAMS, SECRET);
     const query = Object.fromEntries(new URL(url).searchParams.entries());

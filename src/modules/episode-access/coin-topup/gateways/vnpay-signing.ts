@@ -47,18 +47,27 @@ export function parseVnpDateTime(value: unknown): Date | undefined {
   return Number.isNaN(at.getTime()) ? undefined : at;
 }
 
-/** HMAC-SHA512 over `key=value` pairs joined by `&`, keys sorted A–Z. */
+/**
+ * VNPay hashes the URL-encoded form, not the raw values: without this, `:` and `/`
+ * in `vnp_ReturnUrl` / `vnp_IpAddr` make the gateway compute a different checksum
+ * ("sai chữ ký"). Mirrors the official sample: `encodeURIComponent`, spaces as `+`.
+ */
+export function encodeVnpValue(value: string): string {
+  return encodeURIComponent(value).replace(/%20/g, '+');
+}
+
+/** HMAC-SHA512 over encoded `key=value` pairs joined by `&`, keys sorted A–Z. */
 export function signVnpayParams(params: Record<string, string>, secret: string): string {
   const data = Object.keys(params)
     .sort()
-    .map((key) => `${key}=${params[key]}`)
+    .map((key) => `${encodeVnpValue(key)}=${encodeVnpValue(params[key])}`)
     .join('&');
   return createHmac('sha512', secret).update(data, 'utf8').digest('hex');
 }
 
 export function buildVnpayPayUrl(payUrl: string, params: Record<string, string>, secret: string): string {
   const sorted: Record<string, string> = {};
-  for (const key of Object.keys(params).sort()) sorted[key] = params[key];
+  for (const key of Object.keys(params).sort()) sorted[encodeVnpValue(key)] = encodeVnpValue(params[key]);
   const query = Object.entries(sorted)
     .map(([key, value]) => `${key}=${value}`)
     .join('&');
@@ -66,9 +75,10 @@ export function buildVnpayPayUrl(payUrl: string, params: Record<string, string>,
 }
 
 /**
- * Verifies a VNPay return/IPN query. Drops only the hash fields; empty values stay in
- * the checksum exactly as received, mirroring VNPay's own sample. Multi-valued keys
- * are refused outright: anything ambiguous must never settle money.
+ * Verifies a VNPay return/IPN query. Drops only the hash fields; the received
+ * (already URL-decoded) values are re-encoded before hashing, mirroring VNPay's own
+ * sample. Multi-valued keys are refused outright: anything ambiguous must never
+ * settle money.
  */
 export function verifyVnpaySignature(query: Record<string, unknown>, secret: string): boolean {
   const received = query.vnp_SecureHash;

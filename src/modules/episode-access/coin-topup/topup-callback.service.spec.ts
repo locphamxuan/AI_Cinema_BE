@@ -34,14 +34,10 @@ describe('CoinTopUpService.handleCallback', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    const deps = {
-      gateways: {
-        verifyCallbackSignature: jest.fn<boolean, [PaymentProvider, Record<string, unknown>]>(),
-      },
-      coins: {
-        credit: jest.fn(),
-      },
-    };
+    // Configure the injected mocks (never a shadow copy): reset the signature
+    // check to accept, so one test's `false` cannot leak into the next ones.
+    deps.gateways.verifyCallbackSignature.mockReturnValue(true);
+    deps.coins.credit.mockResolvedValue(MOVEMENT);
     prisma.paymentCallback.findUnique.mockResolvedValue(null);
     prisma.payment.findUnique.mockResolvedValue(payment);
     prisma.coinTopUp.findUnique.mockResolvedValue(order);
