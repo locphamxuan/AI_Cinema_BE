@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { PaymentProvider } from '@prisma/client';
+
 import { providerOf } from './payment-provider.util';
 
 describe('providerOf', () => {
@@ -13,16 +14,21 @@ describe('providerOf', () => {
 
   it('answers 404 with PROVIDER_NOT_FOUND for anything else', () => {
     for (const value of ['ZALOPAY', '', 'vnp']) {
-      const error = ((() => {
-        try {
-          providerOf(value);
-          return null;
-        } catch (e) {
-          return e;
+      expect(() => providerOf(value)).toThrow(NotFoundException);
+
+      try {
+        providerOf(value);
+      } catch (error: unknown) {
+        expect(error).toBeInstanceOf(NotFoundException);
+
+        if (error instanceof NotFoundException) {
+          expect(error.getResponse()).toMatchObject({
+            details: {
+              reason: 'PROVIDER_NOT_FOUND',
+            },
+          });
         }
-      })()) as NotFoundException | null;
-      expect(error).toBeInstanceOf(NotFoundException);
-      expect(error?.getResponse()).toMatchObject({ details: { reason: 'PROVIDER_NOT_FOUND' } });
+      }
     }
   });
 });

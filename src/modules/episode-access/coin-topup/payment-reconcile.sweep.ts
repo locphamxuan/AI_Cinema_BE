@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { TopUpStatus } from '@prisma/client';
+import { PaymentStatus } from '@prisma/client';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
@@ -10,9 +10,10 @@ const BATCH = 100;
 const RECONCILE_AFTER_MS = 10 * 60_000;
 
 /**
- * `payment-reconcile.sweep`: lists the PENDING orders that never got a gateway callback, so
- * Billing sees what to ask the gateway about. Settling itself stays in the webhook: without a
- * gateway answer there is nothing to credit, and the expiry sweep closes what nobody pays for.
+ * `payment-reconcile.sweep`: lists the PENDING payment attempts that never got a gateway
+ * callback, so Billing sees what to ask the gateway about. Settling itself stays in the webhook:
+ * without a gateway answer there is nothing to credit, and the expiry sweep closes what nobody
+ * pays for.
  */
 @Injectable()
 export class PaymentReconcileSweep implements OnModuleInit {
@@ -30,31 +31,31 @@ export class PaymentReconcileSweep implements OnModuleInit {
     );
   }
 
-  /** Counts the orders still waiting for a callback; returns how many are waiting. */
+  /** Counts the attempts still waiting for a callback; returns how many are waiting. */
   async reconcileDue(now = new Date()): Promise<{ pending: number }> {
     const threshold = new Date(now.getTime() - RECONCILE_AFTER_MS);
     let pending = 0;
     for (;;) {
-      const stale = await this.prisma.coinTopUp.findMany({
+      const stale = await this.prisma.payment.findMany({
         where: {
-          status: TopUpStatus.PENDING,
+          status: PaymentStatus.PENDING,
           createdAt: { lte: threshold },
           callbacks: { none: { handledAt: { not: null } } },
         },
         orderBy: { createdAt: 'asc' },
-        select: { id: true, provider: true, amountVnd: true },
+        select: { id: true, coinTopUpId: true, provider: true, amountVnd: true },
         take: BATCH,
       });
       if (!stale.length) break;
       pending += stale.length;
-      for (const order of stale) {
+      for (const attempt of stale) {
         this.logger.warn(
-          `Top-up ${order.id} (${order.provider} ${order.amountVnd} VND) is still PENDING with no gateway callback; reconcile with the provider`,
+          `Payment ${attempt.id} of top-up ${attempt.coinTopUpId} (${attempt.provider} ${attempt.amountVnd} VND) is still PENDING with no gateway callback; reconcile with the provider`,
         );
       }
       if (stale.length < BATCH) break;
     }
-    if (pending) this.logger.log(`Reconciled ${pending} top-up order(s) waiting for a gateway callback`);
+    if (pending) this.logger.log(`Reconciled ${pending} payment attempt(s) waiting for a gateway callback`);
     return { pending };
   }
 }

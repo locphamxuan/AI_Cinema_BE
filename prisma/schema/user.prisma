@@ -44,12 +44,13 @@ model User {
   coinEntriesWritten      CoinTransaction[]      @relation("CoinTransactionCreatedBy")
   coinTopUps              CoinTopUp[]
   dailyCheckIns           DailyCheckIn[]
-  membershipPlansCreated  MembershipPlan[]      @relation("MembershipPlanCreatedBy")
-  planPricesSet           MembershipPlanPrice[] @relation("MembershipPlanPriceSetBy")
-  rewardRulesCreated      RewardRule[]          @relation("RewardRuleCreatedBy")
+  membershipPlansCreated  MembershipPlan[]       @relation("MembershipPlanCreatedBy")
+  planPricesSet           MembershipPlanPrice[]  @relation("MembershipPlanPriceSetBy")
+  rewardRulesCreated      RewardRule[]           @relation("RewardRuleCreatedBy")
   subscriptions           Subscription[]
   episodeAccesses         EpisodeAccess[]
   seriesAccesses          SeriesAccess[]
+  payments                Payment[]
 
   @@index([role])
   @@map("users")

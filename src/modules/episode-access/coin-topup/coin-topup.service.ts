@@ -1,5 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import { CoinEntryType, CoinLotSource, CoinReferenceType, PaymentProvider, Prisma, TopUpStatus } from '@prisma/client';
+import {
+  CoinEntryType,
+  CoinLotSource,
+  CoinReferenceType,
+  PaymentProvider,
+  PaymentStatus,
+  Prisma,
+  TopUpStatus,
+} from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
@@ -7,38 +15,24 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { TOPUP_REASON } from './constants/topup-reason';
+import { ORDER_VIEW, orderView, type OrderRow, type OrderWithPayments, PAYMENT_VIEW } from './utils/order-view';
+import { isUuid, normalizeCallback, type GatewayCallback } from './utils/payment-callback.util';
+import { redirectOf } from './utils/payment-provider.util';
+
+export { TOPUP_REASON };
+export type { GatewayCallback };
 
 /** How long a pending order may sit before the sweeper gives up on it. */
 const ORDER_TTL_MINUTES = 15;
 
-/** Reasons of this module travel in `error.details.reason`. */
-export const TOPUP_REASON = {
-  AMOUNT_OUT_OF_RANGE: 'TOPUP_AMOUNT_OUT_OF_RANGE',
-  ALREADY_SETTLED: 'TOPUP_ALREADY_SETTLED',
-  NOT_PAYABLE: 'TOPUP_NOT_PAYABLE',
-  AMOUNT_MISMATCH: 'TOPUP_AMOUNT_MISMATCH',
-  NOT_FOUND: 'TOPUP_NOT_FOUND',
-  INVALID_CALLBACK: 'CALLBACK_INVALID',
-  MISSING_SIGNATURE: 'CALLBACK_MISSING_SIGNATURE',
-} as const;
-
-/** A gateway delivery normalised from VNPay, MoMo or the documented JSON shape. */
-export interface GatewayCallback {
-  eventId: string;
-  topUpId?: string;
-  providerTxnId?: string;
-  amountVnd: number;
-  status: 'success' | 'failed' | 'cancelled';
-  providerPaymentId?: string;
-  signature: string;
-  paidAt?: Date;
-}
-
 /**
- * Step 12: Coins bought with a gateway. The order row is written before the member is sent to the
- * gateway and the ledger entry only when the gateway confirms, so the amount agreed on and the
- * amount credited cannot drift. Top-ups credit main Coins: bonus Coins only come from a promotion
- * an Admin sets up on purpose, so they always expire.
+ * Step 12: Coins bought with a gateway. The order row (`CoinTopUp`: what the member asked for)
+ * is written before the member is sent to the gateway, and one payment row (`Payment`: what a
+ * gateway did about it) is opened per attempt. The ledger entry only lands when the gateway
+ * confirms, so the amount agreed on and the amount credited cannot drift. Top-ups credit main
+ * Coins: bonus Coins only come from a promotion an Admin sets up on purpose, so they always
+ * expire.
  */
 @Injectable()
 export class CoinTopUpService {
@@ -50,7 +44,7 @@ export class CoinTopUpService {
     private readonly notifications: NotificationService,
   ) {}
 
-  /** Creates the order and hands back where to send the member. The gateway itself is out of scope. */
+  /** Creates the order with its first payment attempt and hands back where to send the member. */
   async create(userId: string, provider: PaymentProvider, amountVnd: number) {
     const { coinTopUpMinVnd, coinTopUpMaxVnd, coinRateVnd } = await this.settings.get();
     if (amountVnd < coinTopUpMinVnd || amountVnd > coinTopUpMaxVnd) {
@@ -62,83 +56,105 @@ export class CoinTopUpService {
     const wallet = await this.wallets.walletOf(userId);
     // Round down: the gateway charges the VND amount, so the Coins promised cannot exceed it.
     const coinsGranted = Math.floor(amountVnd / coinRateVnd);
-    // Unique per provider, so a replayed callback finds its order and cannot credit twice.
+    // Unique per provider, so a replayed callback finds its attempt and cannot credit twice.
     const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
     const providerTxnId = `${provider}-${stamp}`;
-    return this.prisma.coinTopUp
-      .create({
+    const expiresAt = new Date(Date.now() + ORDER_TTL_MINUTES * 60_000);
+    return this.prisma.$transaction(async (tx) => {
+      const topUp = await tx.coinTopUp.create({
+        data: { userId, walletId: wallet.id, amountVnd, coinsGranted, rateVnd: coinRateVnd, expiresAt },
+        select: ORDER_VIEW,
+      });
+      const payment = await tx.payment.create({
         data: {
           userId,
-          walletId: wallet.id,
+          coinTopUpId: topUp.id,
           provider,
           providerTxnId,
           amountVnd,
-          coinsGranted,
-          rateVnd: coinRateVnd,
           redirectUrl: redirectOf(provider, providerTxnId, amountVnd),
-          expiresAt: new Date(Date.now() + ORDER_TTL_MINUTES * 60_000),
+          expiresAt,
         },
-        select: ORDER_VIEW,
-      })
-      .then(viewOf);
+        select: PAYMENT_VIEW,
+      });
+      return orderView(topUp, payment);
+    });
   }
 
   listMine(userId: string, query: PaginateQuery) {
     return paginate(query, this.prisma.coinTopUp, {
       where: { userId },
       select: Object.keys(ORDER_VIEW) as (keyof OrderRow)[],
+      relations: { payments: { orderBy: { createdAt: 'desc' }, take: 1 } },
       sortableColumns: ['createdAt', 'amountVnd', 'status'],
       defaultSortBy: [['createdAt', 'DESC']],
-      filterableColumns: { status: ['$eq', '$in'], provider: ['$eq'] },
-    }).then((page) => ({ ...page, data: (page.data as OrderRow[]).map(viewOf) }));
+      filterableColumns: { status: ['$eq', '$in'] },
+    }).then((page) => ({
+      ...page,
+      data: (page.data as unknown as OrderWithPayments[]).map((row) => orderView(row, row.payments[0] ?? null)),
+    }));
   }
 
   async findMine(userId: string, topUpId: string) {
-    const topUp = await this.prisma.coinTopUp.findFirst({ where: { id: topUpId, userId }, select: ORDER_VIEW });
+    const topUp = await this.prisma.coinTopUp.findFirst({
+      where: { id: topUpId, userId },
+      include: { payments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
     if (!topUp)
       throw new NotFoundException({ message: 'Top-up not found', details: { reason: TOPUP_REASON.NOT_FOUND } });
-    return viewOf(topUp);
+    const row = topUp as unknown as OrderWithPayments;
+    return orderView(row, row.payments[0] ?? null);
   }
 
   /**
-   * Settles an order the gateway confirmed. Called at most once per order: a second call finds
-   * the order already PAID and reports TOPUP_ALREADY_SETTLED instead of crediting again.
+   * Settles the payment attempt the gateway confirmed. Called at most once per attempt: a second
+   * call finds it already PAID and reports TOPUP_ALREADY_SETTLED instead of crediting again.
    */
   async settle(input: {
-    topUpId: string;
+    paymentId: string;
     providerPaymentId: string;
     amountVnd: number;
     idempotencyKey: string;
     paidAt?: Date;
   }) {
     return this.prisma.$transaction(async (tx) => {
-      const topUp = await tx.coinTopUp.findUniqueOrThrow({
-        where: { id: input.topUpId },
-        select: ORDER_VIEW,
+      const payment = await tx.payment.findUniqueOrThrow({
+        where: { id: input.paymentId },
+        select: PAYMENT_VIEW,
       });
-      if (topUp.status === TopUpStatus.PAID) {
+      if (payment.status === PaymentStatus.PAID) {
         throw new UnprocessableEntityException({
           message: 'The order has already been paid',
-          details: { reason: TOPUP_REASON.ALREADY_SETTLED, topUpId: topUp.id },
+          details: { reason: TOPUP_REASON.ALREADY_SETTLED, topUpId: payment.coinTopUpId, paymentId: payment.id },
         });
       }
+      if (payment.status !== PaymentStatus.PENDING) {
+        throw new UnprocessableEntityException({
+          message: 'The payment is no longer payable',
+          details: { reason: TOPUP_REASON.NOT_PAYABLE, status: payment.status, paymentId: payment.id },
+        });
+      }
+      const topUp = await tx.coinTopUp.findUniqueOrThrow({
+        where: { id: payment.coinTopUpId },
+        select: ORDER_VIEW,
+      });
       if (topUp.status !== TopUpStatus.PENDING) {
         throw new UnprocessableEntityException({
           message: 'The order is no longer payable',
           details: { reason: TOPUP_REASON.NOT_PAYABLE, status: topUp.status, topUpId: topUp.id },
         });
       }
-      if (input.amountVnd !== topUp.amountVnd) {
-        await tx.coinTopUp.update({
-          where: { id: topUp.id },
-          data: {
-            status: TopUpStatus.FAILED,
-            failureReason: `The gateway reported ${input.amountVnd} VND instead of ${topUp.amountVnd} VND`,
-          },
-        });
+      if (input.amountVnd !== payment.amountVnd) {
+        const failureReason = `The gateway reported ${input.amountVnd} VND instead of ${payment.amountVnd} VND`;
+        await tx.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.FAILED, failureReason } });
+        await tx.coinTopUp.update({ where: { id: topUp.id }, data: { status: TopUpStatus.FAILED, failureReason } });
         throw new UnprocessableEntityException({
           message: 'The settled amount does not match the order',
-          details: { reason: TOPUP_REASON.AMOUNT_MISMATCH, expectedVnd: topUp.amountVnd, settledVnd: input.amountVnd },
+          details: {
+            reason: TOPUP_REASON.AMOUNT_MISMATCH,
+            expectedVnd: payment.amountVnd,
+            settledVnd: input.amountVnd,
+          },
         });
       }
       const movement = await this.coins.credit(
@@ -153,18 +169,22 @@ export class CoinTopUpService {
           referenceId: topUp.id,
           idempotencyKey: input.idempotencyKey,
           rateVnd: topUp.rateVnd,
-          description: `Top-up ${topUp.provider}`,
+          description: `Top-up ${payment.provider}`,
         },
         input.paidAt,
       );
-      const settled = await tx.coinTopUp.update({
-        where: { id: topUp.id },
+      const settledPayment = await tx.payment.update({
+        where: { id: payment.id },
         data: {
-          status: TopUpStatus.PAID,
+          status: PaymentStatus.PAID,
           providerPaymentId: input.providerPaymentId,
-          coinTransactionId: movement.transactionId,
           paidAt: input.paidAt ?? new Date(),
         },
+        select: PAYMENT_VIEW,
+      });
+      const settledOrder = await tx.coinTopUp.update({
+        where: { id: topUp.id },
+        data: { status: TopUpStatus.PAID, coinTransactionId: movement.transactionId },
         select: ORDER_VIEW,
       });
       await this.notifications.notify(
@@ -172,25 +192,36 @@ export class CoinTopUpService {
         {
           type: NOTIFICATION_TYPE.COIN_TOPUP_SUCCESS,
           title: `Đã nạp ${topUp.coinsGranted} Coin`,
-          body: `Thanh toán ${topUp.amountVnd.toLocaleString('vi-VN')} VND qua ${topUp.provider} đã thành công.`,
+          body: `Thanh toán ${topUp.amountVnd.toLocaleString('vi-VN')} VND qua ${payment.provider} đã thành công.`,
           link: '/wallet',
           payload: { topUpId: topUp.id, coinsGranted: topUp.coinsGranted },
         },
         tx,
       );
-      return viewOf(settled);
+      return orderView(settledOrder, settledPayment);
     });
   }
 
-  /** The gateway reports the member gave up, or gave the wrong amount. */
-  markFailed(topUpId: string, reason: string, status: Extract<TopUpStatus, 'FAILED' | 'CANCELLED'>) {
-    return this.prisma.coinTopUp.update({ where: { id: topUpId }, data: { status, failureReason: reason } });
+  /** The gateway reports the member gave up, or gave the wrong amount. The order mirrors it. */
+  async markPaymentFailed(paymentId: string, reason: string, status: Extract<PaymentStatus, 'FAILED' | 'CANCELLED'>) {
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUniqueOrThrow({ where: { id: paymentId }, select: { coinTopUpId: true } });
+      const updated = await tx.payment.update({ where: { id: paymentId }, data: { status, failureReason: reason } });
+      await tx.coinTopUp.update({
+        where: { id: payment.coinTopUpId },
+        data: {
+          status: status === PaymentStatus.FAILED ? TopUpStatus.FAILED : TopUpStatus.CANCELLED,
+          failureReason: reason,
+        },
+      });
+      return updated;
+    });
   }
 
   /**
    * A gateway webhook delivery. Idempotent on (provider, event_id): a repeated delivery answers
-   * with the same order and never credits twice. A delivery for an order already PAID answers the
-   * order as well, so the gateway may retry freely.
+   * with the same order and never credits twice. A delivery for an attempt already PAID answers
+   * the order as well, so the gateway may retry freely.
    */
   async handleCallback(provider: PaymentProvider, raw: Record<string, unknown>) {
     const callback = normalizeCallback(raw);
@@ -199,12 +230,13 @@ export class CoinTopUpService {
       select: { topUpId: true, handledAt: true },
     });
     if (replayed?.handledAt) return this.topUpView(replayed.topUpId);
-    const topUp = await this.resolveTopUp(provider, callback);
+    const { payment, topUp } = await this.resolvePayment(provider, callback);
     if (!replayed) {
       try {
         await this.prisma.paymentCallback.create({
           data: {
             topUpId: topUp.id,
+            paymentId: payment.id,
             provider,
             eventId: callback.eventId,
             signature: callback.signature,
@@ -227,25 +259,29 @@ export class CoinTopUpService {
         where: { provider_eventId: { provider, eventId: callback.eventId } },
         data: patch,
       });
-    if (topUp.status === TopUpStatus.PAID) {
+    if (payment.status === PaymentStatus.PAID) {
       await handled({ handledAt: new Date() });
       return this.topUpView(topUp.id);
     }
-    if (topUp.status !== TopUpStatus.PENDING) {
+    if (payment.status !== PaymentStatus.PENDING || topUp.status !== TopUpStatus.PENDING) {
       await handled({ handledAt: new Date() });
       return this.topUpView(topUp.id);
     }
     if (callback.status !== 'success') {
-      await this.markFailed(
-        topUp.id,
+      await this.markPaymentFailed(
+        payment.id,
         `The gateway reported the payment as ${callback.status}`,
-        callback.status === 'cancelled' ? TopUpStatus.CANCELLED : TopUpStatus.FAILED,
+        callback.status === 'cancelled' ? PaymentStatus.CANCELLED : PaymentStatus.FAILED,
       );
       await handled({ handledAt: new Date() });
       return this.topUpView(topUp.id);
     }
-    if (callback.amountVnd !== topUp.amountVnd) {
-      const failureReason = `The gateway reported ${callback.amountVnd} VND instead of ${topUp.amountVnd} VND`;
+    if (callback.amountVnd !== payment.amountVnd) {
+      const failureReason = `The gateway reported ${callback.amountVnd} VND instead of ${payment.amountVnd} VND`;
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.FAILED, failureReason },
+      });
       await this.prisma.coinTopUp.update({
         where: { id: topUp.id },
         data: { status: TopUpStatus.FAILED, failureReason },
@@ -253,12 +289,16 @@ export class CoinTopUpService {
       await handled({ handledAt: new Date(), errorMessage: failureReason });
       throw new UnprocessableEntityException({
         message: 'The settled amount does not match the order',
-        details: { reason: TOPUP_REASON.AMOUNT_MISMATCH, expectedVnd: topUp.amountVnd, settledVnd: callback.amountVnd },
+        details: {
+          reason: TOPUP_REASON.AMOUNT_MISMATCH,
+          expectedVnd: payment.amountVnd,
+          settledVnd: callback.amountVnd,
+        },
       });
     }
     try {
       const settled = await this.settle({
-        topUpId: topUp.id,
+        paymentId: payment.id,
         providerPaymentId: callback.providerPaymentId ?? callback.eventId,
         amountVnd: callback.amountVnd,
         // One credit per order: the same delivery twice replays the same ledger row.
@@ -294,19 +334,26 @@ export class CoinTopUpService {
       });
     }
     if (ref.topUpId) {
-      const topUp = await this.prisma.coinTopUp.findFirst({ where: { id: ref.topUpId, provider }, select: ORDER_VIEW });
+      const topUp = await this.prisma.coinTopUp.findUnique({ where: { id: ref.topUpId }, select: ORDER_VIEW });
       if (!topUp)
         throw new NotFoundException({ message: 'Top-up not found', details: { reason: TOPUP_REASON.NOT_FOUND } });
-      return viewOf(topUp);
+      const payment = await this.latestPaymentOf(topUp.id, provider);
+      if (!payment)
+        throw new NotFoundException({ message: 'Top-up not found', details: { reason: TOPUP_REASON.NOT_FOUND } });
+      return orderView(topUp, payment);
     }
     if (ref.providerTxnId) {
-      const topUp = await this.prisma.coinTopUp.findFirst({
-        where: { provider, providerTxnId: ref.providerTxnId },
+      const payment = await this.prisma.payment.findUnique({
+        where: { provider_providerTxnId: { provider, providerTxnId: ref.providerTxnId } },
+        select: PAYMENT_VIEW,
+      });
+      if (!payment)
+        throw new NotFoundException({ message: 'Top-up not found', details: { reason: TOPUP_REASON.NOT_FOUND } });
+      const topUp = await this.prisma.coinTopUp.findUniqueOrThrow({
+        where: { id: payment.coinTopUpId },
         select: ORDER_VIEW,
       });
-      if (!topUp)
-        throw new NotFoundException({ message: 'Top-up not found', details: { reason: TOPUP_REASON.NOT_FOUND } });
-      return viewOf(topUp);
+      return orderView(topUp, payment);
     }
     throw new BadRequestException({
       message: 'The return trip needs a topUpId or a providerTxnId',
@@ -314,23 +361,62 @@ export class CoinTopUpService {
     });
   }
 
-  /** The order a callback points at, by top-up id or by the gateway order id. */
-  private async resolveTopUp(provider: PaymentProvider, callback: GatewayCallback) {
-    if (callback.topUpId && isUuid(callback.topUpId)) {
-      const topUp = await this.prisma.coinTopUp.findFirst({
-        where: { id: callback.topUpId, provider },
-        select: ORDER_VIEW,
-      });
-      if (topUp) return topUp;
-    }
+  /** The payment attempt a callback points at, with the order it belongs to. */
+  private async resolvePayment(provider: PaymentProvider, callback: GatewayCallback) {
     if (callback.providerTxnId) {
-      const topUp = await this.prisma.coinTopUp.findFirst({
-        where: { provider, providerTxnId: callback.providerTxnId },
-        select: ORDER_VIEW,
+      const payment = await this.prisma.payment.findUnique({
+        where: { provider_providerTxnId: { provider, providerTxnId: callback.providerTxnId } },
+        select: PAYMENT_VIEW,
       });
-      if (topUp) return topUp;
+      if (payment) {
+        if (callback.topUpId && callback.topUpId !== payment.coinTopUpId) {
+          throw new BadRequestException({
+            message: 'The callback points at two different orders',
+            details: { reason: TOPUP_REASON.INVALID_CALLBACK },
+          });
+        }
+        const topUp = await this.prisma.coinTopUp.findUnique({
+          where: { id: payment.coinTopUpId },
+          select: ORDER_VIEW,
+        });
+        if (!topUp)
+          throw new NotFoundException({ message: 'Top-up not found', details: { reason: TOPUP_REASON.NOT_FOUND } });
+        return { payment, topUp };
+      }
     }
-    throw new NotFoundException({ message: 'Top-up not found', details: { reason: TOPUP_REASON.NOT_FOUND } });
+    if (callback.topUpId && isUuid(callback.topUpId)) {
+      const topUp = await this.prisma.coinTopUp.findUnique({ where: { id: callback.topUpId }, select: ORDER_VIEW });
+      if (topUp) {
+        const payment = await this.prisma.payment.findFirst({
+          where: { coinTopUpId: topUp.id, provider },
+          orderBy: { createdAt: 'desc' },
+          select: PAYMENT_VIEW,
+        });
+        if (payment) return { payment, topUp };
+      }
+    }
+    throw new NotFoundException({
+      message: 'Payment not found',
+      details: { reason: TOPUP_REASON.PAYMENT_NOT_FOUND },
+    });
+  }
+
+  /** The newest attempt of one provider on an order: retries never run side by side. */
+  private async latestPaymentOf(topUpId: string, provider: PaymentProvider) {
+    return this.prisma.payment.findFirst({
+      where: { coinTopUpId: topUpId, provider },
+      orderBy: { createdAt: 'desc' },
+      select: PAYMENT_VIEW,
+    });
+  }
+
+  /** One order with its newest attempt, or null when it never reached a gateway. */
+  private async latestPayment(topUpId: string) {
+    return this.prisma.payment.findFirst({
+      where: { coinTopUpId: topUpId },
+      orderBy: { createdAt: 'desc' },
+      select: PAYMENT_VIEW,
+    });
   }
 
   private async topUpView(topUpId: string | null | undefined) {
@@ -339,110 +425,6 @@ export class CoinTopUpService {
     const topUp = await this.prisma.coinTopUp.findUnique({ where: { id: topUpId }, select: ORDER_VIEW });
     if (!topUp)
       throw new NotFoundException({ message: 'Top-up not found', details: { reason: TOPUP_REASON.NOT_FOUND } });
-    return viewOf(topUp);
+    return orderView(topUp, await this.latestPayment(topUp.id));
   }
-}
-
-/**
- * The columns one order read needs. `walletId` and `userId` stay in the row for `settle` (credit
- * and notify) but never leave the server: `viewOf` strips them along with the raw primary key.
- */
-const ORDER_VIEW = {
-  id: true,
-  provider: true,
-  providerTxnId: true,
-  amountVnd: true,
-  coinsGranted: true,
-  rateVnd: true,
-  status: true,
-  redirectUrl: true,
-  providerPaymentId: true,
-  failureReason: true,
-  paidAt: true,
-  expiresAt: true,
-  createdAt: true,
-  walletId: true,
-  userId: true,
-} satisfies Prisma.CoinTopUpSelect;
-
-type OrderRow = Prisma.CoinTopUpGetPayload<{ select: typeof ORDER_VIEW }>;
-
-/** The member sees `topUpId`, not the raw primary key, and never a gateway payload. */
-const viewOf = ({ id, walletId: _walletId, userId: _userId, ...rest }: OrderRow) => ({ topUpId: id, ...rest });
-
-/**
- * Where the member pays. A placeholder the gateway adapter replaces with the signed payment URL;
- * it carries the gateway order id so the callback finds its order either way.
- */
-function redirectOf(provider: PaymentProvider, providerTxnId: string, amountVnd: number): string {
-  const order = encodeURIComponent(providerTxnId);
-  if (provider === PaymentProvider.MOMO) {
-    return `https://test-payment.momo.vn/v2/gateway/pay?orderId=${order}&amount=${amountVnd}`;
-  }
-  return `https://sandbox.vnpayment.vn/tryitnow/Home/CreateOrder?orderId=${order}&amount=${amountVnd}`;
-}
-
-const textOf = (value: unknown): string | undefined =>
-  typeof value === 'string' && value.trim() ? value.trim() : undefined;
-
-/** Guards Prisma `Uuid` filters: a malformed id must answer 404/400, never a 500. */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const isUuid = (value: string): boolean => UUID_RE.test(value);
-
-const intOf = (value: unknown): number | undefined => {
-  const parsed =
-    typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value.trim()) : NaN;
-  return Number.isInteger(parsed) ? parsed : undefined;
-};
-
-/**
- * Reads the documented JSON shape as well as the VNPay (`vnp_*`) and MoMo IPN fields into one
- * callback. A missing signature is refused outright; the HMAC check against the gateway secret
- * is the adapter's job when the real SDK lands, the signature and the raw payload are kept for it.
- */
-function normalizeCallback(raw: Record<string, unknown>): GatewayCallback {
-  const body = raw;
-  const eventId =
-    textOf(body.eventId) ?? textOf(body.vnp_TransactionNo) ?? textOf(body.transId) ?? textOf(body.transactionId);
-  const signature = textOf(body.signature) ?? textOf(body.vnp_SecureHash) ?? textOf(body.mac);
-  if (!signature) {
-    throw new BadRequestException({
-      message: 'The callback carries no signature',
-      details: { reason: TOPUP_REASON.MISSING_SIGNATURE },
-    });
-  }
-  // VNPay sends the amount times 100; the documented shape and MoMo send it as-is.
-  const vnpAmount = intOf(body.vnp_Amount);
-  const amountVnd =
-    intOf(body.amountVnd) ?? (vnpAmount !== undefined ? Math.floor(vnpAmount / 100) : undefined) ?? intOf(body.amount);
-  const rawStatus = textOf(body.status)?.toLowerCase();
-  const status: GatewayCallback['status'] | undefined =
-    rawStatus === 'success' || rawStatus === 'failed' || rawStatus === 'cancelled'
-      ? rawStatus
-      : body.vnp_ResponseCode !== undefined
-        ? body.vnp_ResponseCode === '00'
-          ? 'success'
-          : 'failed'
-        : body.resultCode !== undefined
-          ? Number(body.resultCode) === 0
-            ? 'success'
-            : 'failed'
-          : undefined;
-  if (!eventId || amountVnd === undefined || status === undefined) {
-    throw new BadRequestException({
-      message: 'The callback is missing its event id, amount or status',
-      details: { reason: TOPUP_REASON.INVALID_CALLBACK },
-    });
-  }
-  const paidAt = textOf(body.paidAt) ? new Date(textOf(body.paidAt) as string) : undefined;
-  return {
-    eventId,
-    topUpId: textOf(body.topUpId),
-    providerTxnId: textOf(body.providerTxnId) ?? textOf(body.vnp_TxnRef) ?? textOf(body.orderId),
-    amountVnd,
-    status,
-    providerPaymentId: textOf(body.providerPaymentId) ?? textOf(body.vnp_TransactionNo) ?? textOf(body.transId),
-    signature,
-    paidAt: paidAt && !Number.isNaN(paidAt.getTime()) ? paidAt : undefined,
-  };
 }

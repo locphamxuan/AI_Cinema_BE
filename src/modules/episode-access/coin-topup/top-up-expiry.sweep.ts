@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { TopUpStatus } from '@prisma/client';
+import { PaymentStatus, TopUpStatus } from '@prisma/client';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
@@ -9,7 +9,8 @@ const BATCH = 100;
 /**
  * `coin-topup-expire.sweep`: an order left PENDING past its expiry is closed, so the member cannot
  * pay for it hours later and the table does not fill with abandoned rows. The row itself stays: it
- * is the record of what was offered.
+ * is the record of what was offered. The order's payment attempts die with it, so a late gateway
+ * answer finds nothing payable.
  */
 @Injectable()
 export class TopUpExpirySweep implements OnModuleInit {
@@ -42,6 +43,10 @@ export class TopUpExpirySweep implements OnModuleInit {
       const { count } = await this.prisma.coinTopUp.updateMany({
         where: { id: { in: stale.map(({ id }) => id) }, status: TopUpStatus.PENDING },
         data: { status: TopUpStatus.EXPIRED, failureReason: 'The order expired before it was paid' },
+      });
+      await this.prisma.payment.updateMany({
+        where: { coinTopUpId: { in: stale.map(({ id }) => id) }, status: PaymentStatus.PENDING },
+        data: { status: PaymentStatus.EXPIRED, failureReason: 'The order expired before it was paid' },
       });
       closed += count;
       if (stale.length < BATCH) break;
