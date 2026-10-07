@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, Body } from '@nestjs/common';
+import { Controller, Get, Ip, Param, ParseUUIDPipe, Post, Body } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PERMISSION } from 'src/common/auth/permissions';
@@ -20,8 +20,8 @@ export class CoinTopUpController {
   @RequirePermission(PERMISSION.WALLET_TOPUP)
   @ApiOperation({ summary: 'Start a Coin top-up; returns the order and where to pay' })
   @ApiOkResponse({ type: CoinTopUpView })
-  create(@CurrentUser('id') userId: string, @Body() dto: CreateCoinTopUpRequestDto) {
-    return this.topUps.create(userId, dto.provider, dto.amountVnd);
+  create(@CurrentUser('id') userId: string, @Body() dto: CreateCoinTopUpRequestDto, @Ip() ip: string) {
+    return this.topUps.create(userId, dto.provider, dto.amountVnd, ip);
   }
 
   @Get()

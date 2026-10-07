@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PaymentProvider, PaymentStatus, Prisma, TopUpStatus } from '@prisma/client';
 import { TOPUP_REASON } from './coin-topup.service';
+import { buildVnpayPayUrl, verifyVnpaySignature } from './gateways/vnpay-signing';
 import {
   MOVEMENT,
   SETTINGS_VALUE,
@@ -24,8 +25,17 @@ describe('CoinTopUpService.create', () => {
     jest.clearAllMocks();
     deps.settings.get.mockResolvedValue(SETTINGS_VALUE);
     deps.wallets.walletOf.mockResolvedValue({ id: 'w1' });
+    deps.gateways.createPaymentUrl.mockResolvedValue('https://sandbox.vnpayment.vn/pay?order=VNPAY-ABC');
     tx.coinTopUp.create.mockImplementation(echoWith({ id: 'topup-1', status: TopUpStatus.PENDING }));
     tx.payment.create.mockImplementation(echoWith({ id: 'pay-1', status: PaymentStatus.PENDING }));
+    prisma.payment.update.mockImplementation(
+      echoWith({
+        id: 'pay-1',
+        provider: PaymentProvider.VNPAY,
+        providerTxnId: 'VNPAY-ABC123',
+        status: PaymentStatus.PENDING,
+      }),
+    );
   });
 
   it('opens a PENDING order with one PENDING attempt and a gateway order id (step 12)', async () => {
@@ -63,8 +73,50 @@ describe('CoinTopUpService.create', () => {
   });
 
   it('points MoMo orders at the MoMo sandbox', async () => {
+    deps.gateways.createPaymentUrl.mockResolvedValue('https://test-payment.momo.vn/pay/abc');
+    prisma.payment.update.mockImplementation(
+      echoWith({
+        id: 'pay-1',
+        provider: PaymentProvider.MOMO,
+        providerTxnId: 'MOMO-XYZ',
+        status: PaymentStatus.PENDING,
+      }),
+    );
+
     const order = await service.create('u1', PaymentProvider.MOMO, 50000);
+
+    expect(deps.gateways.createPaymentUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: PaymentProvider.MOMO, amountVnd: 50000, topUpId: 'topup-1' }),
+    );
     expect(order.redirectUrl).toContain('test-payment.momo.vn');
+    expect(prisma.payment.update).toHaveBeenCalledWith({
+      where: { id: 'pay-1' },
+      data: { redirectUrl: 'https://test-payment.momo.vn/pay/abc' },
+      select: expect.anything(),
+    });
+  });
+
+  it('forwards the client IP so VNPay can fingerprint the order', async () => {
+    await service.create('u1', PaymentProvider.VNPAY, 50000, '203.0.113.7');
+
+    expect(deps.gateways.createPaymentUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: PaymentProvider.VNPAY, clientIp: '203.0.113.7' }),
+    );
+  });
+
+  it('fails the attempt when the gateway gives no payment link', async () => {
+    tx.payment.findUniqueOrThrow.mockResolvedValue({ id: 'pay-1', coinTopUpId: 'topup-1' });
+    deps.gateways.createPaymentUrl.mockRejectedValue(new Error('timeout'));
+
+    await expect(service.create('u1', PaymentProvider.MOMO, 50000)).rejects.toThrow('timeout');
+    expect(tx.payment.update).toHaveBeenCalledWith({
+      where: { id: 'pay-1' },
+      data: expect.objectContaining({ status: PaymentStatus.FAILED }),
+    });
+    expect(tx.coinTopUp.update).toHaveBeenCalledWith({
+      where: { id: 'topup-1' },
+      data: expect.objectContaining({ status: TopUpStatus.FAILED }),
+    });
   });
 
   it.each([9999, 2000001])('refuses %s VND as outside the platform range', async (amountVnd) => {
@@ -241,6 +293,7 @@ describe('CoinTopUpService.handleCallback', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    deps.gateways.verifyCallbackSignature.mockReturnValue(true);
     prisma.paymentCallback.findUnique.mockResolvedValue(null);
     prisma.payment.findUnique.mockResolvedValue(payment);
     prisma.coinTopUp.findUnique.mockResolvedValue(order);
@@ -322,6 +375,39 @@ describe('CoinTopUpService.handleCallback', () => {
     });
   });
 
+  it('refuses a delivery with a bad signature before touching the ledger', async () => {
+    deps.gateways.verifyCallbackSignature.mockReturnValue(false);
+
+    const error = await catchError(service.handleCallback(PaymentProvider.MOMO, { ...delivery }));
+
+    expect(error).toBeInstanceOf(BadRequestException);
+
+    if (!(error instanceof BadRequestException)) {
+      throw new Error('Expected BadRequestException');
+    }
+
+    expect(error.getResponse()).toMatchObject({ details: { reason: TOPUP_REASON.INVALID_SIGNATURE } });
+    expect(prisma.paymentCallback.upsert).toHaveBeenCalledWith({
+      where: { provider_eventId: { provider: PaymentProvider.MOMO, eventId: 'evt-1' } },
+      update: expect.objectContaining({ errorMessage: 'Invalid gateway signature' }),
+      create: expect.objectContaining({ provider: PaymentProvider.MOMO, eventId: 'evt-1' }),
+    });
+    expect(deps.coins.credit).not.toHaveBeenCalled();
+  });
+
+  it('recovers the order id from MoMo extraData when topUpId is missing', async () => {
+    const { topUpId: _dropped, ...withoutId } = delivery;
+    const extraData = Buffer.from(JSON.stringify({ topUpId })).toString('base64');
+
+    const settled = await service.handleCallback(PaymentProvider.MOMO, {
+      ...withoutId,
+      providerTxnId: 'VNPAY-ABC',
+      extraData,
+    });
+
+    expect(settled).toMatchObject({ topUpId, status: TopUpStatus.PAID });
+  });
+
   it('reads VNPay IPN fields, down to the amount times 100', async () => {
     prisma.payment.findUnique.mockImplementation(({ where }: { where: Record<string, unknown> }) => {
       const key = where.provider_providerTxnId as Record<string, unknown> | undefined;
@@ -333,10 +419,33 @@ describe('CoinTopUpService.handleCallback', () => {
       vnp_TransactionNo: 'evt-vnp-1',
       vnp_Amount: '5000000',
       vnp_ResponseCode: '00',
+      vnp_TransactionStatus: '00',
       vnp_SecureHash: 'sig',
     });
 
     expect(settled).toMatchObject({ topUpId, status: TopUpStatus.PAID });
+  });
+
+  it('treats a VNPay payment without a confirmed transaction status as failed', async () => {
+    prisma.payment.findUnique.mockImplementation(({ where }: { where: Record<string, unknown> }) => {
+      const key = where.provider_providerTxnId as Record<string, unknown> | undefined;
+      return Promise.resolve(key?.providerTxnId ? payment : null);
+    });
+    prisma.coinTopUp.findUnique
+      .mockResolvedValueOnce(order)
+      .mockResolvedValue({ ...order, status: TopUpStatus.FAILED });
+
+    const failed = await service.handleCallback(PaymentProvider.VNPAY, {
+      vnp_TxnRef: 'VNPAY-ABC',
+      vnp_TransactionNo: 'evt-vnp-1',
+      vnp_Amount: '5000000',
+      vnp_ResponseCode: '00',
+      vnp_TransactionStatus: '24',
+      vnp_SecureHash: 'sig',
+    });
+
+    expect(failed).toMatchObject({ topUpId, status: TopUpStatus.FAILED });
+    expect(deps.coins.credit).not.toHaveBeenCalled();
   });
 
   it('lets the winner of a raced delivery finish while answering the same order', async () => {
@@ -352,6 +461,107 @@ describe('CoinTopUpService.handleCallback', () => {
 
     expect(settled).toMatchObject({ topUpId, status: TopUpStatus.PAID });
     expect(deps.coins.credit).not.toHaveBeenCalled();
+  });
+});
+
+describe('CoinTopUpService.handleVnpayIpn', () => {
+  const tx = createTx();
+  const prisma = createPrisma(tx);
+  const deps = createDeps();
+  const service = createService(prisma, deps);
+
+  const topUpId = '11111111-1111-4111-8111-111111111111';
+  const order = pendingOrder({ id: topUpId });
+  const payment = pendingPayment({ id: 'pay-1', coinTopUpId: topUpId });
+
+  const vnpQuery = (amount = '5000000', omit: string[] = []) => {
+    const params: Record<string, string> = {
+      vnp_TmnCode: 'TMN123',
+      vnp_Amount: amount,
+      vnp_TxnRef: 'VNPAY-ABC',
+      vnp_OrderInfo: 'Nap-Coin-VNPAY-ABC',
+      vnp_ResponseCode: '00',
+      vnp_TransactionStatus: '00',
+      vnp_TransactionNo: '987654321',
+    };
+    for (const key of omit) delete params[key];
+    const url = buildVnpayPayUrl('https://sandbox.vnpayment.vn/paymentv2/vpcpay.html', params, 'test-secret');
+    return Object.fromEntries(new URL(url).searchParams.entries());
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps.gateways.verifyCallbackSignature.mockImplementation(
+      (_provider: unknown, raw: Record<string, unknown>) =>
+        verifyVnpaySignature(raw, 'test-secret'),
+    );
+    prisma.payment.findUnique.mockResolvedValue(payment);
+    prisma.coinTopUp.findUnique.mockResolvedValue(order);
+    prisma.paymentCallback.findUnique.mockResolvedValue(null);
+    prisma.paymentCallback.create.mockResolvedValue({ id: 'cb-1' });
+    prisma.paymentCallback.update.mockResolvedValue({ id: 'cb-1' });
+    prisma.payment.update.mockResolvedValue(payment);
+    prisma.coinTopUp.update.mockResolvedValue(order);
+    tx.payment.findUniqueOrThrow.mockResolvedValue(payment);
+    tx.coinTopUp.findUniqueOrThrow.mockResolvedValue(order);
+    tx.payment.update.mockImplementation(echoWith(payment));
+    tx.coinTopUp.update.mockImplementation(echoWith(order));
+    deps.coins.credit.mockResolvedValue(MOVEMENT);
+  });
+
+  it('answers 97 on a bad checksum without touching the database', async () => {
+    deps.gateways.verifyCallbackSignature.mockReturnValue(false);
+
+    await expect(service.handleVnpayIpn(vnpQuery())).resolves.toEqual({
+      RspCode: '97',
+      Message: 'Invalid checksum',
+    });
+    expect(prisma.payment.findUnique).not.toHaveBeenCalled();
+    expect(deps.coins.credit).not.toHaveBeenCalled();
+  });
+
+  it('answers 01 for an order VNPay invented', async () => {
+    prisma.payment.findUnique.mockResolvedValue(null);
+
+    await expect(service.handleVnpayIpn(vnpQuery())).resolves.toEqual({
+      RspCode: '01',
+      Message: 'Order not found',
+    });
+    expect(deps.coins.credit).not.toHaveBeenCalled();
+  });
+
+  it('answers 02 for an already confirmed order without writing', async () => {
+    prisma.payment.findUnique.mockResolvedValue({ ...payment, status: PaymentStatus.PAID });
+
+    await expect(service.handleVnpayIpn(vnpQuery())).resolves.toEqual({
+      RspCode: '02',
+      Message: 'Order already confirmed',
+    });
+    expect(prisma.paymentCallback.create).not.toHaveBeenCalled();
+    expect(deps.coins.credit).not.toHaveBeenCalled();
+  });
+
+  it('settles a confirmed payment and answers 00', async () => {
+    await expect(service.handleVnpayIpn(vnpQuery())).resolves.toEqual({
+      RspCode: '00',
+      Message: 'Confirm Success',
+    });
+    expect(deps.coins.credit).toHaveBeenCalled();
+  });
+
+  it('answers 04 when the gateway reports another amount', async () => {
+    await expect(service.handleVnpayIpn(vnpQuery('4000000'))).resolves.toEqual({
+      RspCode: '04',
+      Message: 'Invalid amount',
+    });
+    expect(deps.coins.credit).not.toHaveBeenCalled();
+  });
+
+  it('answers 99 on a malformed delivery', async () => {
+    await expect(service.handleVnpayIpn(vnpQuery('5000000', ['vnp_Amount']))).resolves.toEqual({
+      RspCode: '99',
+      Message: 'Invalid request',
+    });
   });
 });
 

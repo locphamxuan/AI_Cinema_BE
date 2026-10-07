@@ -36,6 +36,54 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...production, SWAGGER_ENABLED: 'true' }).swaggerEnabled).toBe(true);
   });
 
+  it('leaves payment gateways unconfigured by default (sandbox URLs kept)', () => {
+    const config = loadConfig(base);
+    expect(config.payments.momo).toMatchObject({
+      partnerCode: undefined,
+      accessKey: undefined,
+      secretKey: undefined,
+      createUrl: 'https://test-payment.momo.vn/v2/gateway/api/create',
+      statusUrl: 'https://test-payment.momo.vn/v2/gateway/api/transaction-status',
+      requestType: 'payWithMethod',
+    });
+    expect(config.payments.vnpay).toMatchObject({
+      tmnCode: undefined,
+      hashSecret: undefined,
+      payUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+      returnUrl: undefined,
+      ipnUrl: undefined,
+      apiUrl: 'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction',
+    });
+  });
+
+  it('reads payment gateway credentials from the environment', () => {
+    const config = loadConfig({
+      ...base,
+      MOMO_PARTNER_CODE: 'MOMO',
+      MOMO_ACCESS_KEY: 'key',
+      MOMO_SECRET_KEY: 'secret',
+      MOMO_REDIRECT_URL: 'https://api.example.com/api/payments/momo/return',
+      MOMO_IPN_URL: 'https://api.example.com/api/payments/momo/callback',
+      VNPAY_TMN_CODE: 'TMN123',
+      VNPAY_HASH_SECRET: 'hash',
+      VNPAY_RETURN_URL: 'https://api.example.com/api/payments/vnpay/return',
+      VNPAY_IPN_URL: 'https://api.example.com/api/payments/vnpay/callback',
+    });
+    expect(config.payments.momo).toMatchObject({
+      partnerCode: 'MOMO',
+      accessKey: 'key',
+      secretKey: 'secret',
+      redirectUrl: 'https://api.example.com/api/payments/momo/return',
+      ipnUrl: 'https://api.example.com/api/payments/momo/callback',
+    });
+    expect(config.payments.vnpay).toMatchObject({
+      tmnCode: 'TMN123',
+      hashSecret: 'hash',
+      returnUrl: 'https://api.example.com/api/payments/vnpay/return',
+      ipnUrl: 'https://api.example.com/api/payments/vnpay/callback',
+    });
+  });
+
   it('requires the bucket credentials only with the S3 driver', () => {
     expect(() => loadConfig({ ...base, STORAGE_DRIVER: 's3' })).toThrow(/S3_BUCKET is required/);
     const config = loadConfig({

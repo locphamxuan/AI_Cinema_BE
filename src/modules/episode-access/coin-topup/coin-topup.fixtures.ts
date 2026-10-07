@@ -5,6 +5,9 @@ import type { PlatformSettingService } from 'src/modules/platform/platform-setti
 import type { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import type { WalletService } from '../coin-wallet/wallet.service';
 import { CoinTopUpService } from './coin-topup.service';
+import type { PaymentGatewayService } from './gateways/payment-gateway.service';
+import { TopUpLookupService } from './topup-lookup.service';
+import { TopUpSettlementService } from './topup-settlement.service';
 
 /** Shared fixtures for `coin-topup.service.spec.ts`. Fresh mocks per factory call. */
 export const SETTINGS_VALUE = { coinTopUpMinVnd: 10000, coinTopUpMaxVnd: 2000000, coinRateVnd: 1000 };
@@ -56,7 +59,7 @@ export function createPrisma(tx: MockTx) {
       update: jest.fn(),
     },
     payment: { create: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
-    paymentCallback: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    paymentCallback: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn() },
   };
 }
 
@@ -68,18 +71,32 @@ export function createDeps() {
     wallets: { walletOf: jest.fn() },
     settings: { get: jest.fn() },
     notifications: { notify: jest.fn() },
+    gateways: {
+      createPaymentUrl: jest.fn(),
+      verifyCallbackSignature: jest.fn().mockReturnValue(true),
+      reconcilePayment: jest.fn(),
+    },
   };
 }
 
 export type MockDeps = ReturnType<typeof createDeps>;
 
 export function createService(prisma: MockPrisma, deps: MockDeps) {
-  return new CoinTopUpService(
+  // Real collaborators over the same mocks: every existing test keeps exercising
+  // the true settle/lookup paths instead of a stubbed seam.
+  const lookups = new TopUpLookupService(prisma as unknown as PrismaService);
+  const settlement = new TopUpSettlementService(
     prisma as unknown as PrismaService,
     deps.coins as unknown as CoinSpendService,
+    deps.notifications as unknown as NotificationService,
+  );
+  return new CoinTopUpService(
+    prisma as unknown as PrismaService,
     deps.wallets as unknown as WalletService,
     deps.settings as unknown as PlatformSettingService,
-    deps.notifications as unknown as NotificationService,
+    deps.gateways as unknown as PaymentGatewayService,
+    lookups,
+    settlement,
   );
 }
 

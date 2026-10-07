@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { decodeTopUpExtraData } from '../gateways/momo-signing';
 import { TOPUP_REASON } from '../constants/topup-reason';
 
 /** A gateway delivery normalised from VNPay, MoMo or the documented JSON shape. */
@@ -33,8 +34,18 @@ export const intOf = (value: unknown): number | undefined => {
  */
 export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback {
   const body = raw;
+  // A failed VNPay payment may carry no transaction number at all; the order ref plus
+  // the gateway verdict still identifies the delivery exactly once.
+  const vnpFallback =
+    textOf(body.vnp_TxnRef) && textOf(body.vnp_ResponseCode)
+      ? `${textOf(body.vnp_TxnRef)}:${textOf(body.vnp_ResponseCode)}`
+      : undefined;
   const eventId =
-    textOf(body.eventId) ?? textOf(body.vnp_TransactionNo) ?? textOf(body.transId) ?? textOf(body.transactionId);
+    textOf(body.eventId) ??
+    textOf(body.vnp_TransactionNo) ??
+    vnpFallback ??
+    textOf(body.transId) ??
+    textOf(body.transactionId);
   const signature = textOf(body.signature) ?? textOf(body.vnp_SecureHash) ?? textOf(body.mac);
   if (!signature) {
     throw new BadRequestException({
@@ -47,18 +58,19 @@ export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback
   const amountVnd =
     intOf(body.amountVnd) ?? (vnpAmount !== undefined ? Math.floor(vnpAmount / 100) : undefined) ?? intOf(body.amount);
   const rawStatus = textOf(body.status)?.toLowerCase();
+  // VNPay only calls a payment done when BOTH codes read '00'.
+  const vnpStatus =
+    body.vnp_ResponseCode !== undefined
+      ? body.vnp_ResponseCode === '00' &&
+        (body.vnp_TransactionStatus === undefined || body.vnp_TransactionStatus === '00')
+        ? 'success'
+        : 'failed'
+      : undefined;
   const status: GatewayCallback['status'] | undefined =
     rawStatus === 'success' || rawStatus === 'failed' || rawStatus === 'cancelled'
       ? rawStatus
-      : body.vnp_ResponseCode !== undefined
-        ? body.vnp_ResponseCode === '00'
-          ? 'success'
-          : 'failed'
-        : body.resultCode !== undefined
-          ? Number(body.resultCode) === 0
-            ? 'success'
-            : 'failed'
-          : undefined;
+      : (vnpStatus ??
+        (body.resultCode !== undefined ? (Number(body.resultCode) === 0 ? 'success' : 'failed') : undefined));
   if (!eventId || amountVnd === undefined || status === undefined) {
     throw new BadRequestException({
       message: 'The callback is missing its event id, amount or status',
@@ -68,7 +80,7 @@ export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback
   const paidAt = textOf(body.paidAt) ? new Date(textOf(body.paidAt) as string) : undefined;
   return {
     eventId,
-    topUpId: textOf(body.topUpId),
+    topUpId: textOf(body.topUpId) ?? decodeTopUpExtraData(textOf(body.extraData)),
     providerTxnId: textOf(body.providerTxnId) ?? textOf(body.vnp_TxnRef) ?? textOf(body.orderId),
     amountVnd,
     status,
