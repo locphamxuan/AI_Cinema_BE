@@ -300,7 +300,6 @@ describe('PaymentGatewayService.reconcilePayment', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('leaves unconfigured gateways alone without touching the network', async () => {
-    const service = serviceWith();
     const post = jest.spyOn(globalThis, 'fetch');
     await expect(
       serviceWith({ secretKey: undefined }).reconcilePayment({ provider: PaymentProvider.MOMO, providerTxnId: 'M-1' }),
