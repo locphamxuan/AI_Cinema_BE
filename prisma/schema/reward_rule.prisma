@@ -1,0 +1,22 @@
+/// What one day of a check-in streak pays; the Admin edits the ladder and switches days on and
+/// off. Exactly one row per streak day is in force at a time.
+model RewardRule {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique @db.VarChar(50)
+  name        String   @db.VarChar(255)
+  /// 1 = the first day of a streak.
+  streakDay   Int      @map("streak_day")
+  coins       Int
+  /// Coins paid on top of `coins`, on this streak day only (day 7 = the milestone).
+  bonusCoins  Int      @default(0) @map("bonus_coins")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User           @relation("RewardRuleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  checkIns  DailyCheckIn[]
+
+  @@index([isActive, streakDay])
+  @@map("reward_rules")
+}

@@ -1,0 +1,52 @@
+enum PaymentProvider {
+  VNPAY
+  MOMO
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/// One payment attempt at a gateway for a Coin top-up order. The order (`CoinTopUp`) is what
+/// the member asked for; the payment is what a gateway did about it, so the two lifecycles
+/// stay apart: only one attempt may be PENDING per order (partial unique index, see the
+/// `split_payment` migration), past attempts stay as history, and a retry on another provider
+/// opens a new row instead of overwriting the old one.
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId      String @map("user_id") @db.Uuid
+  coinTopUpId String @map("coin_top_up_id") @db.Uuid
+
+  provider  PaymentProvider
+  amountVnd Int             @map("amount_vnd")
+
+  /// Gateway order id; unique per provider so a replayed callback finds its attempt.
+  providerTxnId     String  @map("provider_txn_id") @db.VarChar(100)
+  /// Gateway transaction id of the settled payment.
+  providerPaymentId String? @map("provider_payment_id") @db.VarChar(100)
+
+  status PaymentStatus @default(PENDING)
+
+  redirectUrl   String? @map("redirect_url") @db.VarChar(1000)
+  failureReason String? @map("failure_reason") @db.Text
+
+  paidAt    DateTime? @map("paid_at") @db.Timestamptz(6)
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  coinTopUp CoinTopUp         @relation(fields: [coinTopUpId], references: [id], onDelete: Restrict)
+  callbacks PaymentCallback[]
+
+  @@unique([provider, providerTxnId])
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
+  @@map("payments")
+}

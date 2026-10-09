@@ -31,6 +31,21 @@ export const CONTENT_EVENT = {
   EPISODE_SCHEDULED: 'EPISODE_SCHEDULED',
   EPISODE_PUBLISHED: 'EPISODE_PUBLISHED',
   EPISODE_UNPUBLISHED: 'EPISODE_UNPUBLISHED',
+  // MF-2 — Coin, daily reward and monthly plan
+  COIN_ADJUSTED: 'COIN_ADJUSTED',
+  EPISODE_ACCESS_GRANTED: 'GRANTED',
+  EPISODE_ACCESS_REVOKED: 'REVOKED',
+  SERIES_ACCESS_GRANTED: 'GRANTED',
+  SERIES_ACCESS_REVOKED: 'REVOKED',
+  SUBSCRIPTION_ACTIVATED: 'ACTIVATED',
+  SUBSCRIPTION_RENEWED: 'RENEWED',
+  SUBSCRIPTION_CANCELLED: 'CANCELLED',
+  SUBSCRIPTION_EXPIRED: 'EXPIRED',
+  MEMBERSHIP_PLAN_CREATED: 'CREATED',
+  MEMBERSHIP_PLAN_UPDATED: 'UPDATED',
+  MEMBERSHIP_PLAN_PRICE_SET: 'SET',
+  REWARD_RULE_CREATED: 'CREATED',
+  REWARD_RULE_UPDATED: 'UPDATED',
 } as const;
 
 export type ContentEvent = (typeof CONTENT_EVENT)[keyof typeof CONTENT_EVENT];
@@ -47,4 +62,13 @@ export type AuditEntity =
   | 'AiContentLabel'
   | 'Publication'
   | 'PriceAlert'
-  | 'ProjectChangeRequest';
+  | 'ProjectChangeRequest'
+  // MF-2: these live outside a movie, so their audit row has no movie_id.
+  | 'CoinWallet'
+  | 'CoinTransaction'
+  | 'EpisodeAccess'
+  | 'SeriesAccess'
+  | 'Subscription'
+  | 'MembershipPlan'
+  | 'MembershipPlanPrice'
+  | 'RewardRule';

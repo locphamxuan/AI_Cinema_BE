@@ -1,0 +1,21 @@
+/// The member's Coin purse, one row per member, created on registration. The ledger
+/// (coin_transactions) is the truth; these two counters are what every screen reads, and they are
+/// written in the same transaction as the ledger entry that moves them. `version` guards a lost
+/// update when two requests spend at the same time.
+model CoinWallet {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @unique @map("user_id") @db.Uuid
+  mainBalance  Int      @default(0) @map("main_balance")
+  bonusBalance Int      @default(0) @map("bonus_balance")
+  version      Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lots         CoinLot[]
+  transactions CoinTransaction[]
+  topUps       CoinTopUp[]
+  checkIns     DailyCheckIn[]
+
+  @@map("coin_wallets")
+}

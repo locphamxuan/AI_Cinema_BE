@@ -1,0 +1,41 @@
+enum TopUpStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/// What the member asked for: so many Coins for so many VND. The request row is written
+/// before the redirect and settled from the callback, so the amount agreed on and the amount
+/// actually credited never drift apart. What the gateways did about it lives on `Payment`
+/// rows: one order, one active attempt at a time, past attempts kept as history. Main Coins
+/// are credited: bonus Coins only come from a promotion the Admin sets up on purpose.
+model CoinTopUp {
+  id                String          @id @default(uuid()) @db.Uuid
+  userId            String          @map("user_id") @db.Uuid
+  walletId          String          @map("wallet_id") @db.Uuid
+  amountVnd         Int             @map("amount_vnd")
+  /// Coins credited, rounded down from amountVnd / rateVnd at the rate the request was made at.
+  coinsGranted      Int             @map("coins_granted")
+  rateVnd           Int             @map("rate_vnd")
+  /// Order status, mirrored from the payment attempts: PENDING until one of them is PAID.
+  status            TopUpStatus     @default(PENDING)
+  /// The ledger entry that credited the wallet; null until PAID.
+  coinTransactionId String?         @unique @map("coin_transaction_id") @db.Uuid
+  /// Why the order died, copied from the attempt or the sweep for the member screen.
+  failureReason     String?         @map("failure_reason") @db.Text
+  expiresAt         DateTime?       @map("expires_at") @db.Timestamptz(6)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  wallet          CoinWallet        @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  coinTransaction CoinTransaction?  @relation(fields: [coinTransactionId], references: [id], onDelete: Restrict)
+  payments        Payment[]
+  callbacks       PaymentCallback[]
+
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
+  @@map("coin_top_ups")
+}

@@ -7,7 +7,8 @@ export interface AuditEntry {
   action: ContentEvent;
   entityType: AuditEntity;
   entityId: string;
-  movieId: string;
+  /** null for MF-2 events: a wallet, a plan or a Coin ledger row is not part of a movie project. */
+  movieId: string | null;
   /** null for events the system raises on its own (queue worker, scheduler) or a studio raises. */
   actorId: string | null;
   /** 'STUDIO' for what an outside studio does through its portal link (no account). */

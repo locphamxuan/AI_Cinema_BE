@@ -1,0 +1,35 @@
+enum PlanPeriod {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+/// The plan the Membership & Billing Admin configures. isFree marks the Free Plan every account
+/// starts on: that plan has no price row and no subscription, the free rules of the access check
+/// (Free Starter episode, or an episode priced at 0) grant access instead.
+model MembershipPlan {
+  id           String     @id @default(uuid()) @db.Uuid
+  code         String     @unique @db.VarChar(50)
+  name         String     @db.VarChar(255)
+  description  String?    @db.Text
+  period       PlanPeriod
+  /// Calendar days one cycle covers; a renewal date is the period start + this many days.
+  durationDays Int        @map("duration_days")
+  isFree       Boolean    @default(false) @map("is_free")
+  isActive     Boolean    @default(true) @map("is_active")
+  /// Order on the plan screen; the recommended plan is flagged separately.
+  sortOrder    Int        @default(0) @map("sort_order")
+  isFeatured   Boolean    @default(false) @map("is_featured")
+  /// What the plan allows, e.g. {"maxDevices":2,"adFree":true,"maxQuality":"1080p"}.
+  features     Json?      @db.JsonB
+  createdById  String     @map("created_by_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy     User                  @relation("MembershipPlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  prices        MembershipPlanPrice[]
+  subscriptions Subscription[]
+
+  @@index([isActive, sortOrder])
+  @@map("membership_plans")
+}

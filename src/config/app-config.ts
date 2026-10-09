@@ -32,7 +32,41 @@ export interface AppConfig {
     allowPrivateUrls: boolean;
     concurrency: number;
   };
-  schedules: { publicationSweepMs: number; overdueSweepMs: number; hlsCheckMs: number };
+  schedules: {
+    publicationSweepMs: number;
+    overdueSweepMs: number;
+    hlsCheckMs: number;
+    /** MF-2: subscription auto-renew, bonus lot expiry, top-up expiry and reconciliation. */
+    subscriptionRenewalSweepMs: number;
+    coinExpirySweepMs: number;
+    coinTopUpSweepMs: number;
+    paymentReconcileSweepMs: number;
+  };
+  /**
+   * Real payment gateways (MF-2 top-ups). Secrets are optional: a provider with no
+   * credentials is treated as not configured and its top-ups are refused at request
+   * time, so local development boots without any gateway account.
+   */
+  payments: {
+    momo: {
+      partnerCode?: string;
+      accessKey?: string;
+      secretKey?: string;
+      createUrl: string;
+      statusUrl: string;
+      redirectUrl?: string;
+      ipnUrl?: string;
+      requestType: string;
+    };
+    vnpay: {
+      tmnCode?: string;
+      hashSecret?: string;
+      payUrl: string;
+      returnUrl?: string;
+      ipnUrl?: string;
+      apiUrl: string;
+    };
+  };
   briefFontPath: string | null;
 }
 
@@ -116,6 +150,29 @@ function storageConfig(read: EnvReader, port: number): AppConfig['storage'] {
   };
 }
 
+function paymentConfig(read: EnvReader): AppConfig['payments'] {
+  return {
+    momo: {
+      partnerCode: read.optional('MOMO_PARTNER_CODE'),
+      accessKey: read.optional('MOMO_ACCESS_KEY'),
+      secretKey: read.optional('MOMO_SECRET_KEY'),
+      createUrl: read.string('MOMO_CREATE_URL', 'https://test-payment.momo.vn/v2/gateway/api/create'),
+      statusUrl: read.string('MOMO_STATUS_URL', 'https://test-payment.momo.vn/v2/gateway/api/transaction-status'),
+      redirectUrl: read.optional('MOMO_REDIRECT_URL'),
+      ipnUrl: read.optional('MOMO_IPN_URL'),
+      requestType: read.string('MOMO_REQUEST_TYPE', 'payWithMethod'),
+    },
+    vnpay: {
+      tmnCode: read.optional('VNPAY_TMN_CODE'),
+      hashSecret: read.optional('VNPAY_HASH_SECRET'),
+      payUrl: read.string('VNPAY_PAY_URL', 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'),
+      returnUrl: read.optional('VNPAY_RETURN_URL'),
+      ipnUrl: read.optional('VNPAY_IPN_URL'),
+      apiUrl: read.string('VNPAY_API_URL', 'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction'),
+    },
+  };
+}
+
 export function loadConfig(env: Env = process.env): AppConfig {
   const read = new EnvReader(env);
   const nodeEnv = read.string('NODE_ENV', 'development');
@@ -170,7 +227,12 @@ export function loadConfig(env: Env = process.env): AppConfig {
       publicationSweepMs: read.int('PUBLICATION_SWEEP_MS', 30_000),
       overdueSweepMs: read.int('OVERDUE_SWEEP_MS', 60 * 60_000),
       hlsCheckMs: read.int('HLS_CHECK_MS', 6 * 60 * 60_000),
+      subscriptionRenewalSweepMs: read.int('SUBSCRIPTION_RENEWAL_SWEEP_MS', 60_000),
+      coinExpirySweepMs: read.int('COIN_EXPIRY_SWEEP_MS', 24 * 60 * 60_000),
+      coinTopUpSweepMs: read.int('COIN_TOPUP_SWEEP_MS', 5 * 60_000),
+      paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
     },
+    payments: paymentConfig(read),
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
   };
 

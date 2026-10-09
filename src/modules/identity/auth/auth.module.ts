@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { JWT_ALGORITHM } from 'src/common/auth/authenticated-user';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
+import { CoinWalletModule } from 'src/modules/episode-access/coin-wallet/coin-wallet.module';
 import { AccessControlModule } from 'src/modules/identity/access-control/access-control.module';
 import { PermissionsGuard } from 'src/modules/identity/access-control/permissions.guard';
 import { AuthController } from './auth.controller';
@@ -14,6 +15,7 @@ import { SessionTokenService } from './session-token.service';
 @Module({
   imports: [
     AccessControlModule,
+    CoinWalletModule,
     JwtModule.registerAsync({
       inject: [APP_CONFIG],
       useFactory: (config: AppConfig) => ({
