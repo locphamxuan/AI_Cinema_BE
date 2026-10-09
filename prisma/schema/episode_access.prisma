@@ -1,0 +1,32 @@
+enum AccessSource {
+  EPISODE_PURCHASE
+  SERIES_PURCHASE
+  FREE_STARTER
+  ADMIN_GRANT
+}
+
+/// The right to watch one episode that was bought with Coins. A Free Starter episode and an
+/// episode covered by a running plan need no row: the access check reads the rule instead, so a
+/// plan does not write one row per episode. paidCoins is the price at the moment of buying, the
+/// amount a refund of a taken-down episode pays.
+model EpisodeAccess {
+  id                String       @id @default(uuid()) @db.Uuid
+  userId            String       @map("user_id") @db.Uuid
+  episodeId         String       @map("episode_id") @db.Uuid
+  source            AccessSource
+  paidCoins         Int          @map("paid_coins")
+  rateVnd           Int          @map("rate_vnd")
+  coinTransactionId String?      @unique @map("coin_transaction_id") @db.Uuid
+  grantedAt         DateTime     @default(now()) @map("granted_at") @db.Timestamptz(6)
+  /// Set when the episode was taken down for good and the purchase was refunded.
+  revokedAt         DateTime?    @map("revoked_at") @db.Timestamptz(6)
+  revokeReason      String?      @map("revoke_reason") @db.Text
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode         Episode          @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  coinTransaction CoinTransaction? @relation(fields: [coinTransactionId], references: [id], onDelete: Restrict)
+
+  @@index([userId, episodeId])
+  @@index([episodeId])
+  @@map("episode_accesses")
+}

@@ -1,0 +1,194 @@
+# CI/CD of the API.
+#   Every push and pull request: lint, typecheck, unit + e2e tests (real Postgres), dependency
+#   audit, Docker build, and SonarCloud analysis with its quality gate (once SONAR_TOKEN is set).
+#   Push to main or a v* tag, all green: the image goes to GHCR, then the optional deploy hook.
+# Repository settings it reads (Settings → Secrets and variables → Actions):
+#   secrets.SONAR_TOKEN        SonarCloud token; the analysis is skipped without it
+#   vars.SONAR_HOST_URL        only for a self-hosted SonarQube (default https://sonarcloud.io)
+#   secrets.DEPLOY_HOOK_URL    optional: called after the image is pushed (Render, Railway, …)
+name: CI/CD
+
+on:
+  push:
+    branches: [main, dev, 'refactor/**', 'feat/**', 'fix/**', 'ci/**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  quality:
+    name: Lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Lint (ESLint + Prettier, no autofix)
+        run: npx eslint "{src,test}/**/*.ts" --max-warnings=0
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Unit tests with coverage
+        run: npm run test:cov
+      - name: Build
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage/lcov.info
+          retention-days: 7
+
+  e2e:
+    name: E2E tests (Postgres, Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_cinema_e2e
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_cinema_e2e"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 63799:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    env:
+      E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:54329/ai_cinema_e2e
+      E2E_REDIS_URL: redis://localhost:63799
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: E2E tests with coverage (migrates and seeds the database first)
+        run: npm run test:e2e:cov
+      - name: Prisma schema matches the migrations
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema --exit-code
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-e2e
+          path: coverage-e2e/lcov.info
+          retention-days: 7
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: No high or critical vulnerability in production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  sonar:
+    name: SonarCloud analysis
+    needs: [quality, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Skip without a token
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice::SONAR_TOKEN is not set; the SonarCloud analysis is skipped."
+      - uses: actions/checkout@v4
+        if: env.SONAR_TOKEN != ''
+        with:
+          # Full history: Sonar needs it to tell new code from old code.
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        if: env.SONAR_TOKEN != ''
+        with:
+          name: coverage-unit
+          path: coverage
+      - uses: actions/download-artifact@v4
+        if: env.SONAR_TOKEN != ''
+        with:
+          name: coverage-e2e
+          path: coverage-e2e
+      - name: Scan and wait for the quality gate
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+  docker:
+    name: Docker image
+    needs: [quality, e2e, audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUBLISH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: env.PUBLISH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Build (and push on main or a release tag)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Trigger the deployment
+        if: env.PUBLISH == 'true'
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "::notice::DEPLOY_HOOK_URL is not set; the image is published, nothing is deployed."
+          else
+            curl --fail --silent --show-error --request POST "$DEPLOY_HOOK_URL"
+          fi

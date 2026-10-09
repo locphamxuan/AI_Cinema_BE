@@ -1,0 +1,26 @@
+enum TokenEntryType {
+  INITIAL
+  TOP_UP
+  CORRECTION
+}
+
+/// Production fee of a movie in Token, append-only (BR-45, BR-46, BR-50). A mistake is fixed
+/// with a CORRECTION entry, never by editing a row.
+model TokenLedgerEntry {
+  id           String         @id @default(uuid()) @db.Uuid
+  movieId      String         @map("movie_id") @db.Uuid
+  entryType    TokenEntryType @map("entry_type")
+  /// Negative only for CORRECTION.
+  amountTokens BigInt         @map("amount_tokens")
+  /// Token rate when the entry was written.
+  rateVnd      Int            @map("rate_vnd")
+  reason       String?        @db.Text
+  createdById  String         @map("created_by_id") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  movie     Movie @relation(fields: [movieId], references: [id], onDelete: Restrict)
+  createdBy User  @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([movieId, createdAt])
+  @@map("token_ledger")
+}

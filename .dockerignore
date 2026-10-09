@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+test
+.env
+.env.*
+!.env.example
+.git
+.claude*
+.codegraph
+*.log
+coverage-e2e
+.scannerwork
+sonar-project.properties
+.github
+docker-compose.sonar.yml

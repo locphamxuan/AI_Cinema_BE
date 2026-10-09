@@ -1,0 +1,114 @@
+enum MediaSourceMethod {
+  UPLOAD
+  HLS_URL
+  REMOTE_FILE
+}
+
+enum MediaIngestStatus {
+  PENDING
+  DOWNLOADING
+  TRANSCODING
+  VALIDATING
+  READY
+  FAILED
+  SUPERSEDED
+}
+
+enum IngestJobType {
+  DOWNLOAD
+  TRANSCODE
+  VALIDATE
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// One immutable version of an episode delivered by the studio (BR-14). ai_disclosure (BR-41):
+/// {"aiTools":["Kling"],"aiGeneratedParts":["video"],"humanEdited":true,
+///  "noRealPersonLikeness":true,"noCopyrightedMaterial":true}
+model MediaAsset {
+  id                String            @id @default(uuid()) @db.Uuid
+  episodeId         String            @map("episode_id") @db.Uuid
+  version           Int
+  sourceMethod      MediaSourceMethod @map("source_method")
+  /// HLS_URL / REMOTE_FILE
+  sourceUrl         String?           @map("source_url") @db.VarChar(1000)
+  /// Original file in storage (UPLOAD, or after DOWNLOAD).
+  storageKey        String?           @map("storage_key") @db.VarChar(500)
+  /// Master .m3u8 the players load.
+  streamUrl         String?           @map("stream_url") @db.VarChar(1000)
+  /// false for an external HLS_URL.
+  isSelfHosted      Boolean           @default(true) @map("is_self_hosted")
+  qualities         String[]          @default([])
+  /// Measured with ffprobe (BR-31).
+  durationSeconds   Int?              @map("duration_seconds")
+  fileSizeBytes     BigInt?           @map("file_size_bytes")
+  ingestStatus      MediaIngestStatus @default(PENDING) @map("ingest_status")
+  failureReason     String?           @map("failure_reason") @db.Text
+  aiDisclosure      Json              @map("ai_disclosure") @db.JsonB
+  /// Proposed by the Creator, decided by the Reviewer (BR-40).
+  proposedLabelType LabelType         @map("proposed_label_type")
+  submissionNote    String?           @map("submission_note") @db.Text
+  /// The Creator delivering on the studio's behalf; null when the studio delivered itself.
+  submittedById     String?           @map("submitted_by_id") @db.Uuid
+  /// The hand-off whose studio delivered through its portal; exactly one of the two is set.
+  studioHandoffId   String?           @map("studio_handoff_id") @db.Uuid
+  /// Last check of an external HLS link (BR-17).
+  lastCheckedAt     DateTime?         @map("last_checked_at") @db.Timestamptz(6)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  episode           Episode           @relation("EpisodeMedia", fields: [episodeId], references: [id], onDelete: Restrict)
+  approvedInEpisode Episode?          @relation("EpisodeApprovedMedia")
+  submittedBy       User?             @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+  studioHandoff     StudioHandoff?    @relation(fields: [studioHandoffId], references: [id], onDelete: Restrict)
+  ingestJobs        MediaIngestJob[]
+  subtitles         MediaSubtitle[]
+  contentReviews    ContentReview[]
+  aiContentLabel    AiContentLabel?
+  complianceChecks  ComplianceCheck[]
+  publications      Publication[]
+
+  @@unique([episodeId, version])
+  @@index([studioHandoffId])
+  @@index([ingestStatus])
+  @@map("media_assets")
+}
+
+/// Background work of the media pipeline (download / transcode / validate), with retries.
+model MediaIngestJob {
+  id              String        @id @default(uuid()) @db.Uuid
+  mediaAssetId    String        @map("media_asset_id") @db.Uuid
+  jobType         IngestJobType @map("job_type")
+  status          JobStatus     @default(QUEUED)
+  attempts        Int           @default(0)
+  progressPercent Int?          @map("progress_percent") @db.SmallInt
+  errorMessage    String?       @map("error_message") @db.Text
+  startedAt       DateTime?     @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime?     @map("finished_at") @db.Timestamptz(6)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@index([mediaAssetId])
+  @@index([status])
+  @@map("media_ingest_jobs")
+}
+
+/// WebVTT subtitles delivered with a media version.
+model MediaSubtitle {
+  id           String  @id @default(uuid()) @db.Uuid
+  mediaAssetId String  @map("media_asset_id") @db.Uuid
+  language     String  @db.VarChar(10)
+  fileUrl      String  @map("file_url") @db.VarChar(500)
+  isDefault    Boolean @default(false) @map("is_default")
+
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaAssetId, language])
+  @@map("media_subtitles")
+}

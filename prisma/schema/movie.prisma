@@ -1,0 +1,230 @@
+enum MovieStatus {
+  DRAFT
+  ASSIGNED
+  IN_PRODUCTION
+  COMPLETED
+  /// BR-56: a completed movie with episodes taken down to be fixed
+  UNDER_REVISION
+  CANCELLED
+}
+
+enum EpisodeStatus {
+  DRAFT
+  AWAITING_MEDIA
+  PROCESSING
+  IN_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  LABELED
+  COMPLIANCE_PASSED
+  SCHEDULED
+  PUBLISHED
+  UNPUBLISHED
+}
+
+/// The studio's answer to a hand-off, given through its portal link.
+enum StudioResponse {
+  ACCEPTED
+  DECLINED
+}
+
+enum ChangeRequestStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+}
+
+/// One movie project = one catalog movie (§4.1.1, §4.1.2). It is listed once an episode is
+/// PUBLISHED. The production fee is not stored here: it is the sum of token_ledger (BR-46).
+model Movie {
+  id              String      @id @default(uuid()) @db.Uuid
+  title           String      @db.VarChar(255)
+  ideaDescription String      @map("idea_description") @db.Text
+  synopsis        String?     @db.Text
+  defaultLanguage String      @default("vi") @map("default_language") @db.VarChar(10)
+  /// BR-54: T16 or T18
+  ageRating       String?     @map("age_rating") @db.VarChar(10)
+  releaseYear     Int?        @map("release_year")
+  /// Coin price of unlocking every episode of this movie at once; null = not sold as a bundle.
+  seriesCoinPrice Int?        @map("series_coin_price")
+  status          MovieStatus @default(DRAFT)
+  aiGenerated     Boolean     @default(true) @map("ai_generated")
+  posterUrl       String?     @map("poster_url") @db.VarChar(500)
+  bannerUrl       String?     @map("banner_url") @db.VarChar(500)
+  trailerUrl      String?     @map("trailer_url") @db.VarChar(500)
+  reviewerId      String      @map("reviewer_id") @db.Uuid
+  creatorId       String?     @map("creator_id") @db.Uuid
+  /// Current studio, plain text: the studio is not an actor (BR-15).
+  studioName      String?     @map("studio_name") @db.VarChar(255)
+  studioEmail     String?     @map("studio_email") @db.VarChar(255)
+  studioContact   String?     @map("studio_contact") @db.VarChar(255)
+  cancelReason    String?     @map("cancel_reason") @db.Text
+  assignedAt      DateTime?   @map("assigned_at") @db.Timestamptz(6)
+  handedOffAt     DateTime?   @map("handed_off_at") @db.Timestamptz(6)
+  completedAt     DateTime?   @map("completed_at") @db.Timestamptz(6)
+  cancelledAt     DateTime?   @map("cancelled_at") @db.Timestamptz(6)
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  reviewer       User                   @relation("MovieReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+  creator        User?                  @relation("MovieCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  genres         MovieGenre[]
+  ideaFiles      MovieIdeaFile[]
+  studioHandoffs StudioHandoff[]
+  seasons        Season[]
+  episodes       Episode[]
+  tokenEntries   TokenLedgerEntry[]
+  changeRequests ProjectChangeRequest[]
+  auditLogs      AuditLog[]
+  seriesAccesses SeriesAccess[]
+
+  @@index([status])
+  @@index([reviewerId])
+  @@index([creatorId])
+  @@map("movies")
+}
+
+model MovieGenre {
+  movieId String @map("movie_id") @db.Uuid
+  genreId String @map("genre_id") @db.Uuid
+
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Restrict)
+
+  @@id([movieId, genreId])
+  @@map("movie_genres")
+}
+
+/// Idea files the Reviewer uploads (BR-12); a re-upload adds a version, never overwrites.
+model MovieIdeaFile {
+  id           String   @id @default(uuid()) @db.Uuid
+  movieId      String   @map("movie_id") @db.Uuid
+  fileName     String   @map("file_name") @db.VarChar(255)
+  version      Int
+  storageKey   String   @map("storage_key") @db.VarChar(500)
+  mimeType     String   @map("mime_type") @db.VarChar(100)
+  sizeBytes    BigInt   @map("size_bytes")
+  uploadedById String   @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  movie      Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  uploadedBy User  @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@unique([movieId, fileName, version])
+  @@map("movie_idea_files")
+}
+
+/// Every hand-off and studio change (BR-13, SF-J); the newest row is the current studio.
+model StudioHandoff {
+  id                  String          @id @default(uuid()) @db.Uuid
+  movieId             String          @map("movie_id") @db.Uuid
+  studioName          String          @map("studio_name") @db.VarChar(255)
+  studioEmail         String          @map("studio_email") @db.VarChar(255)
+  studioContact       String?         @map("studio_contact") @db.VarChar(255)
+  /// Production fee printed in the brief when it was sent.
+  productionFeeTokens BigInt          @map("production_fee_tokens")
+  /// Required when the studio is changed.
+  changeReason        String?         @map("change_reason") @db.Text
+  briefFileKey        String?         @map("brief_file_key") @db.VarChar(500)
+  emailMessageId      String?         @map("email_message_id") @db.Uuid
+  createdById         String          @map("created_by_id") @db.Uuid
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// SHA-256 of the studio's portal link token; the token itself is only ever in the email.
+  portalTokenHash     String?         @unique @map("portal_token_hash") @db.Char(64)
+  /// Set when the studio is changed or the Creator sends a new link.
+  portalRevokedAt     DateTime?       @map("portal_revoked_at") @db.Timestamptz(6)
+  studioResponse      StudioResponse? @map("studio_response")
+  respondedAt         DateTime?       @map("responded_at") @db.Timestamptz(6)
+  /// Required when the studio declines.
+  declineReason       String?         @map("decline_reason") @db.Text
+
+  movie        Movie         @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  emailMessage EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: SetNull)
+  createdBy    User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  deliveries   MediaAsset[]
+
+  @@index([movieId, createdAt])
+  @@map("studio_handoffs")
+}
+
+/// A season only groups episodes; it has no state of its own.
+model Season {
+  id           String  @id @default(uuid()) @db.Uuid
+  movieId      String  @map("movie_id") @db.Uuid
+  seasonNumber Int     @map("season_number")
+  title        String? @db.VarChar(255)
+
+  movie    Movie     @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+
+  @@unique([movieId, seasonNumber])
+  @@unique([id, movieId])
+  @@map("seasons")
+}
+
+/// The composite key to seasons (season_id, movie_id) keeps an episode in a season of its own movie.
+model Episode {
+  id                    String        @id @default(uuid()) @db.Uuid
+  movieId               String        @map("movie_id") @db.Uuid
+  seasonId              String        @map("season_id") @db.Uuid
+  /// Numbered across the whole movie, used by Free Starter Episodes (BR-03).
+  episodeNumber         Int           @map("episode_number")
+  title                 String        @db.VarChar(255)
+  synopsis              String?       @db.Text
+  thumbnailUrl          String?       @map("thumbnail_url") @db.VarChar(500)
+  status                EpisodeStatus @default(DRAFT)
+  /// BR-31: set by the Reviewer, no platform limit.
+  targetDurationSeconds Int           @map("target_duration_seconds")
+  /// Set by the Reviewer when creating the project; the studio due date cannot be later.
+  /// Null only on episodes created before milestones existed.
+  milestoneDate         DateTime?     @map("milestone_date") @db.Date
+  /// BR-38: when the studio must deliver.
+  dueDate               DateTime?     @map("due_date") @db.Date
+  /// BR-14: the reviewed version that gets published.
+  approvedMediaAssetId  String?       @unique @map("approved_media_asset_id") @db.Uuid
+  /// BR-29: null until the Reviewer prices the episode.
+  coinPrice             Int?          @map("coin_price")
+  /// BR-56: taken down to be fixed; players show it as under maintenance. Null once released again.
+  revisionStartedAt     DateTime?     @map("revision_started_at") @db.Timestamptz(6)
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  movie              Movie                  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  season             Season                 @relation(fields: [seasonId, movieId], references: [id, movieId], onDelete: Cascade)
+  approvedMediaAsset MediaAsset?            @relation("EpisodeApprovedMedia", fields: [approvedMediaAssetId], references: [id], onDelete: SetNull)
+  mediaAssets        MediaAsset[]           @relation("EpisodeMedia")
+  publications       Publication[]
+  priceAlerts        PriceAlert[]
+  changeRequests     ProjectChangeRequest[]
+  accesses           EpisodeAccess[]
+
+  @@unique([movieId, episodeNumber])
+  @@index([movieId, status])
+  @@index([dueDate])
+  @@map("episodes")
+}
+
+/// Admin proposals to change a project; the Reviewer accepts or rejects them (BR-55, §4.1.8).
+/// episode_id NULL = the proposal is about the whole project.
+model ProjectChangeRequest {
+  id               String              @id @default(uuid()) @db.Uuid
+  movieId          String              @map("movie_id") @db.Uuid
+  episodeId        String?             @map("episode_id") @db.Uuid
+  requestedById    String              @map("requested_by_id") @db.Uuid
+  content          String              @db.Text
+  status           ChangeRequestStatus @default(OPEN)
+  /// Required when REJECTED.
+  reviewerResponse String?             @map("reviewer_response") @db.Text
+  resolvedById     String?             @map("resolved_by_id") @db.Uuid
+  resolvedAt       DateTime?           @map("resolved_at") @db.Timestamptz(6)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  movie       Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  episode     Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  requestedBy User     @relation("ChangeRequestRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  resolvedBy  User?    @relation("ChangeRequestResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([movieId, status])
+  @@index([status, createdAt])
+  @@map("project_change_requests")
+}

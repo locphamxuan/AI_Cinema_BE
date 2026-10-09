@@ -1,0 +1,68 @@
+enum CoinEntryType {
+  TOP_UP
+  SIGNUP_BONUS
+  DAILY_REWARD
+  EPISODE_PURCHASE
+  SERIES_PURCHASE
+  PLAN_PAYMENT
+  PLAN_RENEWAL
+  REFUND
+  BONUS_EXPIRY
+  ADJUSTMENT
+}
+
+/// What the entry was made for; reference_id points at that row.
+enum CoinReferenceType {
+  EPISODE_ACCESS
+  SERIES_ACCESS
+  SUBSCRIPTION_CYCLE
+  COIN_TOP_UP
+  DAILY_CHECK_IN
+  ADMIN
+}
+
+/// Every movement of Coins in or out of a wallet, append-only: a mistake is fixed with a REFUND or
+/// ADJUSTMENT entry pointing back at the original, never by editing history. A positive amount
+/// credits the wallet, a negative one debits it. Main Coins are spent before bonus Coins, so one
+/// debit may move both counters; bonus Coins always leave through a lot, which keeps their
+/// expiry known.
+model CoinTransaction {
+  id                String             @id @default(uuid()) @db.Uuid
+  walletId          String             @map("wallet_id") @db.Uuid
+  entryType         CoinEntryType      @map("entry_type")
+  mainAmount        Int                @map("main_amount")
+  bonusAmount       Int                @map("bonus_amount")
+  /// VND value of one main Coin when the entry was written, so revenue reports stay historical.
+  rateVnd           Int                @map("rate_vnd")
+  /// The lot the bonus part of a debit came from; null when the entry moved no bonus Coin.
+  lotId             String?            @map("lot_id") @db.Uuid
+  referenceType     CoinReferenceType? @map("reference_type")
+  referenceId       String?            @map("reference_id") @db.Uuid
+  /// The entry this one refunds or corrects; null otherwise.
+  reversesId        String?            @map("reverses_id") @db.Uuid
+  /// Set when a replayed callback or a double tap must not move the wallet a second time.
+  idempotencyKey    String?            @unique @map("idempotency_key") @db.VarChar(100)
+  /// Balances right after the entry, so a statement is shown without replaying the ledger.
+  mainBalanceAfter  Int                @map("main_balance_after")
+  bonusBalanceAfter Int                @map("bonus_balance_after")
+  description       String?            @db.Text
+  /// Set when a staff account writes the entry.
+  createdById       String?            @map("created_by_id") @db.Uuid
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  wallet            CoinWallet         @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  lot               CoinLot?           @relation("CoinLotSpentBy", fields: [lotId], references: [id], onDelete: Restrict)
+  reverses          CoinTransaction?   @relation("CoinTransactionReversal", fields: [reversesId], references: [id], onDelete: Restrict)
+  reversedBy        CoinTransaction[]  @relation("CoinTransactionReversal")
+  createdBy         User?              @relation("CoinTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  topUp             CoinTopUp?
+  checkIn           DailyCheckIn?
+  subscriptionCycle SubscriptionCycle?
+  episodeAccess     EpisodeAccess?
+  seriesAccess      SeriesAccess?
+
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
+  @@index([entryType, createdAt])
+  @@map("coin_transactions")
+}

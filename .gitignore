@@ -1,3 +1,15 @@
+# Claude tools (local-only, không push lên GitHub)
+.claude-tools/
+
+# Local-only, machine-specific — not shared
+.claude/
+.claude-mem/
+CLAUDE.md
+TESTING.md
+# Context file of the current code state, read before every task
+PROJECT_OVERVIEW.md
+.codegraph/
+
 # Logs
 logs
 *.log
@@ -20,6 +32,9 @@ lib-cov
 
 # Coverage directory used by tools like istanbul
 coverage
+coverage-e2e
+# SonarScanner work files
+.scannerwork
 *.lcov
 
 # nyc test coverage
@@ -141,3 +156,14 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+/generated/prisma
+
+# Files of the local storage driver (STORAGE_DRIVER=local)
+/storage/
+
+# Genre Style LoRA datasets — keep folder layout + captions in git, not the images
+training-data/**/*.png
+training-data/**/*.jpg
+training-data/**/*.jpeg
+training-data/**/*.webp

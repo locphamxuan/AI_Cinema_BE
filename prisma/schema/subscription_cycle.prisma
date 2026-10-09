@@ -1,0 +1,33 @@
+enum CycleStatus {
+  PAID
+  FAILED
+  SKIPPED
+}
+
+/// One billed cycle of a subscription, written when the plan is activated and by every
+/// auto-renew attempt, so revenue and churn reports read one table and a renewal that found no
+/// Coins still leaves a trace. mainCoinsCharged and bonusCoinsCharged show how the price was
+/// covered, main Coins first.
+model SubscriptionCycle {
+  id                String       @id @default(uuid()) @db.Uuid
+  subscriptionId    String       @map("subscription_id") @db.Uuid
+  cycleNumber       Int          @map("cycle_number")
+  periodStart       DateTime     @map("period_start") @db.Timestamptz(6)
+  periodEnd         DateTime     @map("period_end") @db.Timestamptz(6)
+  priceCoins        Int          @map("price_coins")
+  status            CycleStatus
+  mainCoinsCharged  Int          @default(0) @map("main_coins_charged")
+  bonusCoinsCharged Int          @default(0) @map("bonus_coins_charged")
+  /// The ledger entry that took the Coins; null for a failed or skipped attempt.
+  coinTransactionId String?      @unique @map("coin_transaction_id") @db.Uuid
+  failureReason     String?      @map("failure_reason") @db.Text
+  attemptedAt       DateTime     @default(now()) @map("attempted_at") @db.Timestamptz(6)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  subscription    Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  coinTransaction CoinTransaction? @relation(fields: [coinTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([subscriptionId, cycleNumber])
+  @@index([status, attemptedAt])
+  @@map("subscription_cycles")
+}
