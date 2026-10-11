@@ -20,7 +20,9 @@ export class IdeaFileController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: IDEA_FILE_MAX_BYTES, files: 1 } }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
-  @ApiOperation({ summary: 'Upload an idea file (PDF, DOCX, PNG, JPEG, WebP; ≤ 20 MB); same name = new version' })
+  @ApiOperation({
+    summary: 'Upload an idea file (PDF, DOCX, UTF-8 TXT, PNG, JPEG, WebP; ≤ 20 MB); same name = new version',
+  })
   upload(
     @Param('movieId', ID) movieId: string,
     @UploadedFile() file: Express.Multer.File | undefined,

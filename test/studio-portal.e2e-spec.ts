@@ -8,7 +8,7 @@ import { assignedProject, episodesOf, type ProjectDetail } from './support/proje
 
 interface Overview {
   studio: { studioName: string; response: string | null; declineReason: string | null };
-  project: { title: string; status: string };
+  project: { title: string; status: string; productionFeeTokens: number };
   canDeliver: boolean;
   seasons: { episodes: { id: string; status: string; latestDelivery: { version: number } | null }[] }[];
   ideaFiles: { id: string }[];
@@ -69,6 +69,7 @@ describe('Studio portal (e2e)', () => {
     const { body } = await portal().get(`/api/studio-portal/${token}`).expect(200);
     const overview = body as Overview;
     expect(overview.studio).toMatchObject({ studioName: 'Studio Ánh Trăng', response: null });
+    expect(overview.project.productionFeeTokens).toBe(20000);
     expect(overview.canDeliver).toBe(false);
     expect(overview.seasons[0].episodes).toHaveLength(2);
     expect(JSON.stringify(body)).not.toMatch(/portalTokenHash|storageKey|coinPrice|milestoneDate/);
