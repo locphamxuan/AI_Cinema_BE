@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { BadRequestException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PaymentProvider, PaymentStatus, Prisma, TopUpStatus } from '@prisma/client';
 import type { PaginateQuery } from '@nestarc/pagination';
@@ -56,7 +57,7 @@ export class CoinTopUpService {
     // Round down: the gateway charges the VND amount, so the Coins promised cannot exceed it.
     const coinsGranted = Math.floor(amountVnd / coinRateVnd);
     // Unique per provider, so a replayed callback finds its attempt and cannot credit twice.
-    const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
+    const stamp = `${Date.now().toString(36)}${randomBytes(5).toString('hex')}`.toUpperCase();
     const providerTxnId = `${provider}-${stamp}`;
     const expiresAt = new Date(Date.now() + ORDER_TTL_MINUTES * 60_000);
     const created = await this.prisma.$transaction(async (tx) => {
