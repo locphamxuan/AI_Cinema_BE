@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PlanPeriod } from '@prisma/client';
-import { IsString, Length, IsOptional, IsEnum, IsInt, Min, Max } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
 export class UpdateMembershipPlanRequestDto {
   @ApiPropertyOptional()
@@ -27,6 +27,7 @@ export class UpdateMembershipPlanRequestDto {
   durationDays?: number;
 
   @ApiPropertyOptional({ description: 'Show or hide the plan' })
+  @IsBoolean()
   @IsOptional()
   isActive?: boolean;
 
@@ -36,10 +37,12 @@ export class UpdateMembershipPlanRequestDto {
   sortOrder?: number;
 
   @ApiPropertyOptional()
+  @IsBoolean()
   @IsOptional()
   isFeatured?: boolean;
 
   @ApiPropertyOptional()
+  @IsObject()
   @IsOptional()
   features?: Record<string, unknown>;
 }

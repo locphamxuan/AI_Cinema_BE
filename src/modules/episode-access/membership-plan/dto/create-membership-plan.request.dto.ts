@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PlanPeriod } from '@prisma/client';
-import { IsString, Length, IsOptional, IsEnum, IsInt, Min, Max } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
 export class CreateMembershipPlanRequestDto {
   @ApiProperty({ example: 'premium_monthly', description: 'Short key of the plan, unique' })
@@ -29,6 +29,7 @@ export class CreateMembershipPlanRequestDto {
   durationDays: number;
 
   @ApiPropertyOptional({ example: false, description: 'The free plan has no price row and no subscription' })
+  @IsBoolean()
   @IsOptional()
   isFree?: boolean;
 
@@ -38,10 +39,12 @@ export class CreateMembershipPlanRequestDto {
   sortOrder?: number;
 
   @ApiPropertyOptional({ example: true, description: 'Shown as the recommended plan' })
+  @IsBoolean()
   @IsOptional()
   isFeatured?: boolean;
 
   @ApiPropertyOptional({ example: { maxDevices: 2, adFree: true, maxQuality: '1080p' } })
+  @IsObject()
   @IsOptional()
   features?: Record<string, unknown>;
 }
