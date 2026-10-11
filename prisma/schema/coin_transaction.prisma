@@ -3,7 +3,7 @@ enum CoinEntryType {
   SIGNUP_BONUS
   DAILY_REWARD
   EPISODE_PURCHASE
-  SERIES_PURCHASE
+  REWARD_SPIN
   PLAN_PAYMENT
   PLAN_RENEWAL
   REFUND
@@ -14,7 +14,7 @@ enum CoinEntryType {
 /// What the entry was made for; reference_id points at that row.
 enum CoinReferenceType {
   EPISODE_ACCESS
-  SERIES_ACCESS
+  REWARD_SPIN
   SUBSCRIPTION_CYCLE
   COIN_TOP_UP
   DAILY_CHECK_IN
@@ -59,7 +59,7 @@ model CoinTransaction {
   checkIn           DailyCheckIn?
   subscriptionCycle SubscriptionCycle?
   episodeAccess     EpisodeAccess?
-  seriesAccess      SeriesAccess?
+  rewardSpin        RewardSpin?
 
   @@index([walletId, createdAt])
   @@index([referenceType, referenceId])

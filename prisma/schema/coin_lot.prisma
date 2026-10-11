@@ -4,6 +4,7 @@ enum CoinLotSource {
   TOP_UP_PROMO
   SIGNUP_BONUS
   DAILY_REWARD
+  REWARD_SPIN
   REFUND
   ADJUSTMENT
 }
@@ -22,7 +23,7 @@ model CoinLot {
   expiresAt       DateTime      @map("expires_at") @db.Timestamptz(6)
   closedAt        DateTime?     @map("closed_at") @db.Timestamptz(6)
 
-  wallet  CoinWallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  wallet  CoinWallet        @relation(fields: [walletId], references: [id], onDelete: Cascade)
   entries CoinTransaction[] @relation("CoinLotSpentBy")
 
   @@index([walletId, expiresAt])

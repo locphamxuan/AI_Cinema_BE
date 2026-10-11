@@ -4,7 +4,7 @@ import { PrismaClient, ReviewerTokenEntryType, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
-import { SEED_POLICIES, SEED_TEST_USERS, SEED_USERS } from './seed-data';
+import { SEED_POLICIES, SEED_REWARD_PRIZES, SEED_REWARD_RULES, SEED_TEST_USERS, SEED_USERS } from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
@@ -89,6 +89,27 @@ async function seedReviewerBudgets() {
   }
 }
 
+/** The default ladder and wheel; rows the Admin already has (by code) are left as they are. */
+async function seedRewards() {
+  const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@aicinema.com' }, select: { id: true } });
+  for (const rule of SEED_REWARD_RULES) {
+    const taken = await prisma.rewardRule.count({ where: { streakDay: rule.streakDay, isActive: true } });
+    if (taken) continue;
+    await prisma.rewardRule.upsert({
+      where: { code: rule.code },
+      update: {},
+      create: { ...rule, createdById: admin.id },
+    });
+  }
+  for (const prize of SEED_REWARD_PRIZES) {
+    await prisma.rewardPrize.upsert({
+      where: { code: prize.code },
+      update: {},
+      create: { ...prize, createdById: admin.id },
+    });
+  }
+}
+
 async function main() {
   for (const { name, description } of GENRE_CATALOG) {
     await prisma.genre.upsert({ where: { name }, update: { description }, create: { name, description } });
@@ -97,7 +118,8 @@ async function main() {
   await seedPolicies();
   await seedUsers();
   await seedReviewerBudgets();
-  console.log('Seeded genres, permissions, policies, development accounts and Reviewer budgets.');
+  await seedRewards();
+  console.log('Seeded genres, permissions, policies, development accounts, Reviewer budgets and rewards.');
 }
 
 main()
