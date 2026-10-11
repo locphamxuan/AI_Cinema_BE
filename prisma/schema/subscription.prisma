@@ -1,8 +1,8 @@
 enum SubscriptionStatus {
   PENDING
   ACTIVE
-  /// Auto-renew found no Coins; the grace period is running and access continues until the end
-  /// of the period already paid for.
+  /// Auto-renew found no Coins; the sweeper retries until the grace period ends. Access stops at
+  /// the end of the period already paid for and returns once a retry succeeds.
   PAST_DUE
   CANCELLED
   EXPIRED

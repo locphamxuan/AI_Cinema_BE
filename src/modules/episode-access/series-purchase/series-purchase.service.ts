@@ -1,12 +1,5 @@
 import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
-import {
-  AccessSource,
-  CoinEntryType,
-  CoinReferenceType,
-  EpisodeStatus,
-  MovieStatus,
-  SubscriptionStatus,
-} from '@prisma/client';
+import { AccessSource, CoinEntryType, CoinReferenceType, EpisodeStatus, MovieStatus } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -14,9 +7,8 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { runningPlanWhere } from '../subscription/running-plan';
 import type { PurchaseResultDto } from '../episode-purchase/dto/purchase-result.dto';
-
-const RUNNING_PLAN = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
 
 /**
  * Buying every episode of a movie at once. One SeriesAccess row replaces one row per episode,
@@ -130,7 +122,7 @@ export class SeriesPurchaseService {
   private async assertNotOwned(tx: PrismaTx, movieId: string, userId: string) {
     const [seriesAccess, plan, ownedEpisodes] = await Promise.all([
       tx.seriesAccess.count({ where: { userId, movieId, revokedAt: null } }),
-      tx.subscription.count({ where: { userId, status: { in: RUNNING_PLAN } } }),
+      tx.subscription.count({ where: runningPlanWhere(userId) }),
       tx.episodeAccess.count({ where: { userId, episode: { movieId }, revokedAt: null } }),
     ]);
     if (seriesAccess || plan || ownedEpisodes) {

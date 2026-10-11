@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { AccessSource, CoinEntryType, CoinReferenceType, EpisodeStatus, SubscriptionStatus } from '@prisma/client';
+import { AccessSource, CoinEntryType, CoinReferenceType, EpisodeStatus } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -7,10 +7,10 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { runningPlanWhere } from '../subscription/running-plan';
 import type { PurchaseResultDto } from './dto/purchase-result.dto';
 
 /** A plan that already grants the episode makes buying it pointless. */
-const RUNNING_PLAN = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
 
 /**
  * Step 17 of the flow: unlock one episode with Coins. The Coins leave through the shared spend
@@ -136,7 +136,7 @@ export class EpisodePurchaseService {
     const [episodeAccess, seriesAccess, plan] = await Promise.all([
       tx.episodeAccess.count({ where: { userId, episodeId, revokedAt: null } }),
       tx.seriesAccess.count({ where: { userId, movieId, revokedAt: null } }),
-      tx.subscription.count({ where: { userId, status: { in: RUNNING_PLAN } } }),
+      tx.subscription.count({ where: runningPlanWhere(userId) }),
     ]);
     if (episodeAccess || seriesAccess || plan) {
       throw new ConflictException({

@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, PlanPeriod, SubscriptionStatus } from '@prisma/client';
+import { EpisodeStatus, PlanPeriod } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { runningPlanWhere } from '../subscription/running-plan';
 import {
   AccessMethod,
   ACCESS_METHOD,
@@ -13,9 +14,6 @@ import {
 } from 'src/modules/episode-access/access-decision/constants/access.constants';
 import { AccessDecisionDto } from 'src/modules/episode-access/access-decision/dto/access-decision.dto';
 import { AccessRequired } from 'src/modules/episode-access/access-decision/dto/access-required.dto';
-
-/** A plan still gives access while its grace period runs, up to the end of the paid period. */
-const RUNNING_PLAN: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
 
 /** Methods a Guest may still take, in the order the flow offers them. */
 const GUEST_METHODS: AccessMethod[] = [ACCESS_METHOD.REGISTER_OR_LOGIN];
@@ -80,7 +78,7 @@ export class AccessDecisionService {
   ): Promise<AccessDecisionDto> {
     const [plan, episodeAccess, seriesAccess, planPrice] = await Promise.all([
       this.prisma.subscription.findFirst({
-        where: { userId, status: { in: RUNNING_PLAN } },
+        where: runningPlanWhere(userId),
         orderBy: { currentPeriodEnd: 'desc' },
         include: { plan: { select: { code: true, isActive: true } } },
       }),

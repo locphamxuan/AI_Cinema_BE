@@ -97,6 +97,16 @@ describe('AccessDecisionService.decide', () => {
     });
   });
 
+  it('only counts a plan whose paid period has not ended (BR-11)', async () => {
+    await service.decide('ep-1', 'u1');
+
+    expect(prisma.subscription.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: 'u1', currentPeriodEnd: { gt: expect.any(Date) } }),
+      }),
+    );
+  });
+
   it('honours a bought episode before the bought series', async () => {
     prisma.episodeAccess.findFirst.mockResolvedValue({ source: 'EPISODE_PURCHASE' });
 
