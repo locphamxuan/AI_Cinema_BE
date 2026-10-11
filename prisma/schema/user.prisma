@@ -49,7 +49,8 @@ model User {
   rewardRulesCreated      RewardRule[]           @relation("RewardRuleCreatedBy")
   subscriptions           Subscription[]
   episodeAccesses         EpisodeAccess[]
-  seriesAccesses          SeriesAccess[]
+  rewardSpins             RewardSpin[]
+  rewardPrizesCreated     RewardPrize[]          @relation("RewardPrizeCreatedBy")
   payments                Payment[]
 
   @@index([role])

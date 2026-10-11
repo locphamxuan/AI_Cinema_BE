@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { AccessSource, CoinEntryType, CoinReferenceType, EpisodeStatus, SubscriptionStatus } from '@prisma/client';
+import { AccessSource, CoinEntryType, CoinReferenceType, EpisodeStatus } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -7,10 +7,10 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { runningPlanWhere } from '../subscription/running-plan';
 import type { PurchaseResultDto } from './dto/purchase-result.dto';
 
 /** A plan that already grants the episode makes buying it pointless. */
-const RUNNING_PLAN = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
 
 /**
  * Step 17 of the flow: unlock one episode with Coins. The Coins leave through the shared spend
@@ -52,7 +52,7 @@ export class EpisodePurchaseService {
     const wallet = await this.wallets.walletOf(user.id);
     const { coinRateVnd } = await this.settings.get();
     return this.prisma.$transaction(async (tx) => {
-      await this.assertNotOwned(tx, episode.id, episode.movieId, user.id);
+      await this.assertNotOwned(tx, episode.id, user.id);
       const movement = await this.coins.spend(tx, wallet.id, {
         entryType: CoinEntryType.EPISODE_PURCHASE,
         amountCoins: episode.coinPrice!,
@@ -131,14 +131,13 @@ export class EpisodePurchaseService {
     } satisfies PurchaseResultDto;
   }
 
-  /** Anything that already opens the episode: a plan, the episode itself, or the whole series. */
-  private async assertNotOwned(tx: PrismaTx, episodeId: string, movieId: string, userId: string) {
-    const [episodeAccess, seriesAccess, plan] = await Promise.all([
+  /** Anything that already opens the episode: a running plan or the episode itself. */
+  private async assertNotOwned(tx: PrismaTx, episodeId: string, userId: string) {
+    const [episodeAccess, plan] = await Promise.all([
       tx.episodeAccess.count({ where: { userId, episodeId, revokedAt: null } }),
-      tx.seriesAccess.count({ where: { userId, movieId, revokedAt: null } }),
-      tx.subscription.count({ where: { userId, status: { in: RUNNING_PLAN } } }),
+      tx.subscription.count({ where: runningPlanWhere(userId) }),
     ]);
-    if (episodeAccess || seriesAccess || plan) {
+    if (episodeAccess || plan) {
       throw new ConflictException({
         message: 'The episode is already unlocked',
         details: { reason: 'ACCESS_ALREADY_OWNED' },

@@ -1,11 +1,18 @@
 enum SubscriptionStatus {
   PENDING
   ACTIVE
-  /// Auto-renew found no Coins; the grace period is running and access continues until the end
-  /// of the period already paid for.
+  /// Auto-renew found no Coins; the sweeper retries until the grace period ends. Access stops at
+  /// the end of the period already paid for and returns once a retry succeeds.
   PAST_DUE
   CANCELLED
   EXPIRED
+}
+
+/// How a subscription started: bought with Coins, or given by a reward spin (BR-09) — the latter
+/// never auto-renews unless the member turns auto-renew on.
+enum SubscriptionSource {
+  PURCHASE
+  REWARD
 }
 
 enum SubscriptionEndReason {
@@ -25,6 +32,7 @@ model Subscription {
   userId             String                 @map("user_id") @db.Uuid
   planId             String                 @map("plan_id") @db.Uuid
   status             SubscriptionStatus     @default(PENDING)
+  source             SubscriptionSource     @default(PURCHASE)
   autoRenew          Boolean                @default(true) @map("auto_renew")
   /// Coin price of one cycle, copied from the plan price in force when the cycle started.
   priceCoins         Int                    @map("price_coins")
@@ -45,9 +53,10 @@ model Subscription {
   createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user   User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  plan   MembershipPlan      @relation(fields: [planId], references: [id], onDelete: Restrict)
-  cycles SubscriptionCycle[]
+  user        User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan        MembershipPlan      @relation(fields: [planId], references: [id], onDelete: Restrict)
+  cycles      SubscriptionCycle[]
+  rewardSpins RewardSpin[]
 
   @@index([userId, status])
   @@index([status, nextRenewalAt])

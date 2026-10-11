@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, Length, IsInt, Min, Max, IsOptional } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { LADDER_LENGTH } from '../reward-ladder';
 
-/** A rung of the streak ladder: what streak day `streakDay` pays. */
+/** A rung of the streak ladder: what streak day `streakDay` pays, in bonus Coins only (BR-05). */
 export class CreateRewardRuleRequestDto {
   @ApiProperty({ example: 'streak_day_7', description: 'Short key of the rule, unique' })
   @IsString()
@@ -13,20 +14,19 @@ export class CreateRewardRuleRequestDto {
   @Length(1, 255)
   name: string;
 
-  @ApiProperty({ example: 7, minimum: 1, maximum: 31, description: '1 = the first day of a streak' })
+  @ApiProperty({ example: 7, minimum: 1, maximum: LADDER_LENGTH, description: '1 = the first day of a streak' })
   @IsInt()
   @Min(1)
-  @Max(31)
+  @Max(LADDER_LENGTH)
   streakDay: number;
 
-  @ApiProperty({ example: 10, description: 'Main Coins this day pays' })
+  @ApiProperty({ example: 10, description: 'Bonus Coins this day pays' })
   @IsInt()
-  @Min(0)
-  coins: number;
+  @Min(1)
+  bonusCoins: number;
 
-  @ApiPropertyOptional({ example: 5, description: 'Bonus Coins on top, only on this day' })
-  @IsInt()
-  @Min(0)
+  @ApiPropertyOptional({ example: true, description: 'Milestone day: checking in also grants a reward spin (BR-09)' })
+  @IsBoolean()
   @IsOptional()
-  bonusCoins?: number;
+  grantsSpin?: boolean;
 }

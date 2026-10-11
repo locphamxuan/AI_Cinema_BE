@@ -152,6 +152,10 @@ describe('Coin top-up through VNPay and MoMo (e2e)', () => {
     await gateway.stop();
   });
 
+  it('tells the member the rate and the accepted range before an order', async () => {
+    expect(await member.get('/wallet/top-ups/options')).toEqual({ rateVnd: 1000, minVnd: 10_000, maxVnd: 2_000_000 });
+  });
+
   it('quotes an order within the range and signs the VNPay payment link', async () => {
     await order('VNPAY', 5000, 422);
     await order('VNPAY', 5_000_000, 422);

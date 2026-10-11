@@ -1,14 +1,12 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
-import { CoinEntryType, CoinLotSource, CoinReferenceType } from '@prisma/client';
+import { CoinEntryType, CoinLotSource, CoinReferenceType, RewardSpinStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { LADDER_LENGTH } from './reward-ladder';
 
 /** The business day is Vietnam's, so a reward cannot be claimed twice by moving the clock. */
 const BUSINESS_TZ = 'Asia/Ho_Chi_Minh';
-
-/** The ladder runs over seven days; after the last one it starts again. */
-const LADDER_LENGTH = 7;
 
 const DAY_MS = 86_400_000;
 
@@ -18,10 +16,10 @@ const EXPIRING_LIMIT = 3;
 
 export const CHECKIN_REASON = { ALREADY_TODAY: 'ALREADY_CHECKED_IN_TODAY' } as const;
 
-/** What one streak day pays: the Admin's rule, or nothing when that day is switched off. */
+/** What one streak day pays (bonus Coins only, BR-05) and whether it is the spin milestone (BR-09). */
 interface Reward {
-  coins: number;
   bonusCoins: number;
+  grantsSpin: boolean;
 }
 
 /**
@@ -40,7 +38,8 @@ export function businessDay(at = new Date()): Date {
 
 /**
  * Step 12: the daily check-in. One reward per business day, counted on the Vietnam date rather
- * than the client's clock, and the Coins are bonus Coins so they run out with their lot.
+ * than the client's clock. The reward is bonus Coins only (BR-05), so it runs out with its lot and
+ * never counts as revenue; the milestone day of the ladder also earns a reward spin (BR-09).
  */
 @Injectable()
 export class DailyRewardService {
@@ -54,7 +53,7 @@ export class DailyRewardService {
   async status(userId: string) {
     const today = businessDay();
     const wallet = await this.wallets.walletOf(userId);
-    const [todayCheckIn, lastCheckIn, rules, expiringBonus] = await Promise.all([
+    const [todayCheckIn, lastCheckIn, rules, expiringBonus, availableSpins] = await Promise.all([
       this.prisma.dailyCheckIn.findUnique({ where: { userId_checkInDate: { userId, checkInDate: today } } }),
       this.prisma.dailyCheckIn.findFirst({ where: { userId }, orderBy: { checkInDate: 'desc' } }),
       this.prisma.rewardRule.findMany({ where: { isActive: true }, orderBy: { streakDay: 'asc' } }),
@@ -69,6 +68,7 @@ export class DailyRewardService {
         take: EXPIRING_LIMIT,
         select: { id: true, remainingAmount: true, expiresAt: true },
       }),
+      this.prisma.rewardSpin.count({ where: { userId, status: RewardSpinStatus.AVAILABLE } }),
     ]);
     const streakDay =
       todayCheckIn?.streakDay ?? (this.isYesterday(lastCheckIn?.checkInDate, today) ? lastCheckIn!.streakDay : 0);
@@ -78,7 +78,12 @@ export class DailyRewardService {
       streakDay,
       streakContinued: this.isYesterday(lastCheckIn?.checkInDate, today) && !todayCheckIn,
       reward: this.rewardOf(rules, this.nextStreakDay(streakDay)),
-      ladder: rules.map((rule) => ({ streakDay: rule.streakDay, coins: rule.coins, bonusCoins: rule.bonusCoins })),
+      ladder: rules.map((rule) => ({
+        streakDay: rule.streakDay,
+        bonusCoins: rule.bonusCoins,
+        grantsSpin: rule.grantsSpin,
+      })),
+      availableSpins,
       mainBalance: wallet.mainBalance,
       bonusBalance: wallet.bonusBalance,
       expiringBonus: expiringBonus.map(({ id, remainingAmount, expiresAt }) => ({
@@ -106,7 +111,7 @@ export class DailyRewardService {
     const streakOn = lastCheckIn && this.isYesterday(lastCheckIn.checkInDate, today) ? lastCheckIn.streakDay : 0;
     const streakDay = (streakOn % LADDER_LENGTH) + 1;
     const reward = await this.rewardOfStreakDay(streakDay);
-    if (reward.coins + reward.bonusCoins <= 0) {
+    if (reward.bonusCoins <= 0) {
       // No ladder for today: nothing to pay, so nothing is written.
       throw new UnprocessableEntityException({
         message: 'No reward is set for today',
@@ -122,7 +127,6 @@ export class DailyRewardService {
           wallet.id,
           {
             entryType: CoinEntryType.DAILY_REWARD,
-            mainAmount: reward.coins,
             bonusAmount: reward.bonusCoins,
             lotSource: CoinLotSource.DAILY_REWARD,
             referenceType: CoinReferenceType.DAILY_CHECK_IN,
@@ -138,18 +142,19 @@ export class DailyRewardService {
             checkInDate: today,
             streakDay,
             streakContinued,
-            coinsGranted: movement.mainCoins,
             bonusGranted: movement.bonusCoins,
             coinTransactionId: movement.transactionId,
             ruleId: reward.ruleId,
           },
         });
+        // The milestone day also earns one spin of the reward wheel (BR-09).
+        if (reward.grantsSpin) await tx.rewardSpin.create({ data: { userId, checkInId: checkIn.id } });
         return {
           checkInDate: checkIn.checkInDate,
           streakDay: checkIn.streakDay,
           streakContinued: checkIn.streakContinued,
-          coinsGranted: checkIn.coinsGranted,
           bonusGranted: checkIn.bonusGranted,
+          spinGranted: reward.grantsSpin,
           mainBalance: movement.mainBalance,
           bonusBalance: movement.bonusBalance,
         };
@@ -167,13 +172,13 @@ export class DailyRewardService {
       where: { isActive: true, streakDay },
       orderBy: { streakDay: 'asc' },
     });
-    return { coins: rule?.coins ?? 0, bonusCoins: rule?.bonusCoins ?? 0, ruleId: rule?.id ?? null };
+    return { bonusCoins: rule?.bonusCoins ?? 0, grantsSpin: rule?.grantsSpin ?? false, ruleId: rule?.id ?? null };
   }
 
   /** The same answer as `rewardOfStreakDay` but from an already-loaded ladder. */
-  private rewardOf(rules: { streakDay: number; coins: number; bonusCoins: number }[], streakDay: number) {
+  private rewardOf(rules: { streakDay: number; bonusCoins: number; grantsSpin: boolean }[], streakDay: number) {
     const rule = rules.find((row) => row.streakDay === streakDay);
-    return { streakDay, coins: rule?.coins ?? 0, bonusCoins: rule?.bonusCoins ?? 0 };
+    return { streakDay, bonusCoins: rule?.bonusCoins ?? 0, grantsSpin: rule?.grantsSpin ?? false };
   }
 
   /** The streak number a check-in today would carry: yesterday's plus one, or 1 after a gap. */

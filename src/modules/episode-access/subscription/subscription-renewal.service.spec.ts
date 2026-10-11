@@ -13,7 +13,7 @@ describe('SubscriptionRenewalService.renew', () => {
     subscription: { findUnique: jest.fn(), update: jest.fn() },
     membershipPlan: { findUnique: jest.fn() },
     membershipPlanPrice: { findFirst: jest.fn() },
-    subscriptionCycle: { create: jest.fn() },
+    subscriptionCycle: { create: jest.fn(), upsert: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
@@ -74,9 +74,12 @@ describe('SubscriptionRenewalService.renew', () => {
       }),
       expect.any(Date),
     );
-    expect(tx.subscriptionCycle.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ cycleNumber: 2, status: 'PAID', priceCoins: 850 }),
-    });
+    expect(tx.subscriptionCycle.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { subscriptionId_cycleNumber: { subscriptionId: 'sub-1', cycleNumber: 2 } },
+        create: expect.objectContaining({ cycleNumber: 2, status: 'PAID', priceCoins: 850 }),
+      }),
+    );
     expect(tx.subscription.update).toHaveBeenCalledWith({
       where: { id: 'sub-1' },
       data: expect.objectContaining({ status: SubscriptionStatus.ACTIVE, priceCoins: 850, renewalsCompleted: 1 }),
@@ -129,6 +132,89 @@ describe('SubscriptionRenewalService.renew', () => {
     });
     expect(notifications.notify).toHaveBeenCalledWith(['u1'], expect.objectContaining({ link: '/wallet' }), tx);
     expect(outcome).toEqual({ renewed: false, expired: false, cycleNumber: 2 });
+  });
+
+  it('retries a PAST_DUE plan and pays the cycle the failed attempt wrote', async () => {
+    tx.subscription.findUnique.mockResolvedValue({ ...subscription, status: SubscriptionStatus.PAST_DUE });
+
+    const outcome = await service.renew('sub-1');
+
+    expect(tx.subscriptionCycle.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ status: 'PAID', failureReason: null }) }),
+    );
+    expect(tx.subscription.update).toHaveBeenCalledWith({
+      where: { id: 'sub-1' },
+      data: expect.objectContaining({ status: SubscriptionStatus.ACTIVE }),
+    });
+    expect(outcome.renewed).toBe(true);
+  });
+
+  it('leaves a PAST_DUE plan untouched when the retry is still short of Coins', async () => {
+    tx.subscription.findUnique.mockResolvedValue({ ...subscription, status: SubscriptionStatus.PAST_DUE });
+    coins.spend.mockRejectedValue(new Error('short of Coins'));
+
+    await expect(service.renew('sub-1')).resolves.toEqual({ renewed: false, expired: false, cycleNumber: 2 });
+    expect(tx.subscriptionCycle.create).not.toHaveBeenCalled();
+    expect(tx.subscription.update).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('SubscriptionRenewalService.lapse', () => {
+  const tx = { subscription: { findUnique: jest.fn(), update: jest.fn() } };
+  const prisma = { $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)) };
+  const notifications = { notify: jest.fn() };
+  const auditLog = { record: jest.fn() };
+  const service = new SubscriptionRenewalService(
+    prisma as unknown as PrismaService,
+    {} as unknown as CoinSpendService,
+    {} as unknown as WalletService,
+    {} as unknown as PlatformSettingService,
+    notifications as unknown as NotificationService,
+    auditLog as unknown as AuditLogService,
+  );
+  const stopped = {
+    id: 'sub-1',
+    userId: 'u1',
+    status: SubscriptionStatus.ACTIVE,
+    autoRenew: false,
+    renewalsCompleted: 1,
+    currentPeriodEnd: new Date(Date.now() - 60_000),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    tx.subscription.findUnique.mockResolvedValue(stopped);
+  });
+
+  it('ends a plan whose auto-renew was stopped once its period is over (BR-11)', async () => {
+    await expect(service.lapse('sub-1')).resolves.toBe(true);
+
+    expect(tx.subscription.update).toHaveBeenCalledWith({
+      where: { id: 'sub-1' },
+      data: expect.objectContaining({
+        status: SubscriptionStatus.EXPIRED,
+        endReason: 'NOT_RENEWED',
+        endedAt: stopped.currentPeriodEnd,
+      }),
+    });
+    expect(auditLog.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: CONTENT_EVENT.SUBSCRIPTION_EXPIRED }),
+      tx,
+    );
+    expect(notifications.notify).toHaveBeenCalledWith(['u1'], expect.any(Object), tx);
+  });
+
+  it.each([
+    ['period still running', { ...stopped, currentPeriodEnd: new Date(Date.now() + 3_600_000) }],
+    ['auto-renew on', { ...stopped, autoRenew: true }],
+    ['not active', { ...stopped, status: SubscriptionStatus.PAST_DUE }],
+    ['missing row', null],
+  ])('leaves a plan alone when %s', async (_label, row) => {
+    tx.subscription.findUnique.mockResolvedValue(row);
+
+    await expect(service.lapse('sub-1')).resolves.toBe(false);
+    expect(tx.subscription.update).not.toHaveBeenCalled();
   });
 });
 

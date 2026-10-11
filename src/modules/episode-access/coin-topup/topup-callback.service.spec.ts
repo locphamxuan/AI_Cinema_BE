@@ -312,6 +312,16 @@ describe('CoinTopUpService.handleVnpayIpn', () => {
       RspCode: '04',
       Message: 'Invalid amount',
     });
+
+    // Both failure states are committed through the settlement transaction before IPN answers.
+    expect(tx.payment.update).toHaveBeenCalledWith({
+      where: { id: 'pay-1' },
+      data: expect.objectContaining({ status: PaymentStatus.FAILED }),
+    });
+    expect(tx.coinTopUp.update).toHaveBeenCalledWith({
+      where: { id: topUpId },
+      data: expect.objectContaining({ status: TopUpStatus.FAILED }),
+    });
     expect(deps.coins.credit).not.toHaveBeenCalled();
   });
 

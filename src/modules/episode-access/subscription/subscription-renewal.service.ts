@@ -20,6 +20,9 @@ import { currentPrice } from '../membership-plan/membership-plan.service';
 
 const DAY_MS = 86_400_000;
 
+/** ACTIVE plans renew on their date; PAST_DUE ones are retried until the grace period ends. */
+const RENEWABLE: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
+
 /**
  * What one renewal attempt did, so the sweeper can count it without reading the row again.
  */
@@ -32,8 +35,8 @@ export interface RenewalOutcome {
 /**
  * Step 19, the part the sweeper runs: charging the next cycle and ending plans that stayed unpaid.
  * A renewal that finds no Coins does not throw the transaction away; it writes the failed cycle and
- * moves the subscription to PAST_DUE, so the attempt is on record and access runs on to the end of
- * the period already paid for.
+ * moves the subscription to PAST_DUE, so the attempt is on record and can be retried during the
+ * grace period. Plans whose auto-renew was stopped end at the close of their period (`lapse`).
  */
 @Injectable()
 export class SubscriptionRenewalService {
@@ -53,9 +56,10 @@ export class SubscriptionRenewalService {
   async renew(subscriptionId: string, now = new Date()): Promise<RenewalOutcome> {
     return this.prisma.$transaction(async (tx) => {
       const subscription = await tx.subscription.findUnique({ where: { id: subscriptionId } });
-      if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE || !subscription.autoRenew) {
+      if (!subscription || !RENEWABLE.includes(subscription.status) || !subscription.autoRenew) {
         return { renewed: false, expired: false, cycleNumber: null };
       }
+      const retrying = subscription.status === SubscriptionStatus.PAST_DUE;
       const plan = await tx.membershipPlan.findUnique({ where: { id: subscription.planId } });
       if (!plan || !plan.isActive) return { renewed: false, expired: false, cycleNumber: null };
 
@@ -79,22 +83,26 @@ export class SubscriptionRenewalService {
           now,
         );
       } catch (error) {
-        await this.markPastDue(tx, subscription, plan, cycleNumber, periodEnd, price.priceCoins, error);
+        // A retry that is still short leaves the FAILED cycle and the grace deadline as they are.
+        if (!retrying) await this.markPastDue(tx, subscription, plan, cycleNumber, periodEnd, price.priceCoins, error);
         return { renewed: false, expired: false, cycleNumber };
       }
 
-      await tx.subscriptionCycle.create({
-        data: {
-          subscriptionId: subscription.id,
-          cycleNumber,
-          periodStart: subscription.currentPeriodEnd,
-          periodEnd,
-          priceCoins: price.priceCoins,
-          status: CycleStatus.PAID,
-          mainCoinsCharged: movement.mainCoins,
-          bonusCoinsCharged: movement.bonusCoins,
-          coinTransactionId: movement.transactionId,
-        },
+      const paid = {
+        periodStart: subscription.currentPeriodEnd,
+        periodEnd,
+        priceCoins: price.priceCoins,
+        status: CycleStatus.PAID,
+        failureReason: null,
+        mainCoinsCharged: movement.mainCoins,
+        bonusCoinsCharged: movement.bonusCoins,
+        coinTransactionId: movement.transactionId,
+      };
+      // A retry pays the cycle the failed attempt already wrote.
+      await tx.subscriptionCycle.upsert({
+        where: { subscriptionId_cycleNumber: { subscriptionId: subscription.id, cycleNumber } },
+        create: { subscriptionId: subscription.id, cycleNumber, ...paid },
+        update: paid,
       });
       const { subscriptionCancelWindowHours } = await this.settings.get();
       await tx.subscription.update({
@@ -133,6 +141,55 @@ export class SubscriptionRenewalService {
         tx,
       );
       return { renewed: true, expired: false, cycleNumber };
+    });
+  }
+
+  /**
+   * A plan whose auto-renew was stopped has reached the end of its paid period: it ends as
+   * NOT_RENEWED and the member is back on the free tier (BR-11). Without this the row would stay
+   * ACTIVE for good and block the member from ever joining a plan again.
+   */
+  async lapse(subscriptionId: string, now = new Date()): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const subscription = await tx.subscription.findUnique({ where: { id: subscriptionId } });
+      if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE || subscription.autoRenew) return false;
+      if (subscription.currentPeriodEnd.getTime() > now.getTime()) return false;
+      await tx.subscription.update({
+        where: { id: subscription.id },
+        data: {
+          status: SubscriptionStatus.EXPIRED,
+          endedAt: subscription.currentPeriodEnd,
+          endReason: SubscriptionEndReason.NOT_RENEWED,
+          nextRenewalAt: null,
+        },
+      });
+      await this.auditLog.record(
+        {
+          action: CONTENT_EVENT.SUBSCRIPTION_EXPIRED,
+          entityType: 'Subscription',
+          entityId: subscription.id,
+          movieId: null,
+          actorId: null,
+          payload: {
+            endReason: SubscriptionEndReason.NOT_RENEWED,
+            renewalsCompleted: subscription.renewalsCompleted,
+            currentPeriodEnd: subscription.currentPeriodEnd,
+          },
+        },
+        tx,
+      );
+      await this.notifications.notify(
+        [subscription.userId],
+        {
+          type: NOTIFICATION_TYPE.SUBSCRIPTION_CANCELLED,
+          title: 'Gói đã kết thúc',
+          body: 'Gói Tháng đã hết kỳ và không gia hạn. Tập đã mở khóa bằng Coin vẫn xem được.',
+          link: '/membership',
+          payload: { subscriptionId: subscription.id },
+        },
+        tx,
+      );
+      return true;
     });
   }
 
@@ -188,8 +245,9 @@ export class SubscriptionRenewalService {
 
   /**
    * The wallet could not cover the cycle. The attempt is written as FAILED, the status becomes
-   * PAST_DUE and nextRenewalAt becomes the retry moment, so the sweeper tries again until the
-   * grace period the Admin set runs out. Only the status moves, never the period: access continues.
+   * PAST_DUE and nextRenewalAt becomes the end of the grace period the Admin set; the sweeper
+   * retries on every run until then. Only the status moves, never the period, so access stops at
+   * the end of the period already paid for and comes back the moment a retry succeeds.
    */
   private async markPastDue(
     tx: PrismaTx,
@@ -201,7 +259,8 @@ export class SubscriptionRenewalService {
     cause: unknown,
   ): Promise<void> {
     const { planRenewalGraceHours } = await this.settings.get();
-    const retryAt = new Date(Date.now() + Math.max(1, planRenewalGraceHours) * 3_600_000);
+    // 0 hours = no grace: the same sweep run retries once more, then ends the plan (BR-30).
+    const retryAt = new Date(Date.now() + planRenewalGraceHours * 3_600_000);
     await tx.subscriptionCycle.create({
       data: {
         subscriptionId: subscription.id,
@@ -222,7 +281,10 @@ export class SubscriptionRenewalService {
       {
         type: NOTIFICATION_TYPE.SUB_RENEWAL_FAILED,
         title: 'Gia hạn thất bại',
-        body: `Ví chưa đủ Coin cho chu kỳ ${cycleNumber}. Quyền xem còn đến ${subscription.currentPeriodEnd.toISOString().slice(0, 10)}.`,
+        body:
+          planRenewalGraceHours > 0
+            ? `Ví chưa đủ Coin cho chu kỳ ${cycleNumber}. Gói tạm dừng; nạp Coin trong ${planRenewalGraceHours} giờ tới để hệ thống tự gia hạn lại.`
+            : `Ví chưa đủ Coin cho chu kỳ ${cycleNumber} nên gói sẽ kết thúc.`,
         link: '/wallet',
         payload: { subscriptionId: subscription.id, cycleNumber, retryAt },
       },

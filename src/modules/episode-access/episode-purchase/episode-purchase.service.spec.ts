@@ -10,7 +10,6 @@ import { EpisodePurchaseService } from './episode-purchase.service';
 describe('EpisodePurchaseService.purchase', () => {
   const tx = {
     episodeAccess: { count: jest.fn(), create: jest.fn() },
-    seriesAccess: { count: jest.fn() },
     subscription: { count: jest.fn() },
   };
   const prisma = {
@@ -41,7 +40,6 @@ describe('EpisodePurchaseService.purchase', () => {
     prisma.episode.findFirst.mockResolvedValue(episode);
     prisma.coinTransaction.findUnique.mockResolvedValue(null);
     tx.episodeAccess.count.mockResolvedValue(0);
-    tx.seriesAccess.count.mockResolvedValue(0);
     tx.subscription.count.mockResolvedValue(0);
     coins.spend.mockResolvedValue(movement);
     tx.episodeAccess.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
@@ -153,12 +151,10 @@ describe('EpisodePurchaseService.purchase', () => {
   });
 
   it.each([
-    ['the episode itself', { episodeAccess: 1, seriesAccess: 0, plan: 0 }],
-    ['the whole series', { episodeAccess: 0, seriesAccess: 1, plan: 0 }],
-    ['a running plan', { episodeAccess: 0, seriesAccess: 0, plan: 1 }],
+    ['the episode itself', { episodeAccess: 1, plan: 0 }],
+    ['a running plan', { episodeAccess: 0, plan: 1 }],
   ])('refuses when %s already opens the episode', async (_label, counts) => {
     tx.episodeAccess.count.mockResolvedValue(counts.episodeAccess);
-    tx.seriesAccess.count.mockResolvedValue(counts.seriesAccess);
     tx.subscription.count.mockResolvedValue(counts.plan);
 
     await expect(service.purchase('ep-1', user)).rejects.toMatchObject({
