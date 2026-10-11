@@ -51,6 +51,7 @@ describe('loadConfig', () => {
       hashSecret: undefined,
       payUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
       returnUrl: undefined,
+      appReturnUrl: undefined,
       ipnUrl: undefined,
       apiUrl: 'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction',
     });
@@ -67,6 +68,7 @@ describe('loadConfig', () => {
       VNPAY_TMN_CODE: 'TMN123',
       VNPAY_HASH_SECRET: 'hash',
       VNPAY_RETURN_URL: 'https://api.example.com/api/payments/vnpay/return',
+      VNPAY_APP_RETURN_URL: 'aicinema://',
       VNPAY_IPN_URL: 'https://api.example.com/api/payments/vnpay/callback',
     });
     expect(config.payments.momo).toMatchObject({
@@ -80,6 +82,7 @@ describe('loadConfig', () => {
       tmnCode: 'TMN123',
       hashSecret: 'hash',
       returnUrl: 'https://api.example.com/api/payments/vnpay/return',
+      appReturnUrl: 'aicinema://',
       ipnUrl: 'https://api.example.com/api/payments/vnpay/callback',
     });
   });
