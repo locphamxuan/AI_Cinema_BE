@@ -17,6 +17,7 @@ describe('DailyRewardService.status', () => {
     dailyCheckIn: { findUnique: jest.fn(), findFirst: jest.fn(), count: jest.fn(), create: jest.fn() },
     rewardRule: { findMany: jest.fn(), findFirst: jest.fn() },
     coinLot: { findMany: jest.fn() },
+    rewardSpin: { count: jest.fn() },
   };
   const wallets = { walletOf: jest.fn() };
   const service = new DailyRewardService(
@@ -27,9 +28,9 @@ describe('DailyRewardService.status', () => {
 
   const wallet = { id: 'w1', mainBalance: 10, bonusBalance: 130 };
   const ladder = [
-    { streakDay: 1, coins: 3, bonusCoins: 0 },
-    { streakDay: 2, coins: 3, bonusCoins: 1 },
-    { streakDay: 3, coins: 5, bonusCoins: 2 },
+    { streakDay: 1, bonusCoins: 3, grantsSpin: false },
+    { streakDay: 2, bonusCoins: 4, grantsSpin: false },
+    { streakDay: 7, bonusCoins: 30, grantsSpin: true },
   ];
 
   beforeEach(() => {
@@ -37,6 +38,7 @@ describe('DailyRewardService.status', () => {
     wallets.walletOf.mockResolvedValue(wallet);
     prisma.rewardRule.findMany.mockResolvedValue(ladder);
     prisma.coinLot.findMany.mockResolvedValue([]);
+    prisma.rewardSpin.count.mockResolvedValue(1);
   });
 
   it('reports today as claimed with the streak it paid', async () => {
@@ -52,6 +54,8 @@ describe('DailyRewardService.status', () => {
     expect(status).toMatchObject({ checkedInToday: true, streakDay: 3, mainBalance: 10, bonusBalance: 130 });
     expect(status.streakContinued).toBe(false);
     expect(status.ladder).toHaveLength(3);
+    expect(status.ladder[2]).toEqual({ streakDay: 7, bonusCoins: 30, grantsSpin: true });
+    expect(status.availableSpins).toBe(1);
   });
 
   it('starts a fresh streak after a gap', async () => {
@@ -65,12 +69,12 @@ describe('DailyRewardService.status', () => {
     const status = await service.status('u1');
 
     expect(status).toMatchObject({ checkedInToday: false, streakDay: 0 });
-    expect(status.reward).toMatchObject({ streakDay: 1, coins: 3 });
+    expect(status.reward).toEqual({ streakDay: 1, bonusCoins: 3, grantsSpin: false });
   });
 });
 
 describe('DailyRewardService.checkIn', () => {
-  const tx = { dailyCheckIn: { create: jest.fn() } };
+  const tx = { dailyCheckIn: { create: jest.fn() }, rewardSpin: { create: jest.fn() } };
   const prisma = {
     $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
     dailyCheckIn: { findUnique: jest.fn(), findFirst: jest.fn(), count: jest.fn(), create: jest.fn() },
@@ -85,8 +89,8 @@ describe('DailyRewardService.checkIn', () => {
     wallets as unknown as WalletService,
   );
 
-  const rule = { id: 'rule-3', streakDay: 3, coins: 5, bonusCoins: 2, isActive: true };
-  const movement = { transactionId: 'tx-3', mainCoins: 5, bonusCoins: 2, mainBalance: 15, bonusBalance: 132 };
+  const rule = { id: 'rule-3', streakDay: 3, bonusCoins: 7, grantsSpin: false, isActive: true };
+  const movement = { transactionId: 'tx-3', mainCoins: 0, bonusCoins: 7, mainBalance: 10, bonusBalance: 137 };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -94,11 +98,14 @@ describe('DailyRewardService.checkIn', () => {
     prisma.dailyCheckIn.findUnique.mockResolvedValue(null);
     prisma.rewardRule.findFirst.mockResolvedValue(rule);
     coins.credit.mockResolvedValue(movement);
-    tx.dailyCheckIn.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ ...data }));
+    tx.dailyCheckIn.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
+      id: 'ci-1',
+      ...data,
+    }));
     prisma.dailyCheckIn.count.mockResolvedValue(0);
   });
 
-  it('continues yesterday’s streak and pays the ladder (step 12)', async () => {
+  it('continues yesterday’s streak and pays the ladder in bonus Coins only (step 12, BR-05)', async () => {
     const today = businessDay();
     prisma.dailyCheckIn.findFirst.mockResolvedValue({
       checkInDate: new Date(today.getTime() - 86_400_000),
@@ -112,8 +119,7 @@ describe('DailyRewardService.checkIn', () => {
       'w1',
       expect.objectContaining({
         entryType: 'DAILY_REWARD',
-        mainAmount: 5,
-        bonusAmount: 2,
+        bonusAmount: 7,
         idempotencyKey: 'key-1',
       }),
       today,
@@ -123,18 +129,38 @@ describe('DailyRewardService.checkIn', () => {
         userId: 'u1',
         streakDay: 3,
         streakContinued: true,
-        coinsGranted: 5,
-        bonusGranted: 2,
+        bonusGranted: 7,
         coinTransactionId: 'tx-3',
         ruleId: 'rule-3',
       }),
     });
-    expect(result).toMatchObject({ streakDay: 3, streakContinued: true, coinsGranted: 5, bonusGranted: 2 });
+    expect(coins.credit).toHaveBeenCalledWith(
+      tx,
+      'w1',
+      expect.not.objectContaining({ mainAmount: expect.anything() }),
+      expect.anything(),
+    );
+    expect(result).toMatchObject({ streakDay: 3, streakContinued: true, bonusGranted: 7, spinGranted: false });
+    expect(tx.rewardSpin.create).not.toHaveBeenCalled();
+  });
+
+  it('grants a reward spin on the milestone day (BR-09)', async () => {
+    const today = businessDay();
+    prisma.dailyCheckIn.findFirst.mockResolvedValue({
+      checkInDate: new Date(today.getTime() - 86_400_000),
+      streakDay: 6,
+    });
+    prisma.rewardRule.findFirst.mockResolvedValue({ ...rule, streakDay: 7, bonusCoins: 30, grantsSpin: true });
+
+    const result = await service.checkIn('u1');
+
+    expect(result).toMatchObject({ streakDay: 7, spinGranted: true });
+    expect(tx.rewardSpin.create).toHaveBeenCalledWith({ data: { userId: 'u1', checkInId: 'ci-1' } });
   });
 
   it('starts at day one after a gap', async () => {
     prisma.dailyCheckIn.findFirst.mockResolvedValue(null);
-    prisma.rewardRule.findFirst.mockResolvedValue({ ...rule, streakDay: 1, coins: 3, bonusCoins: 0 });
+    prisma.rewardRule.findFirst.mockResolvedValue({ ...rule, streakDay: 1, bonusCoins: 3 });
 
     const result = await service.checkIn('u1');
 
