@@ -34,6 +34,12 @@ export class CoinTopUpService {
     private readonly settlement: TopUpSettlementService,
   ) {}
 
+  /** What the top-up screen needs to quote Coins: the rate and the accepted VND range. */
+  async options() {
+    const { coinTopUpMinVnd, coinTopUpMaxVnd, coinRateVnd } = await this.settings.get();
+    return { rateVnd: coinRateVnd, minVnd: coinTopUpMinVnd, maxVnd: coinTopUpMaxVnd };
+  }
+
   /**
    * Creates the order with its first payment attempt and hands back where to send the member.
    * `clientIp` ends up in the VNPay order; MoMo does not need it.
