@@ -206,26 +206,6 @@ export class CoinTopUpService {
       await handled({ handledAt: new Date() });
       return this.lookups.topUpView(topUp.id);
     }
-    if (callback.amountVnd !== payment.amountVnd) {
-      const failureReason = `The gateway reported ${callback.amountVnd} VND instead of ${payment.amountVnd} VND`;
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.FAILED, failureReason },
-      });
-      await this.prisma.coinTopUp.update({
-        where: { id: topUp.id },
-        data: { status: TopUpStatus.FAILED, failureReason },
-      });
-      await handled({ handledAt: new Date(), errorMessage: failureReason });
-      throw new UnprocessableEntityException({
-        message: 'The settled amount does not match the order',
-        details: {
-          reason: TOPUP_REASON.AMOUNT_MISMATCH,
-          expectedVnd: payment.amountVnd,
-          settledVnd: callback.amountVnd,
-        },
-      });
-    }
     try {
       const settled = await this.settlement.settle({
         paymentId: payment.id,
