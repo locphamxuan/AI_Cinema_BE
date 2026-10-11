@@ -428,7 +428,7 @@ describe('SubscriptionService reads', () => {
 });
 
 describe('SubscriptionService.cancelByAdmin', () => {
-  const tx = { subscription: { update: jest.fn() } };
+  const tx = { subscription: { updateMany: jest.fn(), findUnique: jest.fn() } };
   const prisma = {
     $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
     subscription: { findFirst: jest.fn(), findUnique: jest.fn() },
@@ -445,17 +445,16 @@ describe('SubscriptionService.cancelByAdmin', () => {
     auditLog as unknown as AuditLogService,
   );
 
-  it('ends the plan now with an audit trail', async () => {
-    tx.subscription.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
-      id: 'sub-1',
-      userId: 'u1',
-      ...data,
-    }));
+  beforeEach(() => jest.clearAllMocks());
+
+  it('ends an open plan now with an audit trail', async () => {
+    tx.subscription.updateMany.mockResolvedValue({ count: 1 });
+    tx.subscription.findUnique.mockResolvedValue({ id: 'sub-1', userId: 'u1', status: SubscriptionStatus.CANCELLED });
 
     const result = await service.cancelByAdmin('sub-1', 'admin-1', 'fraud');
 
-    expect(tx.subscription.update).toHaveBeenCalledWith({
-      where: { id: 'sub-1' },
+    expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sub-1', status: { in: ['PENDING', 'ACTIVE', 'PAST_DUE'] } },
       data: expect.objectContaining({ status: SubscriptionStatus.CANCELLED, endReason: 'CANCELLED_BY_ADMIN' }),
     });
     expect(auditLog.record).toHaveBeenCalledWith(
@@ -464,5 +463,24 @@ describe('SubscriptionService.cancelByAdmin', () => {
     );
     expect(notifications.notify).toHaveBeenCalledWith(['u1'], expect.anything(), tx);
     expect(result).toMatchObject({ status: SubscriptionStatus.CANCELLED });
+  });
+
+  it('keeps the history of a plan that already ended', async () => {
+    tx.subscription.updateMany.mockResolvedValue({ count: 0 });
+    tx.subscription.findUnique.mockResolvedValue({ id: 'sub-1', userId: 'u1', status: SubscriptionStatus.EXPIRED });
+
+    await expect(service.cancelByAdmin('sub-1', 'admin-1')).rejects.toMatchObject({
+      response: { details: { reason: SUB_REASON.ENDED } },
+    });
+    expect(auditLog.record).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown plan', async () => {
+    tx.subscription.updateMany.mockResolvedValue({ count: 0 });
+    tx.subscription.findUnique.mockResolvedValue(null);
+
+    await expect(service.cancelByAdmin('missing', 'admin-1')).rejects.toMatchObject({
+      response: { details: { reason: SUB_REASON.NOT_FOUND } },
+    });
   });
 });
