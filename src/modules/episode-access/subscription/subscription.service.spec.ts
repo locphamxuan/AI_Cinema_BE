@@ -39,7 +39,15 @@ describe('SubscriptionService.subscribe', () => {
     auditLog as unknown as AuditLogService,
   );
 
-  const plan = { id: 'p1', code: 'MONTHLY', name: 'Monthly', durationDays: 30, isActive: true, isFree: false };
+  const plan = {
+    id: 'p1',
+    code: 'MONTHLY',
+    name: 'Monthly',
+    period: 'MONTHLY',
+    durationDays: 30,
+    isActive: true,
+    isFree: false,
+  };
   const price = { id: 'price-1', priceCoins: 900 };
 
   beforeEach(() => {

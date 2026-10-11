@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PlanPeriod } from '@prisma/client';
-import { IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
 export class UpdateMembershipPlanRequestDto {
   @ApiPropertyOptional()
@@ -14,8 +14,8 @@ export class UpdateMembershipPlanRequestDto {
   @IsOptional()
   description?: string;
 
-  @ApiPropertyOptional({ enum: PlanPeriod })
-  @IsEnum(PlanPeriod)
+  @ApiPropertyOptional({ enum: [PlanPeriod.MONTHLY] })
+  @IsIn([PlanPeriod.MONTHLY])
   @IsOptional()
   period?: PlanPeriod;
 

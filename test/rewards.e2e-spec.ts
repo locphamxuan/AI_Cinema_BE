@@ -155,4 +155,20 @@ describe('Daily check-in and the reward wheel (e2e)', () => {
 
     await admin.patch(`/admin/membership-plans/${plan.id}`, { isActive: false });
   });
+
+  it('only allows monthly paid plans to be created or reconfigured', async () => {
+    await admin.post(
+      '/admin/membership-plans',
+      { code: `e2e_weekly_${stamp}`, name: 'Unsupported weekly plan', period: 'WEEKLY', durationDays: 7 },
+      400,
+    );
+
+    const plan = await admin.post(
+      '/admin/membership-plans',
+      { code: `e2e_monthly_only_${stamp}`, name: 'Monthly only', period: 'MONTHLY', durationDays: 30 },
+      201,
+    );
+    await admin.patch(`/admin/membership-plans/${plan.id}`, { period: 'YEARLY' }, 400);
+    await admin.patch(`/admin/membership-plans/${plan.id}`, { isActive: false });
+  });
 });

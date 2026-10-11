@@ -4,7 +4,11 @@ import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.s
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 
-export const PLAN_REASON = { NOT_ACTIVE: 'PLAN_NOT_ACTIVE', NOT_PRICED: 'PLAN_NOT_PRICED' } as const;
+export const PLAN_REASON = {
+  NOT_ACTIVE: 'PLAN_NOT_ACTIVE',
+  NOT_PRICED: 'PLAN_NOT_PRICED',
+  UNSUPPORTED_PERIOD: 'UNSUPPORTED_PLAN_PERIOD',
+} as const;
 
 /** The plan screen reads the price in force: the newest row with no effectiveTo. */
 const PRICE_IN_FORCE: Prisma.MembershipPlan$pricesArgs = {
@@ -47,7 +51,11 @@ export class MembershipPlanService {
   /** The plans on sale, free plan first order; a Guest sees the same list as a Member. */
   listPublic() {
     return this.prisma.membershipPlan
-      .findMany({ where: { isActive: true }, select: PLAN_VIEW, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] })
+      .findMany({
+        where: { isActive: true, OR: [{ isFree: true }, { period: PlanPeriod.MONTHLY }] },
+        select: PLAN_VIEW,
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      })
       .then((plans) => plans.map(viewOf));
   }
 
@@ -205,6 +213,12 @@ export async function purchasablePlan(
     throw new UnprocessableEntityException({
       message: 'The free plan needs no subscription',
       details: { reason: PLAN_REASON.NOT_PRICED },
+    });
+  }
+  if (plan.period !== PlanPeriod.MONTHLY) {
+    throw new UnprocessableEntityException({
+      message: 'Only monthly paid plans are available',
+      details: { reason: PLAN_REASON.UNSUPPORTED_PERIOD, period: plan.period },
     });
   }
   const price = await currentPrice(tx, planId);
