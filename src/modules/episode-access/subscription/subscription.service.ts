@@ -71,8 +71,18 @@ export class SubscriptionService {
   async subscribe(userId: string, planId: string, _idempotencyKey?: string) {
     return this.prisma.$transaction(async (tx) => {
       const { plan, price } = await purchasablePlan(tx, planId);
-      await this.assertNoOpenPlan(tx, userId);
       const now = new Date();
+      // An intent never paid for is only a quote: a new quote replaces it instead of locking the
+      // member out of every plan for good.
+      await tx.subscription.updateMany({
+        where: { userId, status: SubscriptionStatus.PENDING },
+        data: {
+          status: SubscriptionStatus.CANCELLED,
+          endedAt: now,
+          endReason: SubscriptionEndReason.CANCELLED_BY_MEMBER,
+        },
+      });
+      await this.assertNoOpenPlan(tx, userId);
       const periodEnd = new Date(now.getTime() + plan.durationDays * DAY_MS);
       const { subscriptionCancelWindowHours } = await this.settings.get();
       const cancelDeadline = windowEndOf(periodEnd, subscriptionCancelWindowHours);

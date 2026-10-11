@@ -13,7 +13,7 @@ describe('SubscriptionService.subscribe', () => {
   const tx = {
     membershipPlan: { findUnique: jest.fn() },
     membershipPlanPrice: { findFirst: jest.fn() },
-    subscription: { count: jest.fn(), create: jest.fn() },
+    subscription: { count: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
@@ -59,6 +59,18 @@ describe('SubscriptionService.subscribe', () => {
       id: 'sub-1',
       ...data,
     }));
+  });
+
+  it('replaces an earlier unpaid intent instead of refusing the new quote', async () => {
+    await service.subscribe('u1', 'p1');
+
+    expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', status: SubscriptionStatus.PENDING },
+      data: expect.objectContaining({ status: SubscriptionStatus.CANCELLED }),
+    });
+    expect(tx.subscription.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.subscription.count.mock.invocationCallOrder[0],
+    );
   });
 
   it('quotes a PENDING intent without moving any Coin (step 10)', async () => {
