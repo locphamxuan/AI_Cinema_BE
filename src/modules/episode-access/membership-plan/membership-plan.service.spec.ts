@@ -24,8 +24,8 @@ describe('purchasablePlan', () => {
     tx.membershipPlan.findUnique.mockResolvedValue(null);
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: 'PLAN_NOT_FOUND',
         },
@@ -40,8 +40,8 @@ describe('purchasablePlan', () => {
     });
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_ACTIVE,
         },
@@ -61,8 +61,8 @@ describe('purchasablePlan', () => {
     tx.membershipPlanPrice.findFirst.mockResolvedValue(null);
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_PRICED,
         },
@@ -163,8 +163,8 @@ describe('MembershipPlanService.setPrice', () => {
     });
 
     await expect(service.setPrice('p1', 100, new Date(), 'admin-1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_PRICED,
         },

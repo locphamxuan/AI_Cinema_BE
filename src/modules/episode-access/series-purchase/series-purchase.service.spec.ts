@@ -104,8 +104,8 @@ describe('SeriesPurchaseService.purchase', () => {
       prisma.movie.findFirst.mockResolvedValue(row);
 
       await expect(service.purchase('m1', user)).rejects.toMatchObject({
+        status: 422,
         response: {
-          statusCode: 422,
           details: {
             reason: 'SERIES_NOT_SOLD',
           },
@@ -126,8 +126,8 @@ describe('SeriesPurchaseService.purchase', () => {
     tx.episodeAccess.count.mockResolvedValue(counts.ownedEpisodes);
 
     await expect(service.purchase('m1', user)).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: 'SERIES_ACCESS_ALREADY_OWNED',
         },

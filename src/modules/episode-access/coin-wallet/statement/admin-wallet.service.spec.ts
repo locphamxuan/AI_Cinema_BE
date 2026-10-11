@@ -28,8 +28,8 @@ describe('AdminWalletService.wallet', () => {
     wallets.adminView.mockResolvedValue(null);
 
     await expect(service.wallet('ghost')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: 'WALLET_NOT_FOUND',
         },
