@@ -47,6 +47,8 @@ model Episode {
     priceAlerts        PriceAlert[]
     changeRequests     ProjectChangeRequest[]
     accesses           EpisodeAccess[]
+    streamingSessions  StreamingSession[]
+    watchProgresses    WatchProgress[]
 
     @@unique([movieId, episodeNumber])
     @@index([movieId, status])

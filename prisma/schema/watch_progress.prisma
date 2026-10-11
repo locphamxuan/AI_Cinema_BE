@@ -1,0 +1,23 @@
+/// Saved resume position of one member for one episode (Main Flow 3 steps 8/9/10/19/20).
+/// One row per (userId, episodeId). Guests have no row and always restart from 0. Heartbeats
+/// UPDATE this row on a throttle, never INSERT per heartbeat.
+model WatchProgress {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  episodeId       String    @map("episode_id") @db.Uuid
+  positionSeconds Int       @default(0) @map("position_seconds")
+  /// Duration snapshot used to compute the completion percentage.
+  durationSeconds Int?      @map("duration_seconds")
+  completed       Boolean   @default(false)
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz(6)
+  lastWatchedAt   DateTime  @default(now()) @map("last_watched_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, episodeId])
+  @@index([userId, lastWatchedAt])
+  @@map("watch_progress")
+}
