@@ -1,0 +1,55 @@
+enum EpisodeStatus {
+    DRAFT
+    AWAITING_MEDIA
+    PROCESSING
+    IN_REVIEW
+    CHANGES_REQUESTED
+    APPROVED
+    LABELED
+    COMPLIANCE_PASSED
+    SCHEDULED
+    PUBLISHED
+    UNPUBLISHED
+}
+
+/// The composite key to seasons (season_id, movie_id) keeps an episode in a season of its own movie.
+model Episode {
+    id                    String        @id @default(uuid()) @db.Uuid
+    movieId               String        @map("movie_id") @db.Uuid
+    seasonId              String        @map("season_id") @db.Uuid
+    /// Numbered across the whole movie, used by Free Starter Episodes (BR-03).
+    episodeNumber         Int           @map("episode_number")
+    title                 String        @db.VarChar(255)
+    synopsis              String?       @db.Text
+    thumbnailUrl          String?       @map("thumbnail_url") @db.VarChar(500)
+    status                EpisodeStatus @default(DRAFT)
+    /// BR-31: set by the Reviewer, no platform limit.
+    targetDurationSeconds Int           @map("target_duration_seconds")
+    /// Set by the Reviewer when creating the project; the studio due date cannot be later.
+    /// Null only on episodes created before milestones existed.
+    milestoneDate         DateTime?     @map("milestone_date") @db.Date
+    /// BR-38: when the studio must deliver.
+    dueDate               DateTime?     @map("due_date") @db.Date
+    /// BR-14: the reviewed version that gets published.
+    approvedMediaAssetId  String?       @unique @map("approved_media_asset_id") @db.Uuid
+    /// BR-29: null until the Reviewer prices the episode.
+    coinPrice             Int?          @map("coin_price")
+    /// BR-56: taken down to be fixed; players show it as under maintenance. Null once released again.
+    revisionStartedAt     DateTime?     @map("revision_started_at") @db.Timestamptz(6)
+    createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+    movie              Movie                  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    season             Season                 @relation(fields: [seasonId, movieId], references: [id, movieId], onDelete: Cascade)
+    approvedMediaAsset MediaAsset?            @relation("EpisodeApprovedMedia", fields: [approvedMediaAssetId], references: [id], onDelete: SetNull)
+    mediaAssets        MediaAsset[]           @relation("EpisodeMedia")
+    publications       Publication[]
+    priceAlerts        PriceAlert[]
+    changeRequests     ProjectChangeRequest[]
+    accesses           EpisodeAccess[]
+
+    @@unique([movieId, episodeNumber])
+    @@index([movieId, status])
+    @@index([dueDate])
+    @@map("episodes")
+}

@@ -1,0 +1,13 @@
+/// WebVTT subtitles delivered with a media version.
+model MediaSubtitle {
+    id           String  @id @default(uuid()) @db.Uuid
+    mediaAssetId String  @map("media_asset_id") @db.Uuid
+    language     String  @db.VarChar(10)
+    fileUrl      String  @map("file_url") @db.VarChar(500)
+    isDefault    Boolean @default(false) @map("is_default")
+
+    mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+    @@unique([mediaAssetId, language])
+    @@map("media_subtitles")
+}

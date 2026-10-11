@@ -1,0 +1,26 @@
+enum EmailStatus {
+    QUEUED
+    SENT
+    FAILED
+}
+
+/// Outgoing email: only OTP codes and the studio brief (BR-53).
+model EmailMessage {
+    id             String      @id @default(uuid()) @db.Uuid
+    toEmail        String      @map("to_email") @db.VarChar(255)
+    /// STUDIO_BRIEF / OTP
+    template       String      @db.VarChar(100)
+    subject        String      @db.VarChar(255)
+    payload        Json?       @db.JsonB
+    attachmentKeys String[]    @default([]) @map("attachment_keys")
+    status         EmailStatus @default(QUEUED)
+    attempts       Int         @default(0)
+    errorMessage   String?     @map("error_message") @db.Text
+    sentAt         DateTime?   @map("sent_at") @db.Timestamptz(6)
+    createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    studioHandoffs StudioHandoff[]
+
+    @@index([status])
+    @@map("email_messages")
+}
