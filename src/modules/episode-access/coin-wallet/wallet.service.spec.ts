@@ -69,8 +69,8 @@ describe('WalletService.affordability', () => {
     });
 
     await expect(service.assertAffordable('u1', 25)).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'INSUFFICIENT_COINS',
         },

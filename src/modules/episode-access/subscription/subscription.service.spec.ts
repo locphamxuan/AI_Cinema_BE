@@ -87,8 +87,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.subscription.count.mockResolvedValue(1);
 
     await expect(service.subscribe('u1', 'p1')).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: SUB_REASON.EXISTS,
         },
@@ -102,8 +102,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.membershipPlan.findUnique.mockResolvedValue(null);
 
     await expect(service.subscribe('u1', 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: 'PLAN_NOT_FOUND',
         },
@@ -130,8 +130,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.membershipPlanPrice.findFirst.mockResolvedValue(null);
 
     await expect(service.subscribe('u1', 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'PLAN_NOT_PRICED',
         },
@@ -222,8 +222,8 @@ describe('SubscriptionService.activate', () => {
     });
 
     await expect(service.activate('u1', 'sub-1')).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: SUB_REASON.NOT_PENDING,
         },
@@ -237,8 +237,8 @@ describe('SubscriptionService.activate', () => {
     prisma.subscription.findFirst.mockResolvedValue(null);
 
     await expect(service.activate('u1', 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: SUB_REASON.NOT_FOUND,
         },
@@ -253,8 +253,8 @@ describe('SubscriptionService.activate', () => {
     });
 
     await expect(service.activate('u1', 'sub-1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'PLAN_NOT_ACTIVE',
         },
@@ -330,8 +330,8 @@ describe('SubscriptionService auto-renew toggles', () => {
     });
 
     await expect(service.cancelAutoRenew('u1', 'sub-1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: SUB_REASON.WINDOW_CLOSED,
         },

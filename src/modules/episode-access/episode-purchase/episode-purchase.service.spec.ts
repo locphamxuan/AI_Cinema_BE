@@ -111,8 +111,8 @@ describe('EpisodePurchaseService.purchase', () => {
     prisma.episode.findFirst.mockResolvedValue(null);
 
     await expect(service.purchase('missing', user)).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: 'EPISODE_NOT_PUBLISHED',
         },

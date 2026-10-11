@@ -148,8 +148,8 @@ describe('DailyRewardService.checkIn', () => {
     });
 
     await expect(service.checkIn('u1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: CHECKIN_REASON.ALREADY_TODAY,
         },
@@ -164,8 +164,8 @@ describe('DailyRewardService.checkIn', () => {
     prisma.rewardRule.findFirst.mockResolvedValue(null);
 
     await expect(service.checkIn('u1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'NO_REWARD_TODAY',
         },
@@ -181,8 +181,8 @@ describe('DailyRewardService.checkIn', () => {
     prisma.dailyCheckIn.count.mockResolvedValue(1);
 
     await expect(service.checkIn('u1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: CHECKIN_REASON.ALREADY_TODAY,
         },
