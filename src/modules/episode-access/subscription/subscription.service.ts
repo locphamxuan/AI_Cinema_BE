@@ -35,6 +35,7 @@ export const SUB_REASON = {
   NOT_PENDING: 'SUBSCRIPTION_NOT_PENDING',
   WINDOW_CLOSED: 'CANCELLATION_WINDOW_CLOSED',
   NOT_FOUND: 'SUBSCRIPTION_NOT_FOUND',
+  ENDED: 'SUBSCRIPTION_ENDED',
 } as const;
 
 /** A subscription counts as open while it grants or may still grant access. */
@@ -71,8 +72,18 @@ export class SubscriptionService {
   async subscribe(userId: string, planId: string, _idempotencyKey?: string) {
     return this.prisma.$transaction(async (tx) => {
       const { plan, price } = await purchasablePlan(tx, planId);
-      await this.assertNoOpenPlan(tx, userId);
       const now = new Date();
+      // An intent never paid for is only a quote: a new quote replaces it instead of locking the
+      // member out of every plan for good.
+      await tx.subscription.updateMany({
+        where: { userId, status: SubscriptionStatus.PENDING },
+        data: {
+          status: SubscriptionStatus.CANCELLED,
+          endedAt: now,
+          endReason: SubscriptionEndReason.CANCELLED_BY_MEMBER,
+        },
+      });
+      await this.assertNoOpenPlan(tx, userId);
       const periodEnd = new Date(now.getTime() + plan.durationDays * DAY_MS);
       const { subscriptionCancelWindowHours } = await this.settings.get();
       const cancelDeadline = windowEndOf(periodEnd, subscriptionCancelWindowHours);
@@ -312,12 +323,15 @@ export class SubscriptionService {
     return { ...row, plan: planOf(plan), user, cycles };
   }
 
-  /** Admin override: the plan ends now, whoever asked for it. */
+  /** Admin override: an open plan ends now, whoever asked for it; an ended one keeps its history. */
   async cancelByAdmin(subscriptionId: string, actorId: string, reason?: string) {
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      const subscription = await tx.subscription.update({
-        where: { id: subscriptionId },
+      const ended = await tx.subscription.updateMany({
+        where: {
+          id: subscriptionId,
+          status: { in: [SubscriptionStatus.PENDING, SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE] },
+        },
         data: {
           status: SubscriptionStatus.CANCELLED,
           autoRenew: false,
@@ -327,6 +341,13 @@ export class SubscriptionService {
           nextRenewalAt: null,
         },
       });
+      const subscription = await tx.subscription.findUnique({ where: { id: subscriptionId } });
+      if (!subscription) {
+        throw new NotFoundException({ message: 'Subscription not found', details: { reason: SUB_REASON.NOT_FOUND } });
+      }
+      if (!ended.count) {
+        throw new ConflictException({ message: 'This plan has already ended', details: { reason: SUB_REASON.ENDED } });
+      }
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.SUBSCRIPTION_CANCELLED,

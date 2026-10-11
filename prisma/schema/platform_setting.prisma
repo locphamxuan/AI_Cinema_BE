@@ -16,8 +16,8 @@ model PlatformSetting {
   /// Hours before the renewal date a member may still stop auto-renew; a later request is
   /// refused and the renewal goes through.
   subscriptionCancelWindowHours   Int      @default(24) @map("subscription_cancel_window_hours")
-  /// Hours auto-renew keeps retrying a cycle the wallet could not cover before the membership
-  /// ends. Access runs on until the end of the period already paid for.
+  /// Hours a failed renewal stays PAST_DUE while the sweeper retries it automatically; no access
+  /// meanwhile. 0 = no grace, the plan ends at once (BR-30).
   planRenewalGraceHours           Int      @default(48) @map("plan_renewal_grace_hours")
   /// Bonus Coins a new account is given; 0 = none.
   newMemberBonusCoins             Int      @default(0) @map("new_member_bonus_coins")

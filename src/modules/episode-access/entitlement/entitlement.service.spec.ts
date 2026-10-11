@@ -9,7 +9,6 @@ import { EntitlementService } from './entitlement.service';
 describe('EntitlementService.listFor', () => {
   const prisma = {
     episodeAccess: { findMany: jest.fn(), count: jest.fn() },
-    seriesAccess: { findMany: jest.fn(), count: jest.fn() },
   };
   const service = new EntitlementService(
     prisma as unknown as PrismaService,
@@ -32,16 +31,15 @@ describe('EntitlementService.listFor', () => {
     jest.clearAllMocks();
     prisma.episodeAccess.findMany.mockResolvedValue([episodeRow]);
     prisma.episodeAccess.count.mockResolvedValue(1);
-    prisma.seriesAccess.findMany.mockResolvedValue([]);
   });
 
-  it('lists bought episodes with just enough card data, plus the bundles', async () => {
+  it('lists bought episodes with just enough card data', async () => {
     const result = await service.listFor({ userId: 'u1' }, query);
 
     expect(prisma.episodeAccess.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'u1', revokedAt: null } }),
     );
-    expect(result.episodes.data).toEqual([
+    expect(result.data).toEqual([
       {
         id: 'access-1',
         source: 'EPISODE_PURCHASE',
@@ -51,17 +49,13 @@ describe('EntitlementService.listFor', () => {
         movie: { id: 'm1', title: 'M1' },
       },
     ]);
-    expect(result.series).toEqual([]);
   });
 
-  it('forwards the source filter to both lists', async () => {
-    await service.listFor({ userId: 'u1', source: 'SERIES_PURCHASE' }, query);
+  it('forwards the source filter', async () => {
+    await service.listFor({ userId: 'u1', source: 'ADMIN_GRANT' }, query);
 
     expect(prisma.episodeAccess.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ source: 'SERIES_PURCHASE' }) }),
-    );
-    expect(prisma.seriesAccess.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ source: 'SERIES_PURCHASE' }) }),
+      expect.objectContaining({ where: expect.objectContaining({ source: 'ADMIN_GRANT' }) }),
     );
   });
 });
@@ -69,7 +63,7 @@ describe('EntitlementService.listFor', () => {
 describe('EntitlementService refunds', () => {
   const tx = {
     episodeAccess: { findMany: jest.fn(), update: jest.fn() },
-    seriesAccess: { findMany: jest.fn(), update: jest.fn() },
+    coinTransaction: { findUnique: jest.fn() },
   };
   const wallets = { walletOf: jest.fn().mockResolvedValue({ id: 'w1' }) };
   const coins = { credit: jest.fn().mockResolvedValue({ transactionId: 'tx-r' }) };
@@ -87,9 +81,10 @@ describe('EntitlementService refunds', () => {
     jest.clearAllMocks();
     wallets.walletOf.mockResolvedValue({ id: 'w1' });
     coins.credit.mockResolvedValue({ transactionId: 'tx-r' });
+    tx.coinTransaction.findUnique.mockResolvedValue({ mainAmount: -10, bonusAmount: -15 });
   });
 
-  it('pays episode buyers back into main Coins and revokes the rows (BR-52)', async () => {
+  it('pays episode buyers back main and bonus as they paid, and revokes the rows (BR-52)', async () => {
     tx.episodeAccess.findMany.mockResolvedValue([
       { id: 'a1', userId: 'u1', paidCoins: 25, coinTransactionId: 'tx-0', episode: { movieId: 'm1' } },
       { id: 'a2', userId: 'u2', paidCoins: 0, coinTransactionId: null, episode: { movieId: 'm1' } },
@@ -101,7 +96,7 @@ describe('EntitlementService refunds', () => {
     expect(coins.credit).toHaveBeenCalledWith(
       tx,
       'w1',
-      expect.objectContaining({ entryType: 'REFUND', mainAmount: 25, reversesId: 'tx-0' }),
+      expect.objectContaining({ entryType: 'REFUND', mainAmount: 10, bonusAmount: 15, reversesId: 'tx-0' }),
     );
     expect(tx.episodeAccess.update).toHaveBeenCalledTimes(2);
     expect(tx.episodeAccess.update).toHaveBeenCalledWith({
@@ -119,38 +114,20 @@ describe('EntitlementService refunds', () => {
     expect(notifications.notify).toHaveBeenCalledWith(['u1'], expect.objectContaining({ link: '/wallet' }), tx);
   });
 
-  it('pays series buyers back the same way', async () => {
-    tx.seriesAccess.findMany.mockResolvedValue([
-      { id: 's1', userId: 'u1', movieId: 'm1', paidCoins: 180, coinTransactionId: 'tx-0' },
+  it('pays the whole price back as main Coins when the purchase entry is unknown', async () => {
+    tx.episodeAccess.findMany.mockResolvedValue([
+      { id: 'a3', userId: 'u1', paidCoins: 25, coinTransactionId: null, episode: { movieId: 'm1' } },
     ]);
 
-    await expect(service.refundSeriesRemoval(tx as never, 'm1', 'REMOVAL')).resolves.toBe(1);
+    await service.refundEpisodeRemoval(tx as never, 'ep-1', 'REMOVAL');
 
-    expect(coins.credit).toHaveBeenCalledWith(
-      tx,
-      'w1',
-      expect.objectContaining({ entryType: 'REFUND', mainAmount: 180 }),
-    );
-    expect(tx.seriesAccess.update).toHaveBeenCalledWith({
-      where: { id: 's1' },
-      data: { revokedAt: expect.any(Date), revokeReason: 'REMOVAL' },
-    });
-    expect(auditLog.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: CONTENT_EVENT.SERIES_ACCESS_REVOKED,
-        entityType: 'SeriesAccess',
-        movieId: 'm1',
-      }),
-      tx,
-    );
+    expect(coins.credit).toHaveBeenCalledWith(tx, 'w1', expect.objectContaining({ mainAmount: 25, bonusAmount: 0 }));
   });
 
   it('finds nobody to pay back when nothing was bought', async () => {
     tx.episodeAccess.findMany.mockResolvedValue([]);
-    tx.seriesAccess.findMany.mockResolvedValue([]);
 
     await expect(service.refundEpisodeRemoval(tx as never, 'ep-1', 'REMOVAL')).resolves.toBe(0);
-    await expect(service.refundSeriesRemoval(tx as never, 'm1', 'REMOVAL')).resolves.toBe(0);
     expect(coins.credit).not.toHaveBeenCalled();
   });
 });

@@ -119,6 +119,24 @@ describe('Movie projects (e2e)', () => {
     const download = await creator.download(`/projects/${projectId}/idea-files/${second.id}/content`);
     expect(download.body.equals(PDF)).toBe(true);
     expect(download.type).toContain('application/pdf');
+
+    const script = Buffer.from('Cảnh 1: Nhân vật bước vào rạp phim.\n', 'utf8');
+    const textFile = await reviewer.upload<{ id: string; mimeType: string }>(`/projects/${projectId}/idea-files`, {
+      field: 'file',
+      name: 'kich-ban.txt',
+      content: script,
+    });
+    expect(textFile.mimeType).toBe('text/plain');
+    const textDownload = await creator.download(`/projects/${projectId}/idea-files/${textFile.id}/content`);
+    expect(textDownload.body.equals(script)).toBe(true);
+    expect(textDownload.type).toContain('text/plain');
+
+    await reviewer.upload(
+      `/projects/${projectId}/idea-files`,
+      { field: 'file', name: 'binary.txt', content: Buffer.from([0x4d, 0x5a, 0x00, 0x01]) },
+      {},
+      400,
+    );
   });
 
   it('lets the Admin read and propose but never edit (BR-55)', async () => {

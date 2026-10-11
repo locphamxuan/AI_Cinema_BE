@@ -35,8 +35,6 @@ export const CONTENT_EVENT = {
   COIN_ADJUSTED: 'COIN_ADJUSTED',
   EPISODE_ACCESS_GRANTED: 'GRANTED',
   EPISODE_ACCESS_REVOKED: 'REVOKED',
-  SERIES_ACCESS_GRANTED: 'GRANTED',
-  SERIES_ACCESS_REVOKED: 'REVOKED',
   SUBSCRIPTION_ACTIVATED: 'ACTIVATED',
   SUBSCRIPTION_RENEWED: 'RENEWED',
   SUBSCRIPTION_CANCELLED: 'CANCELLED',
@@ -46,6 +44,9 @@ export const CONTENT_EVENT = {
   MEMBERSHIP_PLAN_PRICE_SET: 'SET',
   REWARD_RULE_CREATED: 'CREATED',
   REWARD_RULE_UPDATED: 'UPDATED',
+  REWARD_PRIZE_CREATED: 'CREATED',
+  REWARD_PRIZE_UPDATED: 'UPDATED',
+  REWARD_SPIN_USED: 'USED',
 } as const;
 
 export type ContentEvent = (typeof CONTENT_EVENT)[keyof typeof CONTENT_EVENT];
@@ -67,8 +68,9 @@ export type AuditEntity =
   | 'CoinWallet'
   | 'CoinTransaction'
   | 'EpisodeAccess'
-  | 'SeriesAccess'
   | 'Subscription'
   | 'MembershipPlan'
   | 'MembershipPlanPrice'
-  | 'RewardRule';
+  | 'RewardRule'
+  | 'RewardPrize'
+  | 'RewardSpin';

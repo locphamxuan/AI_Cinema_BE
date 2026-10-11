@@ -13,7 +13,7 @@ describe('SubscriptionService.subscribe', () => {
   const tx = {
     membershipPlan: { findUnique: jest.fn() },
     membershipPlanPrice: { findFirst: jest.fn() },
-    subscription: { count: jest.fn(), create: jest.fn() },
+    subscription: { count: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
@@ -39,7 +39,15 @@ describe('SubscriptionService.subscribe', () => {
     auditLog as unknown as AuditLogService,
   );
 
-  const plan = { id: 'p1', code: 'MONTHLY', name: 'Monthly', durationDays: 30, isActive: true, isFree: false };
+  const plan = {
+    id: 'p1',
+    code: 'MONTHLY',
+    name: 'Monthly',
+    period: 'MONTHLY',
+    durationDays: 30,
+    isActive: true,
+    isFree: false,
+  };
   const price = { id: 'price-1', priceCoins: 900 };
 
   beforeEach(() => {
@@ -59,6 +67,18 @@ describe('SubscriptionService.subscribe', () => {
       id: 'sub-1',
       ...data,
     }));
+  });
+
+  it('replaces an earlier unpaid intent instead of refusing the new quote', async () => {
+    await service.subscribe('u1', 'p1');
+
+    expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', status: SubscriptionStatus.PENDING },
+      data: expect.objectContaining({ status: SubscriptionStatus.CANCELLED }),
+    });
+    expect(tx.subscription.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.subscription.count.mock.invocationCallOrder[0],
+    );
   });
 
   it('quotes a PENDING intent without moving any Coin (step 10)', async () => {
@@ -87,8 +107,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.subscription.count.mockResolvedValue(1);
 
     await expect(service.subscribe('u1', 'p1')).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: SUB_REASON.EXISTS,
         },
@@ -102,8 +122,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.membershipPlan.findUnique.mockResolvedValue(null);
 
     await expect(service.subscribe('u1', 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: 'PLAN_NOT_FOUND',
         },
@@ -130,8 +150,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.membershipPlanPrice.findFirst.mockResolvedValue(null);
 
     await expect(service.subscribe('u1', 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'PLAN_NOT_PRICED',
         },
@@ -222,8 +242,8 @@ describe('SubscriptionService.activate', () => {
     });
 
     await expect(service.activate('u1', 'sub-1')).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: SUB_REASON.NOT_PENDING,
         },
@@ -237,8 +257,8 @@ describe('SubscriptionService.activate', () => {
     prisma.subscription.findFirst.mockResolvedValue(null);
 
     await expect(service.activate('u1', 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: SUB_REASON.NOT_FOUND,
         },
@@ -253,8 +273,8 @@ describe('SubscriptionService.activate', () => {
     });
 
     await expect(service.activate('u1', 'sub-1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'PLAN_NOT_ACTIVE',
         },
@@ -330,8 +350,8 @@ describe('SubscriptionService auto-renew toggles', () => {
     });
 
     await expect(service.cancelAutoRenew('u1', 'sub-1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: SUB_REASON.WINDOW_CLOSED,
         },
@@ -416,7 +436,7 @@ describe('SubscriptionService reads', () => {
 });
 
 describe('SubscriptionService.cancelByAdmin', () => {
-  const tx = { subscription: { update: jest.fn() } };
+  const tx = { subscription: { updateMany: jest.fn(), findUnique: jest.fn() } };
   const prisma = {
     $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
     subscription: { findFirst: jest.fn(), findUnique: jest.fn() },
@@ -433,17 +453,16 @@ describe('SubscriptionService.cancelByAdmin', () => {
     auditLog as unknown as AuditLogService,
   );
 
-  it('ends the plan now with an audit trail', async () => {
-    tx.subscription.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
-      id: 'sub-1',
-      userId: 'u1',
-      ...data,
-    }));
+  beforeEach(() => jest.clearAllMocks());
+
+  it('ends an open plan now with an audit trail', async () => {
+    tx.subscription.updateMany.mockResolvedValue({ count: 1 });
+    tx.subscription.findUnique.mockResolvedValue({ id: 'sub-1', userId: 'u1', status: SubscriptionStatus.CANCELLED });
 
     const result = await service.cancelByAdmin('sub-1', 'admin-1', 'fraud');
 
-    expect(tx.subscription.update).toHaveBeenCalledWith({
-      where: { id: 'sub-1' },
+    expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+      where: { id: 'sub-1', status: { in: ['PENDING', 'ACTIVE', 'PAST_DUE'] } },
       data: expect.objectContaining({ status: SubscriptionStatus.CANCELLED, endReason: 'CANCELLED_BY_ADMIN' }),
     });
     expect(auditLog.record).toHaveBeenCalledWith(
@@ -452,5 +471,24 @@ describe('SubscriptionService.cancelByAdmin', () => {
     );
     expect(notifications.notify).toHaveBeenCalledWith(['u1'], expect.anything(), tx);
     expect(result).toMatchObject({ status: SubscriptionStatus.CANCELLED });
+  });
+
+  it('keeps the history of a plan that already ended', async () => {
+    tx.subscription.updateMany.mockResolvedValue({ count: 0 });
+    tx.subscription.findUnique.mockResolvedValue({ id: 'sub-1', userId: 'u1', status: SubscriptionStatus.EXPIRED });
+
+    await expect(service.cancelByAdmin('sub-1', 'admin-1')).rejects.toMatchObject({
+      response: { details: { reason: SUB_REASON.ENDED } },
+    });
+    expect(auditLog.record).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown plan', async () => {
+    tx.subscription.updateMany.mockResolvedValue({ count: 0 });
+    tx.subscription.findUnique.mockResolvedValue(null);
+
+    await expect(service.cancelByAdmin('missing', 'admin-1')).rejects.toMatchObject({
+      response: { details: { reason: SUB_REASON.NOT_FOUND } },
+    });
   });
 });

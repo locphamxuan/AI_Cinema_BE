@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, UnauthorizedException } from '@n
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { AuthService } from './auth.service';
 import type { SessionTokenService } from './session-token.service';
@@ -20,13 +21,17 @@ const passwordHash = bcrypt.hashSync('Aicinema@123', 4);
 const tokens = { accessToken: 'access', refreshToken: 'refresh', accessTokenExpiresIn: 900 };
 
 describe('AuthService', () => {
-  const prisma = { user: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), create: jest.fn() } };
+  const user = { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), create: jest.fn() };
+  const tx = { user };
+  const prisma = { user, $transaction: jest.fn(<T>(work: (client: typeof tx) => Promise<T>) => work(tx)) };
+  const wallets = { openForNewAccount: jest.fn() };
   const sessions = { issue: jest.fn(), rotate: jest.fn(), revoke: jest.fn() };
   const accessControl = { permissionsOf: () => Promise.resolve(new Set(['project:manage', 'content:review'])) };
   const service = new AuthService(
     prisma as unknown as PrismaService,
     sessions as unknown as SessionTokenService,
     accessControl as unknown as AccessControlService,
+    wallets as unknown as WalletService,
   );
 
   beforeEach(() => {
@@ -82,6 +87,7 @@ describe('AuthService', () => {
       const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: Record<string, unknown> }];
       expect(data).toMatchObject({ email: 'member@example.com', fullName: 'Anh', role: UserRole.MEMBER });
       expect(await bcrypt.compare('Secret123', data.passwordHash as string)).toBe(true);
+      expect(wallets.openForNewAccount).toHaveBeenCalledWith(tx, profile.id);
     });
 
     it('turns away anyone under 18 (BR-54)', async () => {

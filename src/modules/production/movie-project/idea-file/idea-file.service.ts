@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { TextDecoder } from 'node:util';
 import { BadRequestException, Injectable, NotFoundException, StreamableFile } from '@nestjs/common';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
@@ -9,9 +10,31 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 
-/** BR-12: PDF, DOCX or images, at most 20 MB each. */
+/** BR-12: PDF, DOCX, UTF-8 TXT or images, at most 20 MB each. */
 export const IDEA_FILE_MAX_BYTES = 20 * 1024 * 1024;
-const IDEA_FILE_KINDS = [FILE_KINDS.pdf, FILE_KINDS.docx, FILE_KINDS.png, FILE_KINDS.jpeg, FILE_KINDS.webp];
+const IDEA_FILE_KINDS = [
+  FILE_KINDS.pdf,
+  FILE_KINDS.docx,
+  FILE_KINDS.txt,
+  FILE_KINDS.png,
+  FILE_KINDS.jpeg,
+  FILE_KINDS.webp,
+];
+
+function isUtf8Text(file: Buffer): boolean {
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  try {
+    for (let offset = 0; offset < file.length; offset += 64 * 1024) {
+      const chunk = file.subarray(offset, offset + 64 * 1024);
+      if (chunk.includes(0)) return false;
+      decoder.decode(chunk, { stream: offset + chunk.length < file.length });
+    }
+    decoder.decode();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Idea files the Reviewer attaches to the project; they travel with the studio brief. */
 @Injectable()
@@ -28,6 +51,9 @@ export class IdeaFileService {
     const movie = await this.access.movie(movieId, user, 'reviewer');
     assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'add idea files');
     const fileName = safeFileName(file.originalname);
+    if (fileName.toLowerCase().endsWith('.txt') && !isUtf8Text(file.buffer)) {
+      throw new BadRequestException('TXT idea files must contain valid UTF-8 plain text');
+    }
     const kind = detectKind(fileName, file.buffer.subarray(0, 16), IDEA_FILE_KINDS);
 
     const storageKey = `movies/${movieId}/ideas/${randomUUID()}${fileName.slice(fileName.lastIndexOf('.')).toLowerCase()}`;

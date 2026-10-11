@@ -97,8 +97,8 @@ describe('CoinSpendService.spend', () => {
     ]);
 
     await expect(service.spend(tx as unknown as PrismaTx, 'w1', spendRequest(25))).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'INSUFFICIENT_COINS',
           requiredCoins: 25,

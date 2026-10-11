@@ -36,8 +36,8 @@ describe('CoinAdjustService.apply', () => {
         reason: 'split me',
       }),
     ).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: 'SPLIT_THE_CORRECTION',
         },
@@ -61,8 +61,8 @@ describe('CoinAdjustService.apply', () => {
         reason: 'too much',
       }),
     ).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'INSUFFICIENT_COINS',
           requiredCoins: 11,
@@ -105,8 +105,8 @@ describe('CoinAdjustService.apply', () => {
         reason: 'recall',
       }),
     ).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'INSUFFICIENT_COINS',
           missingCoins: 3,

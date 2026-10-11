@@ -1,4 +1,4 @@
-import { PolicyType, UserRole } from '@prisma/client';
+import { RewardPrizeType, PolicyType, UserRole } from '@prisma/client';
 
 /** Development accounts; all of them sign in with SEED_USER_PASSWORD. */
 export const SEED_USERS: { email: string; fullName: string; role: UserRole; dateOfBirth?: Date }[] = [
@@ -74,4 +74,29 @@ export const SEED_POLICIES = [
     documentReference: 'Luật An ninh mạng 2018 và quy định nội dung số',
     content: { summary: 'Không bạo lực cực đoan, nội dung khiêu dâm, kích động thù hận hay vi phạm pháp luật.' },
   },
+];
+
+/** BR-05/BR-09: the default check-in ladder (bonus Coins only); day 7 is the spin milestone. */
+export const SEED_REWARD_RULES = [5, 5, 10, 10, 15, 15, 30].map((bonusCoins, index) => ({
+  code: `streak_day_${index + 1}`,
+  name: `Ngày thứ ${index + 1} trong chuỗi`,
+  streakDay: index + 1,
+  bonusCoins,
+  grantsSpin: index === 6,
+}));
+
+/** BR-09: the default reward wheel; the weights are relative chances. */
+export const SEED_REWARD_PRIZES: {
+  code: string;
+  name: string;
+  type: RewardPrizeType;
+  bonusCoins?: number;
+  planDays?: number;
+  weight: number;
+}[] = [
+  { code: 'bonus_20', name: '20 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 20, weight: 50 },
+  { code: 'bonus_50', name: '50 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 50, weight: 30 },
+  { code: 'bonus_100', name: '100 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 100, weight: 12 },
+  { code: 'plan_1_day', name: '1 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 1, weight: 6 },
+  { code: 'plan_3_days', name: '3 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 3, weight: 2 },
 ];

@@ -17,6 +17,10 @@ export interface GatewayCallback {
 export const textOf = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() ? value.trim() : undefined;
 
+/** A gateway reference: MoMo sends `transId` as a JSON number, the others as text. */
+const refOf = (value: unknown): string | undefined =>
+  typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : textOf(value);
+
 /** Guards Prisma `Uuid` filters: a malformed id must answer 404/400, never a 500. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: string): boolean => UUID_RE.test(value);
@@ -44,7 +48,7 @@ export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback
     textOf(body.eventId) ??
     textOf(body.vnp_TransactionNo) ??
     vnpFallback ??
-    textOf(body.transId) ??
+    refOf(body.transId) ??
     textOf(body.transactionId);
   const signature = textOf(body.signature) ?? textOf(body.vnp_SecureHash) ?? textOf(body.mac);
   if (!signature) {
@@ -84,7 +88,7 @@ export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback
     providerTxnId: textOf(body.providerTxnId) ?? textOf(body.vnp_TxnRef) ?? textOf(body.orderId),
     amountVnd,
     status,
-    providerPaymentId: textOf(body.providerPaymentId) ?? textOf(body.vnp_TransactionNo) ?? textOf(body.transId),
+    providerPaymentId: textOf(body.providerPaymentId) ?? textOf(body.vnp_TransactionNo) ?? refOf(body.transId),
     signature,
     paidAt: paidAt && !Number.isNaN(paidAt.getTime()) ? paidAt : undefined,
   };

@@ -7,7 +7,7 @@ import { currentPrice, MembershipPlanService, PLAN_REASON, purchasablePlan } fro
 
 describe('purchasablePlan', () => {
   const tx = { membershipPlan: { findUnique: jest.fn() }, membershipPlanPrice: { findFirst: jest.fn() } };
-  const plan = { id: 'p1', code: 'MONTHLY', isActive: true, isFree: false };
+  const plan = { id: 'p1', code: 'MONTHLY', period: PlanPeriod.MONTHLY, isActive: true, isFree: false };
   const price = { id: 'price-1', priceCoins: 900 };
 
   beforeEach(() => {
@@ -24,8 +24,8 @@ describe('purchasablePlan', () => {
     tx.membershipPlan.findUnique.mockResolvedValue(null);
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: 'PLAN_NOT_FOUND',
         },
@@ -40,8 +40,8 @@ describe('purchasablePlan', () => {
     });
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_ACTIVE,
         },
@@ -61,13 +61,23 @@ describe('purchasablePlan', () => {
     tx.membershipPlanPrice.findFirst.mockResolvedValue(null);
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_PRICED,
         },
       },
     });
+  });
+
+  it('does not sell a paid non-monthly plan', async () => {
+    tx.membershipPlan.findUnique.mockResolvedValue({ ...plan, period: PlanPeriod.WEEKLY });
+
+    await expect(purchasablePlan(tx as unknown as PrismaTx, 'p1')).rejects.toMatchObject({
+      status: 422,
+      response: { details: { reason: PLAN_REASON.UNSUPPORTED_PERIOD, period: PlanPeriod.WEEKLY } },
+    });
+    expect(tx.membershipPlanPrice.findFirst).not.toHaveBeenCalled();
   });
 });
 
@@ -163,8 +173,8 @@ describe('MembershipPlanService.setPrice', () => {
     });
 
     await expect(service.setPrice('p1', 100, new Date(), 'admin-1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_PRICED,
         },
@@ -207,7 +217,10 @@ describe('MembershipPlanService lists', () => {
     const plans = await service.listPublic();
 
     expect(prisma.membershipPlan.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { isActive: true }, select: expect.anything() }),
+      expect.objectContaining({
+        where: { isActive: true, OR: [{ isFree: true }, { period: PlanPeriod.MONTHLY }] },
+        select: expect.anything(),
+      }),
     );
     expect(plans).toEqual([{ ...row, prices: undefined, priceCoins: 900, priceId: 'price-1' }]);
   });

@@ -11,7 +11,6 @@ describe('AccessDecisionService.decide', () => {
     episode: { findFirst: jest.fn() },
     subscription: { findFirst: jest.fn() },
     episodeAccess: { findFirst: jest.fn() },
-    seriesAccess: { findFirst: jest.fn() },
     membershipPlanPrice: { findFirst: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ freeStarterEpisodeCount: 2, episodeCoinPriceMin: 1 }) };
@@ -27,7 +26,6 @@ describe('AccessDecisionService.decide', () => {
     movieId: 'm1',
     episodeNumber: 5,
     coinPrice: 25,
-    movie: { id: 'm1', title: 'M1', seriesCoinPrice: 180 },
     ...overrides,
   });
 
@@ -37,7 +35,6 @@ describe('AccessDecisionService.decide', () => {
     prisma.episode.findFirst.mockResolvedValue(episode());
     prisma.subscription.findFirst.mockResolvedValue(null);
     prisma.episodeAccess.findFirst.mockResolvedValue(null);
-    prisma.seriesAccess.findFirst.mockResolvedValue(null);
     prisma.membershipPlanPrice.findFirst.mockResolvedValue({ priceCoins: 900 });
     wallets.affordability.mockResolvedValue({
       mainBalance: 10,
@@ -52,7 +49,6 @@ describe('AccessDecisionService.decide', () => {
     await expect(service.decide('missing')).rejects.toThrow(NotFoundException);
     expect(prisma.episode.findFirst).toHaveBeenCalledWith({
       where: { id: 'missing', status: EpisodeStatus.PUBLISHED },
-      include: expect.anything(),
     });
   });
 
@@ -62,9 +58,11 @@ describe('AccessDecisionService.decide', () => {
     await expect(service.decide('ep-1')).resolves.toMatchObject({
       accessGranted: true,
       source: ACCESS_SOURCE.FREE_STARTER,
+      actorType: ACTOR_TYPE.GUEST,
       nextAction: NEXT_ACTION.HANDOFF_TO_PLAYBACK,
     });
     expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
+    await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({ actorType: ACTOR_TYPE.MEMBER });
   });
 
   it('opens an episode priced at zero', async () => {
@@ -97,21 +95,22 @@ describe('AccessDecisionService.decide', () => {
     });
   });
 
-  it('honours a bought episode before the bought series', async () => {
+  it('only counts a plan whose paid period has not ended (BR-11)', async () => {
+    await service.decide('ep-1', 'u1');
+
+    expect(prisma.subscription.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: 'u1', currentPeriodEnd: { gt: expect.any(Date) } }),
+      }),
+    );
+  });
+
+  it('honours a bought episode', async () => {
     prisma.episodeAccess.findFirst.mockResolvedValue({ source: 'EPISODE_PURCHASE' });
 
     await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
       accessGranted: true,
       source: ACCESS_SOURCE.EPISODE_PURCHASE,
-    });
-  });
-
-  it('honours a bought series', async () => {
-    prisma.seriesAccess.findFirst.mockResolvedValue({ source: 'SERIES_PURCHASE' });
-
-    await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
-      accessGranted: true,
-      source: ACCESS_SOURCE.SERIES_PURCHASE,
       nextAction: NEXT_ACTION.HANDOFF_TO_PLAYBACK,
     });
   });
@@ -125,34 +124,21 @@ describe('AccessDecisionService.decide', () => {
       nextAction: NEXT_ACTION.OBTAIN_COIN,
     });
     expect(decision.accessMethods).toEqual(
-      expect.arrayContaining([
-        ACCESS_METHOD.MONTHLY_PLAN,
-        ACCESS_METHOD.UNLOCK_EPISODE,
-        ACCESS_METHOD.UNLOCK_SERIES,
-        ACCESS_METHOD.OBTAIN_COIN,
-      ]),
+      expect.arrayContaining([ACCESS_METHOD.MONTHLY_PLAN, ACCESS_METHOD.UNLOCK_EPISODE, ACCESS_METHOD.OBTAIN_COIN]),
     );
     expect(decision.required).toMatchObject({
       coinPrice: 25,
-      seriesCoinPrice: 180,
       monthlyPlanCoinPrice: 900,
       missingCoins: 15,
       enoughForPlan: false,
     });
   });
 
-  it('points a rich member at the cheaper unlock', async () => {
+  it('points a member who can pay at the episode unlock', async () => {
     wallets.affordability.mockResolvedValue({ mainBalance: 200, bonusBalance: 0, enoughCoins: true, missingCoins: 0 });
 
-    // The episode (25) beats the series bundle (180).
     await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
       nextAction: NEXT_ACTION.UNLOCK_EPISODE,
-    });
-
-    // ...unless the bundle is the cheaper way in.
-    prisma.episode.findFirst.mockResolvedValue(episode({ coinPrice: 200 }));
-    await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
-      nextAction: NEXT_ACTION.UNLOCK_SERIES,
     });
   });
 

@@ -31,7 +31,7 @@ export class TopUpSettlementService {
     idempotencyKey: string;
     paidAt?: Date;
   }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUniqueOrThrow({
         where: { id: input.paymentId },
         select: PAYMENT_VIEW,
@@ -62,14 +62,10 @@ export class TopUpSettlementService {
         const failureReason = `The gateway reported ${input.amountVnd} VND instead of ${payment.amountVnd} VND`;
         await tx.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.FAILED, failureReason } });
         await tx.coinTopUp.update({ where: { id: topUp.id }, data: { status: TopUpStatus.FAILED, failureReason } });
-        throw new UnprocessableEntityException({
-          message: 'The settled amount does not match the order',
-          details: {
-            reason: TOPUP_REASON.AMOUNT_MISMATCH,
-            expectedVnd: payment.amountVnd,
-            settledVnd: input.amountVnd,
-          },
-        });
+        // Commit both FAILED states first; throwing inside the transaction would roll them back.
+        return {
+          amountMismatch: { expectedVnd: payment.amountVnd, settledVnd: input.amountVnd },
+        } as const;
       }
       const movement = await this.coins.credit(
         tx,
@@ -112,8 +108,15 @@ export class TopUpSettlementService {
         },
         tx,
       );
-      return orderView(settledOrder, settledPayment);
+      return { order: orderView(settledOrder, settledPayment) } as const;
     });
+    if ('amountMismatch' in result) {
+      throw new UnprocessableEntityException({
+        message: 'The settled amount does not match the order',
+        details: { reason: TOPUP_REASON.AMOUNT_MISMATCH, ...result.amountMismatch },
+      });
+    }
+    return result.order;
   }
 
   /** The gateway reports the member gave up, or gave the wrong amount. The order mirrors it. */

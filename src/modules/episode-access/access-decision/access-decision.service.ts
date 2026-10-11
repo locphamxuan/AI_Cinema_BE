@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, PlanPeriod, SubscriptionStatus } from '@prisma/client';
+import { EpisodeStatus, PlanPeriod } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { runningPlanWhere } from '../subscription/running-plan';
 import {
   AccessMethod,
   ACCESS_METHOD,
@@ -14,16 +15,13 @@ import {
 import { AccessDecisionDto } from 'src/modules/episode-access/access-decision/dto/access-decision.dto';
 import { AccessRequired } from 'src/modules/episode-access/access-decision/dto/access-required.dto';
 
-/** A plan still gives access while its grace period runs, up to the end of the paid period. */
-const RUNNING_PLAN: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
-
 /** Methods a Guest may still take, in the order the flow offers them. */
 const GUEST_METHODS: AccessMethod[] = [ACCESS_METHOD.REGISTER_OR_LOGIN];
 
 /**
  * Step 6 and 7 of the flow: may this caller watch this episode, and if not, what is left to do.
  * The order of the checks is the order of the flow — Free Starter episode, an episode priced at
- * zero, a running plan, the episode bought, the series bought, and only then the ways left.
+ * zero, a running plan (the whole movie, BR-02), the episode bought, and only then the ways left.
  *
  * A running plan grants every episode without writing a row per episode, which is what keeps
  * episode_accesses small; the bought rights are the rows this service reads here.
@@ -39,7 +37,6 @@ export class AccessDecisionService {
   async decide(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, status: EpisodeStatus.PUBLISHED },
-      include: { movie: { select: { id: true, title: true, seriesCoinPrice: true } } },
     });
     if (!episode) {
       throw new NotFoundException({ message: 'Episode not found', details: { reason: 'EPISODE_NOT_FOUND' } });
@@ -52,12 +49,13 @@ export class AccessDecisionService {
     const base = {
       episodeId: episode.id,
       movieId: episode.movieId,
-      required: { coinPrice, isFreeStarter, seriesCoinPrice: episode.movie.seriesCoinPrice },
+      required: { coinPrice, isFreeStarter },
     };
 
     // The free rules need no account: anyone may watch these.
-    if (isFreeStarter) return granted(base, ACCESS_SOURCE.FREE_STARTER);
-    if (coinPrice === 0) return granted(base, ACCESS_SOURCE.FREE);
+    const actor = userId ? ACTOR_TYPE.MEMBER : ACTOR_TYPE.GUEST;
+    if (isFreeStarter) return granted(base, ACCESS_SOURCE.FREE_STARTER, actor);
+    if (coinPrice === 0) return granted(base, ACCESS_SOURCE.FREE, actor);
 
     if (!userId) {
       return {
@@ -78,14 +76,13 @@ export class AccessDecisionService {
     userId: string,
     base: { episodeId: string; movieId: string; required: AccessDecisionDto['required'] },
   ): Promise<AccessDecisionDto> {
-    const [plan, episodeAccess, seriesAccess, planPrice] = await Promise.all([
+    const [plan, episodeAccess, planPrice] = await Promise.all([
       this.prisma.subscription.findFirst({
-        where: { userId, status: { in: RUNNING_PLAN } },
+        where: runningPlanWhere(userId),
         orderBy: { currentPeriodEnd: 'desc' },
         include: { plan: { select: { code: true, isActive: true } } },
       }),
       this.prisma.episodeAccess.findFirst({ where: { userId, episodeId, revokedAt: null } }),
-      this.prisma.seriesAccess.findFirst({ where: { userId, movieId: base.movieId, revokedAt: null } }),
       this.cheapestPlanPrice(),
     ]);
     // A plan whose entries are hidden still keeps the access its members already paid for.
@@ -100,10 +97,7 @@ export class AccessDecisionService {
         nextAction: NEXT_ACTION.HANDOFF_TO_PLAYBACK,
       };
     }
-    if (episodeAccess) {
-      return granted(base, episodeAccess.source, ACTOR_TYPE.MEMBER, { seriesOwned: Boolean(seriesAccess) });
-    }
-    if (seriesAccess) return granted(base, ACCESS_SOURCE.SERIES_PURCHASE, ACTOR_TYPE.MEMBER, { seriesOwned: true });
+    if (episodeAccess) return granted(base, episodeAccess.source, ACTOR_TYPE.MEMBER);
 
     return this.refused(userId, base, planPrice);
   }
@@ -116,11 +110,9 @@ export class AccessDecisionService {
   ): Promise<AccessDecisionDto> {
     const coinPrice = base.required.coinPrice;
     const wallet = await this.wallets.affordability(userId, coinPrice);
-    const seriesPrice = base.required.seriesCoinPrice ?? null;
     const accessMethods: AccessMethod[] = [];
     if (planPrice !== null) accessMethods.push(ACCESS_METHOD.MONTHLY_PLAN);
     accessMethods.push(ACCESS_METHOD.UNLOCK_EPISODE);
-    if (seriesPrice !== null) accessMethods.push(ACCESS_METHOD.UNLOCK_SERIES);
     if (!wallet.enoughCoins) accessMethods.push(ACCESS_METHOD.OBTAIN_COIN);
 
     return {
@@ -131,7 +123,6 @@ export class AccessDecisionService {
       accessMethods,
       required: {
         ...base.required,
-        seriesOwned: false,
         monthlyPlanCoinPrice: planPrice,
         mainBalance: wallet.mainBalance,
         bonusBalance: wallet.bonusBalance,
@@ -139,11 +130,7 @@ export class AccessDecisionService {
         missingCoins: wallet.missingCoins,
         enoughForPlan: planPrice !== null && wallet.mainBalance + wallet.bonusBalance >= planPrice,
       },
-      nextAction: !wallet.enoughCoins
-        ? NEXT_ACTION.OBTAIN_COIN
-        : seriesPrice !== null && seriesPrice <= coinPrice
-          ? NEXT_ACTION.UNLOCK_SERIES
-          : NEXT_ACTION.UNLOCK_EPISODE,
+      nextAction: wallet.enoughCoins ? NEXT_ACTION.UNLOCK_EPISODE : NEXT_ACTION.OBTAIN_COIN,
     };
   }
 
@@ -170,8 +157,7 @@ export class AccessDecisionService {
 function granted(
   base: { episodeId: string; movieId: string; required: AccessRequired },
   source: AccessSourceName,
-  actorType: AccessDecisionDto['actorType'] = ACTOR_TYPE.MEMBER,
-  extra: Partial<AccessRequired> = {},
+  actorType: AccessDecisionDto['actorType'],
 ): AccessDecisionDto {
   return {
     ...base,
@@ -179,7 +165,7 @@ function granted(
     source,
     actorType,
     accessMethods: [],
-    required: { ...base.required, ...extra },
+    required: base.required,
     nextAction: NEXT_ACTION.HANDOFF_TO_PLAYBACK,
   };
 }

@@ -1,7 +1,7 @@
 /**
  * Seeds the Membership & Billing Admin's plan catalogue: one Free plan (no price row,
- * no subscription — the free access rules grant access instead) plus paid Weekly /
- * Monthly / Yearly plans, each with its price in force. Idempotent: a plan whose
+ * no subscription — the free access rules grant access instead) plus one paid Monthly
+ * plan. Idempotent: a plan whose
  * code already exists is left alone, and a plan that already has a price in force
  * gets no new price row, so values an Admin changed are never overwritten.
  * Needs the seed accounts first: run `prisma db seed` (or `npx tsx prisma/seed.ts`).
@@ -46,18 +46,6 @@ const SEED_PLANS: SeedPlan[] = [
     features: { maxDevices: 1, adFree: false, maxQuality: '720p' },
   },
   {
-    code: 'weekly',
-    name: 'Gói Tuần',
-    description: 'Xem không giới hạn mọi tập trong 7 ngày, tự gia hạn.',
-    period: PlanPeriod.WEEKLY,
-    durationDays: 7,
-    isFree: false,
-    sortOrder: 1,
-    isFeatured: false,
-    features: { maxDevices: 1, adFree: true, maxQuality: '1080p' },
-    priceCoins: 150,
-  },
-  {
     code: 'monthly',
     name: 'Gói Tháng',
     description: 'Xem không giới hạn mọi tập trong 30 ngày, tự gia hạn.',
@@ -68,18 +56,6 @@ const SEED_PLANS: SeedPlan[] = [
     isFeatured: true,
     features: { maxDevices: 2, adFree: true, maxQuality: '1080p' },
     priceCoins: 500,
-  },
-  {
-    code: 'yearly',
-    name: 'Gói Năm',
-    description: 'Xem không giới hạn mọi tập trong 365 ngày, rẻ hơn trả theo tháng.',
-    period: PlanPeriod.YEARLY,
-    durationDays: 365,
-    isFree: false,
-    sortOrder: 3,
-    isFeatured: false,
-    features: { maxDevices: 4, adFree: true, maxQuality: '4K' },
-    priceCoins: 5000,
   },
 ];
 

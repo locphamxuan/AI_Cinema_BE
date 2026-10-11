@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { BadRequestException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PaymentProvider, PaymentStatus, Prisma, TopUpStatus } from '@prisma/client';
 import type { PaginateQuery } from '@nestarc/pagination';
@@ -34,6 +35,12 @@ export class CoinTopUpService {
     private readonly settlement: TopUpSettlementService,
   ) {}
 
+  /** What the top-up screen needs to quote Coins: the rate and the accepted VND range. */
+  async options() {
+    const { coinTopUpMinVnd, coinTopUpMaxVnd, coinRateVnd } = await this.settings.get();
+    return { rateVnd: coinRateVnd, minVnd: coinTopUpMinVnd, maxVnd: coinTopUpMaxVnd };
+  }
+
   /**
    * Creates the order with its first payment attempt and hands back where to send the member.
    * `clientIp` ends up in the VNPay order; MoMo does not need it.
@@ -50,7 +57,7 @@ export class CoinTopUpService {
     // Round down: the gateway charges the VND amount, so the Coins promised cannot exceed it.
     const coinsGranted = Math.floor(amountVnd / coinRateVnd);
     // Unique per provider, so a replayed callback finds its attempt and cannot credit twice.
-    const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
+    const stamp = `${Date.now().toString(36)}${randomBytes(5).toString('hex')}`.toUpperCase();
     const providerTxnId = `${provider}-${stamp}`;
     const expiresAt = new Date(Date.now() + ORDER_TTL_MINUTES * 60_000);
     const created = await this.prisma.$transaction(async (tx) => {
@@ -198,26 +205,6 @@ export class CoinTopUpService {
       );
       await handled({ handledAt: new Date() });
       return this.lookups.topUpView(topUp.id);
-    }
-    if (callback.amountVnd !== payment.amountVnd) {
-      const failureReason = `The gateway reported ${callback.amountVnd} VND instead of ${payment.amountVnd} VND`;
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.FAILED, failureReason },
-      });
-      await this.prisma.coinTopUp.update({
-        where: { id: topUp.id },
-        data: { status: TopUpStatus.FAILED, failureReason },
-      });
-      await handled({ handledAt: new Date(), errorMessage: failureReason });
-      throw new UnprocessableEntityException({
-        message: 'The settled amount does not match the order',
-        details: {
-          reason: TOPUP_REASON.AMOUNT_MISMATCH,
-          expectedVnd: payment.amountVnd,
-          settledVnd: callback.amountVnd,
-        },
-      });
     }
     try {
       const settled = await this.settlement.settle({
