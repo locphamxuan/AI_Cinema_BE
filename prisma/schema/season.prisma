@@ -1,0 +1,14 @@
+/// A season only groups episodes; it has no state of its own.
+model Season {
+    id           String  @id @default(uuid()) @db.Uuid
+    movieId      String  @map("movie_id") @db.Uuid
+    seasonNumber Int     @map("season_number")
+    title        String? @db.VarChar(255)
+
+    movie    Movie     @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    episodes Episode[]
+
+    @@unique([movieId, seasonNumber])
+    @@unique([id, movieId])
+    @@map("seasons")
+}

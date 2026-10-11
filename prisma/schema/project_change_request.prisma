@@ -1,0 +1,30 @@
+enum ChangeRequestStatus {
+    OPEN
+    ACCEPTED
+    REJECTED
+}
+
+/// Admin proposals to change a project; the Reviewer accepts or rejects them (BR-55, §4.1.8).
+/// episode_id NULL = the proposal is about the whole project.
+model ProjectChangeRequest {
+    id               String              @id @default(uuid()) @db.Uuid
+    movieId          String              @map("movie_id") @db.Uuid
+    episodeId        String?             @map("episode_id") @db.Uuid
+    requestedById    String              @map("requested_by_id") @db.Uuid
+    content          String              @db.Text
+    status           ChangeRequestStatus @default(OPEN)
+    /// Required when REJECTED.
+    reviewerResponse String?             @map("reviewer_response") @db.Text
+    resolvedById     String?             @map("resolved_by_id") @db.Uuid
+    resolvedAt       DateTime?           @map("resolved_at") @db.Timestamptz(6)
+    createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    movie       Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    episode     Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+    requestedBy User     @relation("ChangeRequestRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+    resolvedBy  User?    @relation("ChangeRequestResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+    @@index([movieId, status])
+    @@index([status, createdAt])
+    @@map("project_change_requests")
+}
