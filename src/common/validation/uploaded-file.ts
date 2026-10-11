@@ -25,6 +25,7 @@ export const FILE_KINDS = {
     extensions: ['.webp'],
     matches: (h) => startsWith(h, 0x52, 0x49, 0x46, 0x46) && h.subarray(8, 12).toString('latin1') === 'WEBP',
   },
+  txt: { mimeType: 'text/plain', extensions: ['.txt'], matches: (h) => h.length > 0 && !h.includes(0) },
   mp4: {
     mimeType: 'video/mp4',
     extensions: ['.mp4', '.m4v'],
