@@ -52,7 +52,7 @@ export class EpisodePurchaseService {
     const wallet = await this.wallets.walletOf(user.id);
     const { coinRateVnd } = await this.settings.get();
     return this.prisma.$transaction(async (tx) => {
-      await this.assertNotOwned(tx, episode.id, episode.movieId, user.id);
+      await this.assertNotOwned(tx, episode.id, user.id);
       const movement = await this.coins.spend(tx, wallet.id, {
         entryType: CoinEntryType.EPISODE_PURCHASE,
         amountCoins: episode.coinPrice!,
@@ -131,14 +131,13 @@ export class EpisodePurchaseService {
     } satisfies PurchaseResultDto;
   }
 
-  /** Anything that already opens the episode: a plan, the episode itself, or the whole series. */
-  private async assertNotOwned(tx: PrismaTx, episodeId: string, movieId: string, userId: string) {
-    const [episodeAccess, seriesAccess, plan] = await Promise.all([
+  /** Anything that already opens the episode: a running plan or the episode itself. */
+  private async assertNotOwned(tx: PrismaTx, episodeId: string, userId: string) {
+    const [episodeAccess, plan] = await Promise.all([
       tx.episodeAccess.count({ where: { userId, episodeId, revokedAt: null } }),
-      tx.seriesAccess.count({ where: { userId, movieId, revokedAt: null } }),
       tx.subscription.count({ where: runningPlanWhere(userId) }),
     ]);
-    if (episodeAccess || seriesAccess || plan) {
+    if (episodeAccess || plan) {
       throw new ConflictException({
         message: 'The episode is already unlocked',
         details: { reason: 'ACCESS_ALREADY_OWNED' },

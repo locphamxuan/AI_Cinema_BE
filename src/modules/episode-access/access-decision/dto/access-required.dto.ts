@@ -14,18 +14,6 @@ export class AccessRequired {
   isFreeStarter?: boolean;
 
   @ApiPropertyOptional({
-    example: 180,
-    description: 'Price of the whole series; null = not sold as a bundle',
-  })
-  seriesCoinPrice?: number | null;
-
-  @ApiPropertyOptional({
-    example: false,
-    description: 'The caller already owns the series',
-  })
-  seriesOwned?: boolean;
-
-  @ApiPropertyOptional({
     example: 900,
     description: 'Coin price of one cycle of the cheapest running plan',
   })

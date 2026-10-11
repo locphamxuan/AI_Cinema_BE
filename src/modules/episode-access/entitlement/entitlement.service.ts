@@ -47,8 +47,8 @@ const lineOf = (row: EpisodeAccessRow) => ({
 
 /**
  * What a member has unlocked, and the refund that follows a take-down. BR-52: an episode taken
- * down for good is paid back, so nobody is left having paid for something that is gone. The refund
- * always lands in main Coins, which never expire, and points back at the purchase it reverses.
+ * down for good is paid back main and bonus as they were spent, and the refund points back at the
+ * purchase it reverses.
  */
 @Injectable()
 export class EntitlementService {
@@ -60,33 +60,17 @@ export class EntitlementService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  /** The library screen: episodes bought one by one, and series bought as a bundle. */
+  /** The library screen: the episodes the member bought with Coins. */
   async listFor(filter: AccessListFilter, query: PaginateQuery) {
     const where = { userId: filter.userId, revokedAt: null, ...(filter.source ? { source: filter.source } : {}) };
-    const [episodes, series] = await Promise.all([
-      paginate(query, this.prisma.episodeAccess, {
-        where,
-        relations: EPISODE_VIEW,
-        sortableColumns: ['grantedAt', 'paidCoins'],
-        defaultSortBy: [['grantedAt', 'DESC']],
-        filterableColumns: { source: ['$eq', '$in'] },
-      }),
-      this.prisma.seriesAccess.findMany({
-        where,
-        orderBy: { grantedAt: 'desc' },
-        include: { movie: { select: { id: true, title: true, posterUrl: true } } },
-      }),
-    ]);
-    return {
-      episodes: { ...episodes, data: (episodes.data as EpisodeAccessRow[]).map(lineOf) },
-      series: series.map((row) => ({
-        id: row.id,
-        source: row.source,
-        paidCoins: row.paidCoins,
-        grantedAt: row.grantedAt,
-        movie: row.movie,
-      })),
-    };
+    const episodes = await paginate(query, this.prisma.episodeAccess, {
+      where,
+      relations: EPISODE_VIEW,
+      sortableColumns: ['grantedAt', 'paidCoins'],
+      defaultSortBy: [['grantedAt', 'DESC']],
+      filterableColumns: { source: ['$eq', '$in'] },
+    });
+    return { ...episodes, data: (episodes.data as EpisodeAccessRow[]).map(lineOf) };
   }
 
   /**
@@ -108,16 +92,6 @@ export class EntitlementService {
     return due.length;
   }
 
-  /** The same for a movie taken down for good: the bundle every member bought is paid back. */
-  async refundSeriesRemoval(tx: PrismaTx, movieId: string, reason: string): Promise<number> {
-    const due = await tx.seriesAccess.findMany({
-      where: { movieId, revokedAt: null, source: AccessSource.SERIES_PURCHASE },
-      select: { id: true, userId: true, movieId: true, paidCoins: true, coinTransactionId: true },
-    });
-    for (const access of due) await this.refundSeries(tx, access, reason);
-    return due.length;
-  }
-
   private async refundEpisode(
     tx: PrismaTx,
     access: {
@@ -130,7 +104,7 @@ export class EntitlementService {
     episodeId: string,
     reason: string,
   ): Promise<void> {
-    const movement = await this.refund(tx, access, 'EPISODE_ACCESS', reason);
+    const movement = await this.refund(tx, access, reason);
     await tx.episodeAccess.update({ where: { id: access.id }, data: { revokedAt: new Date(), revokeReason: reason } });
     await this.auditLog.record(
       {
@@ -146,41 +120,33 @@ export class EntitlementService {
     await this.notifyRefund(tx, access.userId, access.paidCoins, reason, { episodeId });
   }
 
-  private async refundSeries(
-    tx: PrismaTx,
-    access: { id: string; userId: string; movieId: string; paidCoins: number; coinTransactionId: string | null },
-    reason: string,
-  ): Promise<void> {
-    const movement = await this.refund(tx, access, 'SERIES_ACCESS', reason);
-    await tx.seriesAccess.update({ where: { id: access.id }, data: { revokedAt: new Date(), revokeReason: reason } });
-    await this.auditLog.record(
-      {
-        action: CONTENT_EVENT.SERIES_ACCESS_REVOKED,
-        entityType: 'SeriesAccess',
-        entityId: access.id,
-        movieId: access.movieId,
-        actorId: null,
-        payload: { reason, refundedCoins: access.paidCoins, transactionId: movement },
-      },
-      tx,
-    );
-    await this.notifyRefund(tx, access.userId, access.paidCoins, reason, { movieId: access.movieId });
-  }
-
-  /** Pays a purchase back into main Coins and returns the ledger entry that did it. */
+  /**
+   * Pays a purchase back exactly as it was paid (BR-52): the main Coins to the main balance, the
+   * bonus Coins to a new bonus lot with the default expiry, so a refund never turns promotion
+   * Coins into main Coins. Returns the ledger entry that did it.
+   */
   private async refund(
     tx: PrismaTx,
     access: { userId: string; id: string; paidCoins: number; coinTransactionId: string | null },
-    referenceType: 'EPISODE_ACCESS' | 'SERIES_ACCESS',
     reason: string,
   ): Promise<string | undefined> {
     if (access.paidCoins <= 0) return undefined;
+    const paid = access.coinTransactionId
+      ? await tx.coinTransaction.findUnique({
+          where: { id: access.coinTransactionId },
+          select: { mainAmount: true, bonusAmount: true },
+        })
+      : null;
+    // A purchase writes negative amounts; without its entry the whole price goes back as main.
+    const mainAmount = paid ? -paid.mainAmount : access.paidCoins;
+    const bonusAmount = paid ? -paid.bonusAmount : 0;
     const wallet = await this.wallets.walletOf(access.userId, tx);
     const movement = await this.coins.credit(tx, wallet.id, {
       entryType: CoinEntryType.REFUND,
-      mainAmount: access.paidCoins,
+      mainAmount,
+      bonusAmount,
       lotSource: CoinLotSource.REFUND,
-      referenceType: CoinReferenceType[referenceType],
+      referenceType: CoinReferenceType.EPISODE_ACCESS,
       referenceId: access.id,
       reversesId: access.coinTransactionId ?? undefined,
       description: `Refund: the content was taken down for good (${reason})`,
@@ -200,7 +166,7 @@ export class EntitlementService {
       {
         type: NOTIFICATION_TYPE.EPISODE_ACCESS_REFUNDED,
         title: `Đã hoàn ${coins} Coin`,
-        body: `Nội dung bị gỡ vĩnh viễn (${reason}). ${coins} Coin đã được hoàn vào ví chính.`,
+        body: `Nội dung bị gỡ vĩnh viễn (${reason}). ${coins} Coin đã được hoàn vào ví.`,
         link: '/wallet',
         payload: { refundedCoins: coins, ...payload },
       },
