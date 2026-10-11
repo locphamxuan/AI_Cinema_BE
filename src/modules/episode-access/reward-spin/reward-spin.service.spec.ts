@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { RewardPrizeType, RewardSpinStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
@@ -178,6 +179,13 @@ describe('RewardSpinService', () => {
     });
 
     await expect(service.spin('u1', 'k1')).resolves.toMatchObject({ bonusCoins: 50 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a key another member already used instead of failing on the unique key', async () => {
+    prisma.rewardSpin.findUnique.mockResolvedValue({ ...available, userId: 'u2', status: RewardSpinStatus.USED });
+
+    await expect(service.spin('u1', 'k1')).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 

@@ -93,6 +93,12 @@ export class RewardSpinService {
     if (idempotencyKey) {
       const done = await this.prisma.rewardSpin.findUnique({ where: { idempotencyKey }, include: { prize: true } });
       if (done && done.userId === userId) return this.resultOf(done);
+      if (done) {
+        throw new ConflictException({
+          message: 'This Idempotency-Key was already used',
+          details: { reason: SPIN_REASON.TAKEN },
+        });
+      }
     }
     const spin = await this.prisma.rewardSpin.findFirst({
       where: { userId, status: RewardSpinStatus.AVAILABLE },
