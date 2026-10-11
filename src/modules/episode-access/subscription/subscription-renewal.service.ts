@@ -259,7 +259,8 @@ export class SubscriptionRenewalService {
     cause: unknown,
   ): Promise<void> {
     const { planRenewalGraceHours } = await this.settings.get();
-    const retryAt = new Date(Date.now() + Math.max(1, planRenewalGraceHours) * 3_600_000);
+    // 0 hours = no grace: the same sweep run retries once more, then ends the plan (BR-30).
+    const retryAt = new Date(Date.now() + planRenewalGraceHours * 3_600_000);
     await tx.subscriptionCycle.create({
       data: {
         subscriptionId: subscription.id,
@@ -280,7 +281,10 @@ export class SubscriptionRenewalService {
       {
         type: NOTIFICATION_TYPE.SUB_RENEWAL_FAILED,
         title: 'Gia hạn thất bại',
-        body: `Ví chưa đủ Coin cho chu kỳ ${cycleNumber}. Gói tạm dừng; nạp Coin trước khi hết hạn chờ để tránh mất gói.`,
+        body:
+          planRenewalGraceHours > 0
+            ? `Ví chưa đủ Coin cho chu kỳ ${cycleNumber}. Gói tạm dừng; nạp Coin trong ${planRenewalGraceHours} giờ tới để hệ thống tự gia hạn lại.`
+            : `Ví chưa đủ Coin cho chu kỳ ${cycleNumber} nên gói sẽ kết thúc.`,
         link: '/wallet',
         payload: { subscriptionId: subscription.id, cycleNumber, retryAt },
       },
