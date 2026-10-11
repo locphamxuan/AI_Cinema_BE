@@ -1,9 +1,9 @@
 # CI/CD of the API.
 #   Every push and pull request: lint, typecheck, unit + e2e tests (real Postgres), dependency
-#   audit, Docker build, and SonarCloud analysis with its quality gate (once SONAR_TOKEN is set).
+#   audit, Docker build, and SonarCloud analysis with its quality gate.
 #   Push to main or a v* tag, all green: the image goes to GHCR, then the optional deploy hook.
 # Repository settings it reads (Settings → Secrets and variables → Actions):
-#   secrets.SONAR_TOKEN        SonarCloud token; the analysis is skipped without it
+#   secrets.SONAR_TOKEN        Required SonarCloud token; release images are blocked without it
 #   vars.SONAR_HOST_URL        only for a self-hosted SonarQube (default https://sonarcloud.io)
 #   secrets.DEPLOY_HOOK_URL    optional: called after the image is pushed (Render, Railway, …)
 name: CI/CD
@@ -116,9 +116,11 @@ jobs:
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
-      - name: Skip without a token
+      - name: Require the quality-gate token
         if: env.SONAR_TOKEN == ''
-        run: echo "::notice::SONAR_TOKEN is not set; the SonarCloud analysis is skipped."
+        run: |
+          echo "::error::SONAR_TOKEN is required; SonarCloud quality gate cannot be skipped."
+          exit 1
       - uses: actions/checkout@v4
         if: env.SONAR_TOKEN != ''
         with:
@@ -146,7 +148,7 @@ jobs:
 
   docker:
     name: Docker image
-    needs: [quality, e2e, audit]
+    needs: [quality, e2e, audit, sonar]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
