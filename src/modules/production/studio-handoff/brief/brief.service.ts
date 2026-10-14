@@ -6,12 +6,12 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import type { EmailAttachment } from 'src/modules/platform/email/email-outbox.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
+import type { StoredMaterial } from '../material/handoff-material.service';
 import { briefFont, type BriefContent, renderBriefPdf } from './brief-pdf';
 
-export interface StudioInfo {
-  studioName: string;
-  studioEmail: string;
-  studioContact?: string | null;
+export interface BriefStudio {
+  name: string;
+  contactName: string | null;
 }
 
 export interface PreparedBrief {
@@ -23,8 +23,8 @@ export interface PreparedBrief {
 }
 
 /**
- * Builds the brief a studio receives (BR-13): the PDF is generated from the project as it is
- * now, stored privately, and sent with the latest version of every idea file.
+ * Builds the brief a studio receives (BR-13): the PDF is generated from the project as it is now, stored
+ * privately, and sent with the latest version of every idea file and the material of the hand-off.
  */
 @Injectable()
 export class BriefService {
@@ -42,14 +42,23 @@ export class BriefService {
     if (!this.fontPath) this.logger.warn('No font with Vietnamese glyphs found; briefs drop diacritics');
   }
 
-  /** `dueDates` overrides the stored deadlines (the hand-off sets them in the same request). */
-  async prepare(movieId: string, studio: StudioInfo, dueDates: Map<string, Date> = new Map()): Promise<PreparedBrief> {
+  /** `seasonId` limits the brief to one season; null briefs every episode of the project. */
+  async prepare(
+    movieId: string,
+    studio: BriefStudio,
+    seasonId: string | null,
+    materials: StoredMaterial[],
+  ): Promise<PreparedBrief> {
     const movie = await this.prisma.movie.findUniqueOrThrow({
       where: { id: movieId },
       include: {
         creator: { select: { fullName: true, email: true } },
         genres: { include: { genre: { select: { name: true } } } },
-        episodes: { orderBy: { episodeNumber: 'asc' }, include: { season: { select: { seasonNumber: true } } } },
+        episodes: {
+          where: seasonId ? { seasonId } : {},
+          orderBy: { episodeNumber: 'asc' },
+          include: { season: { select: { seasonNumber: true } } },
+        },
         ideaFiles: { orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
       },
     });
@@ -61,8 +70,9 @@ export class BriefService {
 
     const content: BriefContent = {
       movieTitle: movie.title,
-      studioName: studio.studioName,
-      studioContact: studio.studioContact ?? null,
+      scope: seasonId ? `Mùa ${movie.episodes[0]?.season.seasonNumber ?? ''}` : 'Toàn bộ dự án',
+      studioName: studio.name,
+      studioContact: studio.contactName,
       creatorName: movie.creator?.fullName ?? '',
       creatorEmail: movie.creator?.email ?? '',
       ideaDescription: movie.ideaDescription,
@@ -74,9 +84,9 @@ export class BriefService {
         seasonNumber: episode.season.seasonNumber,
         title: episode.title,
         targetDurationSeconds: episode.targetDurationSeconds,
-        dueDate: dueDates.get(episode.id) ?? episode.dueDate,
+        dueDate: episode.deliveryDeadline,
       })),
-      ideaFiles: latestIdeaFiles.map((file) => file.fileName),
+      ideaFiles: [...latestIdeaFiles.map((file) => file.fileName), ...materials.map((file) => file.fileName)],
       issuedAt: new Date(),
     };
 
@@ -86,13 +96,14 @@ export class BriefService {
     return {
       briefKey,
       productionFeeTokens,
-      subject: `[AI Cinema] Đơn đặt hàng sản xuất phim "${movie.title}"`,
+      subject: `[AI Cinema] Đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope})`,
       text: [
-        `Kính gửi ${studio.studioName},`,
+        `Kính gửi ${studio.name},`,
         '',
-        `AI Cinema gửi đơn đặt hàng sản xuất phim "${movie.title}" gồm ${movie.episodes.length} tập.`,
+        `AI Cinema gửi đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope}) gồm ${movie.episodes.length} tập.`,
         `Phí sản xuất: ${productionFeeTokens} Token (= ${productionFeeTokens * tokenRateVnd} VND).`,
-        'Chi tiết từng tập và hạn giao nằm trong brief PDF đính kèm.',
+        'Chi tiết từng tập và hạn giao nằm trong brief PDF đính kèm, kèm kịch bản và tài liệu tham khảo.',
+        'Khi hoàn tất, vui lòng gửi phim đã soạn sẵn qua email cho đầu mối bên dưới.',
         '',
         `Đầu mối: ${content.creatorName} — ${content.creatorEmail}`,
       ].join('\n'),
@@ -103,6 +114,7 @@ export class BriefService {
           fileName: file.fileName,
           contentType: file.mimeType,
         })),
+        ...materials.map((file) => ({ key: file.storageKey, fileName: file.fileName, contentType: file.mimeType })),
       ],
     };
   }
