@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { ChangeRequestStatus, MovieStatus, Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -11,7 +11,8 @@ import { UpdateMovieProjectRequestDto } from './dto/update-movie-project.request
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { revisionSummary } from './revision-summary';
-import { milestoneDay } from './episode-milestone';
+import { newEpisodeSchedule, seasonWindow } from './episode-schedule';
+import { StudioService } from 'src/modules/production/studio/studio.service';
 
 const PERSON = { select: { id: true, fullName: true, email: true } } as const;
 
@@ -35,7 +36,8 @@ const PROJECT_DETAIL = {
     },
   },
   ideaFiles: { orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
-  studioHandoffs: { orderBy: { createdAt: 'desc' }, include: { createdBy: PERSON } },
+  studio: true,
+  studioHandoffs: { orderBy: { createdAt: 'desc' }, include: { createdBy: PERSON, studio: true } },
   _count: { select: { changeRequests: { where: { status: ChangeRequestStatus.OPEN } } } },
 } satisfies Prisma.MovieInclude;
 
@@ -45,36 +47,48 @@ export class MovieProjectService {
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
     private readonly fees: ProductionFeeService,
+    private readonly studios: StudioService,
     private readonly auditLog: AuditLogService,
   ) {}
 
   /** Step 1: the project with its seasons and episodes, numbered across the whole movie (BR-03, BR-37). */
   async create(dto: CreateMovieProjectRequestDto, user: AuthenticatedUser) {
     await this.assertGenresExist(dto.genreIds);
+    if (dto.studioId) await this.studios.assertUsable(dto.studioId);
+    const seasons = dto.seasons.map((season) => {
+      const window = seasonWindow(season);
+      return {
+        season,
+        window,
+        episodes: season.episodes.map((episode) => ({ episode, ...newEpisodeSchedule(episode, window) })),
+      };
+    });
     const movieId = await this.prisma.$transaction(async (tx) => {
       const movie = await tx.movie.create({
         data: {
           title: dto.title.trim(),
           ideaDescription: dto.ideaDescription.trim(),
           defaultLanguage: dto.defaultLanguage,
+          studioId: dto.studioId,
           reviewerId: user.id,
           genres: { create: dto.genreIds.map((genreId) => ({ genreId })) },
         },
       });
       let episodeNumber = 1;
-      for (const [index, season] of dto.seasons.entries()) {
+      for (const [index, { season, window, episodes }] of seasons.entries()) {
         const created = await tx.season.create({
-          data: { movieId: movie.id, seasonNumber: index + 1, title: season.title },
+          data: { movieId: movie.id, seasonNumber: index + 1, title: season.title, ...window },
         });
         await tx.episode.createMany({
-          data: season.episodes.map((episode) => ({
+          data: episodes.map(({ episode, deliveryDeadline, expectedReleaseDate }) => ({
             movieId: movie.id,
             seasonId: created.id,
             episodeNumber: episodeNumber++,
             title: episode.title.trim(),
             synopsis: episode.synopsis,
             targetDurationSeconds: episode.targetDurationSeconds,
-            milestoneDate: milestoneDay(episode.milestoneDate),
+            deliveryDeadline,
+            expectedReleaseDate,
           })),
         });
       }
@@ -96,10 +110,10 @@ export class MovieProjectService {
   async list(query: PaginateQuery, user: AuthenticatedUser) {
     return paginate(query, this.prisma.movie, {
       where: await this.access.readableWhere(user),
-      relations: { reviewer: PERSON, creator: PERSON, _count: { select: { episodes: true } } },
+      relations: { reviewer: PERSON, creator: PERSON, studio: true, _count: { select: { episodes: true } } },
       sortableColumns: ['title', 'status', 'createdAt', 'updatedAt'],
       defaultSortBy: [['updatedAt', 'DESC']],
-      searchableColumns: ['title', 'studioName'],
+      searchableColumns: ['title'],
       filterableColumns: { status: ['$eq', '$in'], creatorId: ['$eq'] },
     });
   }
@@ -125,6 +139,10 @@ export class MovieProjectService {
       'edit the project',
     );
     if (dto.genreIds) await this.assertGenresExist(dto.genreIds);
+    if (dto.studioId && dto.studioId !== movie.studioId) {
+      if (movie.handedOffAt) throw new ConflictException('The project was handed off; change the studio there');
+      await this.studios.assertUsable(dto.studioId);
+    }
 
     const { genreIds, ...fields } = dto;
     await this.prisma.$transaction(async (tx) => {

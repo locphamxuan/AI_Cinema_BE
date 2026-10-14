@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ProductionFeeModule } from 'src/modules/production/production-fee/production-fee.module';
+import { StudioModule } from 'src/modules/production/studio/studio.module';
 import { ChangeRequestController } from './change-request/change-request.controller';
 import { ChangeRequestService } from './change-request/change-request.service';
 import { IdeaFileController } from './idea-file/idea-file.controller';
@@ -11,7 +12,7 @@ import { ProjectStructureController } from './structure/project-structure.contro
 import { ProjectStructureService } from './structure/project-structure.service';
 
 @Module({
-  imports: [ProductionFeeModule],
+  imports: [ProductionFeeModule, StudioModule],
   controllers: [MovieProjectController, ProjectStructureController, IdeaFileController, ChangeRequestController],
   providers: [
     MovieProjectService,

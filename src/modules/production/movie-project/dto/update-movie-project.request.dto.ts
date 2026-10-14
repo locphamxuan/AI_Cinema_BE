@@ -66,4 +66,9 @@ export class UpdateMovieProjectRequestDto {
   @Max(2100)
   @IsOptional()
   releaseYear?: number;
+
+  @ApiPropertyOptional({ description: 'Active studio from the catalog; only before the hand-off (BR-59).' })
+  @IsUUID('4')
+  @IsOptional()
+  studioId?: string;
 }
