@@ -13,6 +13,7 @@ export const PERMISSION = {
   PROJECT_READ_ALL: 'project:read.all',
   PROJECT_SUGGEST: 'project:suggest',
   STUDIO_HANDOFF: 'studio:handoff',
+  STUDIO_MANAGE: 'studio:manage',
   MEDIA_INGEST: 'media:ingest',
   CONTENT_REVIEW: 'content:review',
   EPISODE_PUBLISH: 'episode:publish',
@@ -57,7 +58,11 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   },
   'project:read.all': { area: 'movie-project', description: "Read every movie project, not only one's own" },
   'project:suggest': { area: 'movie-project', description: 'Propose changes to a movie project (BR-55)' },
-  'studio:handoff': { area: 'studio', description: 'Hand an assigned project off to a studio, change the studio' },
+  'studio:handoff': {
+    area: 'studio',
+    description: 'Hand an assigned project off to a studio, change the studio, record its milestones',
+  },
+  'studio:manage': { area: 'studio', description: 'Keep the catalog of partner studios: add, edit, deactivate' },
   'media:ingest': { area: 'media', description: 'Upload the episodes, subtitles and artwork a studio delivers' },
   'content:review': {
     area: 'review',
@@ -123,6 +128,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
   CONTENT_REVIEWER: [
     PERMISSION.PROJECT_MANAGE,
     PERMISSION.PROJECT_FEE_ALLOCATE,
+    PERMISSION.STUDIO_MANAGE,
     PERMISSION.CONTENT_REVIEW,
     PERMISSION.EPISODE_PUBLISH,
     PERMISSION.GENRE_MANAGE,
