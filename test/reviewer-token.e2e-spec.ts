@@ -57,10 +57,20 @@ describe('Reviewer Token budget (e2e)', () => {
       title: `Ngân sách e2e ${Date.now()}`,
       ideaDescription: 'Một bộ phim để kiểm tra ngân sách Token của Reviewer.',
       genreIds: [genreId],
-      seasons: [{ episodes: [{ title: 'Tập 1', targetDurationSeconds: 900, deliveryDeadline: inDays(30) }] }],
+      seasons: [
+        {
+          episodeProductionCost: 60_000,
+          episodes: [{ title: 'Tập 1', targetDurationSeconds: 900, deliveryDeadline: inDays(30) }],
+        },
+      ],
     });
-    await reviewer.post(`/projects/${project.id}/fee/entries`, { entryType: 'INITIAL', amountTokens: 60_000 }, 409);
-    await reviewer.post(`/projects/${project.id}/fee/entries`, { entryType: 'INITIAL', amountTokens: 30_000 });
+    const [season] = (await reviewer.get<{ seasons: Row[] }>(`/projects/${project.id}`)).seasons;
+    const allocate = (status?: number) =>
+      reviewer.post(`/projects/${project.id}/fee/entries`, { entryType: 'INITIAL', seasonId: season.id }, status);
+    // 60,000 Token for the season is more than the 50,000 left.
+    await allocate(409);
+    await reviewer.patch(`/seasons/${season.id}`, { episodeProductionCost: 30_000 });
+    await allocate();
 
     const mine = await wallet();
     expect(mine.balanceTokens).toBe(20_000);

@@ -4,10 +4,13 @@ import type { Actor, Row } from './api';
 export interface ProjectDetail extends Row {
   status: string;
   studio: { id: string; name: string } | null;
-  seasons: { id: string; episodes: { id: string; episodeNumber: number; status: string }[] }[];
+  seasons: { id: string; status: string; episodes: { id: string; episodeNumber: number; status: string }[] }[];
 }
 
 export const episodesOf = (project: ProjectDetail) => project.seasons.flatMap((season) => season.episodes);
+
+/** Token the studio is paid for one episode in the helpers below. */
+export const EPISODE_COST = 5000;
 
 const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 
@@ -27,6 +30,7 @@ export async function assignedProject(reviewer: Actor, creator: Actor, episodes 
     studioId: studio.id,
     seasons: [
       {
+        episodeProductionCost: EPISODE_COST,
         releaseStartDate: inDays(30),
         releaseEndDate: inDays(90),
         episodes: Array.from({ length: episodes }, (_, i) => ({
@@ -38,7 +42,9 @@ export async function assignedProject(reviewer: Actor, creator: Actor, episodes 
       },
     ],
   });
-  await reviewer.post(`/projects/${project.id}/fee/entries`, { entryType: 'INITIAL', amountTokens: 20000 });
+  for (const season of project.seasons) {
+    await reviewer.post(`/projects/${project.id}/fee/entries`, { entryType: 'INITIAL', seasonId: season.id });
+  }
   await reviewer.post(`/projects/${project.id}/assign`, { creatorId: creator.id }, 204);
   return reviewer.get<ProjectDetail>(`/projects/${project.id}`);
 }

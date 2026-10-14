@@ -59,7 +59,7 @@ describe('Studio hand-off (e2e)', () => {
 
     const history = await creator.upload<Handoff[]>(`/projects/${project.id}/handoff`, [SCRIPT, REFERENCE]);
     expect(history).toHaveLength(1);
-    expect(history[0]).toMatchObject({ seasonId: null, milestoneStatus: 'BRIEF_SENT', productionFeeTokens: 20000 });
+    expect(history[0]).toMatchObject({ seasonId: null, milestoneStatus: 'BRIEF_SENT', productionFeeTokens: 10000 });
     handoffId = history[0].id;
     // Without SMTP the mailer only logs, so the brief counts as sent.
     expect(history[0].emailMessage.status).toBe('SENT');
@@ -159,6 +159,7 @@ describe('Studio hand-off (e2e)', () => {
   it('hands off one season at a time and replaces only that season', async () => {
     const seasonProject = await assignedProject(reviewer, creator, 1);
     const extra = await reviewer.post<Row & { episodes: Row[] }>(`/projects/${seasonProject.id}/seasons`, {
+      episodeProductionCost: 8000,
       releaseStartDate: inDays(60),
       releaseEndDate: inDays(120),
       episodes: [{ title: 'Tập mùa 2', targetDurationSeconds: 600, deliveryDeadline: inDays(45) }],

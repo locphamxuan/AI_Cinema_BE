@@ -7,6 +7,7 @@ import { episodesOf, projectInProduction, type ProjectDetail } from './support/p
 interface Detail extends ProjectDetail {
   seasons: {
     id: string;
+    status: string;
     episodes: { id: string; episodeNumber: number; status: string; revisionStartedAt: string | null }[];
   }[];
   revision: { episodeCount: number; bySeason: { seasonNumber: number; episodeNumbers: number[] }[] };
