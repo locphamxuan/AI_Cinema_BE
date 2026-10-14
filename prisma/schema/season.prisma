@@ -1,16 +1,32 @@
-/// A season groups episodes; it has no state of its own. Its release window bounds the expected
+/// Middle tier of Episode → Season → Movie (BR-37). Rolled up from the episodes by a database trigger.
+enum SeasonStatus {
+    DRAFT
+    IN_PRODUCTION
+    COMPLETED
+    UNDER_REVISION
+}
+
+/// A season groups episodes and sets their production price. Its release window bounds the expected
 /// release date of each of its episodes (BR-60).
 model Season {
-    id               String    @id @default(uuid()) @db.Uuid
-    movieId          String    @map("movie_id") @db.Uuid
-    seasonNumber     Int       @map("season_number")
-    title            String?   @db.VarChar(255)
-    releaseStartDate DateTime? @map("release_start_date") @db.Date
-    releaseEndDate   DateTime? @map("release_end_date") @db.Date
+    id                    String       @id @default(uuid()) @db.Uuid
+    movieId               String       @map("movie_id") @db.Uuid
+    seasonNumber          Int          @map("season_number")
+    title                 String?      @db.VarChar(255)
+    /// Rolled up from the episodes (trigger `episodes_season_status`), never written by the application.
+    status                SeasonStatus @default(DRAFT)
+    /// Token the studio is paid for one episode of this season (BR-37, BR-46).
+    episodeProductionCost BigInt       @default(0) @map("episode_production_cost")
+    releaseStartDate      DateTime?    @map("release_start_date") @db.Date
+    releaseEndDate        DateTime?    @map("release_end_date") @db.Date
+    createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-    movie    Movie           @relation(fields: [movieId], references: [id], onDelete: Cascade)
-    episodes Episode[]
-    handoffs StudioHandoff[]
+    movie          Movie                  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    episodes       Episode[]
+    handoffs       StudioHandoff[]
+    tokenEntries   TokenLedgerEntry[]
+    changeRequests ProjectChangeRequest[]
 
     @@unique([movieId, seasonNumber])
     @@unique([id, movieId])

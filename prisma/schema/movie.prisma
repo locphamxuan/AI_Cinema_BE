@@ -39,6 +39,7 @@ model Movie {
   reviewer       User                   @relation("MovieReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
   creator        User?                  @relation("MovieCreator", fields: [creatorId], references: [id], onDelete: Restrict)
   studio         Studio?                @relation(fields: [studioId], references: [id], onDelete: Restrict)
+  creatorAssignments ProjectCreatorAssignment[]
   genres         MovieGenre[]
   ideaFiles      MovieIdeaFile[]
   studioHandoffs StudioHandoff[]

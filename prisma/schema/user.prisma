@@ -24,6 +24,10 @@ model User {
   platformSettingsUpdated PlatformSetting[]
   moviesReviewed          Movie[]                @relation("MovieReviewer")
   moviesCreated           Movie[]                @relation("MovieCreator")
+  assignmentsAsCreator    ProjectCreatorAssignment[] @relation("AssignmentCreator")
+  assignmentsMade         ProjectCreatorAssignment[] @relation("AssignmentAssignedBy")
+  assignmentsDelegated    ProjectCreatorAssignment[] @relation("AssignmentDelegatedFrom")
+  episodesAssigned        Episode[]              @relation("EpisodeAssignedCreator")
   ideaFilesUploaded       MovieIdeaFile[]
   studioHandoffs          StudioHandoff[]
   studiosCreated          Studio[]
