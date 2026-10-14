@@ -27,12 +27,9 @@ model Movie {
   trailerUrl      String?     @map("trailer_url") @db.VarChar(500)
   reviewerId      String      @map("reviewer_id") @db.Uuid
   creatorId       String?     @map("creator_id") @db.Uuid
-  /// Current studio, plain text: the studio is not an actor (BR-15).
-  studioName      String?     @map("studio_name") @db.VarChar(255)
-  studioEmail     String?     @map("studio_email") @db.VarChar(255)
-  studioContact   String?     @map("studio_contact") @db.VarChar(255)
+  /// The one studio of the project (BR-59); it has no account (BR-15).
+  studioId        String?     @map("studio_id") @db.Uuid
   cancelReason    String?     @map("cancel_reason") @db.Text
-  assignedAt      DateTime?   @map("assigned_at") @db.Timestamptz(6)
   handedOffAt     DateTime?   @map("handed_off_at") @db.Timestamptz(6)
   completedAt     DateTime?   @map("completed_at") @db.Timestamptz(6)
   cancelledAt     DateTime?   @map("cancelled_at") @db.Timestamptz(6)
@@ -41,6 +38,7 @@ model Movie {
 
   reviewer       User                   @relation("MovieReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
   creator        User?                  @relation("MovieCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  studio         Studio?                @relation(fields: [studioId], references: [id], onDelete: Restrict)
   genres         MovieGenre[]
   ideaFiles      MovieIdeaFile[]
   studioHandoffs StudioHandoff[]
@@ -53,5 +51,6 @@ model Movie {
   @@index([status])
   @@index([reviewerId])
   @@index([creatorId])
+  @@index([studioId])
   @@map("movies")
 }

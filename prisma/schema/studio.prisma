@@ -1,0 +1,20 @@
+/// Third-party studios the platform orders movies from (BR-59). The Reviewer keeps the list; a studio
+/// has no account and is never deleted once it received a hand-off, only deactivated.
+model Studio {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  email       String   @unique @db.VarChar(255)
+  contactName String?  @map("contact_name") @db.VarChar(255)
+  phone       String?  @db.VarChar(30)
+  note        String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  movies    Movie[]
+  handoffs  StudioHandoff[]
+
+  @@map("studios")
+}

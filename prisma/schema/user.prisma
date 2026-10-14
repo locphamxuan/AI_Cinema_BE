@@ -26,6 +26,9 @@ model User {
   moviesCreated           Movie[]                @relation("MovieCreator")
   ideaFilesUploaded       MovieIdeaFile[]
   studioHandoffs          StudioHandoff[]
+  studiosCreated          Studio[]
+  handoffMaterials        StudioHandoffMaterial[] @relation("HandoffMaterialUploadedBy")
+  milestoneChanges        StudioMilestoneEvent[]  @relation("MilestoneChangedBy")
   changeRequestsMade      ProjectChangeRequest[] @relation("ChangeRequestRequestedBy")
   changeRequestsResolved  ProjectChangeRequest[] @relation("ChangeRequestResolvedBy")
   tokenEntries            TokenLedgerEntry[]

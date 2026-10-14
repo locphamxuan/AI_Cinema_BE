@@ -1,12 +1,16 @@
-/// A season only groups episodes; it has no state of its own.
+/// A season groups episodes; it has no state of its own. Its release window bounds the expected
+/// release date of each of its episodes (BR-60).
 model Season {
-    id           String  @id @default(uuid()) @db.Uuid
-    movieId      String  @map("movie_id") @db.Uuid
-    seasonNumber Int     @map("season_number")
-    title        String? @db.VarChar(255)
+    id               String    @id @default(uuid()) @db.Uuid
+    movieId          String    @map("movie_id") @db.Uuid
+    seasonNumber     Int       @map("season_number")
+    title            String?   @db.VarChar(255)
+    releaseStartDate DateTime? @map("release_start_date") @db.Date
+    releaseEndDate   DateTime? @map("release_end_date") @db.Date
 
-    movie    Movie     @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    movie    Movie           @relation(fields: [movieId], references: [id], onDelete: Cascade)
     episodes Episode[]
+    handoffs StudioHandoff[]
 
     @@unique([movieId, seasonNumber])
     @@unique([id, movieId])
