@@ -12,6 +12,7 @@ export const PERMISSION = {
   PROJECT_FEE_ALLOCATE: 'project:fee.allocate',
   PROJECT_READ_ALL: 'project:read.all',
   PROJECT_SUGGEST: 'project:suggest',
+  PROJECT_CHANGE_REVIEW: 'project:change.review',
   STUDIO_HANDOFF: 'studio:handoff',
   STUDIO_MANAGE: 'studio:manage',
   MEDIA_INGEST: 'media:ingest',
@@ -57,7 +58,14 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
     description: 'Allocate, top up and correct production fees (Token)',
   },
   'project:read.all': { area: 'movie-project', description: "Read every movie project, not only one's own" },
-  'project:suggest': { area: 'movie-project', description: 'Propose changes to a movie project (BR-55)' },
+  'project:suggest': {
+    area: 'movie-project',
+    description: 'Send the Admin a change request for a project, with the reason and proof (BR-55)',
+  },
+  'project:change.review': {
+    area: 'movie-project',
+    description: 'Approve or reject the change requests of Reviewers and Creators (BR-55)',
+  },
   'studio:handoff': {
     area: 'studio',
     description: 'Hand an assigned project off to a studio, change the studio, record its milestones',
@@ -124,9 +132,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.REWARD_CHECKIN,
     PERMISSION.SUBSCRIPTION_SELF_MANAGE,
   ],
-  CONTENT_CREATOR: [PERMISSION.STUDIO_HANDOFF, PERMISSION.MEDIA_INGEST],
+  CONTENT_CREATOR: [PERMISSION.PROJECT_SUGGEST, PERMISSION.STUDIO_HANDOFF, PERMISSION.MEDIA_INGEST],
   CONTENT_REVIEWER: [
     PERMISSION.PROJECT_MANAGE,
+    PERMISSION.PROJECT_SUGGEST,
     PERMISSION.PROJECT_FEE_ALLOCATE,
     PERMISSION.STUDIO_MANAGE,
     PERMISSION.CONTENT_REVIEW,
@@ -143,10 +152,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.COIN_TRANSACTION_READ,
     PERMISSION.BILLING_SUBSCRIPTION_READ,
   ],
-  // Oversight only in MF-1: the Admin reads every project and proposes changes, never edits them (BR-55).
+  // MF-1: the Admin reads every project and decides the change requests sent to them, never edits a project (BR-55).
   ADMIN: [
     PERMISSION.PROJECT_READ_ALL,
-    PERMISSION.PROJECT_SUGGEST,
+    PERMISSION.PROJECT_CHANGE_REVIEW,
     PERMISSION.PRICE_ALERT_MANAGE,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,

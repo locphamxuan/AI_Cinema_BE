@@ -199,6 +199,33 @@ export class ReviewerTokenService {
     return this.wallet(reviewerId);
   }
 
+  /** Books a grant inside the caller's transaction, e.g. when the Admin approves a budget supplement (BR-55). */
+  async grantWithin(tx: PrismaTx, reviewerId: string, amountTokens: number, reason: string, admin: AuthenticatedUser) {
+    const { tokenRateVnd } = await this.settings.get();
+    await this.lockReviewer(tx, reviewerId);
+    await tx.reviewerTokenEntry.create({
+      data: {
+        reviewerId,
+        entryType: ReviewerTokenEntryType.GRANT,
+        amountTokens: BigInt(amountTokens),
+        rateVnd: tokenRateVnd,
+        reason,
+        createdById: admin.id,
+      },
+    });
+    await this.notifications.notify(
+      [reviewerId],
+      {
+        type: NOTIFICATION_TYPE.TOKEN_GRANTED,
+        title: `Bạn được cấp ${amountTokens} Token`,
+        body: reason,
+        link: '/tokens',
+        payload: { amountTokens },
+      },
+      tx,
+    );
+  }
+
   private async reviewer(reviewerId: string) {
     const reviewer = await this.prisma.user.findUnique({
       where: { id: reviewerId },

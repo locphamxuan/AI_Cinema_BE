@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ProductionFeeModule } from 'src/modules/production/production-fee/production-fee.module';
+import { ReviewerTokenModule } from 'src/modules/production/reviewer-token/reviewer-token.module';
 import { StudioModule } from 'src/modules/production/studio/studio.module';
 import { ChangeRequestController } from './change-request/change-request.controller';
 import { ChangeRequestService } from './change-request/change-request.service';
@@ -10,14 +11,23 @@ import { MovieProjectService } from './movie-project.service';
 import { ProjectLifecycleService } from './project-lifecycle.service';
 import { ProjectStructureController } from './structure/project-structure.controller';
 import { ProjectStructureService } from './structure/project-structure.service';
+import { ProjectTeamController } from './team/project-team.controller';
+import { ProjectTeamService } from './team/project-team.service';
 
 @Module({
-  imports: [ProductionFeeModule, StudioModule],
-  controllers: [MovieProjectController, ProjectStructureController, IdeaFileController, ChangeRequestController],
+  imports: [ProductionFeeModule, ReviewerTokenModule, StudioModule],
+  controllers: [
+    MovieProjectController,
+    ProjectStructureController,
+    ProjectTeamController,
+    IdeaFileController,
+    ChangeRequestController,
+  ],
   providers: [
     MovieProjectService,
     ProjectLifecycleService,
     ProjectStructureService,
+    ProjectTeamService,
     IdeaFileService,
     ChangeRequestService,
   ],
