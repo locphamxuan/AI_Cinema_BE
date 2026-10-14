@@ -5,7 +5,10 @@ import { compliantEpisode, deliver } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Detail extends ProjectDetail {
-  seasons: { episodes: { id: string; episodeNumber: number; status: string; revisionStartedAt: string | null }[] }[];
+  seasons: {
+    id: string;
+    episodes: { id: string; episodeNumber: number; status: string; revisionStartedAt: string | null }[];
+  }[];
   revision: { episodeCount: number; bySeason: { seasonNumber: number; episodeNumbers: number[] }[] };
 }
 interface Publication {

@@ -57,7 +57,7 @@ describe('Reviewer Token budget (e2e)', () => {
       title: `Ngân sách e2e ${Date.now()}`,
       ideaDescription: 'Một bộ phim để kiểm tra ngân sách Token của Reviewer.',
       genreIds: [genreId],
-      seasons: [{ episodes: [{ title: 'Tập 1', targetDurationSeconds: 900, milestoneDate: inDays(30) }] }],
+      seasons: [{ episodes: [{ title: 'Tập 1', targetDurationSeconds: 900, deliveryDeadline: inDays(30) }] }],
     });
     await reviewer.post(`/projects/${project.id}/fee/entries`, { entryType: 'INITIAL', amountTokens: 60_000 }, 409);
     await reviewer.post(`/projects/${project.id}/fee/entries`, { entryType: 'INITIAL', amountTokens: 30_000 });

@@ -19,6 +19,12 @@ export async function bootApp(): Promise<INestApplication<App>> {
   return app;
 }
 
+export interface UploadFile {
+  field: string;
+  name: string;
+  content: Buffer;
+}
+
 type Method = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
 const DEFAULT_STATUS: Record<Method, number> = { get: 200, post: 201, patch: 200, put: 200, delete: 200 };
@@ -55,17 +61,15 @@ export class Actor {
     return this.call<T>('put', path, body, status);
   }
 
-  /** multipart/form-data upload of one file plus text fields. */
+  /** multipart/form-data upload of one or more files plus text fields. */
   async upload<T = Row>(
     path: string,
-    file: { field: string; name: string; content: Buffer },
+    file: UploadFile | UploadFile[],
     fields: Record<string, string> = {},
     status = 201,
   ): Promise<T> {
-    let req = request(this.app.getHttpServer())
-      .post(`/api${path}`)
-      .set('Authorization', `Bearer ${this.token}`)
-      .attach(file.field, file.content, file.name);
+    let req = request(this.app.getHttpServer()).post(`/api${path}`).set('Authorization', `Bearer ${this.token}`);
+    for (const { field, content, name } of [file].flat()) req = req.attach(field, content, name);
     for (const [key, value] of Object.entries(fields)) req = req.field(key, value);
     return this.expect<T>(await req, `UPLOAD ${path}`, status);
   }

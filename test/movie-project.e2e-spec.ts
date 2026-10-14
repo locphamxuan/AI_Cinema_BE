@@ -1,15 +1,24 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
-import { inDays } from './support/projects';
+import { inDays, newStudio } from './support/projects';
 
 interface Project extends Row {
   status: string;
   productionFeeTokens: number;
   openChangeRequests: number;
   seasons: {
+    id: string;
     seasonNumber: number;
-    episodes: { id: string; episodeNumber: number; status: string; milestoneDate: string | null }[];
+    releaseStartDate: string | null;
+    releaseEndDate: string | null;
+    episodes: {
+      id: string;
+      episodeNumber: number;
+      status: string;
+      deliveryDeadline: string | null;
+      expectedReleaseDate: string | null;
+    }[];
   }[];
 }
 
@@ -41,37 +50,68 @@ describe('Movie projects (e2e)', () => {
     title: 'Căn Hộ Số 13',
     ideaDescription: 'Phim kinh dị tâm lý về một căn hộ không ai dám thuê.',
     genreIds: [genreId],
-    seasons: [{ title: 'Mùa 1', episodes: episodes.slice(0, 2) }, { episodes: episodes.slice(2) }],
+    seasons: [
+      { title: 'Mùa 1', releaseStartDate: inDays(40), releaseEndDate: inDays(80), episodes: episodes.slice(0, 2) },
+      { episodes: episodes.slice(2) },
+    ],
   });
 
   it('creates a project whose episodes are numbered across seasons (BR-37)', async () => {
     const project = await reviewer.post<Project>(
       '/projects',
       newProject([
-        { title: 'Tập 1', targetDurationSeconds: 900, milestoneDate: inDays(20) },
-        { title: 'Tập 2', targetDurationSeconds: 2700, milestoneDate: inDays(27) },
-        { title: 'Tập 3', targetDurationSeconds: 600, milestoneDate: inDays(34) },
+        { title: 'Tập 1', targetDurationSeconds: 900, deliveryDeadline: inDays(20), expectedReleaseDate: inDays(45) },
+        { title: 'Tập 2', targetDurationSeconds: 2700, deliveryDeadline: inDays(27) },
+        { title: 'Tập 3', targetDurationSeconds: 600, deliveryDeadline: inDays(34) },
       ]),
     );
     projectId = project.id;
     expect(project.status).toBe('DRAFT');
     expect(project.seasons.map((s) => s.episodes.map((e) => e.episodeNumber))).toEqual([[1, 2], [3]]);
-    expect(project.seasons[0].episodes[0].milestoneDate).toContain(inDays(20));
+    expect(project.seasons[0].episodes[0].deliveryDeadline).toContain(inDays(20));
+    expect(project.seasons[0].releaseEndDate).toContain(inDays(80));
   });
 
-  it('needs a milestone, today or later, for every episode', async () => {
+  it('needs a delivery deadline, today or later, for every episode', async () => {
     const episode = { title: 'Tập 1', targetDurationSeconds: 900 };
     await reviewer.post('/projects', newProject([episode]), 400);
-    await reviewer.post('/projects', newProject([{ ...episode, milestoneDate: '2020-01-01' }]), 400);
+    await reviewer.post('/projects', newProject([{ ...episode, deliveryDeadline: '2020-01-01' }]), 400);
     await reviewer.post(`/projects/${projectId}/seasons`, { episodes: [episode] }, 400);
 
     const [first] = (await reviewer.get<Project>(`/projects/${projectId}`)).seasons[0].episodes;
-    await reviewer.patch(`/episodes/${first.id}`, { milestoneDate: '2020-01-01' }, 400);
-    const moved = await reviewer.patch<{ milestoneDate: string }>(`/episodes/${first.id}`, {
-      milestoneDate: inDays(21),
+    await reviewer.patch(`/episodes/${first.id}`, { deliveryDeadline: '2020-01-01' }, 400);
+    const moved = await reviewer.patch<{ deliveryDeadline: string }>(`/episodes/${first.id}`, {
+      deliveryDeadline: inDays(21),
     });
-    expect(moved.milestoneDate).toContain(inDays(21));
-    await creator.patch(`/episodes/${first.id}`, { milestoneDate: inDays(40) }, 403);
+    expect(moved.deliveryDeadline).toContain(inDays(21));
+    await creator.patch(`/episodes/${first.id}`, { deliveryDeadline: inDays(40) }, 403);
+  });
+
+  it('keeps the expected release date inside the season window and after the deadline (BR-60)', async () => {
+    const [season] = (await reviewer.get<Project>(`/projects/${projectId}`)).seasons;
+    const [first, second] = season.episodes;
+    await reviewer.patch(`/episodes/${first.id}`, { expectedReleaseDate: inDays(10) }, 400);
+    await reviewer.patch(`/episodes/${first.id}`, { expectedReleaseDate: inDays(100) }, 400);
+    await reviewer.patch(`/episodes/${first.id}`, { expectedReleaseDate: inDays(50) });
+    await reviewer.patch(`/episodes/${second.id}`, { expectedReleaseDate: inDays(55) });
+
+    await reviewer.patch(`/seasons/${season.id}`, { releaseEndDate: inDays(52) }, 400);
+    await reviewer.patch(`/episodes/${second.id}`, { expectedReleaseDate: null });
+    const shorter = await reviewer.patch<{ releaseEndDate: string }>(`/seasons/${season.id}`, {
+      releaseEndDate: inDays(52),
+    });
+    expect(shorter.releaseEndDate).toContain(inDays(52));
+    await reviewer.patch(`/seasons/${season.id}`, { releaseStartDate: inDays(60) }, 400);
+  });
+
+  it('gives a project one active studio from the catalog (BR-59)', async () => {
+    const studio = await newStudio(reviewer);
+    await reviewer.patch(`/projects/${projectId}`, { studioId: '00000000-0000-4000-8000-000000000000' }, 400);
+    await reviewer.patch(`/studios/${studio.id}`, { isActive: false });
+    await reviewer.patch(`/projects/${projectId}`, { studioId: studio.id }, 409);
+    await reviewer.patch(`/studios/${studio.id}`, { isActive: true });
+    const updated = await reviewer.patch<{ studio: { id: string } }>(`/projects/${projectId}`, { studioId: studio.id });
+    expect(updated.studio.id).toBe(studio.id);
   });
 
   it('keeps projects private to their Reviewer and away from Creators who are not assigned', async () => {
