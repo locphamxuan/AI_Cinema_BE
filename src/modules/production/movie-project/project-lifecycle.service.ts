@@ -13,6 +13,7 @@ import {
   DELIVERY_PROJECT_STATUSES,
   OPEN_PROJECT_STATUSES,
 } from 'src/modules/production/project-access/project-rules';
+import { ProjectTeamService } from './team/project-team.service';
 
 const projectLink = (movieId: string) => `/projects/${movieId}`;
 
@@ -23,6 +24,7 @@ export class ProjectLifecycleService {
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
     private readonly fees: ProductionFeeService,
+    private readonly team: ProjectTeamService,
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
   ) {}
@@ -38,8 +40,8 @@ export class ProjectLifecycleService {
     if (creator?.role !== UserRole.CONTENT_CREATOR || !creator.isActive) {
       throw new BadRequestException('Pick an active Content Creator account');
     }
-    if ((await this.fees.totalTokens(movieId)) <= 0) {
-      throw new ConflictException('Allocate the production fee before assigning a Creator (BR-12)');
+    if (!(await this.fees.isFunded(movieId))) {
+      throw new ConflictException('Allocate the production fee of every season before assigning a Creator (BR-12)');
     }
     if (!(await this.prisma.episode.count({ where: { movieId } }))) {
       throw new ConflictException('The project needs at least one episode');
@@ -57,6 +59,9 @@ export class ProjectLifecycleService {
         },
       });
       if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
+      // The lead takes a seat; the previous lead's seat ends and their episodes go back to the team.
+      if (movie.creatorId && movie.creatorId !== creatorId) await this.team.release(tx, movieId, movie.creatorId);
+      await this.team.seat(tx, movie, creatorId, { assignedById: user.id });
       await this.notifications.notify(
         [creatorId],
         {
