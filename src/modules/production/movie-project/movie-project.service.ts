@@ -26,6 +26,7 @@ const PROJECT_DETAIL = {
       episodes: {
         orderBy: { episodeNumber: 'asc' },
         include: {
+          assignedCreator: PERSON,
           mediaAssets: {
             orderBy: { version: 'desc' },
             take: 1,
@@ -36,6 +37,11 @@ const PROJECT_DETAIL = {
     },
   },
   ideaFiles: { orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
+  creatorAssignments: {
+    where: { isActive: true },
+    orderBy: { assignedAt: 'asc' },
+    include: { creator: PERSON, delegatedFrom: PERSON },
+  },
   studio: true,
   studioHandoffs: { orderBy: { createdAt: 'desc' }, include: { createdBy: PERSON, studio: true } },
   _count: { select: { changeRequests: { where: { status: ChangeRequestStatus.OPEN } } } },
@@ -77,7 +83,13 @@ export class MovieProjectService {
       let episodeNumber = 1;
       for (const [index, { season, window, episodes }] of seasons.entries()) {
         const created = await tx.season.create({
-          data: { movieId: movie.id, seasonNumber: index + 1, title: season.title, ...window },
+          data: {
+            movieId: movie.id,
+            seasonNumber: index + 1,
+            title: season.title,
+            episodeProductionCost: BigInt(season.episodeProductionCost),
+            ...window,
+          },
         });
         await tx.episode.createMany({
           data: episodes.map(({ episode, deliveryDeadline, expectedReleaseDate }) => ({
@@ -126,6 +138,7 @@ export class MovieProjectService {
       ...rest,
       genres: genres.map(({ genre }) => genre),
       productionFeeTokens: await this.fees.totalTokens(movieId),
+      seasonFees: await this.fees.seasonFees(movieId),
       openChangeRequests: _count.changeRequests,
       revision: revisionSummary(movie.seasons),
     };

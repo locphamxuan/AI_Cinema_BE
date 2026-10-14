@@ -38,7 +38,13 @@ export class ProjectStructureService {
       await this.lockMovie(tx, movieId);
       const last = await tx.season.aggregate({ where: { movieId }, _max: { seasonNumber: true } });
       const season = await tx.season.create({
-        data: { movieId, seasonNumber: (last._max.seasonNumber ?? 0) + 1, title: dto.title, ...window },
+        data: {
+          movieId,
+          seasonNumber: (last._max.seasonNumber ?? 0) + 1,
+          title: dto.title,
+          episodeProductionCost: BigInt(dto.episodeProductionCost),
+          ...window,
+        },
       });
       await this.createEpisodes(tx, movieId, season.id, dto.episodes, window, initialEpisodeStatus(movie.status));
       return tx.season.findUniqueOrThrow({
@@ -72,7 +78,14 @@ export class ProjectStructureService {
         );
       }
     }
-    return this.prisma.season.update({ where: { id: seasonId }, data: { title: dto.title, ...window } });
+    return this.prisma.season.update({
+      where: { id: seasonId },
+      data: {
+        title: dto.title,
+        episodeProductionCost: dto.episodeProductionCost === undefined ? undefined : BigInt(dto.episodeProductionCost),
+        ...window,
+      },
+    });
   }
 
   async addEpisode(seasonId: string, dto: NewEpisodeDto, user: AuthenticatedUser) {

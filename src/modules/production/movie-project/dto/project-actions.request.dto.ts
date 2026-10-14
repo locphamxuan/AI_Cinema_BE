@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
-import { MAX_TARGET_DURATION_SECONDS } from './create-movie-project.request.dto';
+import { MAX_EPISODE_PRODUCTION_COST, MAX_TARGET_DURATION_SECONDS } from './create-movie-project.request.dto';
 
 export class AssignCreatorRequestDto {
   @ApiProperty({ description: 'Active Content Creator account that will run the project.' })
@@ -61,6 +61,16 @@ export class UpdateSeasonRequestDto {
   @MaxLength(255)
   @IsOptional()
   title?: string;
+
+  @ApiPropertyOptional({
+    example: 5000,
+    description: 'Token for one episode of the season; a rise after the allocation is paid with a "+… Token thêm".',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EPISODE_PRODUCTION_COST)
+  @IsOptional()
+  episodeProductionCost?: number;
 
   @ApiPropertyOptional({ example: '2026-12-01', nullable: true, description: 'null clears it (BR-60).' })
   @IsDateString({ strict: true })
