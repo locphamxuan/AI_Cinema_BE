@@ -23,4 +23,7 @@ export class MovieProjectSummaryDto {
 
   @ApiProperty()
   updatedAt: Date;
+
+  @ApiProperty({ description: 'Newest change of the project: its latest content event, else its own update time.' })
+  lastActivityAt: Date;
 }

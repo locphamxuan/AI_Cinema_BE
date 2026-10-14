@@ -120,7 +120,7 @@ export class MovieProjectService {
   }
 
   async list(query: PaginateQuery, user: AuthenticatedUser) {
-    return paginate(query, this.prisma.movie, {
+    const page = await paginate(query, this.prisma.movie, {
       where: await this.access.readableWhere(user),
       relations: { reviewer: PERSON, creator: PERSON, studio: true, _count: { select: { episodes: true } } },
       sortableColumns: ['title', 'status', 'createdAt', 'updatedAt'],
@@ -128,6 +128,26 @@ export class MovieProjectService {
       searchableColumns: ['title'],
       filterableColumns: { status: ['$eq', '$in'], creatorId: ['$eq'] },
     });
+    const lastActivity = await this.lastActivity(page.data.map((movie) => movie.id));
+    return {
+      ...page,
+      data: page.data.map((movie) => ({
+        ...movie,
+        lastActivityAt: lastActivity.get(movie.id) ?? movie.updatedAt,
+      })),
+    };
+  }
+
+  /** The newest content event of each project: "Cập nhật lần cuối" counts every change, not only the movie row. */
+  private async lastActivity(movieIds: string[]): Promise<Map<string, Date>> {
+    const latest = await this.prisma.auditLog.groupBy({
+      by: ['movieId'],
+      where: { movieId: { in: movieIds } },
+      _max: { createdAt: true },
+    });
+    return new Map(
+      latest.flatMap(({ movieId, _max }) => (movieId && _max.createdAt ? [[movieId, _max.createdAt]] : [])),
+    );
   }
 
   async detail(movieId: string, user: AuthenticatedUser) {

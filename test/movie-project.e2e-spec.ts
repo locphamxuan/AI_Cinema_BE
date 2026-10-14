@@ -198,8 +198,11 @@ describe('Movie projects (e2e)', () => {
   });
 
   it('lets the Admin read every project but never edit one (BR-55)', async () => {
-    const all = await admin.get<{ data: Row[] }>('/projects?limit=100');
+    const all = await admin.get<{ data: (Row & { lastActivityAt: string })[] }>('/projects?limit=100');
     expect(all.data.map((p) => p.id)).toContain(projectId);
+    // "Cập nhật lần cuối" follows the content events, which are newer than the project row itself.
+    const mine = all.data.find((p) => p.id === projectId)!;
+    expect(new Date(mine.lastActivityAt).getTime()).toBeGreaterThan(Date.parse(mine.updatedAt as string));
     await admin.patch(`/projects/${projectId}`, { title: 'Hijacked' }, 403);
     await admin.post(
       `/projects/${projectId}/change-requests`,
