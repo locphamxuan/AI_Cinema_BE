@@ -25,7 +25,7 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /** The source stands in for the studio: the films were not commissioned. */
-const SOURCE_STUDIO = { studioName: 'Wikimedia Commons (nguồn mở)', studioEmail: 'catalog-sources@aicinema.local' };
+const SOURCE_STUDIO = { name: 'Wikimedia Commons (nguồn mở)', email: 'catalog-sources@aicinema.local' };
 const LABEL_TEXT = 'Phim được tạo bằng trí tuệ nhân tạo (AI)';
 const EPISODE_COIN_PRICE = 3;
 
@@ -59,6 +59,11 @@ async function seedMovie(
   const genres = await prisma.genre.findMany({ where: { name: { in: source.genres } }, select: { id: true } });
   const now = new Date();
   const today = new Date(now.toISOString().slice(0, 10));
+  const studio = await prisma.studio.upsert({
+    where: { email: SOURCE_STUDIO.email },
+    update: {},
+    create: { ...SOURCE_STUDIO, note: 'Nguồn phim AI mở, không đặt hàng sản xuất.', createdById: people.reviewerId },
+  });
 
   await prisma.$transaction(
     async (tx) => {
@@ -78,8 +83,7 @@ async function seedMovie(
           bannerUrl: source.episodes[0].thumb,
           reviewerId: people.reviewerId,
           creatorId: people.creatorId,
-          ...SOURCE_STUDIO,
-          assignedAt: now,
+          studioId: studio.id,
           handedOffAt: now,
           completedAt: now,
           genres: { create: genres.map(({ id }) => ({ genreId: id })) },
@@ -117,7 +121,7 @@ async function seedEpisode(
       synopsis: `${source.synopsis}\n\n${credit(source)}`,
       thumbnailUrl: source.thumb,
       targetDurationSeconds: source.duration,
-      milestoneDate: at.today,
+      deliveryDeadline: at.today,
       dueDate: at.today,
       status: EpisodeStatus.COMPLIANCE_PASSED,
     },
