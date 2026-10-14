@@ -23,6 +23,15 @@ export class ProjectTeamService {
     private readonly auditLog: AuditLogService,
   ) {}
 
+  /** The Creators one can pick from: Reviewers and Creators do not hold user:read, so this lists only what they need. */
+  directory() {
+    return this.prisma.user.findMany({
+      where: { role: UserRole.CONTENT_CREATOR, isActive: true },
+      orderBy: { fullName: 'asc' },
+      select: { id: true, fullName: true, email: true },
+    });
+  }
+
   /** Every seat, active first, with the episodes each Creator holds. */
   async list(movieId: string, user: AuthenticatedUser) {
     const movie = await this.access.movie(movieId, user, 'read');

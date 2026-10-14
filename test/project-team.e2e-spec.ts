@@ -36,6 +36,15 @@ describe('Project team of Creators (e2e)', () => {
 
   afterAll(() => app.close());
 
+  it('lists the active Creators to Reviewers and Creators, and nobody else', async () => {
+    const directory = await lead.get<Row[]>('/creators');
+    expect(directory.map((c) => c.id)).toEqual(expect.arrayContaining([lead.id, second.id]));
+    expect(directory.every((c) => !('passwordHash' in c))).toBe(true);
+    await reviewer.get('/creators');
+    const member = await signIn(app, 'member01@aicinema.com');
+    await member.get('/creators', 403);
+  });
+
   it('seats the lead Creator when the project is assigned', async () => {
     const seats = await team();
     expect(seats).toHaveLength(1);

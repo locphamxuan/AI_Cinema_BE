@@ -20,6 +20,13 @@ const ID = new ParseUUIDPipe({ version: '4' });
 export class ProjectTeamController {
   constructor(private readonly team: ProjectTeamService) {}
 
+  @Get('creators')
+  @RequirePermission(PERMISSION.PROJECT_MANAGE, PERMISSION.MEDIA_INGEST)
+  @ApiOperation({ summary: 'Active Content Creators a project can add or delegate episodes to' })
+  directory() {
+    return this.team.directory();
+  }
+
   @Get('projects/:movieId/creators')
   @ApiOperation({ summary: 'Creators of the project with their episodes, who added them and who delegated' })
   list(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
