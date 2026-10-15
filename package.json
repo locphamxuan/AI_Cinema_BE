@@ -10,6 +10,9 @@
   },
   "scripts": {
     "build": "nest build",
+    "film:push": "node --env-file=.env AI_Film/film-sync.mjs push",
+    "film:pull": "node --env-file=.env AI_Film/film-sync.mjs pull",
+    "film:list": "node --env-file=.env AI_Film/film-sync.mjs list",
     "postinstall": "prisma generate",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

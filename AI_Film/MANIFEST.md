@@ -1,7 +1,7 @@
 # AI_Film — danh sách phim
 
-File video **không** nằm trong git (quá lớn). Mỗi lần thêm phim, chạy `node AI_Film/gen-manifest.mjs` rồi commit file này;
-ai pull về thấy dòng mới ở đây là biết có phim mới và lấy file video từ người thêm.
+Video không nằm trong git mà nằm trên R2. Có phim mới thì chạy `npm run film:push` rồi commit `MANIFEST.json` + file này;
+đồng nghiệp pull git xong chạy `npm run film:pull` để tải các phim còn thiếu về `AI_Film/`.
 
 Tổng: 36 video.
 
@@ -22,12 +22,12 @@ Tổng: 36 video.
 | AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành đọng- Võ thuật- Void Core-ep2.mp4 | 74 |
 | AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành đọng- Võ thuật- Void Core-ep3.mp4 | 61 |
 | AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành động-Võ thuật- Void Core-ep1.mp4 | 12 |
-| AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep1.mp4 | 8 |
-| AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep2.mp4 | 13 |
-| AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep3.mp4 | 14 |
 | AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep1.mp4 | 65 |
 | AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep2.mp4 | 8 |
 | AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep3.mp4 | 7 |
+| AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep1.mp4 | 8 |
+| AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep2.mp4 | 13 |
+| AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep3.mp4 | 14 |
 | AI_Film_v2/Khoa học viễn tưởng - Giả tưởng - Phiêu lưu/Khoa học đồ long tại dị giới/Khoa học viễn tưởng- Khoa học đồ long tại dị giới.ep1.mp4 | 81 |
 | AI_Film_v2/Khoa học viễn tưởng - Giả tưởng - Phiêu lưu/Khoa học đồ long tại dị giới/Khoa học viễn tưởng- Khoa học đồ long tại dị giới.ep2.mp4 | 40 |
 | AI_Film_v2/Khoa học viễn tưởng - Giả tưởng - Phiêu lưu/Khoa học đồ long tại dị giới/Khoa học viễn tưởng- Khoa học đồ long tại dị giới.ep3.mp4 | 44 |
