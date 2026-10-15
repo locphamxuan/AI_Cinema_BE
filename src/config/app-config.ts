@@ -43,6 +43,8 @@ export interface AppConfig {
     coinExpirySweepMs: number;
     coinTopUpSweepMs: number;
     paymentReconcileSweepMs: number;
+    /** MF-3: closing sessions whose heartbeat timed out. */
+    streamingSessionSweepMs: number;
   };
   /**
    * Real payment gateways (MF-2 top-ups). Secrets are optional: a provider with no
@@ -240,6 +242,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
       coinExpirySweepMs: read.int('COIN_EXPIRY_SWEEP_MS', 24 * 60 * 60_000),
       coinTopUpSweepMs: read.int('COIN_TOPUP_SWEEP_MS', 5 * 60_000),
       paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
+      /** MF-3: sessions whose heartbeat timed out are closed and their progress saved. */
+      streamingSessionSweepMs: read.int('STREAMING_SESSION_SWEEP_MS', 30_000),
     },
     payments: paymentConfig(read),
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,

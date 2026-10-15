@@ -8,7 +8,11 @@ import {
   SessionStateViewDto,
   StopSessionRequestDto,
 } from '../watch-progress/dto/watch-progress.dto';
-import { CreateStreamingSessionRequestDto, StreamingSessionViewDto } from './dto/streaming-session.dto';
+import {
+  CreateStreamingSessionRequestDto,
+  NextEpisodeViewDto,
+  StreamingSessionViewDto,
+} from './dto/streaming-session.dto';
 import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
 
@@ -122,6 +126,13 @@ export class StreamingSessionController {
     @Body() dto?: StopSessionRequestDto,
   ) {
     return this.sessions.complete(sessionId, { userId: user?.id, guestKey }, { positionSeconds: dto?.positionSeconds });
+  }
+
+  @Get('episodes/:episodeId/next')
+  @ApiOperation({ summary: 'Episode after this one, if released; access still goes through Main Flow 2' })
+  @ApiOkResponse({ type: NextEpisodeViewDto })
+  next(@Param('episodeId', ID) episodeId: string) {
+    return this.sessions.nextEpisode(episodeId);
   }
 }
 

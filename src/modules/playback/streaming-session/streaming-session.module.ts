@@ -5,10 +5,11 @@ import { PlaybackAccessService } from '../playback-access/playback-access.servic
 import { WatchProgressModule } from '../watch-progress/watch-progress.module';
 import { AdBreakModule } from '../ad-break/ad-break.module';
 import { PlaybackUrlService } from './playback-url.service';
+import { SessionExpirySweep } from './session-expiry.sweep';
 import { StreamingSessionController } from './streaming-session.controller';
 import { StreamingSessionService } from './streaming-session.service';
 
-/** Phase 3 of Main Flow 3: sessions plus heartbeats, stops, completions and progress. */
+/** Phase 5 of Main Flow 3: sessions, progress, ads and the expiry sweep. */
 @Module({
   imports: [PlatformSettingModule, WatchProgressModule, AdBreakModule],
   controllers: [StreamingSessionController],
@@ -17,6 +18,7 @@ import { StreamingSessionService } from './streaming-session.service';
     { provide: DeviceEligibilityPort, useClass: CountingDeviceEligibilityService },
     PlaybackUrlService,
     StreamingSessionService,
+    SessionExpirySweep,
   ],
   exports: [PlaybackAccessService, PlaybackUrlService, StreamingSessionService],
 })

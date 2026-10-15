@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { StreamingEndReason, StreamingSessionStatus, type StreamingSession } from '@prisma/client';
+import { EpisodeStatus, StreamingEndReason, StreamingSessionStatus, type StreamingSession } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
@@ -22,6 +22,14 @@ export interface CreateSessionInput {
 export interface SessionCaller {
   userId?: string;
   guestKey?: string;
+}
+
+/** The episode after this one (flow 3, steps 22–24); null when the movie ends here. */
+export interface NextEpisodeView {
+  movieId: string;
+  episodeId: string | null;
+  episodeNumber: number | null;
+  title: string | null;
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -244,6 +252,34 @@ export class StreamingSessionService {
     if (!userId) return null;
     const saved = await this.progress.progress(userId, episodeId);
     return saved.found && !saved.completed && saved.positionSeconds > 0 ? saved.positionSeconds : null;
+  }
+
+  /**
+   * Steps 22–24: the episode after this one in the same movie, if it is out.
+   * Access is NOT granted here — the caller hands the id back to Main Flow 2.
+   */
+  async nextEpisode(episodeId: string): Promise<NextEpisodeView> {
+    const current = await this.prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: { movieId: true, episodeNumber: true },
+    });
+    if (!current) {
+      throw new NotFoundException({
+        message: 'Episode not found',
+        details: { reason: 'EPISODE_NOT_FOUND' },
+      });
+    }
+    const next = await this.prisma.episode.findFirst({
+      where: {
+        movieId: current.movieId,
+        episodeNumber: { gt: current.episodeNumber },
+        status: EpisodeStatus.PUBLISHED,
+      },
+      orderBy: { episodeNumber: 'asc' },
+      select: { id: true, movieId: true, episodeNumber: true, title: true },
+    });
+    if (!next) return { movieId: current.movieId, episodeId: null, episodeNumber: null, title: null };
+    return { movieId: next.movieId, episodeId: next.id, episodeNumber: next.episodeNumber, title: next.title };
   }
 
   private view(
