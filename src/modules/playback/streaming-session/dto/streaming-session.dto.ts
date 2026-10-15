@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { AdScheduleItemDto } from '../../ad-break/dto/ad.dto';
 import { IsUUID } from 'class-validator';
 
 /** Main Flow 3, step 11: ask for a streaming session for an episode access was granted for. */
@@ -55,6 +56,13 @@ export class StreamingSessionViewDto {
     description: 'Saved position for the resume-or-restart question (flow 3, step 9); absent when none',
   })
   resumePositionSeconds?: number;
+
+  @ApiProperty({
+    type: AdScheduleItemDto,
+    isArray: true,
+    description: 'Mid-roll cues (flow 3, step 13); empty for ad-free plans, short episodes or no valid ad',
+  })
+  adSchedule: AdScheduleItemDto[];
 
   @ApiPropertyOptional({ example: true, description: 'The same tap sent twice reused the live session' })
   reused?: boolean;

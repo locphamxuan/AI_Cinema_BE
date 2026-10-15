@@ -34,6 +34,8 @@ export const PERMISSION = {
   REWARD_RULE_MANAGE: 'reward.rule.manage',
   ANALYTICS_REVENUE_READ: 'analytics.revenue.read',
   ANALYTICS_CHURN_READ: 'analytics.churn.read',
+  // MF-3 — mid-roll ads
+  AD_MANAGE: 'ad.manage',
   // Administration
   MEMBER_OPS_READ: 'member:ops.read',
   USER_READ: 'user:read',
@@ -87,6 +89,7 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'reward.rule.manage': { area: 'coin', description: 'Configure the daily check-in reward ladder' },
   'analytics.revenue.read': { area: 'billing', description: 'Read the plan revenue reports' },
   'analytics.churn.read': { area: 'billing', description: 'Read the plan churn reports' },
+  'ad.manage': { area: 'advertising', description: 'Create ads and pause or resume them' },
   'member:ops.read': { area: 'administration', description: 'Read member accounts (read-only, BR-20)' },
   'user:read': { area: 'administration', description: 'Read every account, staff included' },
   'user:manage': { area: 'administration', description: 'Create staff accounts, change roles, lock accounts' },
@@ -161,5 +164,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.REWARD_RULE_MANAGE,
     PERMISSION.ANALYTICS_REVENUE_READ,
     PERMISSION.ANALYTICS_CHURN_READ,
+    // MF-3: mid-roll ads shown to ad-supported plans.
+    PERMISSION.AD_MANAGE,
   ],
 };

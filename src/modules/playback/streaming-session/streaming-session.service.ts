@@ -6,6 +6,7 @@ import { DeviceEligibilityPort } from '../playback-access/device-eligibility.por
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
 import type { SessionStateViewDto } from '../watch-progress/dto/watch-progress.dto';
+import { AdBreakService, type AdScheduleItem } from '../ad-break/ad-break.service';
 import { PlaybackUrlService } from './playback-url.service';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
 
@@ -39,6 +40,7 @@ export class StreamingSessionService {
     private readonly settings: PlatformSettingService,
     private readonly urls: PlaybackUrlService,
     private readonly progress: WatchProgressService,
+    private readonly ads: AdBreakService,
   ) {}
 
   async create(input: CreateSessionInput): Promise<StreamingSessionViewDto> {
@@ -78,7 +80,7 @@ export class StreamingSessionService {
       },
       orderBy: { startedAt: 'desc' },
     });
-    if (live) return this.view(live, verified, true);
+    if (live) return this.view(live, verified, true, null, await this.ads.scheduleOf(live.id));
 
     const created = await this.prisma.streamingSession.create({
       data: {
@@ -94,7 +96,13 @@ export class StreamingSessionService {
         userAgent: input.userAgent?.slice(0, 500) ?? null,
       },
     });
-    return this.view(created, verified, false, await this.resumeOf(userId, verified.episodeId));
+    return this.view(
+      created,
+      verified,
+      false,
+      await this.resumeOf(userId, verified.episodeId),
+      await this.ads.scheduleFor(created.id, { userId, durationSeconds: verified.durationSeconds }),
+    );
   }
 
   /** Step 15: heartbeat keeps the session alive and persists the position. */
@@ -259,6 +267,7 @@ export class StreamingSessionService {
     },
     reused: boolean,
     resumePositionSeconds: number | null = null,
+    adSchedule: AdScheduleItem[] = [],
   ): StreamingSessionViewDto {
     return {
       sessionId: session.id,
@@ -283,6 +292,7 @@ export class StreamingSessionService {
         isDefault: subtitle.isDefault,
       })),
       aiLabel: verified.aiLabel,
+      adSchedule,
       ...(reused ? { reused: true } : {}),
       ...(resumePositionSeconds !== null ? { resumePositionSeconds } : {}),
     };

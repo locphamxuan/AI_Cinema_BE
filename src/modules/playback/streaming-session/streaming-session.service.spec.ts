@@ -4,6 +4,7 @@ import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { PlaybackAccessService } from '../playback-access/playback-access.service';
 import type { WatchProgressService } from '../watch-progress/watch-progress.service';
+import type { AdBreakService } from '../ad-break/ad-break.service';
 import type { PlaybackUrlService } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
 
@@ -19,6 +20,7 @@ describe('StreamingSessionService.create', () => {
   };
   const urls = { masterUrl: jest.fn().mockReturnValue('https://api.example/api/playback/s/sess-1/master.m3u8?s=x') };
   const progress = { progress: jest.fn(), save: jest.fn() };
+  const ads = { scheduleFor: jest.fn(), scheduleOf: jest.fn() };
   const service = new StreamingSessionService(
     prisma as unknown as PrismaService,
     access as unknown as PlaybackAccessService,
@@ -26,6 +28,7 @@ describe('StreamingSessionService.create', () => {
     settings as unknown as PlatformSettingService,
     urls as unknown as PlaybackUrlService,
     progress as unknown as WatchProgressService,
+    ads as unknown as AdBreakService,
   );
 
   const verified = {
@@ -47,6 +50,8 @@ describe('StreamingSessionService.create', () => {
     access.verify.mockResolvedValue(verified);
     devices.check.mockResolvedValue(undefined);
     progress.progress.mockResolvedValue({ found: false, positionSeconds: 0, completed: false });
+    ads.scheduleFor.mockResolvedValue([]);
+    ads.scheduleOf.mockResolvedValue([]);
     prisma.streamingSession.findFirst.mockResolvedValue(null);
     prisma.streamingSession.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
       id: 'sess-1',

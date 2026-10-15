@@ -1,0 +1,169 @@
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { AdBreakStatus, AdStatus, StreamingSessionStatus, type Ad } from '@prisma/client';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
+import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import type { SessionCaller } from '../streaming-session/streaming-session.service';
+
+/** No cue in the first or last minute: intros and credits stay clean. */
+export const AD_EDGE_SECONDS = 60;
+
+export interface AdScheduleItem {
+  breakId: string;
+  positionSeconds: number;
+  ad: { id: string; title: string; mediaUrl: string; clickUrl: string | null; durationSeconds: number };
+}
+
+/**
+ * Mid-roll cues (flow 3, steps 12–13, 16–17). Schedule and impression share one
+ * SessionAdBreak row: SCHEDULED at session creation, PLAYED when the player
+ * reaches the cue — which also counts the impression.
+ */
+@Injectable()
+export class AdBreakService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: PlatformSettingService,
+  ) {}
+
+  /**
+   * Step 13: lay up to adMaxBreaksPerEpisode cues evenly across the episode,
+   * each holding a weighted draw among the currently valid ads. Ad-free plans
+   * and episodes too short for a clean window get no cue at all.
+   */
+  async scheduleFor(
+    sessionId: string,
+    input: { userId?: string; durationSeconds: number | null },
+  ): Promise<AdScheduleItem[]> {
+    const [settings, adFree] = await Promise.all([this.settings.get(), this.adFreeOf(input.userId)]);
+    if (adFree) return [];
+    const duration = input.durationSeconds;
+    if (!duration || duration <= AD_EDGE_SECONDS * 2) return [];
+    const eligible = await this.prisma.ad.findMany({
+      where: {
+        status: AdStatus.ACTIVE,
+        OR: [{ validFrom: null }, { validFrom: { lte: new Date() } }],
+        AND: [{ OR: [{ validTo: null }, { validTo: { gt: new Date() } }] }],
+      },
+    });
+    if (!eligible.length || settings.adMaxBreaksPerEpisode <= 0) return [];
+    const count = Math.min(settings.adMaxBreaksPerEpisode, eligible.length);
+    const positions = spreadPositions(duration, count);
+    const picks = weightedOrder(eligible).slice(0, positions.length);
+    // Fewer distinct ads than cues: cycle the order instead of inventing cues.
+    const rows = await Promise.all(
+      positions.map((positionSeconds, i) =>
+        this.prisma.sessionAdBreak.create({
+          data: {
+            streamingSessionId: sessionId,
+            adId: picks[i % picks.length].id,
+            positionSeconds,
+          },
+          include: { ad: true },
+        }),
+      ),
+    );
+    return rows.map(scheduleItem);
+  }
+
+  /** Cues already laid for a session, e.g. when a double tap reuses it. */
+  async scheduleOf(sessionId: string): Promise<AdScheduleItem[]> {
+    const rows = await this.prisma.sessionAdBreak.findMany({
+      where: { streamingSessionId: sessionId },
+      orderBy: { positionSeconds: 'asc' },
+      include: { ad: true },
+    });
+    return rows.map(scheduleItem);
+  }
+
+  /** Step 17: pause the episode content, play the cue, count the impression. Idempotent. */
+  async markPlayed(sessionId: string, breakId: string, caller: SessionCaller) {
+    const row = await this.prisma.sessionAdBreak.findUnique({
+      where: { id: breakId },
+      include: { session: true },
+    });
+    if (!row || row.streamingSessionId !== sessionId) {
+      throw new NotFoundException({
+        message: 'Ad break not found',
+        details: { reason: 'AD_BREAK_NOT_FOUND' },
+      });
+    }
+    const mine = row.session.userId
+      ? Boolean(caller.userId) && row.session.userId === caller.userId
+      : Boolean(caller.guestKey) && row.session.guestKey === caller.guestKey;
+    if (!mine) {
+      throw new ForbiddenException({
+        message: 'This session belongs to someone else',
+        details: { reason: 'SESSION_NOT_OWNER' },
+      });
+    }
+    if (row.session.status !== StreamingSessionStatus.ACTIVE) {
+      throw new ForbiddenException({
+        message: 'The streaming session is no longer active',
+        details: { reason: 'SESSION_NOT_ACTIVE' },
+      });
+    }
+    if (row.status === AdBreakStatus.PLAYED) {
+      return { breakId: row.id, status: row.status, playedAt: row.playedAt };
+    }
+    const played = await this.prisma.sessionAdBreak.update({
+      where: { id: row.id },
+      data: { status: AdBreakStatus.PLAYED, playedAt: new Date(), completedView: true },
+    });
+    return { breakId: played.id, status: played.status, playedAt: played.playedAt };
+  }
+
+  private async adFreeOf(userId: string | undefined): Promise<boolean> {
+    if (!userId) return false;
+    const plan = await this.prisma.subscription.findFirst({
+      where: runningPlanWhere(userId),
+      orderBy: { currentPeriodEnd: 'desc' },
+      include: { plan: { select: { features: true } } },
+    });
+    return (plan?.plan.features as { adFree?: unknown } | null)?.adFree === true;
+  }
+}
+
+/** Evenly spaced cue points inside (edge, duration - edge); nudged apart on rounding collisions. */
+export function spreadPositions(durationSeconds: number, count: number): number[] {
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new BadRequestException({
+      message: 'The break count must be a positive integer',
+      details: { reason: 'AD_BREAK_COUNT_INVALID' },
+    });
+  }
+  const used = new Set<number>();
+  return Array.from({ length: count }, (_, i) => {
+    let position = Math.round(AD_EDGE_SECONDS + ((durationSeconds - AD_EDGE_SECONDS * 2) * (i + 1)) / (count + 1));
+    while (used.has(position)) position += 1;
+    used.add(position);
+    return position;
+  });
+}
+
+/** Eligible ads shuffled by weight (heavier first on average), without replacement. */
+export function weightedOrder<T extends Pick<Ad, 'weight'>>(ads: T[]): T[] {
+  const remaining = [...ads];
+  const ordered: T[] = [];
+  while (remaining.length) {
+    const total = remaining.reduce((sum, ad) => sum + Math.max(ad.weight, 1), 0);
+    let draw = Math.random() * total;
+    const index = remaining.findIndex((ad) => (draw -= Math.max(ad.weight, 1)) < 0);
+    ordered.push(...remaining.splice(index === -1 ? remaining.length - 1 : index, 1));
+  }
+  return ordered;
+}
+
+function scheduleItem(row: { id: string; positionSeconds: number; ad: Ad }): AdScheduleItem {
+  return {
+    breakId: row.id,
+    positionSeconds: row.positionSeconds,
+    ad: {
+      id: row.ad.id,
+      title: row.ad.title,
+      mediaUrl: row.ad.mediaUrl,
+      clickUrl: row.ad.clickUrl,
+      durationSeconds: row.ad.durationSeconds,
+    },
+  };
+}

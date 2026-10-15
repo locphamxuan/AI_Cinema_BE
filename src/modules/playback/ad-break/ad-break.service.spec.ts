@@ -1,0 +1,110 @@
+import { BadRequestException } from '@nestjs/common';
+import { AdBreakStatus, StreamingSessionStatus } from '@prisma/client';
+import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { AdBreakService, spreadPositions, weightedOrder } from './ad-break.service';
+
+describe('spreadPositions', () => {
+  it('lays cues evenly inside the clean window (step 13)', () => {
+    expect(spreadPositions(1320, 2)).toEqual([460, 860]);
+    expect(spreadPositions(300, 1)).toEqual([150]);
+  });
+
+  it('rejects a non-positive count', () => {
+    expect(() => spreadPositions(300, 0)).toThrow(BadRequestException);
+  });
+});
+
+describe('weightedOrder', () => {
+  it('draws every ad exactly once, heavier ones first on average', () => {
+    const ads = [{ weight: 1 }, { weight: 100 }, { weight: 1 }];
+    const firsts = Array.from({ length: 20 }, () => weightedOrder(ads)[0]?.weight);
+    expect(firsts).toContain(100);
+    expect(weightedOrder(ads)).toHaveLength(3);
+  });
+});
+
+describe('AdBreakService', () => {
+  const prisma = {
+    ad: { findMany: jest.fn() },
+    subscription: { findFirst: jest.fn() },
+    sessionAdBreak: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+  };
+  const settings = { get: jest.fn().mockResolvedValue({ adMaxBreaksPerEpisode: 2 }) };
+  const service = new AdBreakService(prisma as unknown as PrismaService, settings as unknown as PlatformSettingService);
+
+  const ad = (overrides = {}) => ({
+    id: 'ad-1',
+    title: 'Ad',
+    mediaUrl: 'https://cdn.example/a.mp4',
+    clickUrl: null,
+    durationSeconds: 15,
+    weight: 1,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    settings.get.mockResolvedValue({ adMaxBreaksPerEpisode: 2 });
+    prisma.subscription.findFirst.mockResolvedValue(null);
+    prisma.ad.findMany.mockResolvedValue([ad({ id: 'ad-1' }), ad({ id: 'ad-2' })]);
+    prisma.sessionAdBreak.create.mockImplementation(
+      ({ data }: { data: { adId: string; positionSeconds: number } }) => ({
+        id: `br-${data.positionSeconds}`,
+        positionSeconds: data.positionSeconds,
+        ad: ad({ id: data.adId }),
+      }),
+    );
+  });
+
+  it('schedules up to the platform cap for ad-supported viewers (steps 12–13)', async () => {
+    const schedule = await service.scheduleFor('sess-1', { userId: 'u-1', durationSeconds: 1320 });
+    expect(schedule).toHaveLength(2);
+    expect(schedule[0]).toMatchObject({ positionSeconds: 460 });
+    expect(prisma.sessionAdBreak.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('schedules nothing for ad-free plans, short episodes or no valid ad', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ plan: { features: { adFree: true } } });
+    await expect(service.scheduleFor('sess-1', { userId: 'u-1', durationSeconds: 1320 })).resolves.toEqual([]);
+    await expect(service.scheduleFor('sess-1', { durationSeconds: 100 })).resolves.toEqual([]);
+    prisma.subscription.findFirst.mockResolvedValue(null);
+    prisma.ad.findMany.mockResolvedValue([]);
+    await expect(service.scheduleFor('sess-1', { durationSeconds: 1320 })).resolves.toEqual([]);
+    expect(prisma.sessionAdBreak.create).not.toHaveBeenCalled();
+  });
+
+  it('marks a cue played once, then replays idempotently (step 17)', async () => {
+    const row = (status: AdBreakStatus) => ({
+      id: 'br-1',
+      streamingSessionId: 'sess-1',
+      status,
+      playedAt: status === AdBreakStatus.PLAYED ? new Date() : null,
+      session: { userId: 'u-1', guestKey: null, status: StreamingSessionStatus.ACTIVE },
+    });
+    prisma.sessionAdBreak.findUnique.mockResolvedValue(row(AdBreakStatus.SCHEDULED));
+    prisma.sessionAdBreak.update.mockResolvedValue(row(AdBreakStatus.PLAYED));
+
+    const played = await service.markPlayed('sess-1', 'br-1', { userId: 'u-1' });
+    expect(played).toMatchObject({ breakId: 'br-1', status: 'PLAYED' });
+
+    prisma.sessionAdBreak.findUnique.mockResolvedValue(row(AdBreakStatus.PLAYED));
+    await expect(service.markPlayed('sess-1', 'br-1', { userId: 'u-1' })).resolves.toMatchObject({ status: 'PLAYED' });
+    expect(prisma.sessionAdBreak.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a cue of another session or another owner', async () => {
+    prisma.sessionAdBreak.findUnique.mockResolvedValue(null);
+    await expect(service.markPlayed('sess-1', 'missing', { userId: 'u-1' })).rejects.toMatchObject({
+      response: expect.objectContaining({ details: expect.objectContaining({ reason: 'AD_BREAK_NOT_FOUND' }) }),
+    });
+    prisma.sessionAdBreak.findUnique.mockResolvedValue({
+      id: 'br-1',
+      streamingSessionId: 'sess-2',
+      session: { userId: 'u-1', status: StreamingSessionStatus.ACTIVE },
+    });
+    await expect(service.markPlayed('sess-1', 'br-1', { userId: 'u-1' })).rejects.toMatchObject({
+      response: expect.objectContaining({ details: expect.objectContaining({ reason: 'AD_BREAK_NOT_FOUND' }) }),
+    });
+  });
+});
