@@ -6,6 +6,7 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { AddReviewerTokenEntryRequestDto } from './dto/reviewer-token.request.dto';
+import { coinActivity, feeCategory } from './token-history';
 
 const HISTORY_LIMIT = 200;
 
@@ -95,7 +96,10 @@ export class ReviewerTokenService {
         where: { createdById: reviewerId },
         orderBy: { createdAt: 'desc' },
         take: HISTORY_LIMIT,
-        include: { movie: { select: { id: true, title: true } } },
+        include: {
+          movie: { select: { id: true, title: true } },
+          season: { select: { id: true, seasonNumber: true, title: true } },
+        },
       }),
       this.settings.get(),
     ]);
@@ -103,6 +107,8 @@ export class ReviewerTokenService {
       ...budget.map((e) => ({
         id: e.id,
         kind: e.entryType,
+        category: 'ADMIN' as const,
+        season: null,
         // Seen from the Reviewer's wallet: what came in (+) or went out (−).
         amountTokens: Number(e.amountTokens),
         rateVnd: e.rateVnd,
@@ -115,6 +121,8 @@ export class ReviewerTokenService {
       ...fees.map((e) => ({
         id: e.id,
         kind: 'ALLOCATION' as const,
+        category: feeCategory(e.reason),
+        season: e.season,
         amountTokens: -Number(e.amountTokens),
         rateVnd: e.rateVnd,
         reason: e.reason,
@@ -126,7 +134,7 @@ export class ReviewerTokenService {
     ]
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, HISTORY_LIMIT);
-    return { reviewer, ...totals, tokenRateVnd, history };
+    return { reviewer, ...totals, tokenRateVnd, history, coinActivity: await coinActivity(this.prisma, reviewerId) };
   }
 
   /** Every Reviewer with granted, allocated and remaining Token, for the Admin. */
