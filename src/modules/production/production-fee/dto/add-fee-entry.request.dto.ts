@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TokenEntryType } from '@prisma/client';
 import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { Trim } from 'src/common/validation/trim';
 
 const MAX_TOKENS = 1_000_000_000;
 
@@ -31,6 +32,7 @@ export class AddFeeEntryRequestDto {
     example: 'The studio added two VFX-heavy scenes.',
     description: 'Required except for INITIAL.',
   })
+  @Trim()
   @IsString()
   @MaxLength(2000)
   @IsOptional()

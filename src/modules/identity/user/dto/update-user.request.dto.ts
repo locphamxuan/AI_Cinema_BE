@@ -3,8 +3,11 @@ import { UserRole } from '@prisma/client';
 import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { PASSWORD_HINT, PASSWORD_RULE } from 'src/modules/identity/auth/dto/password-rule';
 
+import { NormalizeEmail, Trim } from 'src/common/validation/trim';
+
 export class UpdateUserRequestDto {
   @ApiPropertyOptional({ example: 'Lê Minh Châu' })
+  @Trim()
   @IsString()
   @MinLength(2)
   @MaxLength(255)
@@ -12,6 +15,7 @@ export class UpdateUserRequestDto {
   fullName?: string;
 
   @ApiPropertyOptional({ example: 'creator09@aicinema.com', description: 'Must stay unique.' })
+  @NormalizeEmail()
   @IsEmail()
   @MaxLength(255)
   @IsOptional()
