@@ -37,7 +37,10 @@ model StudioHandoff {
     respondedAt         DateTime?             @map("responded_at") @db.Timestamptz(6)
     /// Required when the studio declines.
     declineReason       String?               @map("decline_reason") @db.Text
-    createdById         String                @map("created_by_id") @db.Uuid
+    /// When the Studio Web last reported a film mailed back to the Creator, and what it said.
+    filmSentAt          DateTime?             @map("film_sent_at") @db.Timestamptz(6)
+    filmSentNote        String?               @map("film_sent_note") @db.Text
+    createdById        String                @map("created_by_id") @db.Uuid
     createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt           DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
 
