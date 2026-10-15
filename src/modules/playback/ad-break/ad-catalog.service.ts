@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import type { AdViewDto, CreateAdRequestDto, UpdateAdRequestDto } from './dto/ad.dto';
+import { AdViewDto } from 'src/modules/playback/ad-break/dto/ad.view.dto';
+import { CreateAdRequestDto } from 'src/modules/playback/ad-break/dto/create-ad.request.dto';
+import { UpdateAdRequestDto } from 'src/modules/playback/ad-break/dto/update-ad.request.dto';
 
 /** Minimal ad catalog: list, create, pause/resume. No campaigns or targeting in this phase. */
 @Injectable()

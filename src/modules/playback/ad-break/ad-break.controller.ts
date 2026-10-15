@@ -4,7 +4,7 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { OptionalUser } from 'src/common/decorators/optional-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { AdBreakService } from './ad-break.service';
-import { AdBreakPlayedViewDto } from './dto/ad.dto';
+import { AdBreakPlayedViewDto } from 'src/modules/playback/ad-break/dto/ad-break-played.view.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 

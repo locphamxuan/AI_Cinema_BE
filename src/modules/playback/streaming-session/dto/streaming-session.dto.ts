@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AdScheduleItemDto } from '../../ad-break/dto/ad.dto';
+import { AdScheduleItemDto } from 'src/modules/playback/ad-break/dto/ad-schedule-item.dto';
 
 /** What starting (or reusing) a streaming session hands back to the player. */
 export class StreamingSessionViewDto {
