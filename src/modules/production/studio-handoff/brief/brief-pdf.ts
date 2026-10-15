@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import PDFDocument from 'pdfkit';
 
-export interface BriefEpisode {
+interface BriefEpisode {
   episodeNumber: number;
   seasonNumber: number;
   title: string;
@@ -11,6 +11,8 @@ export interface BriefEpisode {
 
 export interface BriefContent {
   movieTitle: string;
+  /** What is handed off: the whole project or one season. */
+  scope: string;
   studioName: string;
   studioContact: string | null;
   creatorName: string;
@@ -62,6 +64,7 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
     .text(text(`Ngày phát hành brief: ${day(brief.issuedAt)}`));
   doc.moveDown();
   doc.fontSize(12).text(text(`Studio: ${brief.studioName}${brief.studioContact ? ` (${brief.studioContact})` : ''}`));
+  doc.text(text(`Phạm vi bàn giao: ${brief.scope}`));
   doc.text(text(`Đầu mối AI Cinema: ${brief.creatorName} — ${brief.creatorEmail}`));
   doc.text(text(`Thể loại: ${brief.genres.join(', ')}`));
   const feeVnd = brief.productionFeeTokens * brief.tokenRateVnd;

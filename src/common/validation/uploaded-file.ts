@@ -25,6 +25,14 @@ export const FILE_KINDS = {
     extensions: ['.webp'],
     matches: (h) => startsWith(h, 0x52, 0x49, 0x46, 0x46) && h.subarray(8, 12).toString('latin1') === 'WEBP',
   },
+  gif: { mimeType: 'image/gif', extensions: ['.gif'], matches: (h) => h.subarray(0, 4).toString('latin1') === 'GIF8' },
+  bmp: { mimeType: 'image/bmp', extensions: ['.bmp'], matches: (h) => startsWith(h, 0x42, 0x4d) },
+  avif: {
+    mimeType: 'image/avif',
+    extensions: ['.avif'],
+    matches: (h) =>
+      h.subarray(4, 8).toString('latin1') === 'ftyp' && ['avif', 'avis'].includes(h.subarray(8, 12).toString('latin1')),
+  },
   txt: { mimeType: 'text/plain', extensions: ['.txt'], matches: (h) => h.length > 0 && !h.includes(0) },
   mp4: {
     mimeType: 'video/mp4',
@@ -35,6 +43,36 @@ export const FILE_KINDS = {
     mimeType: 'video/quicktime',
     extensions: ['.mov'],
     matches: (h) => ['ftyp', 'moov', 'mdat', 'wide', 'free'].includes(h.subarray(4, 8).toString('latin1')),
+  },
+  doc: {
+    mimeType: 'application/msword',
+    extensions: ['.doc'],
+    matches: (h) => startsWith(h, 0xd0, 0xcf, 0x11, 0xe0),
+  },
+  rtf: {
+    mimeType: 'application/rtf',
+    extensions: ['.rtf'],
+    matches: (h) => h.subarray(0, 5).toString('latin1') === '{\\rtf',
+  },
+  xlsx: {
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    extensions: ['.xlsx'],
+    matches: (h) => startsWith(h, 0x50, 0x4b, 0x03, 0x04),
+  },
+  pptx: {
+    mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    extensions: ['.pptx'],
+    matches: (h) => startsWith(h, 0x50, 0x4b, 0x03, 0x04),
+  },
+  webm: {
+    mimeType: 'video/webm',
+    extensions: ['.webm', '.mkv'],
+    matches: (h) => startsWith(h, 0x1a, 0x45, 0xdf, 0xa3),
+  },
+  avi: {
+    mimeType: 'video/x-msvideo',
+    extensions: ['.avi'],
+    matches: (h) => startsWith(h, 0x52, 0x49, 0x46, 0x46) && h.subarray(8, 11).toString('latin1') === 'AVI',
   },
   vtt: {
     mimeType: 'text/vtt',

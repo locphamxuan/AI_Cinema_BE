@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -12,6 +12,7 @@ const profile = {
   email: 'reviewer@aicinema.com',
   fullName: 'Reviewer',
   dateOfBirth: null,
+  phoneNumber: null,
   role: UserRole.CONTENT_REVIEWER,
   isActive: true,
   createdAt: new Date(),
@@ -21,11 +22,11 @@ const passwordHash = bcrypt.hashSync('Aicinema@123', 4);
 const tokens = { accessToken: 'access', refreshToken: 'refresh', accessTokenExpiresIn: 900 };
 
 describe('AuthService', () => {
-  const user = { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), create: jest.fn() };
+  const user = { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), create: jest.fn(), update: jest.fn() };
   const tx = { user };
   const prisma = { user, $transaction: jest.fn(<T>(work: (client: typeof tx) => Promise<T>) => work(tx)) };
   const wallets = { openForNewAccount: jest.fn() };
-  const sessions = { issue: jest.fn(), rotate: jest.fn(), revoke: jest.fn() };
+  const sessions = { issue: jest.fn(), rotate: jest.fn(), revoke: jest.fn(), revokeAll: jest.fn() };
   const accessControl = { permissionsOf: () => Promise.resolve(new Set(['project:manage', 'content:review'])) };
   const service = new AuthService(
     prisma as unknown as PrismaService,
@@ -99,6 +100,36 @@ describe('AuthService', () => {
     it('rejects an email that already has an account', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'existing' });
       await expect(service.register(dto)).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('own profile', () => {
+    const caller = { id: profile.id, role: UserRole.CONTENT_REVIEWER };
+
+    it('saves the name and phone number the owner typed', async () => {
+      prisma.user.update.mockResolvedValue({ ...profile, phoneNumber: '0912345678' });
+      await service.updateMe(caller, { fullName: 'Ngoc', phoneNumber: '0912345678' });
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: profile.id },
+          data: expect.objectContaining({ phoneNumber: '0912345678' }),
+        }),
+      );
+    });
+
+    it('refuses a birthday in the future', async () => {
+      await expect(service.updateMe(caller, { dateOfBirth: '2999-01-01' })).rejects.toThrow(BadRequestException);
+    });
+
+    it('changes the password only with the current one, then signs every other session out', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...profile, passwordHash });
+      await expect(
+        service.changePassword(profile.id, { currentPassword: 'wrong', newPassword: 'Newpass123' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      await service.changePassword(profile.id, { currentPassword: 'Aicinema@123', newPassword: 'Newpass123' });
+      expect(sessions.revokeAll).toHaveBeenCalledWith(profile.id);
+      expect(sessions.issue).toHaveBeenCalled();
     });
   });
 

@@ -62,6 +62,17 @@ export class TopUpSettlementService {
         const failureReason = `The gateway reported ${input.amountVnd} VND instead of ${payment.amountVnd} VND`;
         await tx.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.FAILED, failureReason } });
         await tx.coinTopUp.update({ where: { id: topUp.id }, data: { status: TopUpStatus.FAILED, failureReason } });
+        await this.notifications.notify(
+          [topUp.userId],
+          {
+            type: NOTIFICATION_TYPE.COIN_TOPUP_FAILED,
+            title: 'Nạp Coin chưa thành công: số tiền thanh toán không khớp',
+            body: `Cổng thanh toán báo ${input.amountVnd.toLocaleString('vi-VN')} VND thay vì ${payment.amountVnd.toLocaleString('vi-VN')} VND. Chưa cộng Coin; liên hệ hỗ trợ để được xử lý.`,
+            link: '/wallet',
+            payload: { topUpId: topUp.id },
+          },
+          tx,
+        );
         // Commit both FAILED states first; throwing inside the transaction would roll them back.
         return {
           amountMismatch: { expectedVnd: payment.amountVnd, settledVnd: input.amountVnd },
@@ -122,7 +133,10 @@ export class TopUpSettlementService {
   /** The gateway reports the member gave up, or gave the wrong amount. The order mirrors it. */
   async markPaymentFailed(paymentId: string, reason: string, status: Extract<PaymentStatus, 'FAILED' | 'CANCELLED'>) {
     return this.prisma.$transaction(async (tx) => {
-      const payment = await tx.payment.findUniqueOrThrow({ where: { id: paymentId }, select: { coinTopUpId: true } });
+      const payment = await tx.payment.findUniqueOrThrow({
+        where: { id: paymentId },
+        select: { coinTopUpId: true, amountVnd: true, coinTopUp: { select: { userId: true } } },
+      });
       const updated = await tx.payment.update({ where: { id: paymentId }, data: { status, failureReason: reason } });
       await tx.coinTopUp.update({
         where: { id: payment.coinTopUpId },
@@ -131,6 +145,20 @@ export class TopUpSettlementService {
           failureReason: reason,
         },
       });
+      // The member who placed the order hears why no Coin arrived.
+      if (payment.coinTopUp?.userId) {
+        await this.notifications.notify(
+          [payment.coinTopUp.userId],
+          {
+            type: NOTIFICATION_TYPE.COIN_TOPUP_FAILED,
+            title: status === PaymentStatus.FAILED ? 'Nạp Coin thất bại' : 'Bạn đã huỷ giao dịch nạp Coin',
+            body: `Giao dịch ${payment.amountVnd.toLocaleString('vi-VN')} VND không được cộng Coin.`,
+            link: '/wallet',
+            payload: { topUpId: payment.coinTopUpId },
+          },
+          tx,
+        );
+      }
       return updated;
     });
   }

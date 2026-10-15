@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -8,6 +8,7 @@ import { appConfig } from 'src/config/config.module';
 import { AuthService } from './auth.service';
 import { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
+import { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
 
@@ -62,5 +63,23 @@ export class AuthController {
   @ApiOkResponse({ type: AuthProfileDto })
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.me(user.id);
+  }
+
+  @Patch('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Edit your own profile: name, phone number, birthday' })
+  @ApiOkResponse({ type: AuthProfileDto })
+  updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateMyProfileRequestDto) {
+    return this.authService.updateMe(user, dto);
+  }
+
+  @Post('me/password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(authRateLimit)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change your password; every other session is signed out and a new one is returned' })
+  @ApiOkResponse({ type: AuthSessionDto })
+  changePassword(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangeMyPasswordRequestDto) {
+    return this.authService.changePassword(user.id, dto);
   }
 }

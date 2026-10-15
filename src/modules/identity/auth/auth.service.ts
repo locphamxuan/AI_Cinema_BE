@@ -1,5 +1,12 @@
-import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
@@ -7,6 +14,7 @@ import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user
 import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
 import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
+import type { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
 import { SessionTokenService } from './session-token.service';
 
@@ -71,6 +79,40 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: USER_PROFILE_SELECT });
     if (!user) throw new UnauthorizedException('Account no longer available');
     return this.withPermissions(user);
+  }
+
+  async updateMe(caller: AuthenticatedUser, dto: UpdateMyProfileRequestDto): Promise<AuthProfileDto> {
+    const dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined;
+    if (dateOfBirth && dateOfBirth.getTime() > Date.now())
+      throw new BadRequestException('Birthday cannot be in the future');
+    if (dateOfBirth && caller.role === UserRole.MEMBER && !isAdult(dateOfBirth)) {
+      throw new ForbiddenException('AI Cinema is only for viewers aged 18 or older');
+    }
+    const user = await this.prisma.user.update({
+      where: { id: caller.id },
+      data: { fullName: dto.fullName, phoneNumber: dto.phoneNumber, dateOfBirth },
+      select: USER_PROFILE_SELECT,
+    });
+    return this.withPermissions(user);
+  }
+
+  async changePassword(userId: string, dto: ChangeMyPasswordRequestDto): Promise<AuthSessionDto> {
+    const found = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { ...USER_PROFILE_SELECT, passwordHash: true },
+    });
+    if (!found || !(await verifyPassword(dto.currentPassword, found.passwordHash))) {
+      throw new UnauthorizedException('The current password is incorrect');
+    }
+    if (dto.currentPassword === dto.newPassword)
+      throw new BadRequestException('Choose a password different from the current one');
+    const { passwordHash: _hash, ...user } = found;
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: await hashPassword(dto.newPassword) },
+    });
+    await this.tokens.revokeAll(userId);
+    return this.session(user);
   }
 
   private async session(user: UserProfile): Promise<AuthSessionDto> {

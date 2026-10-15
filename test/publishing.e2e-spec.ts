@@ -101,7 +101,7 @@ describe('Pricing and publishing (e2e)', () => {
 
     await compliantEpisode(reviewer, creator, episodeId(0));
     const blocked = await reviewer.post<Refusal>(path, {}, 409);
-    expect(blocked.error.details).toEqual(['the movie synopsis', 'the movie age rating (BR-54)']);
+    expect(blocked.error.details).toEqual(['the movie synopsis', 'the movie age rating']);
 
     await reviewer.patch(`/projects/${project.id}`, {
       synopsis: 'Một thám tử AI điều tra chuỗi vụ mất tích ở Đà Lạt.',

@@ -5,10 +5,12 @@ enum TokenEntryType {
 }
 
 /// Production fee of a movie in Token, append-only (BR-45, BR-46, BR-50). A mistake is fixed
-/// with a CORRECTION entry, never by editing a row.
+/// with a CORRECTION entry, never by editing a row. An entry belongs to a season when the fee is
+/// priced per season: INITIAL is its baseline (price × episodes), TOP_UP the "+… Token thêm".
 model TokenLedgerEntry {
   id           String         @id @default(uuid()) @db.Uuid
   movieId      String         @map("movie_id") @db.Uuid
+  seasonId     String?        @map("season_id") @db.Uuid
   entryType    TokenEntryType @map("entry_type")
   /// Negative only for CORRECTION.
   amountTokens BigInt         @map("amount_tokens")
@@ -18,9 +20,11 @@ model TokenLedgerEntry {
   createdById  String         @map("created_by_id") @db.Uuid
   createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  movie     Movie @relation(fields: [movieId], references: [id], onDelete: Restrict)
-  createdBy User  @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  movie     Movie   @relation(fields: [movieId], references: [id], onDelete: Restrict)
+  season    Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  createdBy User    @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([movieId, createdAt])
+  @@index([seasonId])
   @@map("token_ledger")
 }

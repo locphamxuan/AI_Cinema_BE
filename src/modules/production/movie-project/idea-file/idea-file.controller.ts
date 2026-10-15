@@ -1,4 +1,18 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseEnumPipe,
+  Post,
+  ParseUUIDPipe,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { IdeaFilePurpose } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -21,19 +35,33 @@ export class IdeaFileController {
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
   @ApiOperation({
-    summary: 'Upload an idea file (PDF, DOCX, UTF-8 TXT, PNG, JPEG, WebP; ≤ 20 MB); same name = new version',
+    summary:
+      'Upload an idea or synopsis file (?purpose=IDEA|SYNOPSIS; documents, TXT, images, video; ≤ 100 MB); same name = new version',
   })
   upload(
     @Param('movieId', ID) movieId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Query('purpose', new ParseEnumPipe(IdeaFilePurpose, { optional: true })) purpose?: IdeaFilePurpose,
   ) {
-    return this.ideaFiles.upload(movieId, file, user);
+    return this.ideaFiles.upload(movieId, file, user, purpose);
   }
 
   @Get()
   list(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.ideaFiles.list(movieId, user);
+  }
+
+  @Delete(':fileId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission(PERMISSION.PROJECT_MANAGE)
+  @ApiOperation({ summary: 'Remove an idea or synopsis file version while the project is open' })
+  remove(
+    @Param('movieId', ID) movieId: string,
+    @Param('fileId', ID) fileId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ideaFiles.remove(movieId, fileId, user);
   }
 
   @Get(':fileId/content')

@@ -1,10 +1,13 @@
 /**
- * Puts the AI films of catalog-sources.ts into the catalog as released movies, without going through the
- * MF-1 workflow: each episode gets an approved version (played straight from Wikimedia Commons), its AI
- * label, the four compliance items, a Coin price and a publication, so the database gates accept it.
- * Idempotent: a movie whose title already exists is left alone. Run after `prisma db seed`.
+ * Puts the team's AI films (AI_Film/CATALOG.json, written by `npm run film:catalog`) into the catalog as released
+ * movies, without going through the MF-1 workflow: each episode gets an approved version (played straight from
+ * R2), its AI label, the four compliance items, a Coin price and a publication, so the database gates accept it.
+ * A genre the genres table does not have yet is added. Idempotent: a movie whose title exists is left alone.
+ * Run after `prisma db seed`.
  */
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
   ComplianceCheckType,
@@ -17,17 +20,46 @@ import {
   PolicyType,
   PrismaClient,
 } from '@prisma/client';
-import { CATALOG_SOURCES, type CatalogEpisodeSource, type CatalogMovieSource } from './catalog-sources';
+
+interface CatalogSubtitle {
+  language: string;
+  url: string;
+  isDefault: boolean;
+}
+
+interface CatalogEpisode {
+  number: number;
+  subtitles?: CatalogSubtitle[];
+  title: string;
+  file: string;
+  url: string;
+  size: number;
+  duration: number;
+  width: number | null;
+  height: number | null;
+}
+
+interface CatalogMovie {
+  title: string;
+  slug: string;
+  genres: string[];
+  language: string;
+  releaseYear: number;
+  synopsis: string;
+  posterUrl: string;
+  episodes: CatalogEpisode[];
+}
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
-/** The source stands in for the studio: the films were not commissioned. */
-const SOURCE_STUDIO = { studioName: 'Wikimedia Commons (nguồn mở)', studioEmail: 'catalog-sources@aicinema.local' };
+/** The team stands in for the studio: the films were not commissioned through MF-1. */
+const CATALOG_STUDIO = { name: 'AI Cinema — phim của nhóm (AI_Film)', email: 'ai-film@aicinema.local' };
 const LABEL_TEXT = 'Phim được tạo bằng trí tuệ nhân tạo (AI)';
 const EPISODE_COIN_PRICE = 3;
+const SOURCE_NOTE = 'Phim AI do nhóm dự án cung cấp (thư mục AI_Film), lưu trên R2.';
 
 const POLICY_OF: Record<ComplianceCheckType, PolicyType> = {
   AI_LABEL_PRESENCE: PolicyType.AI_LABELING,
@@ -36,9 +68,9 @@ const POLICY_OF: Record<ComplianceCheckType, PolicyType> = {
   REAL_PERSON_LIKENESS: PolicyType.LEGAL,
 };
 
-/** Attribution as CC BY asks: author, licence and source. */
-function credit(e: CatalogEpisodeSource): string {
-  return `"${e.title}" — ${e.artist}. ${e.license}${e.licenseUrl ? ` (${e.licenseUrl})` : ''}. Nguồn: ${e.page}`;
+function readCatalog(): CatalogMovie[] {
+  const file = path.join(process.cwd(), 'AI_Film', 'CATALOG.json');
+  return (JSON.parse(readFileSync(file, 'utf8')) as { movies: CatalogMovie[] }).movies;
 }
 
 async function activePolicies(): Promise<Record<PolicyType, string>> {
@@ -51,14 +83,29 @@ async function activePolicies(): Promise<Record<PolicyType, string>> {
   return byType;
 }
 
+/** The genre ids of the names, adding the ones the table lacks (matched ignoring case). */
+async function genreIds(names: string[]): Promise<string[]> {
+  const ids: string[] = [];
+  for (const name of names) {
+    const existing = await prisma.genre.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
+    ids.push((existing ?? (await prisma.genre.create({ data: { name } }))).id);
+  }
+  return [...new Set(ids)];
+}
+
 async function seedMovie(
-  source: CatalogMovieSource,
+  source: CatalogMovie,
   people: { reviewerId: string; creatorId: string },
   policies: Record<PolicyType, string>,
 ) {
-  const genres = await prisma.genre.findMany({ where: { name: { in: source.genres } }, select: { id: true } });
+  const genres = await genreIds(source.genres);
   const now = new Date();
   const today = new Date(now.toISOString().slice(0, 10));
+  const studio = await prisma.studio.upsert({
+    where: { email: CATALOG_STUDIO.email },
+    update: {},
+    create: { ...CATALOG_STUDIO, note: SOURCE_NOTE, createdById: people.reviewerId },
+  });
 
   await prisma.$transaction(
     async (tx) => {
@@ -66,34 +113,23 @@ async function seedMovie(
         data: {
           title: source.title,
           synopsis: source.synopsis,
-          ideaDescription: [
-            'Phim AI có sẵn, đưa vào catalog từ nguồn mở (không đặt studio sản xuất).',
-            ...source.episodes.map(credit),
-          ].join('\n'),
-          defaultLanguage: source.title.startsWith('Le Temple') ? 'fr' : 'vi',
-          ageRating: source.ageRating,
+          ideaDescription: `${SOURCE_NOTE}\n${source.episodes.map((e) => e.file).join('\n')}`,
+          defaultLanguage: source.language,
           releaseYear: source.releaseYear,
           status: MovieStatus.COMPLETED,
-          posterUrl: source.episodes[0].thumb,
-          bannerUrl: source.episodes[0].thumb,
+          posterUrl: source.posterUrl,
+          bannerUrl: source.posterUrl,
           reviewerId: people.reviewerId,
           creatorId: people.creatorId,
-          ...SOURCE_STUDIO,
-          assignedAt: now,
+          studioId: studio.id,
           handedOffAt: now,
           completedAt: now,
-          genres: { create: genres.map(({ id }) => ({ genreId: id })) },
+          genres: { create: genres.map((genreId) => ({ genreId })) },
         },
       });
       const season = await tx.season.create({ data: { movieId: movie.id, seasonNumber: 1, title: 'Mùa 1' } });
-      for (const [index, episode] of source.episodes.entries()) {
-        await seedEpisode(
-          tx,
-          { movieId: movie.id, seasonId: season.id, episodeNumber: index + 1, today, now },
-          episode,
-          people,
-          policies,
-        );
+      for (const episode of source.episodes) {
+        await seedEpisode(tx, { movieId: movie.id, seasonId: season.id, source, today, now }, episode, people, policies);
       }
       // A remote database (Neon) needs more than the 5 s default for a movie with many episodes.
     },
@@ -103,8 +139,8 @@ async function seedMovie(
 
 async function seedEpisode(
   tx: Tx,
-  at: { movieId: string; seasonId: string; episodeNumber: number; today: Date; now: Date },
-  source: CatalogEpisodeSource,
+  at: { movieId: string; seasonId: string; source: CatalogMovie; today: Date; now: Date },
+  source: CatalogEpisode,
   people: { reviewerId: string; creatorId: string },
   policies: Record<PolicyType, string>,
 ) {
@@ -112,17 +148,16 @@ async function seedEpisode(
     data: {
       movieId: at.movieId,
       seasonId: at.seasonId,
-      episodeNumber: at.episodeNumber,
+      episodeNumber: source.number,
       title: source.title,
-      synopsis: `${source.synopsis}\n\n${credit(source)}`,
-      thumbnailUrl: source.thumb,
+      synopsis: `${at.source.title} — ${source.title}.`,
+      thumbnailUrl: at.source.posterUrl,
       targetDurationSeconds: source.duration,
-      milestoneDate: at.today,
+      deliveryDeadline: at.today,
       dueDate: at.today,
       status: EpisodeStatus.COMPLIANCE_PASSED,
     },
   });
-  // Played straight from Commons: no copy in our storage, so not self-hosted.
   const asset = await tx.mediaAsset.create({
     data: {
       episodeId: episode.id,
@@ -130,21 +165,21 @@ async function seedEpisode(
       sourceMethod: MediaSourceMethod.REMOTE_FILE,
       sourceUrl: source.url,
       streamUrl: source.url,
-      isSelfHosted: false,
-      qualities: [`${source.height}p`],
+      isSelfHosted: true,
+      qualities: source.height ? [`${source.height}p`] : [],
       durationSeconds: source.duration,
       fileSizeBytes: BigInt(source.size),
       ingestStatus: MediaIngestStatus.READY,
       aiDisclosure: {
-        aiTools: source.aiTools,
-        aiGeneratedParts: ['video'],
+        aiTools: ['AI video generation'],
+        aiGeneratedParts: ['video', 'audio'],
         humanEdited: true,
         noRealPersonLikeness: true,
         noCopyrightedMaterial: true,
-        source: { file: source.file, page: source.page, license: source.license, author: source.artist },
+        source: { file: source.file },
       },
       proposedLabelType: LabelType.AI_GENERATED,
-      submissionNote: credit(source),
+      submissionNote: SOURCE_NOTE,
       submittedById: people.creatorId,
     },
   });
@@ -178,6 +213,34 @@ async function seedEpisode(
   await tx.publication.create({
     data: { episodeId: episode.id, mediaAssetId: asset.id, publishedAt: at.now, publishedById: people.reviewerId },
   });
+  await attachSubtitles(tx, asset.id, source.subtitles ?? []);
+}
+
+/** One track per language on the approved version; running the seed again refreshes the URL. */
+async function attachSubtitles(db: Tx | PrismaClient, mediaAssetId: string, subtitles: CatalogSubtitle[]) {
+  for (const s of subtitles) {
+    await db.mediaSubtitle.upsert({
+      where: { mediaAssetId_language: { mediaAssetId, language: s.language } },
+      update: { fileUrl: s.url, isDefault: s.isDefault },
+      create: { mediaAssetId, language: s.language, fileUrl: s.url, isDefault: s.isDefault },
+    });
+  }
+}
+
+/** A movie seeded before its subtitles existed gets them on its released episodes. */
+async function backfillSubtitles(movieId: string, source: CatalogMovie): Promise<number> {
+  let added = 0;
+  for (const episode of source.episodes) {
+    if (!episode.subtitles?.length) continue;
+    const row = await prisma.episode.findFirst({
+      where: { movieId, episodeNumber: episode.number, approvedMediaAssetId: { not: null } },
+      select: { approvedMediaAssetId: true },
+    });
+    if (!row?.approvedMediaAssetId) continue;
+    await attachSubtitles(prisma, row.approvedMediaAssetId, episode.subtitles);
+    added += episode.subtitles.length;
+  }
+  return added;
 }
 
 async function main() {
@@ -187,17 +250,22 @@ async function main() {
   ]);
   if (!reviewer || !creator) throw new Error('Seed accounts missing: run `prisma db seed` first');
   const policies = await activePolicies();
+  const catalog = readCatalog();
 
   let added = 0;
-  for (const source of CATALOG_SOURCES) {
-    if (await prisma.movie.findFirst({ where: { title: source.title }, select: { id: true } })) continue;
+  for (const source of catalog) {
+    const existing = await prisma.movie.findFirst({ where: { title: source.title }, select: { id: true } });
+    if (existing) {
+      const tracks = await backfillSubtitles(existing.id, source);
+      if (tracks) console.log(`~ ${source.title}: ${tracks} subtitle track(s)`);
+      continue;
+    }
     await seedMovie(source, { reviewerId: reviewer.id, creatorId: creator.id }, policies);
     added += 1;
+    console.log(`+ ${source.title}`);
   }
-  const episodes = CATALOG_SOURCES.reduce((n, m) => n + m.episodes.length, 0);
-  console.log(
-    `Catalog: ${added} new movie(s); ${CATALOG_SOURCES.length} movies / ${episodes} episodes in the source list.`,
-  );
+  const episodes = catalog.reduce((n, m) => n + m.episodes.length, 0);
+  console.log(`Catalog: ${added} new movie(s); ${catalog.length} movies / ${episodes} episodes in AI_Film/CATALOG.json.`);
 }
 
 main()

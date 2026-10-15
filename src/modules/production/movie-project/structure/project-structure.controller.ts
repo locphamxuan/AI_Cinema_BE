@@ -5,7 +5,7 @@ import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { NewEpisodeDto, NewSeasonDto } from '../dto/create-movie-project.request.dto';
-import { UpdateEpisodeRequestDto } from '../dto/project-actions.request.dto';
+import { UpdateEpisodeRequestDto, UpdateSeasonRequestDto } from '../dto/project-actions.request.dto';
 import { ProjectStructureService } from './project-structure.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -21,6 +21,16 @@ export class ProjectStructureController {
   @ApiOperation({ summary: 'Add a season with its episodes (numbering continues across the movie)' })
   addSeason(@Param('movieId', ID) movieId: string, @Body() dto: NewSeasonDto, @CurrentUser() user: AuthenticatedUser) {
     return this.structure.addSeason(movieId, dto, user);
+  }
+
+  @Patch('seasons/:seasonId')
+  @ApiOperation({ summary: 'Edit the season title and its release window (BR-60)' })
+  updateSeason(
+    @Param('seasonId', ID) seasonId: string,
+    @Body() dto: UpdateSeasonRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.structure.updateSeason(seasonId, dto, user);
   }
 
   @Post('seasons/:seasonId/episodes')

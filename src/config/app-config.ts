@@ -68,6 +68,8 @@ export interface AppConfig {
     };
   };
   briefFontPath: string | null;
+  /** The Studio Web reports the films it mails back; null leaves that channel closed. */
+  studio: { webhookToken: string | null };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -195,7 +197,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     redisUrl: read.optional('REDIS_URL') ?? null,
     jwt: {
       secret: jwtSecret(read, isProduction),
-      accessTtlSeconds: read.int('JWT_ACCESS_TTL_SECONDS', 15 * 60, 60),
+      accessTtlSeconds: read.int('JWT_ACCESS_TTL_SECONDS', 30 * 60, 60),
       refreshTtlDays: read.int('JWT_REFRESH_TTL_DAYS', 30, 1),
       issuer: read.string('JWT_ISSUER', 'ai-cinema-api'),
       audience: read.string('JWT_AUDIENCE', 'ai-cinema'),
@@ -234,6 +236,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     },
     payments: paymentConfig(read),
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
+    studio: { webhookToken: read.optional('STUDIO_WEBHOOK_TOKEN') ?? null },
   };
 
   if (isProduction && config.media.allowPrivateUrls) {

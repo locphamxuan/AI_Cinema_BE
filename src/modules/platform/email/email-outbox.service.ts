@@ -7,7 +7,7 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 
-export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF', STUDIO_PORTAL_LINK: 'STUDIO_PORTAL_LINK' } as const;
+export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF' } as const;
 
 export interface EmailAttachment {
   /** Private storage key of the file. */
@@ -26,6 +26,9 @@ export interface NewEmail {
   notifyOnFailureId: string;
   /** Screen the failure notification opens. */
   link?: string;
+  /** Sender name shown to the recipient (the Creator for a brief). */
+  fromName?: string;
+  replyTo?: string;
 }
 
 interface StoredPayload {
@@ -33,6 +36,8 @@ interface StoredPayload {
   attachments: Omit<EmailAttachment, 'key'>[];
   notifyOnFailureId: string;
   link?: string;
+  fromName?: string;
+  replyTo?: string;
 }
 
 const SEND_JOB = 'email.send';
@@ -67,6 +72,8 @@ export class EmailOutboxService implements OnModuleInit {
       attachments: email.attachments.map(({ fileName, contentType }) => ({ fileName, contentType })),
       notifyOnFailureId: email.notifyOnFailureId,
       link: email.link,
+      fromName: email.fromName,
+      replyTo: email.replyTo,
     };
     const message = await tx.emailMessage.create({
       data: {
@@ -97,7 +104,14 @@ export class EmailOutboxService implements OnModuleInit {
           content: await this.storage.read(key, 'private'),
         })),
       );
-      await this.mailer.send({ to: message.toEmail, subject: message.subject, text: payload.text, attachments });
+      await this.mailer.send({
+        to: message.toEmail,
+        subject: message.subject,
+        text: payload.text,
+        attachments,
+        fromName: payload.fromName,
+        replyTo: payload.replyTo,
+      });
       await this.prisma.emailMessage.update({
         where: { id: emailMessageId },
         data: { status: EmailStatus.SENT, sentAt: new Date(), attempts: { increment: 1 }, errorMessage: null },

@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ReviewerTokenEntryType } from '@prisma/client';
 import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
+import { Trim } from 'src/common/validation/trim';
+
 /** The Admin gives a Reviewer Token, or takes back part of what is left (with a reason). */
 export class AddReviewerTokenEntryRequestDto {
   @ApiProperty({ enum: ReviewerTokenEntryType })
@@ -15,6 +17,7 @@ export class AddReviewerTokenEntryRequestDto {
   amountTokens: number;
 
   @ApiPropertyOptional({ example: 'Ngân sách quý 4 cho dòng phim kinh dị.', description: 'Required for REVOKE.' })
+  @Trim()
   @IsString()
   @MaxLength(2000)
   @IsOptional()

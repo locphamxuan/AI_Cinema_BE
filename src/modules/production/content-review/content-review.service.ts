@@ -94,7 +94,7 @@ export class ContentReviewService {
       {
         type: NOTIFICATION_TYPE.CONTENT_CHANGES_REQUESTED,
         title: `Yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
-        body: `Studio xem góp ý trên cổng studio và giao bản mới: ${comments}`,
+        body: `Chuyển góp ý cho Studio, chuyển mốc về "Đang thực hiện" và tải lên bản mới: ${comments}`,
         link: `/projects/${episode.movieId}/episodes/${episode.id}`,
         payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },
@@ -110,7 +110,7 @@ export class ContentReviewService {
       include: {
         episode: { include: { movie: { select: { id: true, title: true, status: true } } } },
         submittedBy: { select: { id: true, fullName: true } },
-        studioHandoff: { select: { id: true, studioName: true } },
+        studioHandoff: { select: { id: true, studio: { select: { id: true, name: true } } } },
         contentReviews: {
           orderBy: { createdAt: 'desc' },
           include: { reviewer: { select: { id: true, fullName: true } } },

@@ -7,15 +7,13 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { WalletService } from '../coin-wallet/wallet.service';
 import { TOPUP_REASON } from './constants/topup-reason';
 import { ORDER_VIEW, orderView, PAYMENT_VIEW } from './utils/order-view';
-import { normalizeCallback, type GatewayCallback } from './utils/payment-callback.util';
+import { normalizeCallback } from './utils/payment-callback.util';
 import { PaymentGatewayService } from './gateways/payment-gateway.service';
 import { VNPAY_RSP } from './gateways/vnpay-signing';
 import { TopUpLookupService } from './topup-lookup.service';
 import { TopUpSettlementService } from './topup-settlement.service';
 
 export { TOPUP_REASON };
-export type { GatewayCallback };
-
 /** How long a pending order may sit before the sweeper gives up on it. */
 const ORDER_TTL_MINUTES = 15;
 

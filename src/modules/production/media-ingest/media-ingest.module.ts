@@ -12,7 +12,7 @@ import { FfmpegMediaProcessor, MediaProcessor, MockMediaProcessor } from './pipe
 
 // Episode videos are far too large for memory: multer writes them to a temporary file.
 // Every module with a controller taking an episode upload (the studio portal too) imports this.
-export const EpisodeUploadMulter = MulterModule.registerAsync({
+const EpisodeUploadMulter = MulterModule.registerAsync({
   inject: [APP_CONFIG],
   useFactory: ({ media }: AppConfig) => ({
     dest: join(tmpdir(), 'ai-cinema-uploads'),

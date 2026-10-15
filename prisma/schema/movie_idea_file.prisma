@@ -1,8 +1,15 @@
+/// What an attached file is for: the idea for the studio, or the viewer-facing synopsis.
+enum IdeaFilePurpose {
+    IDEA
+    SYNOPSIS
+}
+
 /// Idea files the Reviewer uploads (BR-12); a re-upload adds a version, never overwrites.
 model MovieIdeaFile {
     id           String   @id @default(uuid()) @db.Uuid
     movieId      String   @map("movie_id") @db.Uuid
     fileName     String   @map("file_name") @db.VarChar(255)
+    purpose      IdeaFilePurpose @default(IDEA)
     version      Int
     storageKey   String   @map("storage_key") @db.VarChar(500)
     mimeType     String   @map("mime_type") @db.VarChar(100)

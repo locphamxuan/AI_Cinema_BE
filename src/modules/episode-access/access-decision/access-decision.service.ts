@@ -34,7 +34,19 @@ export class AccessDecisionService {
     private readonly wallets: WalletService,
   ) {}
 
+  /** The decision, plus the stream to hand to the player once access is granted. */
   async decide(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
+    const decision = await this.evaluate(episodeId, userId);
+    if (!decision.accessGranted) return decision;
+    const released = await this.prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: { approvedMediaAsset: { select: { streamUrl: true } } },
+    });
+    const streamUrl = released?.approvedMediaAsset?.streamUrl;
+    return streamUrl ? { ...decision, streamUrl } : decision;
+  }
+
+  private async evaluate(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, status: EpisodeStatus.PUBLISHED },
     });

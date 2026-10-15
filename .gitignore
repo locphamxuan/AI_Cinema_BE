@@ -5,9 +5,14 @@
 .claude/
 .claude-mem/
 CLAUDE.md
+.agents/
+.agent/
+GEMINI.md
 TESTING.md
 # Context file of the current code state, read before every task
 PROJECT_OVERVIEW.md
+PROJECT_CONTEXT.md
+PROGRESS.md
 .codegraph/
 
 # Logs
