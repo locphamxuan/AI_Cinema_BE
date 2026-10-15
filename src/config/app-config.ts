@@ -68,6 +68,8 @@ export interface AppConfig {
     };
   };
   briefFontPath: string | null;
+  /** The Studio Web reports the films it mails back; null leaves that channel closed. */
+  studio: { webhookToken: string | null };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -234,6 +236,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     },
     payments: paymentConfig(read),
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
+    studio: { webhookToken: read.optional('STUDIO_WEBHOOK_TOKEN') ?? null },
   };
 
   if (isProduction && config.media.allowPrivateUrls) {
