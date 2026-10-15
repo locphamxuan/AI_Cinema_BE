@@ -8,13 +8,11 @@ import {
   SessionStateViewDto,
   StopSessionRequestDto,
 } from '../watch-progress/dto/watch-progress.dto';
-import {
-  CreateStreamingSessionRequestDto,
-  NextEpisodeViewDto,
-  StreamingSessionViewDto,
-} from './dto/streaming-session.dto';
+import { StreamingSessionViewDto } from './dto/streaming-session.dto';
 import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
+import { NextEpisodeViewDto } from 'src/modules/playback/streaming-session/dto/next-episode.view.dto';
+import { CreateStreamingSessionRequestDto } from 'src/modules/playback/streaming-session/dto/create-streaming-session.request.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
