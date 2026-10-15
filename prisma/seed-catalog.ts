@@ -21,8 +21,15 @@ import {
   PrismaClient,
 } from '@prisma/client';
 
+interface CatalogSubtitle {
+  language: string;
+  url: string;
+  isDefault: boolean;
+}
+
 interface CatalogEpisode {
   number: number;
+  subtitles?: CatalogSubtitle[];
   title: string;
   file: string;
   url: string;
@@ -206,6 +213,34 @@ async function seedEpisode(
   await tx.publication.create({
     data: { episodeId: episode.id, mediaAssetId: asset.id, publishedAt: at.now, publishedById: people.reviewerId },
   });
+  await attachSubtitles(tx, asset.id, source.subtitles ?? []);
+}
+
+/** One track per language on the approved version; running the seed again refreshes the URL. */
+async function attachSubtitles(db: Tx | PrismaClient, mediaAssetId: string, subtitles: CatalogSubtitle[]) {
+  for (const s of subtitles) {
+    await db.mediaSubtitle.upsert({
+      where: { mediaAssetId_language: { mediaAssetId, language: s.language } },
+      update: { fileUrl: s.url, isDefault: s.isDefault },
+      create: { mediaAssetId, language: s.language, fileUrl: s.url, isDefault: s.isDefault },
+    });
+  }
+}
+
+/** A movie seeded before its subtitles existed gets them on its released episodes. */
+async function backfillSubtitles(movieId: string, source: CatalogMovie): Promise<number> {
+  let added = 0;
+  for (const episode of source.episodes) {
+    if (!episode.subtitles?.length) continue;
+    const row = await prisma.episode.findFirst({
+      where: { movieId, episodeNumber: episode.number, approvedMediaAssetId: { not: null } },
+      select: { approvedMediaAssetId: true },
+    });
+    if (!row?.approvedMediaAssetId) continue;
+    await attachSubtitles(prisma, row.approvedMediaAssetId, episode.subtitles);
+    added += episode.subtitles.length;
+  }
+  return added;
 }
 
 async function main() {
@@ -219,7 +254,12 @@ async function main() {
 
   let added = 0;
   for (const source of catalog) {
-    if (await prisma.movie.findFirst({ where: { title: source.title }, select: { id: true } })) continue;
+    const existing = await prisma.movie.findFirst({ where: { title: source.title }, select: { id: true } });
+    if (existing) {
+      const tracks = await backfillSubtitles(existing.id, source);
+      if (tracks) console.log(`~ ${source.title}: ${tracks} subtitle track(s)`);
+      continue;
+    }
     await seedMovie(source, { reviewerId: reviewer.id, creatorId: creator.id }, policies);
     added += 1;
     console.log(`+ ${source.title}`);

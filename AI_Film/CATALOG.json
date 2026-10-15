@@ -20,7 +20,8 @@
           "size": 7989834,
           "duration": 92,
           "width": 576,
-          "height": 1024
+          "height": 1024,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -30,7 +31,8 @@
           "size": 13254097,
           "duration": 180,
           "width": 576,
-          "height": 1024
+          "height": 1024,
+          "subtitles": []
         },
         {
           "number": 3,
@@ -40,7 +42,8 @@
           "size": 14234170,
           "duration": 163,
           "width": 576,
-          "height": 1024
+          "height": 1024,
+          "subtitles": []
         }
       ]
     },
@@ -65,7 +68,8 @@
           "size": 37671504,
           "duration": 421,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -75,7 +79,8 @@
           "size": 46537167,
           "duration": 478,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         }
       ]
     },
@@ -100,7 +105,8 @@
           "size": 68586978,
           "duration": 855,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -110,7 +116,8 @@
           "size": 8333123,
           "duration": 132,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 3,
@@ -120,7 +127,8 @@
           "size": 7254990,
           "duration": 119,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         }
       ]
     },
@@ -145,7 +153,8 @@
           "size": 84815002,
           "duration": 600,
           "width": 1344,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -155,7 +164,8 @@
           "size": 42241403,
           "duration": 300,
           "width": 1344,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 3,
@@ -165,7 +175,8 @@
           "size": 46408225,
           "duration": 301,
           "width": 1344,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         }
       ]
     },
@@ -189,7 +200,8 @@
           "size": 3999185,
           "duration": 44,
           "width": 576,
-          "height": 904
+          "height": 904,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -199,7 +211,8 @@
           "size": 15122996,
           "duration": 168,
           "width": 576,
-          "height": 1024
+          "height": 1024,
+          "subtitles": []
         },
         {
           "number": 3,
@@ -209,7 +222,8 @@
           "size": 14802585,
           "duration": 151,
           "width": 576,
-          "height": 1024
+          "height": 1024,
+          "subtitles": []
         }
       ]
     },
@@ -233,7 +247,8 @@
           "size": 127525330,
           "duration": 2486,
           "width": 576,
-          "height": 1022
+          "height": 1022,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -243,7 +258,8 @@
           "size": 118400267,
           "duration": 2331,
           "width": 576,
-          "height": 1022
+          "height": 1022,
+          "subtitles": []
         },
         {
           "number": 3,
@@ -253,7 +269,8 @@
           "size": 149009314,
           "duration": 2807,
           "width": 576,
-          "height": 1022
+          "height": 1022,
+          "subtitles": []
         }
       ]
     },
@@ -276,7 +293,8 @@
           "size": 25835467,
           "duration": 628,
           "width": 720,
-          "height": 1280
+          "height": 1280,
+          "subtitles": []
         }
       ]
     },
@@ -300,7 +318,19 @@
           "size": 107174127,
           "duration": 1400,
           "width": 854,
-          "height": 480
+          "height": 480,
+          "subtitles": [
+            {
+              "language": "vi",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/she-raised-a-monster-they-tried-to-kill/ep1.vi.vtt",
+              "isDefault": true
+            },
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/she-raised-a-monster-they-tried-to-kill/ep1.en.vtt",
+              "isDefault": false
+            }
+          ]
         }
       ]
     },
@@ -324,7 +354,8 @@
           "size": 23876614,
           "duration": 203,
           "width": 576,
-          "height": 1024
+          "height": 1024,
+          "subtitles": []
         }
       ]
     },
@@ -349,7 +380,8 @@
           "size": 6185082,
           "duration": 215,
           "width": 576,
-          "height": 1024
+          "height": 1024,
+          "subtitles": []
         }
       ]
     },
@@ -374,7 +406,8 @@
           "size": 74644027,
           "duration": 619,
           "width": 1280,
-          "height": 720
+          "height": 720,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -384,7 +417,8 @@
           "size": 69828039,
           "duration": 452,
           "width": 1680,
-          "height": 720
+          "height": 720,
+          "subtitles": []
         }
       ]
     },
@@ -409,7 +443,8 @@
           "size": 12355432,
           "duration": 113,
           "width": 1280,
-          "height": 720
+          "height": 720,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -419,7 +454,8 @@
           "size": 78112069,
           "duration": 616,
           "width": 1280,
-          "height": 720
+          "height": 720,
+          "subtitles": []
         },
         {
           "number": 3,
@@ -429,7 +465,8 @@
           "size": 63693840,
           "duration": 539,
           "width": 1280,
-          "height": 720
+          "height": 720,
+          "subtitles": []
         }
       ]
     },
@@ -454,7 +491,8 @@
           "size": 7485549,
           "duration": 151,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -464,7 +502,8 @@
           "size": 31880036,
           "duration": 449,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 3,
@@ -474,7 +513,8 @@
           "size": 20839319,
           "duration": 306,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 4,
@@ -484,7 +524,8 @@
           "size": 19240949,
           "duration": 353,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         }
       ]
     },
@@ -508,7 +549,8 @@
           "size": 157390439,
           "duration": 1880,
           "width": 576,
-          "height": 768
+          "height": 768,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -518,7 +560,8 @@
           "size": 130958247,
           "duration": 1880,
           "width": 576,
-          "height": 768
+          "height": 768,
+          "subtitles": []
         }
       ]
     },
@@ -543,7 +586,8 @@
           "size": 61708948,
           "duration": 500,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 2,
@@ -553,7 +597,8 @@
           "size": 62646554,
           "duration": 500,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         },
         {
           "number": 3,
@@ -563,7 +608,8 @@
           "size": 59972903,
           "duration": 500,
           "width": 1024,
-          "height": 576
+          "height": 576,
+          "subtitles": []
         }
       ]
     }

@@ -3,7 +3,8 @@
 // A film is a folder "<genre> - <genre>/<title>/" of episodes "...ep1.mp4"; a video straight in AI_Film_v2 is a
 // one-episode film described in ROOT_FILMS. For each film it measures the episodes with ffmpeg, takes a poster
 // (the .jpg beside the video, else a frame of episode 1), uploads the poster next to the videos on R2 and
-// writes the public URLs. Synopsis and year can be set by hand in catalog-meta.json ({ "<title>": {...} }).
+// writes the public URLs. Subtitles beside a video ("<video name>.<lang>.srt") are turned into WebVTT and uploaded too.
+// Synopsis and year can be set by hand in catalog-meta.json ({ "<title>": {...} }).
 // Needs ffmpeg on PATH and the S3_* settings of .env.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -95,6 +96,29 @@ async function uploadPoster(movieSlug, firstEpisode, besideJpg, work) {
   return publicUrl(key);
 }
 
+/** SubRip to WebVTT: a header, and a dot instead of the comma before the milliseconds. */
+function srtToVtt(srt) {
+  const body = srt.replace(/^\uFEFF/, '').replace(/\r/g, '').replace(/(\d\d:\d\d:\d\d),(\d\d\d)/g, '$1.$2');
+  return `WEBVTT\n\n${body.trim()}\n`;
+}
+
+/** Uploads every "<video>.<lang>.srt" lying next to the video; Vietnamese is the default track. */
+async function uploadSubtitles(video, movieSlug, number) {
+  const base = path.basename(video).replace(VIDEO, '');
+  const dir = path.dirname(video);
+  const found = readdirSync(dir).filter((name) => name.startsWith(`${base}.`) && name.toLowerCase().endsWith('.srt'));
+  const subtitles = [];
+  for (const name of found) {
+    const language = name.slice(base.length + 1, -4).toLowerCase();
+    if (!/^[a-z]{2,3}(-[a-z]{2})?$/.test(language)) continue;
+    const key = `${PREFIX}subtitles/${movieSlug}/ep${number}.${language}.vtt`;
+    const vtt = srtToVtt(readFileSync(path.join(dir, name), 'utf8'));
+    await s3.send(new PutObjectCommand({ Bucket: need('S3_BUCKET'), Key: key, Body: vtt, ContentType: 'text/vtt; charset=utf-8' }));
+    subtitles.push({ language, url: publicUrl(key), isDefault: language === 'vi' });
+  }
+  return subtitles.sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.language.localeCompare(b.language));
+}
+
 const episodeNumber = (name) => Number(/ep\s*\.?\s*(\d+)/i.exec(name)?.[1] ?? 1);
 
 /** Every film of the library as { title, genres, files (episode order), jpg?, overrides }. */
@@ -133,7 +157,8 @@ async function main() {
         const key = PREFIX + rel(file);
         const size = statSync(file).size;
         if ((await remoteSize(key)) !== size) throw new Error(`${rel(file)} is not on R2 yet: run npm run film:push`);
-        episodes.push({ number: index + 1, title: `Tập ${index + 1}`, file: rel(file), url: publicUrl(key), size, ...probe(file) });
+        const subtitles = await uploadSubtitles(file, movieSlug, index + 1);
+        episodes.push({ number: index + 1, title: `Tập ${index + 1}`, file: rel(file), url: publicUrl(key), size, ...probe(file), subtitles });
       }
       const extra = meta[film.title] ?? {};
       const genreText = film.genres.join(', ').toLowerCase();
