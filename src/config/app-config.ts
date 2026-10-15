@@ -197,7 +197,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     redisUrl: read.optional('REDIS_URL') ?? null,
     jwt: {
       secret: jwtSecret(read, isProduction),
-      accessTtlSeconds: read.int('JWT_ACCESS_TTL_SECONDS', 15 * 60, 60),
+      accessTtlSeconds: read.int('JWT_ACCESS_TTL_SECONDS', 30 * 60, 60),
       refreshTtlDays: read.int('JWT_REFRESH_TTL_DAYS', 30, 1),
       issuer: read.string('JWT_ISSUER', 'ai-cinema-api'),
       audience: read.string('JWT_AUDIENCE', 'ai-cinema'),

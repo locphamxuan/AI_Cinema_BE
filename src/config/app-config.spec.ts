@@ -8,7 +8,7 @@ describe('loadConfig', () => {
     expect(config.isProduction).toBe(false);
     expect(config.swaggerEnabled).toBe(true);
     expect(config.storage).toMatchObject({ driver: 'local', publicBaseUrl: 'http://localhost:3001/media' });
-    expect(config.jwt.accessTtlSeconds).toBe(900);
+    expect(config.jwt.accessTtlSeconds).toBe(1800);
     expect(config.redisUrl).toBeNull();
   });
 
