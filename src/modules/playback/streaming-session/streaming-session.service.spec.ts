@@ -3,21 +3,29 @@ import { PlaybackAccessType, StreamingSessionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { PlaybackAccessService } from '../playback-access/playback-access.service';
+import type { WatchProgressService } from '../watch-progress/watch-progress.service';
 import type { PlaybackUrlService } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
 
 describe('StreamingSessionService.create', () => {
-  const prisma = { streamingSession: { findFirst: jest.fn(), create: jest.fn() } };
+  const prisma = {
+    streamingSession: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    mediaAsset: { findUnique: jest.fn() },
+  };
   const access = { verify: jest.fn() };
   const devices = { check: jest.fn() };
-  const settings = { get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90 }) };
+  const settings = {
+    get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
+  };
   const urls = { masterUrl: jest.fn().mockReturnValue('https://api.example/api/playback/s/sess-1/master.m3u8?s=x') };
+  const progress = { progress: jest.fn(), save: jest.fn() };
   const service = new StreamingSessionService(
     prisma as unknown as PrismaService,
     access as unknown as PlaybackAccessService,
     devices,
     settings as unknown as PlatformSettingService,
     urls as unknown as PlaybackUrlService,
+    progress as unknown as WatchProgressService,
   );
 
   const verified = {
@@ -38,6 +46,7 @@ describe('StreamingSessionService.create', () => {
     jest.clearAllMocks();
     access.verify.mockResolvedValue(verified);
     devices.check.mockResolvedValue(undefined);
+    progress.progress.mockResolvedValue({ found: false, positionSeconds: 0, completed: false });
     prisma.streamingSession.findFirst.mockResolvedValue(null);
     prisma.streamingSession.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
       id: 'sess-1',
@@ -94,5 +103,86 @@ describe('StreamingSessionService.create', () => {
   it('rejects a malformed guest key', async () => {
     await expect(service.create({ episodeId: 'ep-1', guestKey: 'not-a-uuid' })).rejects.toThrow(BadRequestException);
     expect(access.verify).not.toHaveBeenCalled();
+  });
+
+  it('returns the saved position as a resume hint (step 9)', async () => {
+    progress.progress.mockResolvedValue({ found: true, positionSeconds: 320, completed: false });
+    const view = await service.create({ episodeId: 'ep-1', userId: 'u-1' });
+    expect(view).toMatchObject({ resumePositionSeconds: 320 });
+  });
+
+  describe('heartbeat / stop / complete', () => {
+    const live = (overrides = {}) => ({
+      id: 'sess-1',
+      userId: 'u-1',
+      guestKey: null,
+      episodeId: 'ep-1',
+      mediaAssetId: 'asset-1',
+      status: StreamingSessionStatus.ACTIVE,
+      lastPositionSeconds: 300,
+      totalWatchedSeconds: 600,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      prisma.streamingSession.findUnique.mockResolvedValue(live());
+      prisma.mediaAsset.findUnique.mockResolvedValue({ durationSeconds: 1200 });
+      prisma.streamingSession.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
+        ...live(),
+        ...data,
+      }));
+    });
+
+    it('heartbeat persists position and watch time (step 15)', async () => {
+      const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 320, watchedSeconds: 12 });
+      expect(state).toMatchObject({ sessionId: 'sess-1', positionSeconds: 320, completed: false });
+      expect(prisma.streamingSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ lastPositionSeconds: 320, totalWatchedSeconds: { increment: 12 } }),
+        }),
+      );
+      expect(progress.save).toHaveBeenCalledWith(
+        'u-1',
+        'ep-1',
+        expect.objectContaining({ positionSeconds: 320, completed: false }),
+      );
+    });
+
+    it('heartbeat past the threshold completes and ends the session (steps 18/20)', async () => {
+      const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
+      expect(state).toMatchObject({ completed: true, status: 'ENDED' });
+      expect(prisma.streamingSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ endReason: 'COMPLETED' }) }),
+      );
+    });
+
+    it('stop saves the position and frees the slot without progress for guests (steps 19/21)', async () => {
+      prisma.streamingSession.findUnique.mockResolvedValue(live({ userId: null, guestKey: 'g-1' }));
+      const state = await service.stop('sess-1', { guestKey: 'g-1' }, { positionSeconds: 400 });
+      expect(state).toMatchObject({ positionSeconds: 400, status: 'ENDED' });
+      expect(progress.save).not.toHaveBeenCalled();
+    });
+
+    it('complete forces completion even below the threshold', async () => {
+      const state = await service.complete('sess-1', { userId: 'u-1' }, {});
+      expect(state).toMatchObject({ completed: true, status: 'ENDED' });
+      expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ completed: true }));
+    });
+
+    it('refuses a caller who does not own the session', async () => {
+      await expect(service.heartbeat('sess-1', { userId: 'u-2' }, { positionSeconds: 1 })).rejects.toMatchObject({
+        response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_OWNER' }) }),
+      });
+      await expect(service.heartbeat('sess-1', {}, { positionSeconds: 1 })).rejects.toMatchObject({
+        response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_OWNER' }) }),
+      });
+    });
+
+    it('refuses a session that already ended', async () => {
+      prisma.streamingSession.findUnique.mockResolvedValue(live({ status: StreamingSessionStatus.ENDED }));
+      await expect(service.stop('sess-1', { userId: 'u-1' }, { positionSeconds: 1 })).rejects.toMatchObject({
+        response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_ACTIVE' }) }),
+      });
+    });
   });
 });

@@ -2,13 +2,14 @@ import { Module } from '@nestjs/common';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { CountingDeviceEligibilityService, DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
+import { WatchProgressModule } from '../watch-progress/watch-progress.module';
 import { PlaybackUrlService } from './playback-url.service';
 import { StreamingSessionController } from './streaming-session.controller';
 import { StreamingSessionService } from './streaming-session.service';
 
-/** Phase 2 of Main Flow 3: session creation plus signed playlists and rendition filtering. */
+/** Phase 3 of Main Flow 3: sessions plus heartbeats, stops, completions and progress. */
 @Module({
-  imports: [PlatformSettingModule],
+  imports: [PlatformSettingModule, WatchProgressModule],
   controllers: [StreamingSessionController],
   providers: [
     PlaybackAccessService,

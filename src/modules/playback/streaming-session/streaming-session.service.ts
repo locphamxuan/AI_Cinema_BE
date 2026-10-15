@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { StreamingSessionStatus } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { StreamingEndReason, StreamingSessionStatus, type StreamingSession } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
+import { WatchProgressService } from '../watch-progress/watch-progress.service';
+import type { SessionStateViewDto } from '../watch-progress/dto/watch-progress.dto';
 import { PlaybackUrlService } from './playback-url.service';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
 
@@ -15,12 +17,18 @@ export interface CreateSessionInput {
   userAgent?: string | null;
 }
 
+/** Who is calling a session-owned route: the member, the guest key, or nobody. */
+export interface SessionCaller {
+  userId?: string;
+  guestKey?: string;
+}
+
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Main Flow 3, step 11 (phase 1): verifies playback access, checks the device
- * slot and opens a streaming session. Guests always start from 0 and carry
- * guestKey; members carry userId. Saved-progress resume lands in a later phase.
+ * Main Flow 3: verifies playback access, opens streaming sessions (step 11) and
+ * tracks viewing through heartbeats until the viewer stops or finishes (steps
+ * 15, 18–21). Guests always start from 0 and keep no progress row.
  */
 @Injectable()
 export class StreamingSessionService {
@@ -30,6 +38,7 @@ export class StreamingSessionService {
     private readonly devices: DeviceEligibilityPort,
     private readonly settings: PlatformSettingService,
     private readonly urls: PlaybackUrlService,
+    private readonly progress: WatchProgressService,
   ) {}
 
   async create(input: CreateSessionInput): Promise<StreamingSessionViewDto> {
@@ -85,7 +94,148 @@ export class StreamingSessionService {
         userAgent: input.userAgent?.slice(0, 500) ?? null,
       },
     });
-    return this.view(created, verified, false);
+    return this.view(created, verified, false, await this.resumeOf(userId, verified.episodeId));
+  }
+
+  /** Step 15: heartbeat keeps the session alive and persists the position. */
+  async heartbeat(
+    sessionId: string,
+    caller: SessionCaller,
+    input: { positionSeconds: number; watchedSeconds?: number },
+  ): Promise<SessionStateViewDto> {
+    const session = await this.owned(sessionId, caller);
+    const saved = await this.saveViewing(session, {
+      positionSeconds: input.positionSeconds,
+      watchedSeconds: input.watchedSeconds ?? 0,
+      endReason: null,
+      forceCompleted: false,
+    });
+    return this.state(saved.session, saved.completed);
+  }
+
+  /** Step 19/21: the viewer stops; the position is saved and the slot is freed. */
+  async stop(
+    sessionId: string,
+    caller: SessionCaller,
+    input: { positionSeconds: number },
+  ): Promise<SessionStateViewDto> {
+    const session = await this.owned(sessionId, caller);
+    const saved = await this.saveViewing(session, {
+      positionSeconds: input.positionSeconds,
+      watchedSeconds: 0,
+      endReason: StreamingEndReason.STOPPED,
+      forceCompleted: false,
+    });
+    return this.state(saved.session, saved.completed);
+  }
+
+  /** Step 18/20: the viewer finishes; history marks the episode completed. */
+  async complete(
+    sessionId: string,
+    caller: SessionCaller,
+    input: { positionSeconds?: number },
+  ): Promise<SessionStateViewDto> {
+    const session = await this.owned(sessionId, caller);
+    const saved = await this.saveViewing(session, {
+      positionSeconds: input.positionSeconds ?? session.lastPositionSeconds,
+      watchedSeconds: 0,
+      endReason: StreamingEndReason.COMPLETED,
+      forceCompleted: true,
+    });
+    return this.state(saved.session, true);
+  }
+
+  /** The session only its owner may touch; anything else goes back to the catalog. */
+  private async owned(sessionId: string, caller: SessionCaller): Promise<StreamingSession> {
+    const session = await this.prisma.streamingSession.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new NotFoundException({
+        message: 'Streaming session not found',
+        details: { reason: 'SESSION_NOT_FOUND' },
+      });
+    }
+    const mine = session.userId
+      ? Boolean(caller.userId) && session.userId === caller.userId
+      : Boolean(caller.guestKey) && session.guestKey === caller.guestKey;
+    if (!mine) {
+      throw new ForbiddenException({
+        message: 'This session belongs to someone else',
+        details: { reason: 'SESSION_NOT_OWNER' },
+      });
+    }
+    if (session.status !== StreamingSessionStatus.ACTIVE) {
+      throw new ForbiddenException({
+        message: 'The streaming session is no longer active',
+        details: { reason: 'SESSION_NOT_ACTIVE' },
+      });
+    }
+    return session;
+  }
+
+  /**
+   * One viewing update: clamps the position to the media length, accumulates
+   * watch time, crosses the completion threshold from platform settings, and —
+   * for members — persists the progress row. Guests keep nothing.
+   */
+  private async saveViewing(
+    session: StreamingSession,
+    input: {
+      positionSeconds: number;
+      watchedSeconds: number;
+      endReason: StreamingEndReason | null;
+      forceCompleted: boolean;
+    },
+  ): Promise<{ session: StreamingSession; completed: boolean }> {
+    const now = new Date();
+    const asset = await this.prisma.mediaAsset.findUnique({
+      where: { id: session.mediaAssetId },
+      select: { durationSeconds: true },
+    });
+    const duration = asset?.durationSeconds ?? null;
+    const position = duration
+      ? Math.min(Math.max(0, Math.floor(input.positionSeconds)), duration)
+      : Math.max(0, Math.floor(input.positionSeconds));
+    const { episodeCompletionPercent } = await this.settings.get();
+    const crossed = Boolean(duration) && duration! > 0 && (position / duration!) * 100 >= episodeCompletionPercent;
+    const completed = input.forceCompleted || crossed;
+    const endReason = completed ? StreamingEndReason.COMPLETED : input.endReason;
+
+    const updated = await this.prisma.streamingSession.update({
+      where: { id: session.id },
+      data: {
+        lastPositionSeconds: position,
+        lastHeartbeatAt: now,
+        totalWatchedSeconds: { increment: Math.max(0, Math.floor(input.watchedSeconds)) },
+        ...(endReason ? { status: StreamingSessionStatus.ENDED, endReason, endedAt: now } : {}),
+      },
+    });
+    if (session.userId) {
+      await this.progress.save(session.userId, session.episodeId, {
+        positionSeconds: position,
+        durationSeconds: duration,
+        completed,
+        at: now,
+      });
+    }
+    return { session: updated, completed };
+  }
+
+  private state(session: StreamingSession, completed: boolean): SessionStateViewDto {
+    return {
+      sessionId: session.id,
+      episodeId: session.episodeId,
+      status: session.status,
+      positionSeconds: session.lastPositionSeconds,
+      totalWatchedSeconds: session.totalWatchedSeconds,
+      completed,
+    };
+  }
+
+  /** Step 9 hint for the resume-or-restart question; guests always get null. */
+  private async resumeOf(userId: string | undefined, episodeId: string): Promise<number | null> {
+    if (!userId) return null;
+    const saved = await this.progress.progress(userId, episodeId);
+    return saved.found && !saved.completed && saved.positionSeconds > 0 ? saved.positionSeconds : null;
   }
 
   private view(
@@ -108,6 +258,7 @@ export class StreamingSessionService {
       aiLabel: { type: string; text: string; displayLocation: string | null } | null;
     },
     reused: boolean,
+    resumePositionSeconds: number | null = null,
   ): StreamingSessionViewDto {
     return {
       sessionId: session.id,
@@ -133,6 +284,7 @@ export class StreamingSessionService {
       })),
       aiLabel: verified.aiLabel,
       ...(reused ? { reused: true } : {}),
+      ...(resumePositionSeconds !== null ? { resumePositionSeconds } : {}),
     };
   }
 }

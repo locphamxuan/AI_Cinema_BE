@@ -50,6 +50,12 @@ export class StreamingSessionViewDto {
   })
   aiLabel: { type: string; text: string; displayLocation: string | null } | null;
 
+  @ApiPropertyOptional({
+    example: 320,
+    description: 'Saved position for the resume-or-restart question (flow 3, step 9); absent when none',
+  })
+  resumePositionSeconds?: number;
+
   @ApiPropertyOptional({ example: true, description: 'The same tap sent twice reused the live session' })
   reused?: boolean;
 }

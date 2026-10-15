@@ -1,8 +1,13 @@
-import { Body, Controller, Get, Header, Headers, Ip, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Header, Headers, Ip, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiHeader, ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { OptionalUser } from 'src/common/decorators/optional-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
+import {
+  HeartbeatRequestDto,
+  SessionStateViewDto,
+  StopSessionRequestDto,
+} from '../watch-progress/dto/watch-progress.dto';
 import { CreateStreamingSessionRequestDto, StreamingSessionViewDto } from './dto/streaming-session.dto';
 import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
@@ -78,6 +83,45 @@ export class StreamingSessionController {
     @Query('sig') sig: string,
   ) {
     return this.urls.variantPlaylist(sessionId, quality, tokenOf(s, exp, sig));
+  }
+
+  @Patch('sessions/:sessionId/heartbeat')
+  @ApiOperation({ summary: 'Keep the session alive and persist the position (flow 3, step 15)' })
+  @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
+  @ApiOkResponse({ type: SessionStateViewDto })
+  heartbeat(
+    @Param('sessionId', ID) sessionId: string,
+    @Body() dto: HeartbeatRequestDto,
+    @OptionalUser() user: AuthenticatedUser | undefined,
+    @Headers('x-guest-key') guestKey?: string,
+  ) {
+    return this.sessions.heartbeat(sessionId, { userId: user?.id, guestKey }, dto);
+  }
+
+  @Post('sessions/:sessionId/stop')
+  @ApiOperation({ summary: 'Viewer stops: save the position and free the slot (flow 3, steps 19/21)' })
+  @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
+  @ApiOkResponse({ type: SessionStateViewDto })
+  stop(
+    @Param('sessionId', ID) sessionId: string,
+    @Body() dto: StopSessionRequestDto,
+    @OptionalUser() user: AuthenticatedUser | undefined,
+    @Headers('x-guest-key') guestKey?: string,
+  ) {
+    return this.sessions.stop(sessionId, { userId: user?.id, guestKey }, dto);
+  }
+
+  @Post('sessions/:sessionId/complete')
+  @ApiOperation({ summary: 'Viewer finishes: mark completed and close the session (flow 3, steps 18/20)' })
+  @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
+  @ApiOkResponse({ type: SessionStateViewDto })
+  complete(
+    @Param('sessionId', ID) sessionId: string,
+    @OptionalUser() user: AuthenticatedUser | undefined,
+    @Headers('x-guest-key') guestKey?: string,
+    @Body() dto?: StopSessionRequestDto,
+  ) {
+    return this.sessions.complete(sessionId, { userId: user?.id, guestKey }, { positionSeconds: dto?.positionSeconds });
   }
 }
 
