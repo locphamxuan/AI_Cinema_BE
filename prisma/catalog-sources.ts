@@ -29,6 +29,8 @@ export interface CatalogMovieSource {
   genres: string[];
   ageRating: 'T16' | 'T18' | null;
   releaseYear: number;
+  /** ISO code of the spoken language; defaults to 'vi'. */
+  defaultLanguage?: string;
   episodes: CatalogEpisodeSource[];
 }
 
@@ -359,6 +361,34 @@ export const CATALOG_SOURCES: CatalogMovieSource[] = [
         license: 'Public domain',
         licenseUrl: null,
         artist: 'Sora/OpenAI',
+      },
+    ],
+  },
+  {
+    // Film supplied by the team (AI_Film/), uploaded to our own bucket by hand: not a Commons file.
+    title: 'She Raised a Monster They Tried to Kill',
+    genres: ['Giả tưởng', 'Phiêu lưu'],
+    ageRating: null,
+    releaseYear: 2026,
+    defaultLanguage: 'en',
+    synopsis:
+      'Sau khi thợ săn giết mẹ của một sinh vật nhỏ bí ẩn, Elara liều mình cứu đứa con của nó, Kiro, nhưng nỗi sợ hãi khiến cả hai bị xua khỏi ngôi làng từng là nhà. Nhiều năm sau, khi một con quái vật cổ xưa thức giấc dưới lòng núi, Kiro phải đưa ra lựa chọn.',
+    episodes: [
+      {
+        file: 'She Raised a Monster They Tried to Kill [iXpEcPsswpU].mp4',
+        title: 'She Raised a Monster They Tried to Kill',
+        synopsis: 'Toàn bộ phim, hình ảnh và âm thanh tạo bằng AI.',
+        aiTools: ['AI video generation'],
+        url: 'https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/public/catalog/she-raised-a-monster/episode-1.mp4',
+        thumb: 'https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/public/catalog/she-raised-a-monster/poster.jpg',
+        page: 'https://www.youtube.com/watch?v=iXpEcPsswpU',
+        duration: 1399,
+        width: 854,
+        height: 480,
+        size: 107174127,
+        license: 'Nội dung do nhóm dự án cung cấp để trình diễn',
+        licenseUrl: null,
+        artist: 'Kênh YouTube gốc',
       },
     ],
   },

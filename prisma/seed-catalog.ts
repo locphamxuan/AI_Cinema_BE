@@ -75,7 +75,7 @@ async function seedMovie(
             'Phim AI có sẵn, đưa vào catalog từ nguồn mở (không đặt studio sản xuất).',
             ...source.episodes.map(credit),
           ].join('\n'),
-          defaultLanguage: source.title.startsWith('Le Temple') ? 'fr' : 'vi',
+          defaultLanguage: source.defaultLanguage ?? (source.title.startsWith('Le Temple') ? 'fr' : 'vi'),
           ageRating: source.ageRating,
           releaseYear: source.releaseYear,
           status: MovieStatus.COMPLETED,
