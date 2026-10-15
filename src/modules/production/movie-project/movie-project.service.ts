@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { ChangeRequestStatus, MovieStatus, Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -11,6 +11,7 @@ import { UpdateMovieProjectRequestDto } from './dto/update-movie-project.request
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { revisionSummary } from './revision-summary';
+import { resolveGenreIds } from './genre-resolver';
 import { newEpisodeSchedule, seasonWindow } from './episode-schedule';
 import { StudioService } from 'src/modules/production/studio/studio.service';
 
@@ -59,7 +60,6 @@ export class MovieProjectService {
 
   /** Step 1: the project with its seasons and episodes, numbered across the whole movie (BR-03, BR-37). */
   async create(dto: CreateMovieProjectRequestDto, user: AuthenticatedUser) {
-    await this.assertGenresExist(dto.genreIds);
     if (dto.studioId) await this.studios.assertUsable(dto.studioId);
     const seasons = dto.seasons.map((season) => {
       const window = seasonWindow(season);
@@ -70,14 +70,18 @@ export class MovieProjectService {
       };
     });
     const movieId = await this.prisma.$transaction(async (tx) => {
+      const genreIds = await resolveGenreIds(tx, dto.genreIds, dto.genreNames);
       const movie = await tx.movie.create({
         data: {
           title: dto.title.trim(),
           ideaDescription: dto.ideaDescription.trim(),
+          synopsis: dto.synopsis?.trim() || undefined,
+          releaseYear: dto.releaseYear,
+          ageRating: dto.ageRating,
           defaultLanguage: dto.defaultLanguage,
           studioId: dto.studioId,
           reviewerId: user.id,
-          genres: { create: dto.genreIds.map((genreId) => ({ genreId })) },
+          genres: { create: genreIds.map((genreId) => ({ genreId })) },
         },
       });
       let episodeNumber = 1;
@@ -171,16 +175,16 @@ export class MovieProjectService {
       [...OPEN_PROJECT_STATUSES, MovieStatus.COMPLETED, MovieStatus.UNDER_REVISION],
       'edit the project',
     );
-    if (dto.genreIds) await this.assertGenresExist(dto.genreIds);
     if (dto.studioId && dto.studioId !== movie.studioId) {
       if (movie.handedOffAt) throw new ConflictException('The project was handed off; change the studio there');
       await this.studios.assertUsable(dto.studioId);
     }
 
-    const { genreIds, ...fields } = dto;
+    const { genreIds, genreNames, ...fields } = dto;
     await this.prisma.$transaction(async (tx) => {
       await tx.movie.update({ where: { id: movieId }, data: fields });
-      if (genreIds) await this.replaceGenres(tx, movieId, genreIds);
+      if (genreIds || genreNames)
+        await this.replaceGenres(tx, movieId, await resolveGenreIds(tx, genreIds, genreNames));
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.PROJECT_UPDATED,
@@ -204,10 +208,5 @@ export class MovieProjectService {
   private async replaceGenres(tx: PrismaTx, movieId: string, genreIds: string[]) {
     await tx.movieGenre.deleteMany({ where: { movieId } });
     await tx.movieGenre.createMany({ data: genreIds.map((genreId) => ({ movieId, genreId })) });
-  }
-
-  private async assertGenresExist(genreIds: string[]) {
-    const found = await this.prisma.genre.count({ where: { id: { in: genreIds } } });
-    if (found !== genreIds.length) throw new BadRequestException('One of the genres does not exist');
   }
 }

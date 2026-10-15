@@ -79,6 +79,26 @@ describe('Movie projects (e2e)', () => {
     expect(project.seasons[0].releaseEndDate).toContain(inDays(80));
   });
 
+  it('adds a genre the list does not have yet when the project names it', async () => {
+    const name = `Thể loại mới ${Date.now()}`;
+    const project = await reviewer.post<Project & { genres: Row[]; synopsis: string; releaseYear: number }>(
+      '/projects',
+      {
+        ...newProject(
+          [1, 2, 3].map((n) => ({ title: `Tập ${n}`, targetDurationSeconds: 900, deliveryDeadline: inDays(20 + n) })),
+        ),
+        genreNames: [name],
+        synopsis: 'Tóm tắt cho người xem.',
+        releaseYear: 2026,
+        ageRating: 'T16',
+      },
+    );
+    expect(project.genres.map((g) => g.name)).toContain(name);
+    expect(project).toMatchObject({ synopsis: 'Tóm tắt cho người xem.', releaseYear: 2026, ageRating: 'T16' });
+    const listed = await reviewer.get<{ data: Row[] }>(`/genres?search=${encodeURIComponent(name)}`);
+    expect(listed.data).toHaveLength(1);
+  });
+
   it('needs a delivery deadline, today or later, for every episode', async () => {
     const episode = { title: 'Tập 1', targetDurationSeconds: 900 };
     await reviewer.post('/projects', newProject([episode]), 400);
