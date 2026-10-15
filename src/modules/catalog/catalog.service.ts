@@ -11,17 +11,26 @@ export const REVISION_NOTICE = 'Tập đang được bảo trì / sửa đổi n
  * Episodes viewers see: released ones, and the ones taken down to be fixed, which stay listed
  * with a maintenance notice (BR-56). Scheduled, removed and unfinished episodes stay hidden.
  */
-const VISIBLE_EPISODE: Prisma.EpisodeWhereInput = {
+export const VISIBLE_EPISODE: Prisma.EpisodeWhereInput = {
   OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }],
 };
 
 /** A movie is listed once one of its episodes is out (MF-1 step 14), never once cancelled. */
-const LISTED_MOVIE: Prisma.MovieWhereInput = {
+export const LISTED_MOVIE: Prisma.MovieWhereInput = {
   status: { not: MovieStatus.CANCELLED },
   episodes: { some: VISIBLE_EPISODE },
 };
 
-const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
+/** Names of subtitle languages as the player lists them. */
+const SUBTITLE_LABEL: Record<string, string> = {
+  vi: 'Tiếng Việt',
+  en: 'English',
+  zh: '中文',
+  ko: '한국어',
+  ja: '日本語',
+};
+
+export const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
 
 const EPISODE_DETAIL = {
   season: { select: { seasonNumber: true, title: true } },
@@ -29,6 +38,10 @@ const EPISODE_DETAIL = {
     select: {
       durationSeconds: true,
       qualities: true,
+      subtitles: {
+        orderBy: [{ isDefault: 'desc' }, { language: 'asc' }],
+        select: { id: true, language: true, isDefault: true },
+      },
       aiContentLabel: { select: { labelType: true, labelText: true, displayLocation: true } },
     },
   },
@@ -163,6 +176,13 @@ export function episodeView(episode: EpisodeRow, freeStarterCount: number) {
     durationSeconds: media?.durationSeconds ?? null,
     qualities: media?.qualities ?? [],
     aiLabel: media?.aiContentLabel ?? null,
+    // Served through the API (GET /subtitles/:id) so the web player gets them without storage CORS.
+    subtitles: (media?.subtitles ?? []).map((s) => ({
+      id: s.id,
+      language: s.language,
+      label: SUBTITLE_LABEL[s.language] ?? s.language,
+      isDefault: s.isDefault,
+    })),
     publishedAt: episode.publications[0]?.publishedAt ?? null,
   };
 }
