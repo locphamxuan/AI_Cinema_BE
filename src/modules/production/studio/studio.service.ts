@@ -60,6 +60,26 @@ export class StudioService {
     });
   }
 
+  /**
+   * The studio of a hand-off: found by the typed email (created on the spot when new), else by id, else the
+   * project's current one. The studio is always usable (active) when this returns.
+   */
+  async resolve(
+    choice: { studioId?: string; studioName?: string; studioEmail?: string; studioPhone?: string },
+    fallbackId: string | null,
+    user: AuthenticatedUser,
+  ): Promise<Studio> {
+    if (choice.studioEmail) {
+      const known = await this.prisma.studio.findUnique({ where: { email: choice.studioEmail } });
+      if (known) return this.assertUsable(known.id);
+      if (!choice.studioName) throw new BadRequestException('Type the name of the studio (studioName)');
+      return this.create({ name: choice.studioName, email: choice.studioEmail, phone: choice.studioPhone }, user);
+    }
+    const id = choice.studioId ?? fallbackId;
+    if (!id) throw new ConflictException('Type the name and email of the studio to hand the project off to');
+    return this.assertUsable(id);
+  }
+
   /** The studio a project or hand-off may be given: it must exist and still be active. */
   async assertUsable(studioId: string, tx?: PrismaTx): Promise<Studio> {
     const studio = await (tx ?? this.prisma).studio.findUnique({ where: { id: studioId } });

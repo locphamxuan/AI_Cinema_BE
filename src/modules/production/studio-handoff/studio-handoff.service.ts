@@ -55,7 +55,7 @@ export class StudioHandoffService {
   async handOff(movieId: string, dto: HandOffRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
     const movie = await this.access.movie(movieId, user, 'creator');
     assertProjectStatus(movie.status, [MovieStatus.ASSIGNED, MovieStatus.IN_PRODUCTION], 'hand the project off');
-    const studio = await this.studios.assertUsable(this.chosenStudioId(movie, dto.studioId));
+    const studio = await this.studios.resolve(dto, movie.studioId, user);
     if (movie.studioId && movie.studioId !== studio.id) {
       throw new ConflictException('The project already has a studio; change the studio instead');
     }
@@ -86,7 +86,7 @@ export class StudioHandoffService {
   async changeStudio(movieId: string, dto: ChangeStudioRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
     const movie = await this.access.movie(movieId, user, 'creator');
     assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'change the studio');
-    const studio = await this.studios.assertUsable(dto.studioId);
+    const studio = await this.studios.resolve(dto, null, user);
     const seasonId = await this.scopeSeason(movieId, dto.seasonId);
     const replaced = await this.prisma.studioHandoff.findMany({
       where: { movieId, seasonId, milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },
@@ -130,12 +130,6 @@ export class StudioHandoffService {
       type: 'application/pdf',
       disposition: `attachment; filename="brief-${movieId}.pdf"`,
     });
-  }
-
-  private chosenStudioId(movie: Movie, studioId?: string): string {
-    const id = studioId ?? movie.studioId;
-    if (!id) throw new ConflictException('Choose the studio to hand the project off to');
-    return id;
   }
 
   /** The season a hand-off covers; null = the whole project. */
