@@ -1,0 +1,4 @@
+# Videos are shared out of band; MANIFEST.md (gen-manifest.mjs) records which ones exist.
+*.mp4
+*.mov
+*.mkv
