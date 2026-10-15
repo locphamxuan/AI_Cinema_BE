@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import type { HistoryItemDto, ProgressViewDto } from './dto/watch-progress.dto';
+import { HistoryItemDto } from 'src/modules/playback/watch-progress/dto/history-item.dto';
+import { ProgressViewDto } from 'src/modules/playback/watch-progress/dto/progress.view.dto';
 
 /**
  * Saved resume positions (flow 3, steps 8–10, 20): one row per (member, episode).

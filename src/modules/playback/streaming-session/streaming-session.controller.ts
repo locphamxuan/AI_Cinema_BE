@@ -3,16 +3,14 @@ import { ApiHeader, ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@n
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { OptionalUser } from 'src/common/decorators/optional-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
-import {
-  HeartbeatRequestDto,
-  SessionStateViewDto,
-  StopSessionRequestDto,
-} from '../watch-progress/dto/watch-progress.dto';
 import { StreamingSessionViewDto } from './dto/streaming-session.dto';
 import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
 import { NextEpisodeViewDto } from 'src/modules/playback/streaming-session/dto/next-episode.view.dto';
 import { CreateStreamingSessionRequestDto } from 'src/modules/playback/streaming-session/dto/create-streaming-session.request.dto';
+import { HeartbeatRequestDto } from 'src/modules/playback/watch-progress/dto/heart-beat.request.dto';
+import { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/session-state.view.dto';
+import { StopSessionRequestDto } from 'src/modules/playback/watch-progress/dto/stop-session.request.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 

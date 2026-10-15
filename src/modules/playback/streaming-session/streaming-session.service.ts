@@ -5,10 +5,10 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
-import type { SessionStateViewDto } from '../watch-progress/dto/watch-progress.dto';
 import { AdBreakService, type AdScheduleItem } from '../ad-break/ad-break.service';
 import { PlaybackUrlService } from './playback-url.service';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
+import { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/session-state.view.dto';
 
 export interface CreateSessionInput {
   episodeId: string;

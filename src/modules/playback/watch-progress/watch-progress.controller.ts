@@ -2,8 +2,8 @@ import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { ProgressViewDto } from './dto/watch-progress.dto';
 import { WatchProgressService } from './watch-progress.service';
+import { ProgressViewDto } from 'src/modules/playback/watch-progress/dto/progress.view.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
