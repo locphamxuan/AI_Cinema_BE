@@ -67,7 +67,7 @@ export class TokenRequestService {
           type: NOTIFICATION_TYPE.TOKEN_REQUESTED,
           title: `${request.requestedBy.fullName} xin thêm ${dto.requestedTokens} Token cho phim "${movie.title}"`,
           body: dto.reason,
-          link: `/projects/${movieId}/fee`,
+          link: `/projects/${movieId}/studio`,
           payload: { movieId, tokenRequestId: request.id, seasonId: season.id, requestedTokens: dto.requestedTokens },
         },
         tx,
