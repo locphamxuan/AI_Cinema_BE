@@ -13,6 +13,7 @@
     "film:push": "node --env-file=.env AI_Film/film-sync.mjs push",
     "film:pull": "node --env-file=.env AI_Film/film-sync.mjs pull",
     "film:list": "node --env-file=.env AI_Film/film-sync.mjs list",
+    "film:catalog": "node --env-file=.env AI_Film/film-catalog.mjs",
     "postinstall": "prisma generate",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
