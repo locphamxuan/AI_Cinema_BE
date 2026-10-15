@@ -44,6 +44,36 @@ export const FILE_KINDS = {
     extensions: ['.mov'],
     matches: (h) => ['ftyp', 'moov', 'mdat', 'wide', 'free'].includes(h.subarray(4, 8).toString('latin1')),
   },
+  doc: {
+    mimeType: 'application/msword',
+    extensions: ['.doc'],
+    matches: (h) => startsWith(h, 0xd0, 0xcf, 0x11, 0xe0),
+  },
+  rtf: {
+    mimeType: 'application/rtf',
+    extensions: ['.rtf'],
+    matches: (h) => h.subarray(0, 5).toString('latin1') === '{\\rtf',
+  },
+  xlsx: {
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    extensions: ['.xlsx'],
+    matches: (h) => startsWith(h, 0x50, 0x4b, 0x03, 0x04),
+  },
+  pptx: {
+    mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    extensions: ['.pptx'],
+    matches: (h) => startsWith(h, 0x50, 0x4b, 0x03, 0x04),
+  },
+  webm: {
+    mimeType: 'video/webm',
+    extensions: ['.webm', '.mkv'],
+    matches: (h) => startsWith(h, 0x1a, 0x45, 0xdf, 0xa3),
+  },
+  avi: {
+    mimeType: 'video/x-msvideo',
+    extensions: ['.avi'],
+    matches: (h) => startsWith(h, 0x52, 0x49, 0x46, 0x46) && h.subarray(8, 11).toString('latin1') === 'AVI',
+  },
   vtt: {
     mimeType: 'text/vtt',
     extensions: ['.vtt'],

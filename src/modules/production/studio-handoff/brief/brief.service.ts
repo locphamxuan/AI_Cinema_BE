@@ -62,7 +62,7 @@ export class BriefService {
           orderBy: { episodeNumber: 'asc' },
           include: { season: { select: { seasonNumber: true } } },
         },
-        ideaFiles: { orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
+        ideaFiles: { where: { purpose: 'IDEA' }, orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
       },
     });
     const latestIdeaFiles = movie.ideaFiles.filter(
