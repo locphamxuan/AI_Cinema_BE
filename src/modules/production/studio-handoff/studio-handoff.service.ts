@@ -7,6 +7,8 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { EMAIL_TEMPLATE, EmailOutboxService } from 'src/modules/platform/email/email-outbox.service';
+import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { StudioService } from 'src/modules/production/studio/studio.service';
@@ -50,6 +52,7 @@ export class StudioHandoffService {
     private readonly emails: EmailOutboxService,
     private readonly storage: ObjectStorage,
     private readonly auditLog: AuditLogService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async handOff(movieId: string, dto: HandOffRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
@@ -241,6 +244,22 @@ export class StudioHandoffService {
       },
       tx,
     );
+    // The Reviewer follows the project without asking the Creator what was sent where.
+    if (movie.reviewerId !== user.id) {
+      await this.notifications.notify(
+        [movie.reviewerId],
+        {
+          type: NOTIFICATION_TYPE.STUDIO_HANDOFF_SENT,
+          title: changeReason
+            ? `Creator đổi Studio của phim "${movie.title}" sang ${studio.name}`
+            : `Creator đã gửi bàn giao phim "${movie.title}" cho Studio ${studio.name}`,
+          body: changeReason ?? undefined,
+          link: `/projects/${movie.id}/studio`,
+          payload: { movieId: movie.id, handoffId: handoff.id, studioId: studio.id, seasonId },
+        },
+        tx,
+      );
+    }
     return emailId;
   }
 }

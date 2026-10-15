@@ -16,6 +16,8 @@ import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.s
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
+import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import {
@@ -67,6 +69,7 @@ export class MediaIngestService {
     private readonly queue: JobQueue,
     private readonly auditLog: AuditLogService,
     private readonly outcomes: MediaOutcomeService,
+    private readonly notifications: NotificationService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -185,8 +188,23 @@ export class MediaIngestService {
           submittedById: user.id,
           studioHandoffId,
         },
-        include: { episode: { select: { movieId: true } } },
+        include: {
+          episode: {
+            select: { movieId: true, episodeNumber: true, movie: { select: { title: true, reviewerId: true } } },
+          },
+        },
       });
+      await this.notifications.notify(
+        [asset.episode.movie.reviewerId],
+        {
+          type: NOTIFICATION_TYPE.MEDIA_SUBMITTED,
+          title: `Creator vừa nộp tập ${asset.episode.episodeNumber} của phim "${asset.episode.movie.title}"`,
+          body: `Bản ${asset.version}, đang được xử lý.`,
+          link: `/projects/${asset.episode.movieId}/episodes/${episodeId}`,
+          payload: { movieId: asset.episode.movieId, episodeId, mediaAssetId: asset.id },
+        },
+        tx,
+      );
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.MEDIA_SUBMITTED,

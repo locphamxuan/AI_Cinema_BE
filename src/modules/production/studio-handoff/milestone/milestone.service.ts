@@ -95,7 +95,20 @@ export class MilestoneService {
     note?: string,
   ) {
     const accepted = to === Milestone.STUDIO_ACCEPTED;
-    if (!accepted && to !== Milestone.STUDIO_DECLINED) return;
+    if (!accepted && to !== Milestone.STUDIO_DECLINED) {
+      await this.notifications.notify(
+        [movie.reviewerId],
+        {
+          type: NOTIFICATION_TYPE.STUDIO_MILESTONE_CHANGED,
+          title: `Mốc Studio của phim "${movie.title}" chuyển sang ${to}`,
+          body: note,
+          link: `/projects/${movie.id}/studio`,
+          payload: { movieId: movie.id, status: to },
+        },
+        tx,
+      );
+      return;
+    }
     await this.notifications.notify(
       [movie.reviewerId],
       {

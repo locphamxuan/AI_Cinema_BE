@@ -8,6 +8,7 @@ import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import type { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
+import type { NotificationService } from 'src/modules/platform/notification/notification.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { MediaIngestService } from './media-ingest.service';
 import type { MediaOutcomeService } from './pipeline/media-outcome.service';
@@ -35,6 +36,7 @@ describe('MediaIngestService.submitUpload', () => {
       {} as JobQueue,
       {} as AuditLogService,
       {} as MediaOutcomeService,
+      {} as NotificationService,
       {} as AppConfig,
     );
     const file = { path, originalname: 'tap.mp4', size: MP4.length } as Express.Multer.File;
