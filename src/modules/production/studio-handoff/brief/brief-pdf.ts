@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import PDFDocument from 'pdfkit';
 
-export interface BriefEpisode {
+interface BriefEpisode {
   episodeNumber: number;
   seasonNumber: number;
   title: string;

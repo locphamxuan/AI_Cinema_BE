@@ -9,7 +9,7 @@ const trimmed = ({ value }: { value: unknown }) => (typeof value === 'string' ? 
  * The studio of a hand-off is typed by hand (name + email, which find or create the studio) or, for a
  * studio already on record, named by `studioId`. A known email reuses that studio.
  */
-export class StudioChoiceDto {
+class StudioChoiceDto {
   @ApiPropertyOptional({ description: "A studio already on record; defaults to the project's studio (BR-59)." })
   @IsUUID('4')
   @IsOptional()

@@ -24,16 +24,6 @@ export function spendableLots(tx: PrismaTx, walletId: string, now: Date): Promis
   });
 }
 
-/** How many spendable bonus Coins a wallet holds right now, summed in the database. */
-export function spendableBonus(tx: PrismaTx, walletId: string, now: Date): Promise<number> {
-  return tx.coinLot
-    .aggregate({
-      where: { walletId, remainingAmount: { gt: 0 }, closedAt: null, expiresAt: { gt: now } },
-      _sum: { remainingAmount: true },
-    })
-    .then(({ _sum }) => _sum.remainingAmount ?? 0);
-}
-
 /** Sums the Coins left in a set of lots, for a caller that already has the rows. */
 export function bonusOf(lots: { remainingAmount: number }[]): number {
   return lots.reduce((sum, lot) => sum + lot.remainingAmount, 0);

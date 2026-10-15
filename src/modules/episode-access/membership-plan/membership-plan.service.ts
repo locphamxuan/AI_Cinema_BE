@@ -35,7 +35,7 @@ const PLAN_VIEW = {
 
 type PlanRow = Prisma.MembershipPlanGetPayload<{ select: typeof PLAN_VIEW }>;
 
-export type PlanView = Omit<PlanRow, 'prices'> & { priceCoins: number | null; priceId: string | null };
+type PlanView = Omit<PlanRow, 'prices'> & { priceCoins: number | null; priceId: string | null };
 
 /**
  * The Membership & Billing Admin's catalogue. A price never overwrites: the row in force is closed
