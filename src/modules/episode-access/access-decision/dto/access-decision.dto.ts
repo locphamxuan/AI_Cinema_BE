@@ -55,6 +55,12 @@ export class AccessDecisionDto {
   @ApiProperty({ type: AccessRequired })
   required: AccessRequired;
 
+  @ApiPropertyOptional({
+    example: 'https://cdn.example.com/public/episodes/1/master.m3u8',
+    description: 'What the player loads (HLS or MP4); only present when access is granted',
+  })
+  streamUrl?: string;
+
   @ApiProperty({
     enum: NEXT_ACTION,
     example: 'HANDOFF_TO_PLAYBACK',
