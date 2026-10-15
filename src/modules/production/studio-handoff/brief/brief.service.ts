@@ -20,6 +20,9 @@ export interface PreparedBrief {
   subject: string;
   text: string;
   attachments: EmailAttachment[];
+  /** The Creator the brief comes from: shown as the sender, and where the studio's reply goes. */
+  creatorName: string;
+  creatorEmail: string;
 }
 
 /**
@@ -96,6 +99,8 @@ export class BriefService {
     return {
       briefKey,
       productionFeeTokens,
+      creatorName: content.creatorName,
+      creatorEmail: content.creatorEmail,
       subject: `[AI Cinema] Đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope})`,
       text: [
         `Kính gửi ${studio.name},`,

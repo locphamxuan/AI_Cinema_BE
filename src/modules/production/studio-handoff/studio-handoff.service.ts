@@ -209,6 +209,8 @@ export class StudioHandoffService {
       attachments: brief.attachments,
       notifyOnFailureId: user.id,
       link: `/projects/${movie.id}/studio`,
+      fromName: brief.creatorName || undefined,
+      replyTo: brief.creatorEmail || undefined,
     });
     const handoff = await tx.studioHandoff.create({
       data: {

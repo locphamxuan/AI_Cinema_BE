@@ -85,6 +85,20 @@ describe('EmailOutboxService', () => {
     );
   });
 
+  it("sends under the Creator's name and lets the studio reply to the Creator", async () => {
+    prisma.emailMessage.findUnique.mockResolvedValue({
+      ...stored,
+      payload: { ...stored.payload, fromName: 'Creator Test', replyTo: 'creator@gmail.com' },
+    });
+    storage.read.mockResolvedValue(Buffer.from('%PDF'));
+
+    await handler({ emailMessageId: 'e1' });
+
+    expect(mailer.send).toHaveBeenCalledWith(
+      expect.objectContaining({ fromName: 'Creator Test', replyTo: 'creator@gmail.com' }),
+    );
+  });
+
   it('does not send a message twice', async () => {
     prisma.emailMessage.findUnique.mockResolvedValue({ ...stored, status: EmailStatus.SENT });
     await handler({ emailMessageId: 'e1' });
