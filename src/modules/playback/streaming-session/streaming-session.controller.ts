@@ -1,10 +1,13 @@
-import { Body, Controller, Headers, Ip, Post } from '@nestjs/common';
-import { ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Header, Headers, Ip, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { ApiHeader, ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { OptionalUser } from 'src/common/decorators/optional-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { CreateStreamingSessionRequestDto, StreamingSessionViewDto } from './dto/streaming-session.dto';
+import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
+
+const ID = new ParseUUIDPipe({ version: '4' });
 
 /**
  * Public: guests (X-Guest-Key) and members (optional bearer token) share the
@@ -15,7 +18,10 @@ import { StreamingSessionService } from './streaming-session.service';
 @Public()
 @Controller('playback')
 export class StreamingSessionController {
-  constructor(private readonly sessions: StreamingSessionService) {}
+  constructor(
+    private readonly sessions: StreamingSessionService,
+    private readonly urls: PlaybackUrlService,
+  ) {}
 
   @Post('sessions')
   @ApiOperation({ summary: 'Verify playback access and open a streaming session (flow 3, step 11)' })
@@ -42,4 +48,39 @@ export class StreamingSessionController {
       userAgent,
     });
   }
+
+  /**
+   * Token playlist endpoints: players cannot send auth headers, so the signed
+   * query (`?s=&exp=&sig=`) is the credential. The session row is re-checked.
+   */
+  @Get('s/:sessionId/master.m3u8')
+  @ApiOperation({ summary: 'Filtered master playlist: only renditions at or below the plan ceiling' })
+  @ApiProduces('application/vnd.apple.mpegurl')
+  @Header('Content-Type', 'application/vnd.apple.mpegurl')
+  master(
+    @Param('sessionId', ID) sessionId: string,
+    @Query('s') s: string,
+    @Query('exp') exp: string,
+    @Query('sig') sig: string,
+  ) {
+    return this.urls.masterPlaylist(sessionId, tokenOf(s, exp, sig)).then(({ text }) => text);
+  }
+
+  @Get('s/:sessionId/renditions/:quality/index.m3u8')
+  @ApiOperation({ summary: 'Variant playlist with segments rewritten to signed CDN URLs' })
+  @ApiProduces('application/vnd.apple.mpegurl')
+  @Header('Content-Type', 'application/vnd.apple.mpegurl')
+  rendition(
+    @Param('sessionId', ID) sessionId: string,
+    @Param('quality') quality: string,
+    @Query('s') s: string,
+    @Query('exp') exp: string,
+    @Query('sig') sig: string,
+  ) {
+    return this.urls.variantPlaylist(sessionId, quality, tokenOf(s, exp, sig));
+  }
+}
+
+function tokenOf(s: string, exp: string, sig: string): PlaybackToken {
+  return { sessionId: s, exp: Number(exp), sig: sig ?? '' };
 }

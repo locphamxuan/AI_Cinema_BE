@@ -15,6 +15,8 @@ export interface AppConfig {
   redisUrl: string | null;
   jwt: { secret: string; accessTtlSeconds: number; refreshTtlDays: number; issuer: string; audience: string };
   rateLimit: { ttlMs: number; limit: number; authLimit: number };
+  /** Absolute base players resolve API-issued playlist URLs against. */
+  apiPublicUrl: string;
   storage: {
     driver: 'local' | 's3';
     localRoot: string;
@@ -68,6 +70,12 @@ export interface AppConfig {
     };
   };
   briefFontPath: string | null;
+  /**
+   * Signed playback URLs (MF-3 phase 2). Empty secret = signing disabled: the API
+   * hands out direct stream URLs and the token playlist endpoints refuse with 422,
+   * so local development boots without any secret.
+   */
+  playback: { urlSecret?: string; urlTtlSeconds: number };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -205,6 +213,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       limit: read.int('RATE_LIMIT_MAX', 300, 1),
       authLimit: read.int('RATE_LIMIT_AUTH_MAX', 10, 1),
     },
+    apiPublicUrl: (read.optional('API_PUBLIC_URL') ?? `http://localhost:${port}`).replace(/\/+$/, ''),
     storage: storageConfig(read, port),
     mail: {
       host: read.optional('SMTP_HOST') ?? null,
@@ -234,6 +243,10 @@ export function loadConfig(env: Env = process.env): AppConfig {
     },
     payments: paymentConfig(read),
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
+    playback: {
+      urlSecret: read.optional('PLAYBACK_URL_SECRET'),
+      urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 7200, 60),
+    },
   };
 
   if (isProduction && config.media.allowPrivateUrls) {

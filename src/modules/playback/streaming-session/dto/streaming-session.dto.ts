@@ -33,11 +33,11 @@ export class StreamingSessionViewDto {
 
   @ApiProperty({
     example: {
-      masterUrl: 'https://cdn.aicinema.example/public/hls/<assetId>/master.m3u8',
+      masterUrl: 'https://api.aicinema.example/api/playback/s/<sessionId>/master.m3u8?s=...&exp=...&sig=...',
       qualities: ['360p', '720p', '1080p'],
       durationSeconds: 1320,
     },
-    description: 'Direct origin URL in phase 1; replaced by the signed CDN URL in phase 2',
+    description: 'Signed token playlist (filtered by plan ceiling); direct origin URL when signing is off or external',
   })
   stream: { masterUrl: string; qualities: string[]; durationSeconds: number | null };
 

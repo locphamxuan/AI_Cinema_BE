@@ -3,6 +3,7 @@ import { PlaybackAccessType, StreamingSessionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { PlaybackAccessService } from '../playback-access/playback-access.service';
+import type { PlaybackUrlService } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
 
 describe('StreamingSessionService.create', () => {
@@ -10,17 +11,20 @@ describe('StreamingSessionService.create', () => {
   const access = { verify: jest.fn() };
   const devices = { check: jest.fn() };
   const settings = { get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90 }) };
+  const urls = { masterUrl: jest.fn().mockReturnValue('https://api.example/api/playback/s/sess-1/master.m3u8?s=x') };
   const service = new StreamingSessionService(
     prisma as unknown as PrismaService,
     access as unknown as PlaybackAccessService,
     devices,
     settings as unknown as PlatformSettingService,
+    urls as unknown as PlaybackUrlService,
   );
 
   const verified = {
     episodeId: 'ep-1',
     movieId: 'm-1',
     mediaAssetId: 'asset-1',
+    isSelfHosted: true,
     streamUrl: 'https://cdn.example/hls/asset-1/master.m3u8',
     qualities: ['360p'],
     durationSeconds: 600,
@@ -54,6 +58,7 @@ describe('StreamingSessionService.create', () => {
       }),
     );
     expect(view).toMatchObject({ sessionId: 'sess-1', accessType: 'PLAN', startPositionSeconds: 0 });
+    expect(view.stream.masterUrl).toContain('/api/playback/s/sess-1/master.m3u8');
     expect(view.reused).toBeUndefined();
   });
 

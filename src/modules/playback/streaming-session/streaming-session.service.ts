@@ -4,6 +4,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
+import { PlaybackUrlService } from './playback-url.service';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
 
 export interface CreateSessionInput {
@@ -28,6 +29,7 @@ export class StreamingSessionService {
     private readonly access: PlaybackAccessService,
     private readonly devices: DeviceEligibilityPort,
     private readonly settings: PlatformSettingService,
+    private readonly urls: PlaybackUrlService,
   ) {}
 
   async create(input: CreateSessionInput): Promise<StreamingSessionViewDto> {
@@ -95,6 +97,8 @@ export class StreamingSessionService {
     verified: {
       episodeId: string;
       movieId: string;
+      mediaAssetId: string;
+      isSelfHosted: boolean;
       streamUrl: string;
       qualities: string[];
       durationSeconds: number | null;
@@ -114,7 +118,11 @@ export class StreamingSessionService {
       status: session.status,
       startPositionSeconds: session.startPositionSeconds,
       stream: {
-        masterUrl: verified.streamUrl,
+        masterUrl: this.urls.masterUrl(session.id, {
+          id: verified.mediaAssetId,
+          streamUrl: verified.streamUrl,
+          isSelfHosted: verified.isSelfHosted,
+        }),
         qualities: verified.qualities,
         durationSeconds: verified.durationSeconds,
       },

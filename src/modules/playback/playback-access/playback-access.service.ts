@@ -8,6 +8,7 @@ export interface VerifiedPlayback {
   episodeId: string;
   movieId: string;
   mediaAssetId: string;
+  isSelfHosted: boolean;
   streamUrl: string;
   qualities: string[];
   durationSeconds: number | null;
@@ -65,6 +66,7 @@ export class PlaybackAccessService {
       episodeId: episode.id,
       movieId: episode.movieId,
       mediaAssetId: media.id,
+      isSelfHosted: media.isSelfHosted,
       streamUrl: media.streamUrl,
       qualities: media.qualities,
       durationSeconds: media.durationSeconds,
