@@ -52,6 +52,7 @@ model Episode {
     priceAlerts        PriceAlert[]
     changeRequests     ProjectChangeRequest[]
     accesses           EpisodeAccess[]
+    views              EpisodeView[]
 
     @@unique([movieId, episodeNumber])
     @@index([movieId, status])

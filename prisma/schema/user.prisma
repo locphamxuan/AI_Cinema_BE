@@ -38,6 +38,8 @@ model User {
   changeRequestsResolved  ProjectChangeRequest[] @relation("ChangeRequestResolvedBy")
   tokenRequestsMade       TokenRequest[]         @relation("TokenRequestRequestedBy")
   tokenRequestsResolved   TokenRequest[]         @relation("TokenRequestResolvedBy")
+  movieLikes              MovieLike[]
+  episodeViews            EpisodeView[]
   tokenEntries            TokenLedgerEntry[]
   tokenBudget             ReviewerTokenEntry[]   @relation("ReviewerTokenBudget")
   tokenBudgetGranted      ReviewerTokenEntry[]   @relation("ReviewerTokenGrantedBy")
