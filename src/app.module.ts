@@ -24,6 +24,7 @@ import { ProjectAccessModule } from 'src/modules/production/project-access/proje
 import { StudioHandoffModule } from 'src/modules/production/studio-handoff/studio-handoff.module';
 import { StudioModule } from 'src/modules/production/studio/studio.module';
 import { ReviewerTokenModule } from 'src/modules/production/reviewer-token/reviewer-token.module';
+import { TokenRequestModule } from 'src/modules/production/token-request/token-request.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { UserModule } from 'src/modules/identity/user/user.module';
 import { AppController } from './app.controller';
@@ -54,6 +55,7 @@ import { AppController } from './app.controller';
     MediaIngestModule,
     StudioModule,
     ReviewerTokenModule,
+    TokenRequestModule,
     ContentReviewModule,
     PublishingModule,
     CatalogModule,
