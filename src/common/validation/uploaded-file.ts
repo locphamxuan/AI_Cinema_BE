@@ -25,6 +25,14 @@ export const FILE_KINDS = {
     extensions: ['.webp'],
     matches: (h) => startsWith(h, 0x52, 0x49, 0x46, 0x46) && h.subarray(8, 12).toString('latin1') === 'WEBP',
   },
+  gif: { mimeType: 'image/gif', extensions: ['.gif'], matches: (h) => h.subarray(0, 4).toString('latin1') === 'GIF8' },
+  bmp: { mimeType: 'image/bmp', extensions: ['.bmp'], matches: (h) => startsWith(h, 0x42, 0x4d) },
+  avif: {
+    mimeType: 'image/avif',
+    extensions: ['.avif'],
+    matches: (h) =>
+      h.subarray(4, 8).toString('latin1') === 'ftyp' && ['avif', 'avis'].includes(h.subarray(8, 12).toString('latin1')),
+  },
   txt: { mimeType: 'text/plain', extensions: ['.txt'], matches: (h) => h.length > 0 && !h.includes(0) },
   mp4: {
     mimeType: 'video/mp4',

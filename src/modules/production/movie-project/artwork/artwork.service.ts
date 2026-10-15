@@ -10,9 +10,16 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import { assertProjectStatus } from 'src/modules/production/project-access/project-rules';
 import { EDITABLE_PROJECT_STATUSES } from '../project-status';
 
-/** Posters and episode thumbnails: PNG, JPEG or WebP, at most 5 MB. */
-export const ARTWORK_MAX_BYTES = 5 * 1024 * 1024;
-const ARTWORK_KINDS = [FILE_KINDS.png, FILE_KINDS.jpeg, FILE_KINDS.webp];
+/** Posters and episode thumbnails: any raster image a browser shows (PNG, JPEG, WebP, GIF, BMP, AVIF), at most 20 MB. */
+export const ARTWORK_MAX_BYTES = 20 * 1024 * 1024;
+const ARTWORK_KINDS = [
+  FILE_KINDS.png,
+  FILE_KINDS.jpeg,
+  FILE_KINDS.webp,
+  FILE_KINDS.gif,
+  FILE_KINDS.bmp,
+  FILE_KINDS.avif,
+];
 
 /** The poster of a project and the thumbnail of an episode, which the Reviewer uploads (§4.1.10). */
 @Injectable()

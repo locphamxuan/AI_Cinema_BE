@@ -22,7 +22,7 @@ export class ArtworkController {
   @UseInterceptors(IMAGE)
   @ApiConsumes('multipart/form-data')
   @ApiBody(IMAGE_BODY)
-  @ApiOperation({ summary: 'Upload the poster of the project (PNG, JPEG, WebP; ≤ 5 MB)' })
+  @ApiOperation({ summary: 'Upload the poster of the project (PNG, JPEG, WebP, GIF, BMP, AVIF; ≤ 20 MB)' })
   poster(
     @Param('movieId', ID) movieId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -35,7 +35,7 @@ export class ArtworkController {
   @UseInterceptors(IMAGE)
   @ApiConsumes('multipart/form-data')
   @ApiBody(IMAGE_BODY)
-  @ApiOperation({ summary: 'Upload the thumbnail of an episode (PNG, JPEG, WebP; ≤ 5 MB)' })
+  @ApiOperation({ summary: 'Upload the thumbnail of an episode (PNG, JPEG, WebP, GIF, BMP, AVIF; ≤ 20 MB)' })
   thumbnail(
     @Param('episodeId', ID) episodeId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
