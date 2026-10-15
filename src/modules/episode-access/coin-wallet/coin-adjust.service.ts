@@ -1,7 +1,9 @@
-import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, CoinLotSource, type Prisma } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { noticeAdjusted } from './coin-notices';
 import { COIN_REASON, type AdjustmentRequest, type CoinMovement } from './coin-wallet.types';
 import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './lot-usage';
 
@@ -12,7 +14,10 @@ import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './l
  */
 @Injectable()
 export class CoinAdjustService {
-  constructor(private readonly settings: PlatformSettingService) {}
+  constructor(
+    private readonly settings: PlatformSettingService,
+    @Optional() private readonly notifications?: NotificationService,
+  ) {}
 
   async apply(tx: PrismaTx, walletId: string, request: AdjustmentRequest, now = new Date()): Promise<CoinMovement> {
     const mainAmount = request.mainAmount ?? 0;
@@ -34,7 +39,12 @@ export class CoinAdjustService {
     }
     const rateVnd = request.rateVnd ?? (await this.settings.get()).coinRateVnd;
     const wanted = { ...request, rateVnd };
-    return bonusAmount < 0 ? this.debitBonus(tx, walletId, wanted, now) : this.debitMain(tx, walletId, wanted, now);
+    const movement =
+      bonusAmount < 0
+        ? await this.debitBonus(tx, walletId, wanted, now)
+        : await this.debitMain(tx, walletId, wanted, now);
+    await noticeAdjusted(this.notifications, tx, walletId, request.reason, movement);
+    return movement;
   }
 
   /** Only main Coins move: too negative is refused, the wallet never goes below zero. */

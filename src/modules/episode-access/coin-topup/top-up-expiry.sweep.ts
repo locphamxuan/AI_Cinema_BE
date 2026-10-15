@@ -1,8 +1,10 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { PaymentStatus, TopUpStatus } from '@prisma/client';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
+import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
 
 const BATCH = 100;
 
@@ -20,6 +22,7 @@ export class TopUpExpirySweep implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly queue: JobQueue,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Optional() private readonly notifications?: NotificationService,
   ) {}
 
   onModuleInit() {
@@ -35,7 +38,7 @@ export class TopUpExpirySweep implements OnModuleInit {
       const stale = await this.prisma.coinTopUp.findMany({
         where: { status: TopUpStatus.PENDING, expiresAt: { lte: now } },
         orderBy: { expiresAt: 'asc' },
-        select: { id: true },
+        select: { id: true, userId: true },
         take: BATCH,
       });
       if (!stale.length) break;
@@ -49,6 +52,15 @@ export class TopUpExpirySweep implements OnModuleInit {
         data: { status: PaymentStatus.EXPIRED, failureReason: 'The order expired before it was paid' },
       });
       closed += count;
+      for (const order of stale) {
+        await this.notifications?.notify([order.userId], {
+          type: NOTIFICATION_TYPE.COIN_TOPUP_FAILED,
+          title: 'Đơn nạp Coin đã hết hạn',
+          body: 'Đơn chưa được thanh toán kịp nên đã đóng; không có khoản tiền nào bị trừ. Tạo đơn mới để nạp.',
+          link: '/wallet',
+          payload: { topUpId: order.id },
+        });
+      }
       if (stale.length < BATCH) break;
     }
     if (closed) this.logger.log(`Closed ${closed} top-up order(s) nobody finished`);
