@@ -13,6 +13,7 @@ model User {
   fullName        String    @map("full_name") @db.VarChar(255)
   /// BR-54: required for members, who must be 18 or older; staff accounts may leave it empty.
   dateOfBirth     DateTime? @map("date_of_birth") @db.Date
+  phoneNumber     String?   @map("phone_number") @db.VarChar(20)
   role            UserRole  @default(MEMBER)
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
   isActive        Boolean   @default(true) @map("is_active")
@@ -35,6 +36,8 @@ model User {
   milestoneChanges        StudioMilestoneEvent[]  @relation("MilestoneChangedBy")
   changeRequestsMade      ProjectChangeRequest[] @relation("ChangeRequestRequestedBy")
   changeRequestsResolved  ProjectChangeRequest[] @relation("ChangeRequestResolvedBy")
+  tokenRequestsMade       TokenRequest[]         @relation("TokenRequestRequestedBy")
+  tokenRequestsResolved   TokenRequest[]         @relation("TokenRequestResolvedBy")
   tokenEntries            TokenLedgerEntry[]
   tokenBudget             ReviewerTokenEntry[]   @relation("ReviewerTokenBudget")
   tokenBudgetGranted      ReviewerTokenEntry[]   @relation("ReviewerTokenGrantedBy")

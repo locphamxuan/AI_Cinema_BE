@@ -47,6 +47,7 @@ model Movie {
   episodes       Episode[]
   tokenEntries   TokenLedgerEntry[]
   changeRequests ProjectChangeRequest[]
+  tokenRequests  TokenRequest[]
   auditLogs      AuditLog[]
 
   @@index([status])

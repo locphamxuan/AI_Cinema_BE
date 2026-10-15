@@ -27,6 +27,7 @@ model Season {
     handoffs       StudioHandoff[]
     tokenEntries   TokenLedgerEntry[]
     changeRequests ProjectChangeRequest[]
+    tokenRequests  TokenRequest[]
 
     @@unique([movieId, seasonNumber])
     @@unique([id, movieId])
