@@ -13,8 +13,11 @@ const dto: FilmSentRequestDto = {
   episodeCount: 3,
 };
 
-function setup(handoff: unknown) {
-  const tx = { studioHandoff: { findFirst: jest.fn().mockResolvedValue(handoff), update: jest.fn() } };
+function setup(handoff: unknown, coCreators: string[] = []) {
+  const tx = {
+    studioHandoff: { findFirst: jest.fn().mockResolvedValue(handoff), update: jest.fn() },
+    episode: { findMany: jest.fn().mockResolvedValue(coCreators.map((assignedCreatorId) => ({ assignedCreatorId }))) },
+  };
   const prisma = { $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)) };
   const auditLog = { record: jest.fn() };
   const notifications = { notify: jest.fn() };
@@ -46,6 +49,17 @@ describe('FilmSentService', () => {
       expect.objectContaining({ type: NOTIFICATION_TYPE.STUDIO_FILM_SENT, link: '/projects/m1/studio' }),
       tx,
     );
+  });
+
+  it('also tells the Creators given episodes of the season, once each', async () => {
+    const { service, tx, notifications } = setup({ ...handoff, seasonId: 's2' }, ['c3', 'c1']);
+
+    await service.record(dto);
+
+    expect(tx.episode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { movieId: 'm1', assignedCreatorId: { not: null }, seasonId: 's2' } }),
+    );
+    expect(notifications.notify).toHaveBeenCalledWith(['c2', 'c1', 'r1', 'c3'], expect.anything(), tx);
   });
 
   it('looks a season scope up by its number and a whole-project scope by no season', async () => {

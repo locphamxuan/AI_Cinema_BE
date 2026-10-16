@@ -65,8 +65,24 @@ export class FilmSentService {
         tx,
       );
       const { movie } = handoff;
+      // The Creators given episodes of the scope were CC'd on the brief ("Đồng gửi") and get the film too.
+      const coCreators = await tx.episode.findMany({
+        where: {
+          movieId: movie.id,
+          assignedCreatorId: { not: null },
+          ...(handoff.seasonId ? { seasonId: handoff.seasonId } : {}),
+        },
+        select: { assignedCreatorId: true },
+        distinct: ['assignedCreatorId'],
+      });
+      const recipients = [
+        handoff.createdById,
+        movie.creatorId,
+        movie.reviewerId,
+        ...coCreators.map((e) => e.assignedCreatorId),
+      ];
       await this.notifications.notify(
-        [...new Set([handoff.createdById, movie.creatorId, movie.reviewerId])],
+        [...new Set(recipients.filter((id): id is string => !!id))],
         {
           type: NOTIFICATION_TYPE.STUDIO_FILM_SENT,
           title: `Studio đã gửi phim "${movie.title}" (${dto.scope})`,
