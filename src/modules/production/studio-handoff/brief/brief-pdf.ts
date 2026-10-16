@@ -7,6 +7,8 @@ interface BriefEpisode {
   title: string;
   targetDurationSeconds: number;
   dueDate: Date | null;
+  /** The Creator who answers for the episode. */
+  owner: string | null;
 }
 
 export interface BriefContent {
@@ -17,6 +19,8 @@ export interface BriefContent {
   studioContact: string | null;
   creatorName: string;
   creatorEmail: string;
+  /** "Name <email>" of the other Creators of the scope, CC'd when the film is mailed back. */
+  coSenders: string[];
   ideaDescription: string;
   genres: string[];
   productionFeeTokens: number;
@@ -66,6 +70,7 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
   doc.fontSize(12).text(text(`Studio: ${brief.studioName}${brief.studioContact ? ` (${brief.studioContact})` : ''}`));
   doc.text(text(`Phạm vi bàn giao: ${brief.scope}`));
   doc.text(text(`Đầu mối AI Cinema: ${brief.creatorName} - ${brief.creatorEmail}`));
+  if (brief.coSenders.length) doc.text(text(`Đồng gửi: ${brief.coSenders.join(', ')}`));
   doc.text(text(`Thể loại: ${brief.genres.join(', ')}`));
   const feeVnd = brief.productionFeeTokens * brief.tokenRateVnd;
   doc.text(text(`Phí sản xuất: ${brief.productionFeeTokens} Token (= ${vnd(feeVnd)})`));
@@ -77,7 +82,7 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
   for (const episode of brief.episodes) {
     doc.text(
       text(
-        `Mùa ${episode.seasonNumber} · Tập ${episode.episodeNumber}: ${episode.title} - ${minutes(episode.targetDurationSeconds)} - hạn ${day(episode.dueDate)}`,
+        `Mùa ${episode.seasonNumber} · Tập ${episode.episodeNumber}: ${episode.title} - ${minutes(episode.targetDurationSeconds)} - hạn ${day(episode.dueDate)}${episode.owner ? ` - phụ trách: ${episode.owner}` : ''}`,
       ),
     );
   }

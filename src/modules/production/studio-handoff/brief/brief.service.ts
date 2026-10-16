@@ -8,6 +8,9 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
 import type { StoredMaterial } from '../material/handoff-material.service';
 import { briefFont, type BriefContent, renderBriefPdf } from './brief-pdf';
+import { briefTeam, briefTeamLines, personLine } from './brief-team';
+
+const PERSON = { select: { id: true, fullName: true, email: true } } as const;
 
 export interface BriefStudio {
   name: string;
@@ -75,10 +78,11 @@ export class BriefService {
       where: { id: movieId },
       include: {
         genres: { include: { genre: { select: { name: true } } } },
+        creator: PERSON,
         episodes: {
           where: seasonId ? { seasonId } : {},
           orderBy: { episodeNumber: 'asc' },
-          include: { season: { select: { seasonNumber: true } } },
+          include: { season: { select: { seasonNumber: true } }, assignedCreator: PERSON },
         },
         ideaFiles: { where: { purpose: 'IDEA' }, orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
       },
@@ -87,6 +91,11 @@ export class BriefService {
       (file, i, all) => all.findIndex((other) => other.fileName === file.fileName) === i,
     );
     const { tokenRateVnd } = await this.settings.get();
+    const team = briefTeam(
+      movie.episodes.map((episode) => ({ ...episode, seasonNumber: episode.season.seasonNumber })),
+      movie.creator,
+      context.senderId,
+    );
 
     const content: BriefContent = {
       movieTitle: movie.title,
@@ -95,6 +104,7 @@ export class BriefService {
       studioContact: studio.contactName,
       creatorName: sender.fullName,
       creatorEmail: sender.email,
+      coSenders: team.coSenders.map(personLine),
       ideaDescription: movie.ideaDescription,
       genres: movie.genres.map(({ genre }) => genre.name),
       productionFeeTokens,
@@ -105,6 +115,7 @@ export class BriefService {
         title: episode.title,
         targetDurationSeconds: episode.targetDurationSeconds,
         dueDate: episode.deliveryDeadline,
+        owner: (episode.assignedCreator ?? movie.creator)?.fullName ?? null,
       })),
       ideaFiles: [...latestIdeaFiles.map((file) => file.fileName), ...materials.map((file) => file.fileName)],
       issuedAt: new Date(),
@@ -128,6 +139,7 @@ export class BriefService {
         'Khi hoàn tất, vui lòng gửi phim đã soạn sẵn qua email cho đầu mối bên dưới.',
         '',
         `Đầu mối: ${content.creatorName} - ${content.creatorEmail}`,
+        ...briefTeamLines(team),
       ].join('\n'),
       attachments: [
         { key: briefKey, fileName: `brief-${movieId}.pdf`, contentType: 'application/pdf' },
