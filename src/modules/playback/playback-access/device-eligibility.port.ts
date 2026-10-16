@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 
@@ -12,7 +12,12 @@ export const DEFAULT_MAX_DEVICES = 2;
  * replace the default implementation below without touching the session flow.
  */
 export abstract class DeviceEligibilityPort {
-  abstract check(userId: string): Promise<void>;
+  /**
+   * May this member open one more stream right now? `db` carries the creation
+   * transaction so the count and the insert serialize (F-2); without it the
+   * count is only best-effort.
+   */
+  abstract check(userId: string, db?: PrismaTx): Promise<void>;
 }
 
 /**
@@ -28,16 +33,17 @@ export class CountingDeviceEligibilityService extends DeviceEligibilityPort {
     super();
   }
 
-  async check(userId: string): Promise<void> {
+  async check(userId: string, db?: PrismaTx): Promise<void> {
     const { playbackHeartbeatTimeoutSeconds } = await this.settings.get();
     const aliveSince = new Date(Date.now() - playbackHeartbeatTimeoutSeconds * 1000);
+    const client: PrismaService | PrismaTx = db ?? this.prisma;
     const [plan, liveSessions] = await Promise.all([
-      this.prisma.subscription.findFirst({
+      client.subscription.findFirst({
         where: runningPlanWhere(userId),
         orderBy: { currentPeriodEnd: 'desc' },
         include: { plan: { select: { features: true } } },
       }),
-      this.prisma.streamingSession.count({
+      client.streamingSession.count({
         where: { userId, status: 'ACTIVE', lastHeartbeatAt: { gt: aliveSince } },
       }),
     ]);

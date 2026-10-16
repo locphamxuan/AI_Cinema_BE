@@ -9,10 +9,18 @@ import type { PlaybackUrlService } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
 
 describe('StreamingSessionService.create', () => {
-  const prisma = {
-    streamingSession: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+  const streamingSession = { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
+  const tx = {
+    streamingSession,
     mediaAsset: { findUnique: jest.fn() },
     episode: { findUnique: jest.fn(), findFirst: jest.fn() },
+    $executeRaw: jest.fn(),
+  };
+  const prisma = {
+    streamingSession,
+    mediaAsset: { findUnique: jest.fn() },
+    episode: { findUnique: jest.fn(), findFirst: jest.fn() },
+    $transaction: jest.fn((work: (db: typeof tx) => Promise<never>) => work(tx)),
   };
   const access = { verify: jest.fn() };
   const devices = { check: jest.fn() };
@@ -66,7 +74,7 @@ describe('StreamingSessionService.create', () => {
     const view = await service.create({ episodeId: 'ep-1', userId: 'u-1' });
 
     expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1');
-    expect(devices.check).toHaveBeenCalledWith('u-1');
+    expect(devices.check).toHaveBeenCalledWith('u-1', tx);
     expect(prisma.streamingSession.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ userId: 'u-1', episodeId: 'ep-1', mediaAssetId: 'asset-1' }),
@@ -75,6 +83,19 @@ describe('StreamingSessionService.create', () => {
     expect(view).toMatchObject({ sessionId: 'sess-1', accessType: 'PLAN', startPositionSeconds: 0 });
     expect(view.stream.masterUrl).toContain('/api/playback/s/sess-1/master.m3u8');
     expect(view.reused).toBeUndefined();
+  });
+
+  it('serializes creation on a per-owner lock inside one transaction', async () => {
+    await service.create({ episodeId: 'ep-1', userId: 'u-1' });
+
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    const rawCall = tx.$executeRaw.mock.calls[0] as unknown[];
+    expect(String((rawCall[0] as unknown[])[0])).toContain('pg_advisory_xact_lock');
+    // The device count runs after the lock, on the transaction client.
+    expect(devices.check).toHaveBeenCalledWith('u-1', tx);
+    const checkOrder = devices.check.mock.invocationCallOrder[0];
+    const createOrder = prisma.streamingSession.create.mock.invocationCallOrder[0];
+    expect(checkOrder).toBeLessThan(createOrder);
   });
 
   it('opens a guest session from X-Guest-Key without a device check', async () => {

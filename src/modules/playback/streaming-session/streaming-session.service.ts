@@ -73,43 +73,54 @@ export class StreamingSessionService {
     }
 
     const verified = await this.access.verify(input.episodeId, userId);
-    if (userId) await this.devices.check(userId);
 
-    // Double taps share one live session: an ACTIVE row on the same episode whose
-    // heartbeat has not timed out is handed back instead of opening a second row.
-    const { playbackHeartbeatTimeoutSeconds } = await this.settings.get();
-    const aliveSince = new Date(Date.now() - playbackHeartbeatTimeoutSeconds * 1000);
-    const live = await this.prisma.streamingSession.findFirst({
-      where: {
-        episodeId: input.episodeId,
-        status: StreamingSessionStatus.ACTIVE,
-        lastHeartbeatAt: { gt: aliveSince },
-        ...(userId ? { userId } : { guestKey }),
-      },
-      orderBy: { startedAt: 'desc' },
-    });
-    if (live) return this.view(live, verified, true, null, await this.ads.scheduleOf(live.id));
+    // F-2: the device count, the live-session lookup and the insert serialize on a
+    // per-owner advisory lock. The lock releases with the transaction, so a second
+    // concurrent tap always sees the first tap's row and reuses it instead of
+    // doubling the session (and its ad-break schedule).
+    const ownerKey = userId ? `member:${userId}` : `guest:${guestKey}`;
+    const { session, reused } = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'playback:' + ownerKey}))`;
+      if (userId) await this.devices.check(userId, tx);
 
-    const created = await this.prisma.streamingSession.create({
-      data: {
-        userId: userId ?? null,
-        guestKey: guestKey ?? null,
-        episodeId: verified.episodeId,
-        mediaAssetId: verified.mediaAssetId,
-        accessType: verified.accessType,
-        status: StreamingSessionStatus.ACTIVE,
-        startPositionSeconds: 0,
-        lastPositionSeconds: 0,
-        ipAddress: input.ipAddress ?? null,
-        userAgent: input.userAgent?.slice(0, 500) ?? null,
-      },
+      // Double taps share one live session: an ACTIVE row on the same episode whose
+      // heartbeat has not timed out is handed back instead of opening a second row.
+      const { playbackHeartbeatTimeoutSeconds } = await this.settings.get();
+      const aliveSince = new Date(Date.now() - playbackHeartbeatTimeoutSeconds * 1000);
+      const live = await tx.streamingSession.findFirst({
+        where: {
+          episodeId: input.episodeId,
+          status: StreamingSessionStatus.ACTIVE,
+          lastHeartbeatAt: { gt: aliveSince },
+          ...(userId ? { userId } : { guestKey }),
+        },
+        orderBy: { startedAt: 'desc' },
+      });
+      if (live) return { session: live, reused: true };
+
+      const created = await tx.streamingSession.create({
+        data: {
+          userId: userId ?? null,
+          guestKey: guestKey ?? null,
+          episodeId: verified.episodeId,
+          mediaAssetId: verified.mediaAssetId,
+          accessType: verified.accessType,
+          status: StreamingSessionStatus.ACTIVE,
+          startPositionSeconds: 0,
+          lastPositionSeconds: 0,
+          ipAddress: input.ipAddress ?? null,
+          userAgent: input.userAgent?.slice(0, 500) ?? null,
+        },
+      });
+      return { session: created, reused: false };
     });
+    if (reused) return this.view(session, verified, true, null, await this.ads.scheduleOf(session.id));
     return this.view(
-      created,
+      session,
       verified,
       false,
       await this.resumeOf(userId, verified.episodeId),
-      await this.ads.scheduleFor(created.id, { userId, durationSeconds: verified.durationSeconds }),
+      await this.ads.scheduleFor(session.id, { userId, durationSeconds: verified.durationSeconds }),
     );
   }
 
