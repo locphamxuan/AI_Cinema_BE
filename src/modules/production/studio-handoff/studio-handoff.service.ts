@@ -59,7 +59,7 @@ export class StudioHandoffService {
   ) {}
 
   async handOff(movieId: string, dto: HandOffRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'creator');
+    const movie = await this.access.movie(movieId, user, 'lead');
     assertProjectStatus(movie.status, [MovieStatus.ASSIGNED, MovieStatus.IN_PRODUCTION], 'hand the project off');
     const studio = await this.studios.resolve(dto, movie.studioId, user);
     if (movie.studioId && movie.studioId !== studio.id) {
@@ -90,7 +90,7 @@ export class StudioHandoffService {
   }
 
   async changeStudio(movieId: string, dto: ChangeStudioRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'creator');
+    const movie = await this.access.movie(movieId, user, 'lead');
     assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'change the studio');
     const studio = await this.studios.resolve(dto, null, user);
     const seasonId = await this.scopeSeason(movieId, dto.seasonId);

@@ -40,7 +40,7 @@ export class TokenRequestService {
   ) {}
 
   async create(movieId: string, dto: CreateTokenRequestDto, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'creator');
+    const movie = await this.access.movie(movieId, user, 'lead');
     assertProjectStatus(movie.status, [...OPEN_PROJECT_STATUSES, MovieStatus.UNDER_REVISION], 'ask for more Token');
     const season = await this.prisma.season.findFirst({ where: { id: dto.seasonId, movieId } });
     if (!season) throw new BadRequestException('The season does not belong to this project');

@@ -22,7 +22,7 @@ export class MilestoneService {
   ) {}
 
   async update(movieId: string, handoffId: string, dto: UpdateMilestoneRequestDto, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'creator');
+    const movie = await this.access.movie(movieId, user, 'lead');
     assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'change the studio milestone');
     const handoff = await this.prisma.studioHandoff.findFirst({ where: { id: handoffId, movieId } });
     if (!handoff) throw new NotFoundException('Hand-off not found');
