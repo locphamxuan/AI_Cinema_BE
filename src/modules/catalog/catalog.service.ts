@@ -103,14 +103,14 @@ export class CatalogService {
   }
 
   async episodes(movieId: string, seasonNumber?: number) {
-    await this.assertListed(movieId);
+    const listed = await this.assertListed(movieId);
     const [episodes, freeStarter] = await Promise.all([
       this.prisma.episode.findMany({
         where: { movieId, ...VISIBLE_EPISODE, ...(seasonNumber ? { season: { seasonNumber } } : {}) },
         orderBy: { episodeNumber: 'asc' },
         include: EPISODE_DETAIL,
       }),
-      this.freeStarterCount(),
+      this.freeStarterCount(listed.freeEpisodeCount),
     ]);
     return episodes.map((episode) => episodeView(episode, freeStarter));
   }
@@ -121,17 +121,24 @@ export class CatalogService {
       include: { ...EPISODE_DETAIL, movie: { include: GENRES } },
     });
     if (!episode) throw new NotFoundException('Episode not found');
-    return { ...episodeView(episode, await this.freeStarterCount()), movie: movieCard(episode.movie) };
+    return {
+      ...episodeView(episode, await this.freeStarterCount(episode.movie.freeEpisodeCount)),
+      movie: movieCard(episode.movie),
+    };
   }
 
   private async assertListed(movieId: string) {
-    if (!(await this.prisma.movie.count({ where: { id: movieId, ...LISTED_MOVIE } }))) {
-      throw new NotFoundException('Movie not found');
-    }
+    const movie = await this.prisma.movie.findFirst({
+      where: { id: movieId, ...LISTED_MOVIE },
+      select: { freeEpisodeCount: true },
+    });
+    if (!movie) throw new NotFoundException('Movie not found');
+    return movie;
   }
 
-  private async freeStarterCount(): Promise<number> {
-    return (await this.settings.get()).freeStarterEpisodeCount;
+  /** BR-03: the Reviewer may set a movie's own count (a one-episode film free or not); else the platform's. */
+  private async freeStarterCount(movieCount: number | null): Promise<number> {
+    return movieCount ?? (await this.settings.get()).freeStarterEpisodeCount;
   }
 }
 

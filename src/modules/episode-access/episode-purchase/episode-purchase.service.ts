@@ -33,7 +33,13 @@ export class EpisodePurchaseService {
 
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, status: EpisodeStatus.PUBLISHED },
-      select: { id: true, movieId: true, episodeNumber: true, coinPrice: true },
+      select: {
+        id: true,
+        movieId: true,
+        episodeNumber: true,
+        coinPrice: true,
+        movie: { select: { freeEpisodeCount: true } },
+      },
     });
     if (!episode) {
       throw new ConflictException({
@@ -100,9 +106,15 @@ export class EpisodePurchaseService {
   }
 
   /** A Free Starter episode and an episode priced at zero need no purchase at all. */
-  private async assertNotFree(episode: { id: string; episodeNumber: number; coinPrice: number | null }) {
+  private async assertNotFree(episode: {
+    id: string;
+    episodeNumber: number;
+    coinPrice: number | null;
+    movie: { freeEpisodeCount: number | null };
+  }) {
     const settings = await this.settings.get();
-    if (episode.episodeNumber <= settings.freeStarterEpisodeCount || episode.coinPrice === 0) {
+    const freeCount = episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount;
+    if (episode.episodeNumber <= freeCount || episode.coinPrice === 0) {
       throw new ConflictException({
         message: 'The episode is free, it needs no purchase',
         details: { reason: 'ACCESS_ALREADY_OWNED' },
