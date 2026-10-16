@@ -39,7 +39,7 @@ export function briefFont(configured: string | null): string | null {
 
 const vnd = (amount: number) => `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
 const minutes = (seconds: number) => `${Math.round((seconds / 60) * 10) / 10} phút`;
-const day = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : '—');
+const day = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : '-');
 
 // Without a Unicode font the built-in Helvetica cannot draw Vietnamese marks; drop them rather than print garbage.
 const plain = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
@@ -57,7 +57,7 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
     doc.on('error', reject);
   });
 
-  doc.fontSize(18).text(text(`ĐƠN ĐẶT HÀNG SẢN XUẤT PHIM — ${brief.movieTitle}`));
+  doc.fontSize(18).text(text(`ĐƠN ĐẶT HÀNG SẢN XUẤT PHIM - ${brief.movieTitle}`));
   doc
     .moveDown(0.5)
     .fontSize(10)
@@ -65,7 +65,7 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
   doc.moveDown();
   doc.fontSize(12).text(text(`Studio: ${brief.studioName}${brief.studioContact ? ` (${brief.studioContact})` : ''}`));
   doc.text(text(`Phạm vi bàn giao: ${brief.scope}`));
-  doc.text(text(`Đầu mối AI Cinema: ${brief.creatorName} — ${brief.creatorEmail}`));
+  doc.text(text(`Đầu mối AI Cinema: ${brief.creatorName} - ${brief.creatorEmail}`));
   doc.text(text(`Thể loại: ${brief.genres.join(', ')}`));
   const feeVnd = brief.productionFeeTokens * brief.tokenRateVnd;
   doc.text(text(`Phí sản xuất: ${brief.productionFeeTokens} Token (= ${vnd(feeVnd)})`));
@@ -77,7 +77,7 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
   for (const episode of brief.episodes) {
     doc.text(
       text(
-        `Mùa ${episode.seasonNumber} · Tập ${episode.episodeNumber}: ${episode.title} — ${minutes(episode.targetDurationSeconds)} — hạn ${day(episode.dueDate)}`,
+        `Mùa ${episode.seasonNumber} · Tập ${episode.episodeNumber}: ${episode.title} - ${minutes(episode.targetDurationSeconds)} - hạn ${day(episode.dueDate)}`,
       ),
     );
   }

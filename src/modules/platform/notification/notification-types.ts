@@ -1,6 +1,6 @@
 /** Kinds of in-app notifications the platform raises (the `notifications.type` column). */
 export const NOTIFICATION_TYPE = {
-  // MF-1 — movie projects
+  // MF-1 - movie projects
   PROJECT_ASSIGNED: 'PROJECT_ASSIGNED',
   PROJECT_CANCELLED: 'PROJECT_CANCELLED',
   EPISODE_ASSIGNED: 'EPISODE_ASSIGNED',
@@ -28,7 +28,7 @@ export const NOTIFICATION_TYPE = {
   PRICE_OUT_OF_RANGE: 'PRICE_OUT_OF_RANGE',
   PRICE_CHANGE_REQUEST: 'PRICE_CHANGE_REQUEST',
   EPISODE_PUBLISHED: 'EPISODE_PUBLISHED',
-  // MF-2 — Coin, daily reward and monthly plan
+  // MF-2 - Coin, daily reward and monthly plan
   COIN_TOPUP_SUCCESS: 'COIN_TOPUP_SUCCESS',
   COIN_TOPUP_FAILED: 'COIN_TOPUP_FAILED',
   COIN_SPENT: 'COIN_SPENT',

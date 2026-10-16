@@ -11,7 +11,7 @@ export const VNPAY_RSP = {
   UNKNOWN_ERROR: '99',
 } as const;
 
-/** `yyyyMMddHHmmss` in Vietnam time — the only clock VNPay speaks. */
+/** `yyyyMMddHHmmss` in Vietnam time - the only clock VNPay speaks. */
 export function formatVnpDateTime(at: Date): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh',

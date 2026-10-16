@@ -110,7 +110,7 @@ export class BriefService {
         'Chi tiết từng tập và hạn giao nằm trong brief PDF đính kèm, kèm kịch bản và tài liệu tham khảo.',
         'Khi hoàn tất, vui lòng gửi phim đã soạn sẵn qua email cho đầu mối bên dưới.',
         '',
-        `Đầu mối: ${content.creatorName} — ${content.creatorEmail}`,
+        `Đầu mối: ${content.creatorName} - ${content.creatorEmail}`,
       ].join('\n'),
       attachments: [
         { key: briefKey, fileName: `brief-${movieId}.pdf`, contentType: 'application/pdf' },

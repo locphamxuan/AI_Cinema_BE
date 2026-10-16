@@ -20,7 +20,7 @@ const GUEST_METHODS: AccessMethod[] = [ACCESS_METHOD.REGISTER_OR_LOGIN];
 
 /**
  * Step 6 and 7 of the flow: may this caller watch this episode, and if not, what is left to do.
- * The order of the checks is the order of the flow — Free Starter episode, an episode priced at
+ * The order of the checks is the order of the flow - Free Starter episode, an episode priced at
  * zero, a running plan (the whole movie, BR-02), the episode bought, and only then the ways left.
  *
  * A running plan grants every episode without writing a row per episode, which is what keeps
