@@ -7,6 +7,8 @@ export interface SeasonFeeSource {
   episodeProductionCost: bigint;
   episodeCount: number;
   entries: { entryType: TokenEntryType; amountTokens: bigint }[];
+  /** Token of hand-offs replaced after the studio got the brief (BR-59). */
+  lostTokens?: bigint | number;
 }
 
 /** What one season costs against what the Reviewer has paid out for it (BR-37, BR-46). */
@@ -25,6 +27,10 @@ export interface SeasonFee {
   totalTokens: number;
   /** Token still owed when episodes or the price grew after the allocation; 0 when covered. */
   missingTokens: number;
+  /** Spent on studios that were replaced: gone, never refunded (BR-59). */
+  lostTokens: number;
+  /** What a new brief of the season may still promise: total minus lost, never below 0. */
+  availableTokens: number;
   hasInitial: boolean;
 }
 
@@ -41,6 +47,7 @@ export function summariseSeasonFee(source: SeasonFeeSource): SeasonFee {
   const supplementTokens = sum(source, TokenEntryType.TOP_UP);
   const correctionTokens = sum(source, TokenEntryType.CORRECTION);
   const totalTokens = allocatedTokens + supplementTokens + correctionTokens;
+  const lostTokens = Number(source.lostTokens ?? 0);
   return {
     seasonId: source.id,
     seasonNumber: source.seasonNumber,
@@ -53,6 +60,8 @@ export function summariseSeasonFee(source: SeasonFeeSource): SeasonFee {
     correctionTokens,
     totalTokens,
     missingTokens: Math.max(0, baseline - totalTokens),
+    lostTokens,
+    availableTokens: Math.max(0, totalTokens - lostTokens),
     hasInitial: source.entries.some((e) => e.entryType === TokenEntryType.INITIAL),
   };
 }
