@@ -18,6 +18,8 @@ enum StreamingEndReason {
   STOPPED
   EXPIRED
   KICKED
+  /// A newer approved media version replaced the one this session was pinned to.
+  SUPERSEDED
   ERROR
 }
 

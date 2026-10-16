@@ -103,19 +103,37 @@ export class StreamingSessionService {
     try {
       outcome = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'playback:' + ownerKey}))`;
+        const now = new Date();
         if (idempotencyKey) {
           // Same key + same owner + same episode replays the first session, even when it
           // already ended: the key names one creation intent, so a retry answers identically.
           const prior = await tx.streamingSession.findFirst({ where: { idempotencyKey } });
           if (prior) {
             this.assertSameIntent(prior, input);
-            return { session: prior, reused: true, idempotent: true };
+            // …unless the episode was re-published since: a token/URL pinned to the new
+            // version must never ride on a row pinned to the old one. The key moves to
+            // the fresh row so the next retry replays the new answer.
+            if (prior.mediaAssetId !== verified.mediaAssetId) {
+              await tx.streamingSession.update({
+                where: { id: prior.id },
+                data: {
+                  status: StreamingSessionStatus.ENDED,
+                  endReason: StreamingEndReason.SUPERSEDED,
+                  endedAt: now,
+                  idempotencyKey: null,
+                },
+              });
+            } else {
+              return { session: prior, reused: true, idempotent: true };
+            }
           }
         }
         if (userId) await this.devices.check(userId, tx);
 
         // Double taps share one live session: an ACTIVE row on the same episode whose
-        // heartbeat has not timed out is handed back instead of opening a second row.
+        // heartbeat has not timed out is handed back instead of opening a second row —
+        // but only while it still points at the current media version. A re-publish
+        // rotates the row so no token or URL ever mixes two versions.
         const { playbackHeartbeatTimeoutSeconds } = await this.settings.get();
         const aliveSince = new Date(Date.now() - playbackHeartbeatTimeoutSeconds * 1000);
         const live = await tx.streamingSession.findFirst({
@@ -127,7 +145,14 @@ export class StreamingSessionService {
           },
           orderBy: { startedAt: 'desc' },
         });
-        if (live) return { session: live, reused: true, idempotent: false };
+        if (live && live.mediaAssetId !== verified.mediaAssetId) {
+          await tx.streamingSession.update({
+            where: { id: live.id },
+            data: { status: StreamingSessionStatus.ENDED, endReason: StreamingEndReason.SUPERSEDED, endedAt: now },
+          });
+        } else if (live) {
+          return { session: live, reused: true, idempotent: false };
+        }
 
         const created = await tx.streamingSession.create({
           data: {

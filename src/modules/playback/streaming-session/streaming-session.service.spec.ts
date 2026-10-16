@@ -112,6 +112,7 @@ describe('StreamingSessionService.create', () => {
       id: 'sess-live',
       status: StreamingSessionStatus.ACTIVE,
       startPositionSeconds: 0,
+      mediaAssetId: 'asset-1',
     });
 
     const view = await service.create({ episodeId: 'ep-1', userId: 'u-1' });
@@ -145,6 +146,7 @@ describe('StreamingSessionService.create', () => {
       userId: 'u-1',
       guestKey: null,
       episodeId: 'ep-1',
+      mediaAssetId: 'asset-1',
       status: StreamingSessionStatus.ACTIVE,
       startPositionSeconds: 0,
       ...overrides,
@@ -176,6 +178,43 @@ describe('StreamingSessionService.create', () => {
       );
       const view = await service.create({ episodeId: 'ep-1', userId: 'u-1', idempotencyKey: 'key-1' });
       expect(view).toMatchObject({ sessionId: 'sess-first', idempotent: true });
+    });
+
+    it('rotates the row when the episode was re-published since (live path)', async () => {
+      prisma.streamingSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-old',
+        status: StreamingSessionStatus.ACTIVE,
+        startPositionSeconds: 0,
+        mediaAssetId: 'asset-0',
+      });
+      const view = await service.create({ episodeId: 'ep-1', userId: 'u-1' });
+
+      expect(prisma.streamingSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sess-old' },
+          data: expect.objectContaining({ status: 'ENDED', endReason: 'SUPERSEDED' }),
+        }),
+      );
+      expect(view).toMatchObject({ sessionId: 'sess-1' });
+      expect(view).not.toMatchObject({ reused: true });
+    });
+
+    it('moves the key to a fresh row when the replayed session points at stale media', async () => {
+      prisma.streamingSession.findFirst
+        .mockResolvedValueOnce(prior({ mediaAssetId: 'asset-0' }))
+        .mockResolvedValueOnce(null);
+      const view = await service.create({ episodeId: 'ep-1', userId: 'u-1', idempotencyKey: 'key-1' });
+
+      expect(prisma.streamingSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sess-first' },
+          data: expect.objectContaining({ endReason: 'SUPERSEDED', idempotencyKey: null }),
+        }),
+      );
+      expect(prisma.streamingSession.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: 'key-1' }) }),
+      );
+      expect(view).toMatchObject({ sessionId: 'sess-1' });
     });
   });
 
