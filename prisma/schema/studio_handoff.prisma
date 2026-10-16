@@ -26,6 +26,8 @@ model StudioHandoff {
     seasonId            String?               @map("season_id") @db.Uuid
     /// Production fee printed in the brief when it was sent.
     productionFeeTokens BigInt                @map("production_fee_tokens")
+    /// Token spent on this hand-off when it was replaced: the studio got the brief and did not decline (BR-59).
+    lostTokens          BigInt                @default(0) @map("lost_tokens")
     /// Required when the studio is changed.
     changeReason        String?               @map("change_reason") @db.Text
     briefFileKey        String?               @map("brief_file_key") @db.VarChar(500)
