@@ -36,7 +36,12 @@ export class FilmSentService {
         where: {
           milestoneStatus: { in: OPEN },
           studio: { email: { equals: dto.studioEmail, mode: 'insensitive' } },
-          movie: { title: dto.movieTitle, creator: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } },
+          movie: { title: dto.movieTitle },
+          // The brief names the Creator who sent it; older briefs named the project's main Creator.
+          OR: [
+            { createdBy: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } },
+            { movie: { creator: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } } },
+          ],
           ...this.scopeFilter(dto.scope),
         },
         orderBy: { createdAt: 'desc' },
@@ -61,7 +66,7 @@ export class FilmSentService {
       );
       const { movie } = handoff;
       await this.notifications.notify(
-        [movie.creatorId, movie.reviewerId],
+        [...new Set([handoff.createdById, movie.creatorId, movie.reviewerId])],
         {
           type: NOTIFICATION_TYPE.STUDIO_FILM_SENT,
           title: `Studio đã gửi phim "${movie.title}" (${dto.scope})`,
