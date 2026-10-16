@@ -59,7 +59,7 @@ export function drawPrize<T extends { weight: number }>(prizes: T[], pick = rand
 
 /**
  * BR-09: the reward wheel. A milestone check-in earns a spin; spinning draws one of the Admin's
- * prizes — bonus Coins, or days of the monthly plan (added to a running plan, or a plan of that
+ * prizes - bonus Coins, or days of the monthly plan (added to a running plan, or a plan of that
  * many days without auto-renew). Plan days are a promotion cost, kept on the spin (BR-49).
  */
 @Injectable()

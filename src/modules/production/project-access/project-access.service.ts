@@ -9,11 +9,13 @@ import { AccessControlService } from 'src/modules/identity/access-control/access
  * Who may touch a movie project, on top of the endpoint permission:
  * - read: its Reviewer, a Creator of its team, or anyone holding project:read.all (Admin);
  * - reviewer: only the Reviewer who owns it;
- * - creator: its lead Creator or a Creator holding an active assignment (BR-13); an episode given to
- *   one Creator is worked on by that Creator or the lead only.
+ * - creator: its lead Creator or a Creator holding an active assignment (BR-13); an episode is worked on by
+ *   the Creator it was given to or the lead, and one not given to anyone belongs to the lead;
+ * - lead: only the lead Creator, who speaks for the team to the studio (hand-off, studio change, milestones,
+ *   asking for Token). The other Creators are CC'd on the brief and pass their episodes up to the lead.
  * Someone who may not read a project gets 404, so ids of other projects reveal nothing.
  */
-export type ProjectRole = 'read' | 'reviewer' | 'creator';
+export type ProjectRole = 'read' | 'reviewer' | 'creator' | 'lead';
 
 @Injectable()
 export class ProjectAccessService {
@@ -88,6 +90,9 @@ export class ProjectAccessService {
     if (role === 'creator' && !(await this.isOnTeam(movie, user.id, tx))) {
       throw new ForbiddenException('This project is not assigned to you');
     }
+    if (role === 'lead' && movie.creatorId !== user.id) {
+      throw new ForbiddenException('Only the lead Creator of this project can do that');
+    }
   }
 
   private assertEpisodeOwner(
@@ -96,8 +101,10 @@ export class ProjectAccessService {
     role: ProjectRole,
   ): void {
     const { assignedCreatorId, movie } = episode;
-    if (role === 'creator' && assignedCreatorId && assignedCreatorId !== user.id && movie.creatorId !== user.id) {
-      throw new ForbiddenException('This episode is assigned to another Creator');
+    if (role === 'creator' && assignedCreatorId !== user.id && movie.creatorId !== user.id) {
+      throw new ForbiddenException(
+        assignedCreatorId ? 'This episode is assigned to another Creator' : 'This episode belongs to the lead Creator',
+      );
     }
   }
 }

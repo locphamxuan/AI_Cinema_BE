@@ -36,7 +36,12 @@ export class FilmSentService {
         where: {
           milestoneStatus: { in: OPEN },
           studio: { email: { equals: dto.studioEmail, mode: 'insensitive' } },
-          movie: { title: dto.movieTitle, creator: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } },
+          movie: { title: dto.movieTitle },
+          // The brief names the Creator who sent it; older briefs named the project's main Creator.
+          OR: [
+            { createdBy: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } },
+            { movie: { creator: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } } },
+          ],
           ...this.scopeFilter(dto.scope),
         },
         orderBy: { createdAt: 'desc' },
@@ -60,8 +65,24 @@ export class FilmSentService {
         tx,
       );
       const { movie } = handoff;
+      // The Creators given episodes of the scope were CC'd on the brief ("Đồng gửi") and get the film too.
+      const coCreators = await tx.episode.findMany({
+        where: {
+          movieId: movie.id,
+          assignedCreatorId: { not: null },
+          ...(handoff.seasonId ? { seasonId: handoff.seasonId } : {}),
+        },
+        select: { assignedCreatorId: true },
+        distinct: ['assignedCreatorId'],
+      });
+      const recipients = [
+        handoff.createdById,
+        movie.creatorId,
+        movie.reviewerId,
+        ...coCreators.map((e) => e.assignedCreatorId),
+      ];
       await this.notifications.notify(
-        [movie.creatorId, movie.reviewerId],
+        [...new Set(recipients.filter((id): id is string => !!id))],
         {
           type: NOTIFICATION_TYPE.STUDIO_FILM_SENT,
           title: `Studio đã gửi phim "${movie.title}" (${dto.scope})`,

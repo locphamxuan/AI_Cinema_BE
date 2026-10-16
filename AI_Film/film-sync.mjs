@@ -51,7 +51,7 @@ const readManifest = () => (existsSync(manifestPath) ? JSON.parse(readFileSync(m
 function writeManifest(files) {
   writeFileSync(manifestPath, `${JSON.stringify({ files }, null, 2)}\n`);
   const lines = [
-    '# AI_Film — danh sách phim',
+    '# AI_Film - danh sách phim',
     '',
     'Video không nằm trong git mà nằm trên R2. Có phim mới thì chạy `npm run film:push` rồi commit `MANIFEST.json` + file này;',
     'đồng nghiệp pull git xong chạy `npm run film:pull` để tải các phim còn thiếu về `AI_Film/`.',

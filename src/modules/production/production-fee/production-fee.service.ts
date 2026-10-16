@@ -57,11 +57,43 @@ export class ProductionFeeService {
       include: {
         _count: { select: { episodes: true } },
         tokenEntries: { select: { entryType: true, amountTokens: true } },
+        handoffs: { select: { lostTokens: true } },
       },
     });
-    return seasons.map(({ _count, tokenEntries, ...season }) =>
-      summariseSeasonFee({ ...season, episodeCount: _count.episodes, entries: tokenEntries }),
+    return seasons.map(({ _count, tokenEntries, handoffs, ...season }) =>
+      summariseSeasonFee({
+        ...season,
+        episodeCount: _count.episodes,
+        entries: tokenEntries,
+        lostTokens: handoffs.reduce((sum, { lostTokens }) => sum + lostTokens, 0n),
+      }),
     );
+  }
+
+  /**
+   * What a new brief may promise the studio (BR-59): the fee minus what replaced studios already cost, for the
+   * season when one is named (never more than the project still has), else for the whole project.
+   * `pendingLostTokens` = the hand-offs about to be replaced by this brief.
+   */
+  async spendableTokens(movieId: string, seasonId: string | null, pendingLostTokens = 0, tx?: PrismaTx) {
+    const db = tx ?? this.prisma;
+    const [projectFee, projectLost] = await Promise.all([
+      this.totalTokens(movieId, tx),
+      db.studioHandoff.aggregate({ where: { movieId }, _sum: { lostTokens: true } }),
+    ]);
+    const projectLeft = projectFee - Number(projectLost._sum.lostTokens ?? 0n) - pendingLostTokens;
+    if (!seasonId) return Math.max(0, projectLeft);
+
+    const [seasonFee, seasonLost, wholeProjectEntries] = await Promise.all([
+      db.tokenLedgerEntry.aggregate({ where: { movieId, seasonId }, _sum: { amountTokens: true } }),
+      db.studioHandoff.aggregate({ where: { movieId, seasonId }, _sum: { lostTokens: true } }),
+      db.tokenLedgerEntry.count({ where: { movieId, seasonId: null } }),
+    ]);
+    const seasonTokens = Number(seasonFee._sum.amountTokens ?? 0n);
+    // A project funded as a whole before its seasons were priced has no season entries: the project fee stands.
+    if (seasonTokens === 0 && wholeProjectEntries > 0) return Math.max(0, projectLeft);
+    const seasonLeft = seasonTokens - Number(seasonLost._sum.lostTokens ?? 0n) - pendingLostTokens;
+    return Math.max(0, Math.min(seasonLeft, projectLeft));
   }
 
   /** True once every season was allocated, or the project was funded as a whole before seasons were priced. */

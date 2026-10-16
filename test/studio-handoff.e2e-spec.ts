@@ -12,6 +12,7 @@ interface Handoff {
   milestoneStatus: string;
   changeReason: string | null;
   productionFeeTokens: number;
+  lostTokens: number;
   studio: { id: string; name: string };
   emailMessage: { status: string };
   materials: { id: string; kind: string; fileName: string }[];
@@ -140,15 +141,24 @@ describe('Studio hand-off (e2e)', () => {
     await reviewer.patch(`/studios/${inactive.id}`, { isActive: false });
     const path = `/projects/${project.id}/studio-change`;
 
+    const reason = 'Studio đầu tiên trễ hạn hai lần.';
     await creator.post(path, { studioId: next.id }, 400);
-    await creator.post(path, { studioId: inactive.id, reason: 'Studio đầu tiên trễ hạn hai lần.' }, 409);
-    const history = await creator.post<Handoff[]>(path, {
-      studioId: next.id,
-      reason: 'Studio đầu tiên trễ hạn hai lần.',
+    await creator.post(path, { studioId: inactive.id, reason }, 409);
+    // BR-59: the first studio got the brief, so its 10000 Token are spent and the project has nothing left.
+    await creator.post(path, { studioId: next.id, reason }, 409);
+    await reviewer.post(`/projects/${project.id}/fee/entries`, {
+      entryType: 'TOP_UP',
+      amountTokens: 6000,
+      reason: 'Đổi Studio: cấp ngân sách cho Studio B.',
     });
+    const history = await creator.post<Handoff[]>(path, { studioId: next.id, reason });
 
     expect(history.map((h) => h.studio.name)).toEqual(['Studio B', 'Studio Ánh Trăng']);
     expect(history.map((h) => h.milestoneStatus)).toEqual(['BRIEF_SENT', 'SUPERSEDED']);
+    expect(history.map((h) => [h.productionFeeTokens, h.lostTokens])).toEqual([
+      [6000, 0],
+      [10000, 10000],
+    ]);
     expect(history[0].changeReason).toContain('trễ hạn');
     const detail = await reviewer.get<ProjectDetail>(`/projects/${project.id}`);
     expect(detail.studio?.id).toBe(next.id);
@@ -165,6 +175,10 @@ describe('Studio hand-off (e2e)', () => {
       episodes: [{ title: 'Tập mùa 2', targetDurationSeconds: 600, deliveryDeadline: inDays(45) }],
     });
     const [season1] = seasonProject.seasons;
+    const fee = `/projects/${seasonProject.id}/fee/entries`;
+    // A season nobody funded has nothing to promise a studio.
+    await creator.post(`/projects/${seasonProject.id}/handoff`, { seasonId: extra.id }, 409);
+    await reviewer.post(fee, { entryType: 'INITIAL', seasonId: extra.id });
     await creator.post(
       `/projects/${seasonProject.id}/handoff`,
       { seasonId: '00000000-0000-4000-8000-000000000000' },
@@ -178,13 +192,18 @@ describe('Studio hand-off (e2e)', () => {
     await creator.post(`/projects/${seasonProject.id}/handoff`, { seasonId: extra.id }, 409);
 
     const studio = await newStudio(reviewer, 'Studio D');
-    const changed = await creator.post<Handoff[]>(`/projects/${seasonProject.id}/studio-change`, {
-      studioId: studio.id,
-      seasonId: extra.id,
-      reason: 'Mùa 2 cần studio hoạt hình.',
-    });
+    const change = { studioId: studio.id, seasonId: extra.id, reason: 'Mùa 2 cần studio hoạt hình.' };
+    await creator.post(`/projects/${seasonProject.id}/studio-change`, change, 409);
+    await reviewer.post(fee, { entryType: 'TOP_UP', seasonId: extra.id, amountTokens: 9000, reason: 'Studio mới.' });
+    const changed = await creator.post<Handoff[]>(`/projects/${seasonProject.id}/studio-change`, change);
     expect(changed.map((h) => h.milestoneStatus)).toEqual(['BRIEF_SENT', 'SUPERSEDED', 'BRIEF_SENT']);
     expect(changed.map((h) => h.seasonId)).toEqual([extra.id, extra.id, season1.id]);
+    // Only season 2 paid for the swap; season 1 keeps its studio and its fee.
+    expect(changed.map((h) => [h.productionFeeTokens, h.lostTokens])).toEqual([
+      [9000, 0],
+      [8000, 8000],
+      [5000, 0],
+    ]);
   });
 
   it('flags an overdue episode once to its Creator and Reviewer (BR-38)', async () => {

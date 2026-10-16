@@ -26,6 +26,7 @@ describe('AccessDecisionService.decide', () => {
     movieId: 'm1',
     episodeNumber: 5,
     coinPrice: 25,
+    movie: { freeEpisodeCount: null },
     ...overrides,
   });
 
@@ -50,6 +51,7 @@ describe('AccessDecisionService.decide', () => {
     await expect(service.decide('missing')).rejects.toThrow(NotFoundException);
     expect(prisma.episode.findFirst).toHaveBeenCalledWith({
       where: { id: 'missing', status: EpisodeStatus.PUBLISHED },
+      include: { movie: { select: { freeEpisodeCount: true } } },
     });
   });
 
@@ -82,6 +84,17 @@ describe('AccessDecisionService.decide', () => {
     await expect(service.decide('ep-1')).resolves.toMatchObject({
       accessGranted: true,
       source: ACCESS_SOURCE.FREE,
+    });
+  });
+
+  it("follows the movie's own free count over the platform's (BR-03)", async () => {
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1, movie: { freeEpisodeCount: 0 } }));
+    await expect(service.decide('ep-1')).resolves.toMatchObject({ accessGranted: false });
+
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 5, movie: { freeEpisodeCount: 5 } }));
+    await expect(service.decide('ep-1')).resolves.toMatchObject({
+      accessGranted: true,
+      source: ACCESS_SOURCE.FREE_STARTER,
     });
   });
 

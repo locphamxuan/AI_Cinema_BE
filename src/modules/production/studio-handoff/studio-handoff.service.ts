@@ -12,8 +12,9 @@ import { NotificationService } from 'src/modules/platform/notification/notificat
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { StudioService } from 'src/modules/production/studio/studio.service';
-import { BriefService, type PreparedBrief } from './brief/brief.service';
+import { type BriefContext, BriefService, type PreparedBrief } from './brief/brief.service';
 import type { ChangeStudioRequestDto, HandOffRequestDto } from './dto/studio-handoff.request.dto';
+import { lostOnReplace } from './studio-swap-loss';
 import { HandoffMaterialService, type MaterialUploads, type StoredMaterial } from './material/handoff-material.service';
 
 const HISTORY_INCLUDE = {
@@ -38,6 +39,8 @@ interface HandoffPlan {
   materials: StoredMaterial[];
   brief: PreparedBrief;
   changeReason: string | null;
+  /** Token the replaced hand-offs cost (BR-59); 0 on a first hand-off. */
+  lostTokens: number;
 }
 
 /** MF-1 steps 3–4: hand the project (or a season) to a studio outside the platform, or change studio (BR-13, BR-59). */
@@ -56,7 +59,7 @@ export class StudioHandoffService {
   ) {}
 
   async handOff(movieId: string, dto: HandOffRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'creator');
+    const movie = await this.access.movie(movieId, user, 'lead');
     assertProjectStatus(movie.status, [MovieStatus.ASSIGNED, MovieStatus.IN_PRODUCTION], 'hand the project off');
     const studio = await this.studios.resolve(dto, movie.studioId, user);
     if (movie.studioId && movie.studioId !== studio.id) {
@@ -65,7 +68,7 @@ export class StudioHandoffService {
     const seasonId = await this.scopeSeason(movieId, dto.seasonId);
     const episodes = await this.episodesToHandOff(movieId, seasonId);
 
-    const plan = await this.plan(movieId, studio, seasonId, uploads, null);
+    const plan = await this.plan(movieId, studio, seasonId, uploads, null, { senderId: user.id, pendingLostTokens: 0 });
     return this.send(movie, plan, user, async (tx) => {
       const { count } = await tx.movie.updateMany({
         where: { id: movieId, status: { in: [MovieStatus.ASSIGNED, MovieStatus.IN_PRODUCTION] } },
@@ -87,21 +90,30 @@ export class StudioHandoffService {
   }
 
   async changeStudio(movieId: string, dto: ChangeStudioRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'creator');
+    const movie = await this.access.movie(movieId, user, 'lead');
     assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'change the studio');
     const studio = await this.studios.resolve(dto, null, user);
     const seasonId = await this.scopeSeason(movieId, dto.seasonId);
     const replaced = await this.prisma.studioHandoff.findMany({
       where: { movieId, seasonId, milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },
+      include: { emailMessage: { select: { status: true } } },
     });
     if (!replaced.length) throw new ConflictException('There is no hand-off for that scope to replace');
 
-    const plan = await this.plan(movieId, studio, seasonId, uploads, dto.reason.trim());
+    const lost = replaced.map((handoff) => ({ id: handoff.id, tokens: lostOnReplace(handoff) }));
+    const lostTokens = lost.reduce((sum, { tokens }) => sum + tokens, 0n);
+    const plan = await this.plan(movieId, studio, seasonId, uploads, dto.reason.trim(), {
+      senderId: user.id,
+      pendingLostTokens: Number(lostTokens),
+    });
+    plan.lostTokens = Number(lostTokens);
     return this.send(movie, plan, user, async (tx) => {
-      await tx.studioHandoff.updateMany({
-        where: { id: { in: replaced.map(({ id }) => id) } },
-        data: { milestoneStatus: StudioMilestoneStatus.SUPERSEDED },
-      });
+      for (const { id, tokens } of lost) {
+        await tx.studioHandoff.update({
+          where: { id },
+          data: { milestoneStatus: StudioMilestoneStatus.SUPERSEDED, lostTokens: tokens },
+        });
+      }
       await tx.studioMilestoneEvent.createMany({
         data: replaced.map((handoff) => ({
           handoffId: handoff.id,
@@ -170,11 +182,12 @@ export class StudioHandoffService {
     seasonId: string | null,
     uploads: MaterialUploads,
     changeReason: string | null,
+    context: BriefContext,
   ): Promise<HandoffPlan> {
     const materials = await this.materials.store(movieId, uploads);
     try {
-      const brief = await this.briefs.prepare(movieId, studio, seasonId, materials);
-      return { studio, seasonId, materials, brief, changeReason };
+      const brief = await this.briefs.prepare(movieId, studio, seasonId, materials, context);
+      return { studio, seasonId, materials, brief, changeReason, lostTokens: 0 };
     } catch (error) {
       await this.materials.discard(materials);
       throw error;
@@ -203,7 +216,7 @@ export class StudioHandoffService {
   }
 
   private async recordHandoff(tx: PrismaTx, movie: Movie, plan: HandoffPlan, user: AuthenticatedUser) {
-    const { studio, seasonId, brief, materials, changeReason } = plan;
+    const { studio, seasonId, brief, materials, changeReason, lostTokens } = plan;
     const emailId = await this.emails.create(tx, {
       to: studio.email,
       template: EMAIL_TEMPLATE.STUDIO_BRIEF,
@@ -240,7 +253,7 @@ export class StudioHandoffService {
         entityId: handoff.id,
         movieId: movie.id,
         actorId: user.id,
-        payload: { studio: studio.name, seasonId, materials: materials.length, reason: changeReason },
+        payload: { studio: studio.name, seasonId, materials: materials.length, reason: changeReason, lostTokens },
       },
       tx,
     );
@@ -253,7 +266,9 @@ export class StudioHandoffService {
           title: changeReason
             ? `Creator đổi Studio của phim "${movie.title}" sang ${studio.name}`
             : `Creator đã gửi bàn giao phim "${movie.title}" cho Studio ${studio.name}`,
-          body: changeReason ?? undefined,
+          body: changeReason
+            ? `Lý do: ${changeReason}. Token mất do đổi Studio: ${lostTokens}. Brief mới ghi ${brief.productionFeeTokens} Token.`
+            : undefined,
           link: `/projects/${movie.id}/studio`,
           payload: { movieId: movie.id, handoffId: handoff.id, studioId: studio.id, seasonId },
         },

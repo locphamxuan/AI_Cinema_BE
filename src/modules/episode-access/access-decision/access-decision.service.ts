@@ -20,7 +20,7 @@ const GUEST_METHODS: AccessMethod[] = [ACCESS_METHOD.REGISTER_OR_LOGIN];
 
 /**
  * Step 6 and 7 of the flow: may this caller watch this episode, and if not, what is left to do.
- * The order of the checks is the order of the flow — Free Starter episode, an episode priced at
+ * The order of the checks is the order of the flow - Free Starter episode, an episode priced at
  * zero, a running plan (the whole movie, BR-02), the episode bought, and only then the ways left.
  *
  * A running plan grants every episode without writing a row per episode, which is what keeps
@@ -49,6 +49,7 @@ export class AccessDecisionService {
   private async evaluate(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, status: EpisodeStatus.PUBLISHED },
+      include: { movie: { select: { freeEpisodeCount: true } } },
     });
     if (!episode) {
       throw new NotFoundException({ message: 'Episode not found', details: { reason: 'EPISODE_NOT_FOUND' } });
@@ -57,7 +58,8 @@ export class AccessDecisionService {
     // A published episode always carries a price (the release gate insists on one); the lowest
     // price of the platform stands in while a row predates the column.
     const coinPrice = episode.coinPrice ?? settings.episodeCoinPriceMin;
-    const isFreeStarter = episode.episodeNumber <= settings.freeStarterEpisodeCount;
+    // BR-03: the movie's own count when its Reviewer set one, else the platform's.
+    const isFreeStarter = episode.episodeNumber <= (episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount);
     const base = {
       episodeId: episode.id,
       movieId: episode.movieId,

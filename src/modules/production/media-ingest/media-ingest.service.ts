@@ -190,12 +190,18 @@ export class MediaIngestService {
         },
         include: {
           episode: {
-            select: { movieId: true, episodeNumber: true, movie: { select: { title: true, reviewerId: true } } },
+            select: {
+              movieId: true,
+              episodeNumber: true,
+              movie: { select: { title: true, reviewerId: true, creatorId: true } },
+            },
           },
         },
       });
+      // A Creator other than the lead passes their episode up: the lead follows it along with the Reviewer.
+      const lead = asset.episode.movie.creatorId;
       await this.notifications.notify(
-        [asset.episode.movie.reviewerId],
+        [asset.episode.movie.reviewerId, ...(lead && lead !== user.id ? [lead] : [])],
         {
           type: NOTIFICATION_TYPE.MEDIA_SUBMITTED,
           title: `Creator vừa nộp tập ${asset.episode.episodeNumber} của phim "${asset.episode.movie.title}"`,

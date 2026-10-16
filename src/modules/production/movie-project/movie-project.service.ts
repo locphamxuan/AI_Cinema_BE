@@ -44,7 +44,11 @@ const PROJECT_DETAIL = {
     include: { creator: PERSON, delegatedFrom: PERSON },
   },
   studio: true,
-  studioHandoffs: { orderBy: { createdAt: 'desc' }, include: { createdBy: PERSON, studio: true } },
+  studioHandoffs: {
+    orderBy: { createdAt: 'desc' },
+    // The email status tells whether a studio change would cost the old studio's fee (BR-59).
+    include: { createdBy: PERSON, studio: true, emailMessage: { select: { status: true } } },
+  },
   _count: { select: { changeRequests: { where: { status: ChangeRequestStatus.OPEN } } } },
 } satisfies Prisma.MovieInclude;
 

@@ -56,7 +56,7 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /** The team stands in for the studio: the films were not commissioned through MF-1. */
-const CATALOG_STUDIO = { name: 'AI Cinema — phim của nhóm (AI_Film)', email: 'ai-film@aicinema.local' };
+const CATALOG_STUDIO = { name: 'AI Cinema - phim của nhóm (AI_Film)', email: 'ai-film@aicinema.local' };
 const LABEL_TEXT = 'Phim được tạo bằng trí tuệ nhân tạo (AI)';
 const EPISODE_COIN_PRICE = 3;
 const SOURCE_NOTE = 'Phim AI do nhóm dự án cung cấp (thư mục AI_Film), lưu trên R2.';
@@ -150,7 +150,7 @@ async function seedEpisode(
       seasonId: at.seasonId,
       episodeNumber: source.number,
       title: source.title,
-      synopsis: `${at.source.title} — ${source.title}.`,
+      synopsis: `${at.source.title} - ${source.title}.`,
       thumbnailUrl: at.source.posterUrl,
       targetDurationSeconds: source.duration,
       deliveryDeadline: at.today,

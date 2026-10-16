@@ -18,8 +18,8 @@ export { TOPUP_REASON };
 const ORDER_TTL_MINUTES = 15;
 
 /**
- * Step 12: Coins bought with a gateway. This service owns the flow — quoting the order,
- * handing the member to the gateway, and routing webhooks — while `TopUpLookupService`
+ * Step 12: Coins bought with a gateway. This service owns the flow - quoting the order,
+ * handing the member to the gateway, and routing webhooks - while `TopUpLookupService`
  * answers reads and `TopUpSettlementService` moves the money.
  */
 @Injectable()

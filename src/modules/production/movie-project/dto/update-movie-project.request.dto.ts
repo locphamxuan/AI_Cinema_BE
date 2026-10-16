@@ -79,6 +79,18 @@ export class UpdateMovieProjectRequestDto {
   @IsOptional()
   releaseYear?: number;
 
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 0,
+    description: "Free episodes of this movie (BR-03); 0 = none free, null = the platform's default count.",
+  })
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  @IsOptional()
+  freeEpisodeCount?: number | null;
+
   @ApiPropertyOptional({ description: 'Active studio from the catalog; only before the hand-off (BR-59).' })
   @IsUUID('4')
   @IsOptional()

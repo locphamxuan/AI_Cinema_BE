@@ -13,8 +13,11 @@ const dto: FilmSentRequestDto = {
   episodeCount: 3,
 };
 
-function setup(handoff: unknown) {
-  const tx = { studioHandoff: { findFirst: jest.fn().mockResolvedValue(handoff), update: jest.fn() } };
+function setup(handoff: unknown, coCreators: string[] = []) {
+  const tx = {
+    studioHandoff: { findFirst: jest.fn().mockResolvedValue(handoff), update: jest.fn() },
+    episode: { findMany: jest.fn().mockResolvedValue(coCreators.map((assignedCreatorId) => ({ assignedCreatorId }))) },
+  };
   const prisma = { $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)) };
   const auditLog = { record: jest.fn() };
   const notifications = { notify: jest.fn() };
@@ -26,10 +29,11 @@ describe('FilmSentService', () => {
   const handoff = {
     id: 'h1',
     movieId: 'm1',
+    createdById: 'c2',
     movie: { id: 'm1', title: 'Hành Trình', creatorId: 'c1', reviewerId: 'r1' },
   };
 
-  it('remembers the film on the hand-off and tells the Creator and the Reviewer', async () => {
+  it('remembers the film on the hand-off and tells the sending Creator, the main Creator and the Reviewer', async () => {
     const { service, tx, auditLog, notifications } = setup(handoff);
 
     const result = await service.record(dto);
@@ -41,10 +45,21 @@ describe('FilmSentService', () => {
     });
     expect(auditLog.record).toHaveBeenCalledWith(expect.objectContaining({ actorId: null, movieId: 'm1' }), tx);
     expect(notifications.notify).toHaveBeenCalledWith(
-      ['c1', 'r1'],
+      ['c2', 'c1', 'r1'],
       expect.objectContaining({ type: NOTIFICATION_TYPE.STUDIO_FILM_SENT, link: '/projects/m1/studio' }),
       tx,
     );
+  });
+
+  it('also tells the Creators given episodes of the season, once each', async () => {
+    const { service, tx, notifications } = setup({ ...handoff, seasonId: 's2' }, ['c3', 'c1']);
+
+    await service.record(dto);
+
+    expect(tx.episode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { movieId: 'm1', assignedCreatorId: { not: null }, seasonId: 's2' } }),
+    );
+    expect(notifications.notify).toHaveBeenCalledWith(['c2', 'c1', 'r1', 'c3'], expect.anything(), tx);
   });
 
   it('looks a season scope up by its number and a whole-project scope by no season', async () => {
@@ -58,6 +73,19 @@ describe('FilmSentService', () => {
     await whole.service.record({ ...dto, scope: 'Toàn bộ dự án' });
     expect(whole.tx.studioHandoff.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ seasonId: null }) }),
+    );
+  });
+
+  it('matches the Creator who sent the brief as well as the main Creator', async () => {
+    const { service, tx } = setup(handoff);
+    await service.record(dto);
+    const email = { equals: dto.creatorEmail, mode: 'insensitive' };
+    expect(tx.studioHandoff.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ createdBy: { email } }, { movie: { creator: { email } } }],
+        }),
+      }),
     );
   });
 
