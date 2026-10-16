@@ -2,6 +2,7 @@ import { Body, Controller, Get, Header, Headers, Ip, Param, ParseUUIDPipe, Patch
 import { ApiHeader, ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { OptionalUser } from 'src/common/decorators/optional-user.decorator';
+import { IdempotencyKey } from 'src/common/decorators/idempotency-key.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { StreamingSessionViewDto } from './dto/streaming-session.dto';
 import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
@@ -42,6 +43,7 @@ export class StreamingSessionController {
     @OptionalUser() user: AuthenticatedUser | undefined,
     // Validated as UUID v4 in StreamingSessionService (400 GUEST_KEY_INVALID).
     @Headers('x-guest-key') guestKey?: string,
+    @IdempotencyKey() idempotencyKey?: string,
     @Ip() ip?: string,
     @Headers('user-agent') userAgent?: string,
   ) {
@@ -49,6 +51,7 @@ export class StreamingSessionController {
       episodeId: dto.episodeId,
       userId: user?.id,
       guestKey,
+      idempotencyKey,
       ipAddress: ip,
       userAgent,
     });

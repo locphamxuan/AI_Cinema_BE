@@ -44,6 +44,8 @@ model StreamingSession {
   endReason            StreamingEndReason?    @map("end_reason")
   ipAddress            String?                @map("ip_address") @db.VarChar(45)
   userAgent            String?                @map("user_agent") @db.VarChar(500)
+  /// Same key + same owner + same episode replays the first session instead of opening a new one.
+  idempotencyKey       String?                @unique @map("idempotency_key") @db.VarChar(100)
 
   user       User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
   episode    Episode          @relation(fields: [episodeId], references: [id], onDelete: Cascade)

@@ -1,5 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
-import { PlaybackAccessType, StreamingSessionStatus } from '@prisma/client';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { PlaybackAccessType, Prisma, StreamingSessionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { PlaybackAccessService } from '../playback-access/playback-access.service';
@@ -130,6 +130,53 @@ describe('StreamingSessionService.create', () => {
   it('rejects a malformed guest key', async () => {
     await expect(service.create({ episodeId: 'ep-1', guestKey: 'not-a-uuid' })).rejects.toThrow(BadRequestException);
     expect(access.verify).not.toHaveBeenCalled();
+  });
+
+  it('rejects an overlong Idempotency-Key', async () => {
+    await expect(service.create({ episodeId: 'ep-1', userId: 'u-1', idempotencyKey: 'k'.repeat(101) })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(access.verify).not.toHaveBeenCalled();
+  });
+
+  describe('Idempotency-Key', () => {
+    const prior = (overrides = {}) => ({
+      id: 'sess-first',
+      userId: 'u-1',
+      guestKey: null,
+      episodeId: 'ep-1',
+      status: StreamingSessionStatus.ACTIVE,
+      startPositionSeconds: 0,
+      ...overrides,
+    });
+
+    it('replays the first session for the same key instead of opening a new row', async () => {
+      prisma.streamingSession.findFirst.mockResolvedValueOnce(prior());
+      const view = await service.create({ episodeId: 'ep-1', userId: 'u-1', idempotencyKey: 'key-1' });
+
+      expect(view).toMatchObject({ sessionId: 'sess-first', reused: true, idempotent: true });
+      expect(prisma.streamingSession.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a key already used for another episode', async () => {
+      prisma.streamingSession.findFirst.mockResolvedValueOnce(prior({ episodeId: 'ep-9' }));
+      await expect(service.create({ episodeId: 'ep-1', userId: 'u-1', idempotencyKey: 'key-1' })).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.streamingSession.create).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the winner when two owners race the same key (P2002)', async () => {
+      prisma.streamingSession.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(prior());
+      prisma.streamingSession.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' }),
+      );
+      const view = await service.create({ episodeId: 'ep-1', userId: 'u-1', idempotencyKey: 'key-1' });
+      expect(view).toMatchObject({ sessionId: 'sess-first', idempotent: true });
+    });
   });
 
   it('returns the saved position as a resume hint (step 9)', async () => {

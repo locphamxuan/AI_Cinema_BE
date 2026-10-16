@@ -58,4 +58,10 @@ export class StreamingSessionViewDto {
 
   @ApiPropertyOptional({ example: true, description: 'The same tap sent twice reused the live session' })
   reused?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'The Idempotency-Key was seen before; this is the first answer replayed, no second session was opened',
+  })
+  idempotent?: boolean;
 }

@@ -1,5 +1,17 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, StreamingEndReason, StreamingSessionStatus, type StreamingSession } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  EpisodeStatus,
+  Prisma,
+  StreamingEndReason,
+  StreamingSessionStatus,
+  type StreamingSession,
+} from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
@@ -14,6 +26,7 @@ export interface CreateSessionInput {
   episodeId: string;
   userId?: string;
   guestKey?: string;
+  idempotencyKey?: string;
   ipAddress?: string | null;
   userAgent?: string | null;
 }
@@ -71,6 +84,13 @@ export class StreamingSessionService {
         details: { reason: 'GUEST_KEY_INVALID' },
       });
     }
+    const { idempotencyKey } = input;
+    if (idempotencyKey && idempotencyKey.length > 100) {
+      throw new BadRequestException({
+        message: 'Idempotency-Key must be at most 100 characters',
+        details: { reason: 'IDEMPOTENCY_KEY_TOO_LONG' },
+      });
+    }
 
     const verified = await this.access.verify(input.episodeId, userId);
 
@@ -79,49 +99,94 @@ export class StreamingSessionService {
     // concurrent tap always sees the first tap's row and reuses it instead of
     // doubling the session (and its ad-break schedule).
     const ownerKey = userId ? `member:${userId}` : `guest:${guestKey}`;
-    const { session, reused } = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'playback:' + ownerKey}))`;
-      if (userId) await this.devices.check(userId, tx);
+    let outcome: { session: StreamingSession; reused: boolean; idempotent: boolean };
+    try {
+      outcome = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'playback:' + ownerKey}))`;
+        if (idempotencyKey) {
+          // Same key + same owner + same episode replays the first session, even when it
+          // already ended: the key names one creation intent, so a retry answers identically.
+          const prior = await tx.streamingSession.findFirst({ where: { idempotencyKey } });
+          if (prior) {
+            this.assertSameIntent(prior, input);
+            return { session: prior, reused: true, idempotent: true };
+          }
+        }
+        if (userId) await this.devices.check(userId, tx);
 
-      // Double taps share one live session: an ACTIVE row on the same episode whose
-      // heartbeat has not timed out is handed back instead of opening a second row.
-      const { playbackHeartbeatTimeoutSeconds } = await this.settings.get();
-      const aliveSince = new Date(Date.now() - playbackHeartbeatTimeoutSeconds * 1000);
-      const live = await tx.streamingSession.findFirst({
-        where: {
-          episodeId: input.episodeId,
-          status: StreamingSessionStatus.ACTIVE,
-          lastHeartbeatAt: { gt: aliveSince },
-          ...(userId ? { userId } : { guestKey }),
-        },
-        orderBy: { startedAt: 'desc' },
-      });
-      if (live) return { session: live, reused: true };
+        // Double taps share one live session: an ACTIVE row on the same episode whose
+        // heartbeat has not timed out is handed back instead of opening a second row.
+        const { playbackHeartbeatTimeoutSeconds } = await this.settings.get();
+        const aliveSince = new Date(Date.now() - playbackHeartbeatTimeoutSeconds * 1000);
+        const live = await tx.streamingSession.findFirst({
+          where: {
+            episodeId: input.episodeId,
+            status: StreamingSessionStatus.ACTIVE,
+            lastHeartbeatAt: { gt: aliveSince },
+            ...(userId ? { userId } : { guestKey }),
+          },
+          orderBy: { startedAt: 'desc' },
+        });
+        if (live) return { session: live, reused: true, idempotent: false };
 
-      const created = await tx.streamingSession.create({
-        data: {
-          userId: userId ?? null,
-          guestKey: guestKey ?? null,
-          episodeId: verified.episodeId,
-          mediaAssetId: verified.mediaAssetId,
-          accessType: verified.accessType,
-          status: StreamingSessionStatus.ACTIVE,
-          startPositionSeconds: 0,
-          lastPositionSeconds: 0,
-          ipAddress: input.ipAddress ?? null,
-          userAgent: input.userAgent?.slice(0, 500) ?? null,
-        },
+        const created = await tx.streamingSession.create({
+          data: {
+            userId: userId ?? null,
+            guestKey: guestKey ?? null,
+            episodeId: verified.episodeId,
+            mediaAssetId: verified.mediaAssetId,
+            accessType: verified.accessType,
+            status: StreamingSessionStatus.ACTIVE,
+            startPositionSeconds: 0,
+            lastPositionSeconds: 0,
+            ipAddress: input.ipAddress ?? null,
+            userAgent: input.userAgent?.slice(0, 500) ?? null,
+            idempotencyKey: idempotencyKey ?? null,
+          },
+        });
+        return { session: created, reused: false, idempotent: false };
       });
-      return { session: created, reused: false };
-    });
-    if (reused) return this.view(session, verified, true, null, await this.ads.scheduleOf(session.id));
+    } catch (error) {
+      // Two owners racing the same key serialize on different locks; the unique index is
+      // the backstop — re-read the winner and replay it instead of answering 500.
+      if (idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const prior = await this.prisma.streamingSession.findFirst({ where: { idempotencyKey } });
+        if (prior) {
+          this.assertSameIntent(prior, input);
+          outcome = { session: prior, reused: true, idempotent: true };
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
+    const { session, reused, idempotent } = outcome;
+    if (reused) return this.view(session, verified, true, null, await this.ads.scheduleOf(session.id), idempotent);
     return this.view(
       session,
       verified,
       false,
       await this.resumeOf(userId, verified.episodeId),
       await this.ads.scheduleFor(session.id, { userId, durationSeconds: verified.durationSeconds }),
+      idempotent,
     );
+  }
+
+  /**
+   * One key names one creation intent. Reusing it for another owner or episode is a client
+   * bug (keys must be fresh UUIDs per intent), answered 409 — never another session.
+   */
+  private assertSameIntent(prior: StreamingSession, input: CreateSessionInput): void {
+    const { userId, guestKey } = input;
+    const same =
+      prior.episodeId === input.episodeId && (userId ? prior.userId === userId : prior.guestKey === guestKey);
+    if (!same) {
+      throw new ConflictException({
+        message: 'This Idempotency-Key was already used for another session',
+        details: { reason: 'IDEMPOTENCY_KEY_REUSED' },
+      });
+    }
   }
 
   /** Step 15: heartbeat keeps the session alive and persists the position. */
@@ -315,6 +380,7 @@ export class StreamingSessionService {
     reused: boolean,
     resumePositionSeconds: number | null = null,
     adSchedule: AdScheduleItem[] = [],
+    idempotent = false,
   ): StreamingSessionViewDto {
     return {
       sessionId: session.id,
@@ -341,6 +407,7 @@ export class StreamingSessionService {
       aiLabel: verified.aiLabel,
       adSchedule,
       ...(reused ? { reused: true } : {}),
+      ...(idempotent ? { idempotent: true } : {}),
       ...(resumePositionSeconds !== null ? { resumePositionSeconds } : {}),
     };
   }
