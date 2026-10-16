@@ -39,4 +39,18 @@ describe('season fee', () => {
     expect(summariseSeasonFee(season(entries, 6)).missingTokens).toBe(10000);
     expect(summariseSeasonFee(season([], 4))).toMatchObject({ missingTokens: 20000, hasInitial: false });
   });
+
+  it('keeps what replaced studios cost apart from what a new brief may still promise (BR-59)', () => {
+    const entries = [
+      { entryType: TokenEntryType.INITIAL, amountTokens: 20000n },
+      { entryType: TokenEntryType.TOP_UP, amountTokens: 8000n },
+    ];
+    expect(summariseSeasonFee({ ...season(entries), lostTokens: 20000n })).toMatchObject({
+      totalTokens: 28000,
+      lostTokens: 20000,
+      availableTokens: 8000,
+    });
+    expect(summariseSeasonFee({ ...season(entries), lostTokens: 30000n }).availableTokens).toBe(0);
+    expect(summariseSeasonFee(season(entries))).toMatchObject({ lostTokens: 0, availableTokens: 28000 });
+  });
 });
