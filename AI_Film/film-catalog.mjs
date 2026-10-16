@@ -171,7 +171,7 @@ async function main() {
         synopsis:
           extra.synopsis ??
           film.synopsis ??
-          `${film.title} — phim AI thể loại ${genreText}, ${episodes.length} tập. Hình ảnh và âm thanh được tạo bằng AI.`,
+          `${film.title} - phim AI thể loại ${genreText}, ${episodes.length} tập. Hình ảnh và âm thanh được tạo bằng AI.`,
         posterUrl: await uploadPoster(movieSlug, film.files[0], film.jpg, work),
         episodes,
       });

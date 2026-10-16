@@ -1,6 +1,6 @@
 /**
  * Seeds the Membership & Billing Admin's plan catalogue: one Free plan (no price row,
- * no subscription — the free access rules grant access instead) plus one paid Monthly
+ * no subscription - the free access rules grant access instead) plus one paid Monthly
  * plan. Idempotent: a plan whose
  * code already exists is left alone, and a plan that already has a price in force
  * gets no new price row, so values an Admin changed are never overwritten.
