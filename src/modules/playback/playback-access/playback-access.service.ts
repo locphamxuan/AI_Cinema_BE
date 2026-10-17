@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
+import { AccessSource, EpisodeStatus, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
@@ -112,7 +112,7 @@ export class PlaybackAccessService {
       return {
         ...base,
         accessType:
-          episodeAccess.source === 'ADMIN_GRANT' ? PlaybackAccessType.ADMIN_GRANT : PlaybackAccessType.EPISODE_PURCHASE,
+          episodeAccess.source === AccessSource.ADMIN_GRANT ? PlaybackAccessType.ADMIN_GRANT : PlaybackAccessType.EPISODE_PURCHASE,
         planCode: null,
       };
     }
