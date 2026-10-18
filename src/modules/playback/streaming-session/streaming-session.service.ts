@@ -15,7 +15,7 @@ import {
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
-import { PlaybackAccessService } from '../playback-access/playback-access.service';
+import { PlaybackAccessService, type VerifiedPlayback } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
 import { AdBreakService, type AdScheduleItem } from '../ad-break/ad-break.service';
 import { PlaybackUrlService } from './playback-url.service';
@@ -233,7 +233,8 @@ export class StreamingSessionService {
   /**
    * Step 15: heartbeat keeps the session alive and persists the position. The session row
    * takes every beat (liveness feeds the expiry sweep); the member's resume hint lands at
-   * most once a minute — and always when this beat ends the session.
+   * most once a minute — and always when this beat ends the session. Before anything is
+   * credited, the beat re-checks that the entitlement is still there (hardening #11).
    */
   async heartbeat(
     sessionId: string,
@@ -241,6 +242,16 @@ export class StreamingSessionService {
     input: { positionSeconds: number; watchedSeconds?: number },
   ): Promise<SessionStateViewDto> {
     const session = await this.owned(sessionId, caller);
+    // A take-down for good revokes the unlock and refunds it (BR-52); a plan can lapse. The
+    // session ends here instead of riding its heartbeat timeout, so the player is told to
+    // stop and the signed playlist URLs pinned to this row stop being served.
+    if (!(await this.access.stillEntitled(session))) {
+      await this.kicked(session, input.positionSeconds);
+      throw new ForbiddenException({
+        message: 'Playback access was revoked while the session was open',
+        details: { reason: 'PLAYBACK_ACCESS_REVOKED' },
+      });
+    }
     const saved = await this.saveViewing(session, {
       positionSeconds: input.positionSeconds,
       watchedSeconds: input.watchedSeconds,
@@ -282,6 +293,16 @@ export class StreamingSessionService {
       persistProgress: true,
     });
     return this.state(saved.session, true);
+  }
+
+  /** Ends a session whose entitlement vanished mid-viewing: position saved, row closed as KICKED. */
+  private async kicked(session: StreamingSession, positionSeconds: number): Promise<void> {
+    await this.saveViewing(session, {
+      positionSeconds,
+      endReason: StreamingEndReason.KICKED,
+      forceCompleted: false,
+      persistProgress: true,
+    });
   }
 
   /** The session only its owner may touch; anything else goes back to the catalog. */
@@ -419,19 +440,7 @@ export class StreamingSessionService {
       status: StreamingSessionStatus;
       startPositionSeconds: number;
     },
-    verified: {
-      episodeId: string;
-      movieId: string;
-      mediaAssetId: string;
-      isSelfHosted: boolean;
-      streamUrl: string;
-      qualities: string[];
-      durationSeconds: number | null;
-      accessType: string;
-      planCode: string | null;
-      subtitles: { language: string; fileUrl: string; isDefault: boolean }[];
-      aiLabel: { type: string; text: string; displayLocation: string | null } | null;
-    },
+    verified: VerifiedPlayback,
     reused: boolean,
     resumePositionSeconds: number | null = null,
     adSchedule: AdScheduleItem[] = [],

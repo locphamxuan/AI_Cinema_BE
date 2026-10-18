@@ -127,4 +127,34 @@ export class PlaybackAccessService {
       details: { reason: 'PLAYBACK_ACCESS_REQUIRED' },
     });
   }
+
+  /**
+   * Hardening #11: the light re-check a heartbeat runs while the viewer is watching, because
+   * access can disappear between beats — an episode taken down for good revokes the unlock
+   * and refunds it (BR-52), and a plan can lapse mid-episode. The session row says which
+   * entitlement it was opened with, so one indexed read answers it; free sessions (all guest
+   * sessions among them) hold nothing that can be revoked.
+   */
+  async stillEntitled(session: {
+    userId: string | null;
+    episodeId: string;
+    accessType: PlaybackAccessType;
+  }): Promise<boolean> {
+    const { userId, episodeId, accessType } = session;
+    if (!userId || accessType === PlaybackAccessType.FREE_STARTER) return true;
+    if (accessType === PlaybackAccessType.PLAN) {
+      const plan = await this.prisma.subscription.findFirst({
+        where: runningPlanWhere(userId),
+        select: { id: true },
+      });
+      if (plan) return true;
+      // A lapsed plan does not end a session whose owner also holds an unlock: verify()
+      // would still grant it on a fresh open, so fall through before calling access lost.
+    }
+    const unlock = await this.prisma.episodeAccess.findFirst({
+      where: { userId, episodeId, revokedAt: null },
+      select: { id: true },
+    });
+    return Boolean(unlock);
+  }
 }

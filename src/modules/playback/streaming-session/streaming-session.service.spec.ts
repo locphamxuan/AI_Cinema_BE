@@ -26,7 +26,7 @@ describe('StreamingSessionService.create', () => {
     episode: { findUnique: jest.fn(), findFirst: jest.fn() },
     $transaction: jest.fn((work: (db: typeof tx) => Promise<never>) => work(tx)),
   };
-  const access = { verify: jest.fn() };
+  const access = { verify: jest.fn(), stillEntitled: jest.fn() };
   const devices = { check: jest.fn() };
   const settings = {
     get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
@@ -61,6 +61,7 @@ describe('StreamingSessionService.create', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     access.verify.mockResolvedValue(verified);
+    access.stillEntitled.mockResolvedValue(true);
     devices.check.mockResolvedValue(undefined);
     progress.progress.mockResolvedValue({ found: false, positionSeconds: 0, completed: false });
     ads.scheduleFor.mockResolvedValue([]);
@@ -242,6 +243,7 @@ describe('StreamingSessionService.create', () => {
       guestKey: null,
       episodeId: 'ep-1',
       mediaAssetId: 'asset-1',
+      accessType: PlaybackAccessType.PLAN,
       durationSeconds: 1200,
       lastProgressAt: null,
       // The previous update landed one beat ago: the server may credit 12s.
@@ -368,6 +370,47 @@ describe('StreamingSessionService.create', () => {
       const state = await service.complete('sess-1', { userId: 'u-1' }, {});
       expect(state).toMatchObject({ completed: true, status: 'ENDED' });
       expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ completed: true }));
+    });
+
+    describe('entitlement lost mid-session (hardening #11)', () => {
+      it('ends the session before crediting the beat when the unlock was revoked', async () => {
+        prisma.streamingSession.findUnique.mockResolvedValue(live({ accessType: PlaybackAccessType.EPISODE_PURCHASE }));
+        access.stillEntitled.mockResolvedValue(false);
+
+        await expect(service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 420 })).rejects.toMatchObject({
+          response: expect.objectContaining({
+            details: expect.objectContaining({ reason: 'PLAYBACK_ACCESS_REVOKED' }),
+          }),
+        });
+        expect(access.stillEntitled).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1', userId: 'u-1', episodeId: 'ep-1' }),
+        );
+        // The row closes as KICKED instead of riding the heartbeat timeout, which also
+        // stops the signed playlist URLs pinned to it from being served.
+        expect(updateData()).toMatchObject({ status: 'ENDED', endReason: 'KICKED' });
+        // The viewer got this far: the final position lands like a stop.
+        expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ positionSeconds: 420 }));
+      });
+
+      it('ends the session when the plan lapsed mid-episode', async () => {
+        access.stillEntitled.mockResolvedValue(false);
+
+        await expect(service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 300 })).rejects.toMatchObject({
+          response: expect.objectContaining({
+            details: expect.objectContaining({ reason: 'PLAYBACK_ACCESS_REVOKED' }),
+          }),
+        });
+        expect(updateData()).toMatchObject({ status: 'ENDED', endReason: 'KICKED' });
+      });
+
+      it('leaves stop and complete alone: leaving a revoked episode must still work', async () => {
+        access.stillEntitled.mockResolvedValue(false);
+
+        const stopped = await service.stop('sess-1', { userId: 'u-1' }, { positionSeconds: 400 });
+        expect(stopped).toMatchObject({ status: 'ENDED', positionSeconds: 400 });
+        await expect(service.complete('sess-1', { userId: 'u-1' }, {})).resolves.toMatchObject({ status: 'ENDED' });
+        expect(access.stillEntitled).not.toHaveBeenCalled();
+      });
     });
 
     it('refuses a caller who does not own the session', async () => {

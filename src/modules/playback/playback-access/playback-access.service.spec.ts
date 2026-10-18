@@ -110,3 +110,84 @@ describe('PlaybackAccessService.verify', () => {
     });
   });
 });
+
+describe('PlaybackAccessService.stillEntitled', () => {
+  const prisma = {
+    subscription: { findFirst: jest.fn() },
+    episodeAccess: { findFirst: jest.fn() },
+  };
+  const settings = { get: jest.fn() };
+  const service = new PlaybackAccessService(
+    prisma as unknown as PrismaService,
+    settings as unknown as PlatformSettingService,
+  );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.subscription.findFirst.mockResolvedValue(null);
+    prisma.episodeAccess.findFirst.mockResolvedValue(null);
+  });
+
+  it('never checks a guest or free session: it holds no entitlement to lose', async () => {
+    await expect(
+      service.stillEntitled({ userId: null, episodeId: 'ep-1', accessType: PlaybackAccessType.FREE_STARTER }),
+    ).resolves.toBe(true);
+    await expect(
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.FREE_STARTER }),
+    ).resolves.toBe(true);
+    expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
+    expect(prisma.episodeAccess.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('keeps a plan session alive while the plan runs, with one read', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-1' });
+    await expect(
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.PLAN }),
+    ).resolves.toBe(true);
+    expect(prisma.subscription.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'u-1',
+          status: { in: ['ACTIVE', 'PAST_DUE'] },
+          currentPeriodEnd: { gt: expect.any(Date) },
+        }),
+      }),
+    );
+    // The running plan answers the beat: no second read.
+    expect(prisma.episodeAccess.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('ends a plan session once the plan lapsed and nothing else covers the episode', async () => {
+    await expect(
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.PLAN }),
+    ).resolves.toBe(false);
+    // Before calling access lost, the unlock is checked: verify() would still grant it.
+    expect(prisma.episodeAccess.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'u-1', episodeId: 'ep-1', revokedAt: null } }),
+    );
+  });
+
+  it('keeps a plan session whose lapsed plan is backed by an owned episode', async () => {
+    prisma.episodeAccess.findFirst.mockResolvedValue({ id: 'acc-1' });
+    await expect(
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.PLAN }),
+    ).resolves.toBe(true);
+  });
+
+  it('keeps a purchased session while the unlock stands, without reading plans', async () => {
+    prisma.episodeAccess.findFirst.mockResolvedValue({ id: 'acc-1' });
+    await expect(
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.EPISODE_PURCHASE }),
+    ).resolves.toBe(true);
+    expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('ends a purchased session once the take-down revoked the unlock (REMOVAL + refund)', async () => {
+    await expect(
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.EPISODE_PURCHASE }),
+    ).resolves.toBe(false);
+    expect(prisma.episodeAccess.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'u-1', episodeId: 'ep-1', revokedAt: null } }),
+    );
+  });
+});
