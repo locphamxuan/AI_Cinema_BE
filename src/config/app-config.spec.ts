@@ -36,6 +36,17 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...production, SWAGGER_ENABLED: 'true' }).swaggerEnabled).toBe(true);
   });
 
+  it('gives playback its own rate budgets: tight on creation, generous on heartbeats', () => {
+    const config = loadConfig(base);
+    expect(config.rateLimit).toMatchObject({
+      limit: 300,
+      playbackSessionLimit: 60,
+      playbackHeartbeatLimit: 1200,
+    });
+    const tuned = loadConfig({ ...base, RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX: '5000' });
+    expect(tuned.rateLimit.playbackHeartbeatLimit).toBe(5000);
+  });
+
   it('leaves payment gateways unconfigured by default (sandbox URLs kept)', () => {
     const config = loadConfig(base);
     expect(config.payments.momo).toMatchObject({

@@ -37,6 +37,8 @@ process.env.SWAGGER_ENABLED = 'false';
 // The suite signs in many times a minute.
 process.env.RATE_LIMIT_MAX = '10000';
 process.env.RATE_LIMIT_AUTH_MAX = '10000';
+process.env.RATE_LIMIT_PLAYBACK_SESSION_MAX = '10000';
+process.env.RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX = '10000';
 // Schedulers are driven by the tests, never by timers.
 process.env.PUBLICATION_SWEEP_MS = '0';
 process.env.OVERDUE_SWEEP_MS = '0';

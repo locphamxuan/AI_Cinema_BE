@@ -14,7 +14,15 @@ export interface AppConfig {
   databaseUrl: string;
   redisUrl: string | null;
   jwt: { secret: string; accessTtlSeconds: number; refreshTtlDays: number; issuer: string; audience: string };
-  rateLimit: { ttlMs: number; limit: number; authLimit: number };
+  rateLimit: {
+    ttlMs: number;
+    limit: number;
+    authLimit: number;
+    /** MF-3: opening a playback session (flow 3, step 11); a deliberate tap, kept tight. */
+    playbackSessionLimit: number;
+    /** MF-3: heartbeats; a viewer sends 4–6/min and CGNAT puts many viewers on one IP. */
+    playbackHeartbeatLimit: number;
+  };
   /** Absolute base players resolve API-issued playlist URLs against. */
   apiPublicUrl: string;
   storage: {
@@ -214,6 +222,11 @@ export function loadConfig(env: Env = process.env): AppConfig {
       ttlMs: read.int('RATE_LIMIT_TTL_MS', 60_000, 1000),
       limit: read.int('RATE_LIMIT_MAX', 300, 1),
       authLimit: read.int('RATE_LIMIT_AUTH_MAX', 10, 1),
+      // Beating players sit behind shared CGNAT IPs: the heartbeat budget covers ~200
+      // concurrent viewers (6 req/min each) while session creation is tightened so guest
+      // minting cannot ride the API-wide budget.
+      playbackSessionLimit: read.int('RATE_LIMIT_PLAYBACK_SESSION_MAX', 60, 1),
+      playbackHeartbeatLimit: read.int('RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX', 1200, 1),
     },
     apiPublicUrl: (read.optional('API_PUBLIC_URL') ?? `http://localhost:${port}`).replace(/\/+$/, ''),
     storage: storageConfig(read, port),

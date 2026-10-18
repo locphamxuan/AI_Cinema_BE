@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Header, Headers, Ip, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiHeader, ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { OptionalUser } from 'src/common/decorators/optional-user.decorator';
 import { IdempotencyKey } from 'src/common/decorators/idempotency-key.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
+import { appConfig } from 'src/config/config.module';
 import { StreamingSessionViewDto } from './dto/streaming-session.dto';
 import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
@@ -14,6 +16,17 @@ import { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/ses
 import { StopSessionRequestDto } from 'src/modules/playback/watch-progress/dto/stop-session.request.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
+
+// Mobile carriers put many viewers behind one CGNAT egress IP, so the API-wide per-IP
+// budget starves a beating player. Opening a session is a deliberate tap and stays tight
+// to keep guest minting bounded; a heartbeat is ~4–6 requests/min per viewer, so its
+// budget is sized for hundreds of viewers per IP (the session's owner key still gates it).
+const openSessionRateLimit = {
+  default: { limit: () => appConfig().rateLimit.playbackSessionLimit, ttl: () => appConfig().rateLimit.ttlMs },
+};
+const heartbeatRateLimit = {
+  default: { limit: () => appConfig().rateLimit.playbackHeartbeatLimit, ttl: () => appConfig().rateLimit.ttlMs },
+};
 
 /**
  * Public: guests (X-Guest-Key) and members (optional bearer token) share the
@@ -29,6 +42,7 @@ export class StreamingSessionController {
     private readonly urls: PlaybackUrlService,
   ) {}
 
+  @Throttle(openSessionRateLimit)
   @Post('sessions')
   @ApiOperation({ summary: 'Verify playback access and open a streaming session (flow 3, step 11)' })
   @ApiHeader({
@@ -88,6 +102,7 @@ export class StreamingSessionController {
     return this.urls.variantPlaylist(sessionId, quality, tokenOf(s, exp, sig));
   }
 
+  @Throttle(heartbeatRateLimit)
   @Patch('sessions/:sessionId/heartbeat')
   @ApiOperation({ summary: 'Keep the session alive and persist the position (flow 3, step 15)' })
   @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
