@@ -117,11 +117,12 @@ describe('Studio hand-off (e2e)', () => {
     await creator.patch(path, { status: 'DELIVERED' }, 400);
     await creator.patch(path, { status: 'DELIVERED', mediaAssetId: '00000000-0000-4000-8000-000000000000' }, 400);
 
+    // Uploading the Submission is the delivery: the milestone moves by itself.
     const submission = await deliver(creator, episodesOf(project)[0].id);
-    const delivered = await creator.patch<Handoff>(path, { status: 'DELIVERED', mediaAssetId: submission.id });
-    expect(delivered.milestoneStatus).toBe('DELIVERED');
+    await creator.patch(path, { status: 'DELIVERED', mediaAssetId: submission.id }, 409);
 
     const [handoff] = await handoffs();
+    expect(handoff.milestoneStatus).toBe('DELIVERED');
     expect(handoff.milestoneEvents.map((e) => e.toStatus)).toEqual([
       'BRIEF_SENT',
       'STUDIO_ACCEPTED',
