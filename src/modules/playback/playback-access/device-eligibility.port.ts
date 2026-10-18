@@ -57,7 +57,12 @@ export class CountingDeviceEligibilityService extends DeviceEligibilityPort {
   }
 }
 
-function maxDevicesOf(features: unknown): number | null {
+/**
+ * Reads the device limit out of the free-form `plans.features` JSON. Anything that is not
+ * a positive integer — a missing key, a string, zero, a fraction — is not a limit, so the
+ * caller can fall back to the default.
+ */
+export function maxDevicesOf(features: unknown): number | null {
   if (!features || typeof features !== 'object') return null;
   const value = (features as { maxDevices?: unknown }).maxDevices;
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
