@@ -6,6 +6,7 @@ import { WatchProgressModule } from '../watch-progress/watch-progress.module';
 import { AdBreakModule } from '../ad-break/ad-break.module';
 import { PlaybackUrlService } from './playback-url.service';
 import { SessionExpirySweep } from './session-expiry.sweep';
+import { SessionRetentionSweep } from './session-retention.sweep';
 import { StreamingSessionController } from './streaming-session.controller';
 import { StreamingSessionService } from './streaming-session.service';
 
@@ -19,6 +20,7 @@ import { StreamingSessionService } from './streaming-session.service';
     PlaybackUrlService,
     StreamingSessionService,
     SessionExpirySweep,
+    SessionRetentionSweep,
   ],
   exports: [PlaybackAccessService, PlaybackUrlService, StreamingSessionService],
 })

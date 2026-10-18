@@ -53,6 +53,8 @@ export interface AppConfig {
     paymentReconcileSweepMs: number;
     /** MF-3: closing sessions whose heartbeat timed out. */
     streamingSessionSweepMs: number;
+    /** MF-3: deleting finished sessions older than `playback.sessionRetentionDays`. */
+    streamingSessionRetentionSweepMs: number;
   };
   /**
    * Real payment gateways (MF-2 top-ups). Secrets are optional: a provider with no
@@ -81,11 +83,20 @@ export interface AppConfig {
   };
   briefFontPath: string | null;
   /**
-   * Signed playback URLs (MF-3 phase 2). Empty secret = signing disabled: the API
-   * hands out direct stream URLs and the token playlist endpoints refuse with 422,
+   * MF-3 playback: signed URLs and session retention. Empty `urlSecret` = signing disabled:
+   * the API hands out direct stream URLs and the token playlist endpoints refuse with 422,
    * so local development boots without any secret.
    */
-  playback: { urlSecret?: string; urlTtlSeconds: number };
+  playback: {
+    urlSecret?: string;
+    urlTtlSeconds: number;
+    /**
+     * MF-3 retention: a session that ended more than this many days ago is deleted by the
+     * retention sweep, and its ad-break rows cascade with it. 0 keeps every row forever;
+     * keep the window longer than any report that reads session rows.
+     */
+    sessionRetentionDays: number;
+  };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -257,12 +268,15 @@ export function loadConfig(env: Env = process.env): AppConfig {
       paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
       /** MF-3: sessions whose heartbeat timed out are closed and their progress saved. */
       streamingSessionSweepMs: read.int('STREAMING_SESSION_SWEEP_MS', 30_000),
+      /** MF-3: the retention sweep runs once a day by default; it is cheap when nothing is due. */
+      streamingSessionRetentionSweepMs: read.int('STREAMING_SESSION_RETENTION_SWEEP_MS', 24 * 60 * 60_000),
     },
     payments: paymentConfig(read),
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
     playback: {
       urlSecret: read.optional('PLAYBACK_URL_SECRET'),
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 7200, 60),
+      sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
   };
 

@@ -47,6 +47,14 @@ describe('loadConfig', () => {
     expect(tuned.rateLimit.playbackHeartbeatLimit).toBe(5000);
   });
 
+  it('retains finished playback sessions for a window, switchable off', () => {
+    const config = loadConfig(base);
+    expect(config.playback.sessionRetentionDays).toBe(90);
+    expect(config.schedules.streamingSessionRetentionSweepMs).toBe(86_400_000);
+    const off = loadConfig({ ...base, STREAMING_SESSION_RETENTION_DAYS: '0' });
+    expect(off.playback.sessionRetentionDays).toBe(0);
+  });
+
   it('leaves payment gateways unconfigured by default (sandbox URLs kept)', () => {
     const config = loadConfig(base);
     expect(config.payments.momo).toMatchObject({
