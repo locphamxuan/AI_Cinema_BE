@@ -19,8 +19,8 @@ const OPEN: StudioMilestoneStatus[] = [
 
 /**
  * BR-58: the studio hands films back by email only, so the Studio Web reports each mail it sent. The hand-off
- * remembers it (the Studio tab shows it) and the Creator and Reviewer are told; the milestone itself still moves
- * only when the Creator uploads the Submission.
+ * remembers it (the Studio tab shows it) and the Creator and Reviewer are told; the milestone itself moves to
+ * DELIVERED once the Submission the Creator uploads is READY (deliverOnSubmission).
  */
 @Injectable()
 export class FilmSentService {
