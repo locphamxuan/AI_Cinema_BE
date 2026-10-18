@@ -34,6 +34,9 @@ model StreamingSession {
   guestKey             String?                @map("guest_key") @db.VarChar(255)
   episodeId            String                 @map("episode_id") @db.Uuid
   mediaAssetId         String                 @map("media_asset_id") @db.Uuid
+  /// The pinned media version's length, cached at creation: heartbeats clamp and complete
+  /// against this instead of re-reading media_assets on every beat.
+  durationSeconds      Int?                   @map("duration_seconds")
   accessType           PlaybackAccessType     @map("access_type")
   status               StreamingSessionStatus @default(ACTIVE)
   startPositionSeconds Int                    @default(0) @map("start_position_seconds")
@@ -42,6 +45,9 @@ model StreamingSession {
   totalWatchedSeconds  Int                    @default(0) @map("total_watched_seconds")
   startedAt            DateTime               @default(now()) @map("started_at") @db.Timestamptz(6)
   lastHeartbeatAt      DateTime               @default(now()) @map("last_heartbeat_at") @db.Timestamptz(6)
+  /// When watch_progress was last written for this session. Heartbeats persist the resume
+  /// hint at most once a minute; stop and complete always write.
+  lastProgressAt       DateTime?              @map("last_progress_at") @db.Timestamptz(6)
   endedAt              DateTime?              @map("ended_at") @db.Timestamptz(6)
   endReason            StreamingEndReason?    @map("end_reason")
   ipAddress            String?                @map("ip_address") @db.VarChar(45)

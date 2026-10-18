@@ -48,6 +48,12 @@ export interface NextEpisodeView {
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
+ * Heartbeats run every 10–15s to keep the session alive, but watch_progress is a resume
+ * hint, not a liveness signal: one write a minute is plenty. Stop and complete always write.
+ */
+export const PROGRESS_WRITE_INTERVAL_MS = 60_000;
+
+/**
  * Main Flow 3: verifies playback access, opens streaming sessions (step 11) and
  * tracks viewing through heartbeats until the viewer stops or finishes (steps
  * 15, 18–21). Guests always start from 0 and keep no progress row.
@@ -160,6 +166,8 @@ export class StreamingSessionService {
             guestKey: guestKey ?? null,
             episodeId: verified.episodeId,
             mediaAssetId: verified.mediaAssetId,
+            // Cached once here so every later beat reads the length off this row.
+            durationSeconds: verified.durationSeconds,
             accessType: verified.accessType,
             status: StreamingSessionStatus.ACTIVE,
             startPositionSeconds: 0,
@@ -214,7 +222,11 @@ export class StreamingSessionService {
     }
   }
 
-  /** Step 15: heartbeat keeps the session alive and persists the position. */
+  /**
+   * Step 15: heartbeat keeps the session alive and persists the position. The session row
+   * takes every beat (liveness feeds the expiry sweep); the member's resume hint lands at
+   * most once a minute — and always when this beat ends the session.
+   */
   async heartbeat(
     sessionId: string,
     caller: SessionCaller,
@@ -226,6 +238,7 @@ export class StreamingSessionService {
       watchedSeconds: input.watchedSeconds ?? 0,
       endReason: null,
       forceCompleted: false,
+      persistProgress: progressWriteDue(session, new Date()),
     });
     return this.state(saved.session, saved.completed);
   }
@@ -242,6 +255,8 @@ export class StreamingSessionService {
       watchedSeconds: 0,
       endReason: StreamingEndReason.STOPPED,
       forceCompleted: false,
+      // Whatever the cadence, the last position must land before the session closes.
+      persistProgress: true,
     });
     return this.state(saved.session, saved.completed);
   }
@@ -258,6 +273,7 @@ export class StreamingSessionService {
       watchedSeconds: 0,
       endReason: StreamingEndReason.COMPLETED,
       forceCompleted: true,
+      persistProgress: true,
     });
     return this.state(saved.session, true);
   }
@@ -290,9 +306,10 @@ export class StreamingSessionService {
   }
 
   /**
-   * One viewing update: clamps the position to the media length, accumulates
-   * watch time, crosses the completion threshold from platform settings, and —
-   * for members — persists the progress row. Guests keep nothing.
+   * One viewing update: clamps the position to the cached media length, accumulates
+   * watch time, crosses the completion threshold from platform settings, and — for
+   * members, on the cadence the caller asks for — persists the progress row.
+   * Guests keep nothing.
    */
   private async saveViewing(
     session: StreamingSession,
@@ -301,14 +318,13 @@ export class StreamingSessionService {
       watchedSeconds: number;
       endReason: StreamingEndReason | null;
       forceCompleted: boolean;
+      /** false on a heartbeat inside the write window; stop and complete always pass true. */
+      persistProgress: boolean;
     },
   ): Promise<{ session: StreamingSession; completed: boolean }> {
     const now = new Date();
-    const asset = await this.prisma.mediaAsset.findUnique({
-      where: { id: session.mediaAssetId },
-      select: { durationSeconds: true },
-    });
-    const duration = asset?.durationSeconds ?? null;
+    // The media length was cached on the row at creation: no media_assets read per beat.
+    const duration = session.durationSeconds;
     const position = duration
       ? Math.min(Math.max(0, Math.floor(input.positionSeconds)), duration)
       : Math.max(0, Math.floor(input.positionSeconds));
@@ -316,6 +332,9 @@ export class StreamingSessionService {
     const crossed = Boolean(duration) && duration! > 0 && (position / duration!) * 100 >= episodeCompletionPercent;
     const completed = input.forceCompleted || crossed;
     const endReason = completed ? StreamingEndReason.COMPLETED : input.endReason;
+    // A session that ends now (stop/complete, or a beat that crossed the threshold) must
+    // leave its final position behind; otherwise the once-a-minute cadence applies.
+    const writeProgress = Boolean(session.userId) && (input.persistProgress || endReason !== null);
 
     const updated = await this.prisma.streamingSession.update({
       where: { id: session.id },
@@ -323,10 +342,11 @@ export class StreamingSessionService {
         lastPositionSeconds: position,
         lastHeartbeatAt: now,
         totalWatchedSeconds: { increment: Math.max(0, Math.floor(input.watchedSeconds)) },
+        ...(writeProgress ? { lastProgressAt: now } : {}),
         ...(endReason ? { status: StreamingSessionStatus.ENDED, endReason, endedAt: now } : {}),
       },
     });
-    if (session.userId) {
+    if (writeProgress && session.userId) {
       await this.progress.save(session.userId, session.episodeId, {
         positionSeconds: position,
         durationSeconds: duration,
@@ -436,4 +456,10 @@ export class StreamingSessionService {
       ...(resumePositionSeconds !== null ? { resumePositionSeconds } : {}),
     };
   }
+}
+
+/** True when a heartbeat is allowed to write the resume hint again. */
+function progressWriteDue(session: StreamingSession, now: Date): boolean {
+  const last = session.lastProgressAt;
+  return !last || now.getTime() - last.getTime() >= PROGRESS_WRITE_INTERVAL_MS;
 }

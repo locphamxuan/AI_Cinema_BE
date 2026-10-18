@@ -41,7 +41,6 @@ export class SessionExpirySweep implements OnModuleInit {
         where: { status: StreamingSessionStatus.ACTIVE, lastHeartbeatAt: { lte: cutoff } },
         orderBy: { lastHeartbeatAt: 'asc' },
         take: BATCH,
-        include: { mediaAsset: { select: { durationSeconds: true } } },
       });
       if (!due.length) break;
       for (const session of due) {
@@ -57,7 +56,8 @@ export class SessionExpirySweep implements OnModuleInit {
         if (count === 0) continue;
         sessions += 1;
         if (session.userId) {
-          const duration = session.mediaAsset.durationSeconds;
+          // The length was cached on the row at creation; no join back to media_assets.
+          const duration = session.durationSeconds;
           const completed =
             Boolean(duration) &&
             duration! > 0 &&

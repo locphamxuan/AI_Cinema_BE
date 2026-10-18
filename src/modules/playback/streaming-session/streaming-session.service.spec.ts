@@ -6,7 +6,7 @@ import type { PlaybackAccessService } from '../playback-access/playback-access.s
 import type { WatchProgressService } from '../watch-progress/watch-progress.service';
 import type { AdBreakService } from '../ad-break/ad-break.service';
 import type { PlaybackUrlService } from './playback-url.service';
-import { StreamingSessionService } from './streaming-session.service';
+import { StreamingSessionService, PROGRESS_WRITE_INTERVAL_MS } from './streaming-session.service';
 
 describe('StreamingSessionService.create', () => {
   const streamingSession = { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
@@ -96,6 +96,13 @@ describe('StreamingSessionService.create', () => {
     const checkOrder = devices.check.mock.invocationCallOrder[0];
     const createOrder = prisma.streamingSession.create.mock.invocationCallOrder[0];
     expect(checkOrder).toBeLessThan(createOrder);
+  });
+
+  it('caches the media duration on the session row at creation', async () => {
+    await service.create({ episodeId: 'ep-1', userId: 'u-1' });
+    expect(prisma.streamingSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ durationSeconds: 600 }) }),
+    );
   });
 
   it('opens a guest session from X-Guest-Key without a device check', async () => {
@@ -231,6 +238,8 @@ describe('StreamingSessionService.create', () => {
       guestKey: null,
       episodeId: 'ep-1',
       mediaAssetId: 'asset-1',
+      durationSeconds: 1200,
+      lastProgressAt: null,
       status: StreamingSessionStatus.ACTIVE,
       lastPositionSeconds: 300,
       totalWatchedSeconds: 600,
@@ -239,7 +248,6 @@ describe('StreamingSessionService.create', () => {
 
     beforeEach(() => {
       prisma.streamingSession.findUnique.mockResolvedValue(live());
-      prisma.mediaAsset.findUnique.mockResolvedValue({ durationSeconds: 1200 });
       prisma.streamingSession.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
         ...live(),
         ...data,
@@ -251,14 +259,58 @@ describe('StreamingSessionService.create', () => {
       expect(state).toMatchObject({ sessionId: 'sess-1', positionSeconds: 320, completed: false });
       expect(prisma.streamingSession.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ lastPositionSeconds: 320, totalWatchedSeconds: { increment: 12 } }),
+          data: expect.objectContaining({
+            lastPositionSeconds: 320,
+            totalWatchedSeconds: { increment: 12 },
+            lastProgressAt: expect.any(Date),
+          }),
         }),
       );
       expect(progress.save).toHaveBeenCalledWith(
         'u-1',
         'ep-1',
-        expect.objectContaining({ positionSeconds: 320, completed: false }),
+        expect.objectContaining({ positionSeconds: 320, durationSeconds: 1200, completed: false }),
       );
+      // The duration rides on the session row; no media_assets read per beat.
+      expect(prisma.mediaAsset.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('heartbeat inside the write window only touches the session row', async () => {
+      prisma.streamingSession.findUnique.mockResolvedValue(live({ lastProgressAt: new Date() }));
+      const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 330, watchedSeconds: 12 });
+
+      expect(state).toMatchObject({ positionSeconds: 330 });
+      expect(prisma.streamingSession.update).toHaveBeenCalledTimes(1);
+      const data = ((prisma.streamingSession.update.mock.calls[0] as unknown[])[0] as { data: Record<string, unknown> })
+        .data;
+      expect(data).not.toHaveProperty('lastProgressAt');
+      expect(progress.save).not.toHaveBeenCalled();
+    });
+
+    it('heartbeat writes the resume hint again once the window has passed', async () => {
+      prisma.streamingSession.findUnique.mockResolvedValue(
+        live({ lastProgressAt: new Date(Date.now() - PROGRESS_WRITE_INTERVAL_MS - 1000) }),
+      );
+      await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 340 });
+
+      expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ positionSeconds: 340 }));
+      const data = ((prisma.streamingSession.update.mock.calls[0] as unknown[])[0] as { data: Record<string, unknown> })
+        .data;
+      expect(data).toHaveProperty('lastProgressAt', expect.any(Date));
+    });
+
+    it('heartbeat past the threshold always lands the completion, window or not', async () => {
+      prisma.streamingSession.findUnique.mockResolvedValue(live({ lastProgressAt: new Date() }));
+      const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
+
+      expect(state).toMatchObject({ completed: true, status: 'ENDED' });
+      expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ completed: true }));
+    });
+
+    it('stop inside the write window still lands the final position', async () => {
+      prisma.streamingSession.findUnique.mockResolvedValue(live({ lastProgressAt: new Date() }));
+      await service.stop('sess-1', { userId: 'u-1' }, { positionSeconds: 360 });
+      expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ positionSeconds: 360 }));
     });
 
     it('heartbeat past the threshold completes and ends the session (steps 18/20)', async () => {

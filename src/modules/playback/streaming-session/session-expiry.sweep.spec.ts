@@ -29,7 +29,8 @@ describe('SessionExpirySweep.expireDue', () => {
     userId: 'u-1',
     episodeId: 'ep-1',
     lastPositionSeconds: 300,
-    mediaAsset: { durationSeconds: 1200 },
+    // Cached on the row at session creation; the sweep does not join media_assets.
+    durationSeconds: 1200,
     ...overrides,
   });
 
