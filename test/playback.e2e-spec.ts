@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
+import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
@@ -135,5 +136,32 @@ describe('Playback viewing experience (e2e)', () => {
       {},
       404,
     );
+  });
+
+  it('answers a taken-down episode with its maintenance reason, before and during the handoff (BR-56)', async () => {
+    const live = (
+      await reviewer.get<{ id: string; publishedAt: string | null }[]>(`/episodes/${episodeId(2)}/publications`)
+    ).find((publication) => publication.publishedAt)!;
+    await reviewer.post(
+      `/publications/${live.id}/unpublish`,
+      { mode: 'REVISION', reason: 'COMPLIANCE_ISSUE', note: 'Cảnh cuối cần làm lại phụ đề.' },
+      200,
+    );
+
+    // Main Flow 2: the episode is listed, but nothing plays and nothing is on sale.
+    const decision = await guest<{ accessGranted: boolean; availability: string; notice: string; nextAction: string }>(
+      'get',
+      `/episodes/${episodeId(2)}/access`,
+    );
+    expect(decision).toMatchObject({
+      accessGranted: false,
+      availability: 'UNDER_REVISION',
+      notice: 'Tập đang được bảo trì / sửa đổi nội dung',
+      nextAction: 'NOT_PLAYABLE',
+    });
+
+    // Main Flow 3: a caller who skips the decision still gets the reason, not a 404.
+    const refused = await member.post<ApiErrorBody>('/playback/sessions', { episodeId: episodeId(2) }, 409);
+    expect(refused.error.details).toMatchObject({ reason: 'EPISODE_UNDER_REVISION' });
   });
 });

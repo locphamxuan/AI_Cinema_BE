@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { AccessSource, EpisodeStatus, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
+import { AccessSource, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
 import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 
@@ -32,8 +33,11 @@ export class PlaybackAccessService {
   ) {}
 
   async verify(episodeId: string, userId?: string): Promise<VerifiedPlayback> {
+    // The same visibility rule as the catalog and the Main Flow 2 decision (BR-56): an episode
+    // taken down to be fixed is found here and refused with its reason below, instead of the
+    // caller hearing 404 about an episode the viewer can see listed.
     const episode = await this.prisma.episode.findFirst({
-      where: { id: episodeId, status: EpisodeStatus.PUBLISHED },
+      where: { id: episodeId, ...VISIBLE_EPISODE },
       include: {
         approvedMediaAsset: {
           include: {

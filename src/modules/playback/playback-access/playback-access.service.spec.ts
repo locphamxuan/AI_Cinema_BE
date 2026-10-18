@@ -47,15 +47,17 @@ describe('PlaybackAccessService.verify', () => {
     prisma.episodeAccess.findFirst.mockResolvedValue(null);
   });
 
-  it('answers 404 when the episode is not published', async () => {
+  it('answers 404 when the episode is not listed', async () => {
     prisma.episode.findFirst.mockResolvedValue(null);
     await expect(service.verify('missing')).rejects.toThrow(NotFoundException);
     expect(prisma.episode.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'missing', status: EpisodeStatus.PUBLISHED } }),
+      expect.objectContaining({
+        where: { id: 'missing', OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }] },
+      }),
     );
   });
 
-  it('refuses an episode under revision (step 7)', async () => {
+  it('refuses an episode under revision with its reason, not a 404 (step 7, BR-56)', async () => {
     prisma.episode.findFirst.mockResolvedValue(episode({ revisionStartedAt: new Date() }));
     await expect(service.verify('ep-1', 'u-1')).rejects.toMatchObject({
       name: 'ConflictException',
