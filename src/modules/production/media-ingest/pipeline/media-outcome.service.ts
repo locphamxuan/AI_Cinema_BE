@@ -6,6 +6,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import { deliverOnSubmission } from 'src/modules/production/studio-handoff/milestone/deliver-on-submission';
 
 /** Ingest states a delivery no longer leaves. */
 export const DONE: MediaIngestStatus[] = [
@@ -74,6 +75,15 @@ export class MediaOutcomeService {
       );
       // Nothing to review on a project cancelled meanwhile.
       if (!moved.count || !DELIVERY_PROJECT_STATUSES.includes(episode.movie.status)) return;
+      // Only a playable Submission proves the studio delivered; a failed upload leaves the milestone as it was.
+      if (asset.studioHandoffId) {
+        await deliverOnSubmission(tx, this.auditLog, {
+          handoffId: asset.studioHandoffId,
+          mediaAssetId: asset.id,
+          movieId: episode.movieId,
+          submittedById: asset.submittedById,
+        });
+      }
       await this.notifications.notify(
         [episode.movie.reviewerId, episode.movie.creatorId],
         {
