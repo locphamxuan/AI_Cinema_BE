@@ -112,7 +112,9 @@ export class PlaybackAccessService {
       return {
         ...base,
         accessType:
-          episodeAccess.source === AccessSource.ADMIN_GRANT ? PlaybackAccessType.ADMIN_GRANT : PlaybackAccessType.EPISODE_PURCHASE,
+          episodeAccess.source === AccessSource.ADMIN_GRANT
+            ? PlaybackAccessType.ADMIN_GRANT
+            : PlaybackAccessType.EPISODE_PURCHASE,
         planCode: null,
       };
     }
