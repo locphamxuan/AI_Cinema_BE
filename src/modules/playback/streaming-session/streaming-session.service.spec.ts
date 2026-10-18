@@ -6,7 +6,11 @@ import type { PlaybackAccessService } from '../playback-access/playback-access.s
 import type { WatchProgressService } from '../watch-progress/watch-progress.service';
 import type { AdBreakService } from '../ad-break/ad-break.service';
 import type { PlaybackUrlService } from './playback-url.service';
-import { StreamingSessionService, PROGRESS_WRITE_INTERVAL_MS } from './streaming-session.service';
+import {
+  StreamingSessionService,
+  MAX_WATCH_CREDIT_SECONDS,
+  PROGRESS_WRITE_INTERVAL_MS,
+} from './streaming-session.service';
 
 describe('StreamingSessionService.create', () => {
   const streamingSession = { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
@@ -240,11 +244,17 @@ describe('StreamingSessionService.create', () => {
       mediaAssetId: 'asset-1',
       durationSeconds: 1200,
       lastProgressAt: null,
+      // The previous update landed one beat ago: the server may credit 12s.
+      lastHeartbeatAt: new Date(Date.now() - 12_000),
       status: StreamingSessionStatus.ACTIVE,
       lastPositionSeconds: 300,
       totalWatchedSeconds: 600,
       ...overrides,
     });
+
+    /** The `data` of the nth streaming_sessions.update call. */
+    const updateData = (n = 0) =>
+      ((prisma.streamingSession.update.mock.calls[n] as unknown[])[0] as { data: Record<string, unknown> }).data;
 
     beforeEach(() => {
       prisma.streamingSession.findUnique.mockResolvedValue(live());
@@ -275,15 +285,43 @@ describe('StreamingSessionService.create', () => {
       expect(prisma.mediaAsset.findUnique).not.toHaveBeenCalled();
     });
 
+    describe('server-credited watch time', () => {
+      it('ignores an inflated client claim and credits the measured beat gap', async () => {
+        await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 320, watchedSeconds: 9999 });
+        expect(updateData()).toMatchObject({ totalWatchedSeconds: { increment: 12 } });
+      });
+
+      it('caps the credit at two heartbeat intervals when the gap is wider', async () => {
+        prisma.streamingSession.findUnique.mockResolvedValue(live({ lastHeartbeatAt: new Date(Date.now() - 300_000) }));
+        await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 320, watchedSeconds: 9999 });
+        expect(updateData()).toMatchObject({ totalWatchedSeconds: { increment: MAX_WATCH_CREDIT_SECONDS } });
+      });
+
+      it('lets an honest-but-lower claim clamp the credit down (paused player)', async () => {
+        prisma.streamingSession.findUnique.mockResolvedValue(live({ lastHeartbeatAt: new Date(Date.now() - 20_000) }));
+        await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 320, watchedSeconds: 3 });
+        expect(updateData()).toMatchObject({ totalWatchedSeconds: { increment: 3 } });
+      });
+
+      it('credits the measured window when the client sends no claim at all', async () => {
+        await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 320 });
+        expect(updateData()).toMatchObject({ totalWatchedSeconds: { increment: 12 } });
+      });
+
+      it('stop also credits the final measured gap before closing', async () => {
+        prisma.streamingSession.findUnique.mockResolvedValue(live({ lastHeartbeatAt: new Date(Date.now() - 10_000) }));
+        await service.stop('sess-1', { userId: 'u-1' }, { positionSeconds: 360 });
+        expect(updateData()).toMatchObject({ totalWatchedSeconds: { increment: 10 } });
+      });
+    });
+
     it('heartbeat inside the write window only touches the session row', async () => {
       prisma.streamingSession.findUnique.mockResolvedValue(live({ lastProgressAt: new Date() }));
       const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 330, watchedSeconds: 12 });
 
       expect(state).toMatchObject({ positionSeconds: 330 });
       expect(prisma.streamingSession.update).toHaveBeenCalledTimes(1);
-      const data = ((prisma.streamingSession.update.mock.calls[0] as unknown[])[0] as { data: Record<string, unknown> })
-        .data;
-      expect(data).not.toHaveProperty('lastProgressAt');
+      expect(updateData()).not.toHaveProperty('lastProgressAt');
       expect(progress.save).not.toHaveBeenCalled();
     });
 
@@ -294,9 +332,7 @@ describe('StreamingSessionService.create', () => {
       await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 340 });
 
       expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ positionSeconds: 340 }));
-      const data = ((prisma.streamingSession.update.mock.calls[0] as unknown[])[0] as { data: Record<string, unknown> })
-        .data;
-      expect(data).toHaveProperty('lastProgressAt', expect.any(Date));
+      expect(updateData()).toHaveProperty('lastProgressAt', expect.any(Date));
     });
 
     it('heartbeat past the threshold always lands the completion, window or not', async () => {

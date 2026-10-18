@@ -53,6 +53,14 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
  */
 export const PROGRESS_WRITE_INTERVAL_MS = 60_000;
 
+const HEARTBEAT_INTERVAL_SECONDS = 15;
+
+/**
+ * Watch time one viewing update may credit at most: two beats' worth. Players beat every
+ * 10–15s (see HeartbeatRequestDto), so a wider gap is not time the server can vouch for.
+ */
+export const MAX_WATCH_CREDIT_SECONDS = 2 * HEARTBEAT_INTERVAL_SECONDS;
+
 /**
  * Main Flow 3: verifies playback access, opens streaming sessions (step 11) and
  * tracks viewing through heartbeats until the viewer stops or finishes (steps
@@ -235,7 +243,7 @@ export class StreamingSessionService {
     const session = await this.owned(sessionId, caller);
     const saved = await this.saveViewing(session, {
       positionSeconds: input.positionSeconds,
-      watchedSeconds: input.watchedSeconds ?? 0,
+      watchedSeconds: input.watchedSeconds,
       endReason: null,
       forceCompleted: false,
       persistProgress: progressWriteDue(session, new Date()),
@@ -252,7 +260,6 @@ export class StreamingSessionService {
     const session = await this.owned(sessionId, caller);
     const saved = await this.saveViewing(session, {
       positionSeconds: input.positionSeconds,
-      watchedSeconds: 0,
       endReason: StreamingEndReason.STOPPED,
       forceCompleted: false,
       // Whatever the cadence, the last position must land before the session closes.
@@ -270,7 +277,6 @@ export class StreamingSessionService {
     const session = await this.owned(sessionId, caller);
     const saved = await this.saveViewing(session, {
       positionSeconds: input.positionSeconds ?? session.lastPositionSeconds,
-      watchedSeconds: 0,
       endReason: StreamingEndReason.COMPLETED,
       forceCompleted: true,
       persistProgress: true,
@@ -306,16 +312,17 @@ export class StreamingSessionService {
   }
 
   /**
-   * One viewing update: clamps the position to the cached media length, accumulates
-   * watch time, crosses the completion threshold from platform settings, and — for
-   * members, on the cadence the caller asks for — persists the progress row.
+   * One viewing update: clamps the position to the cached media length, credits watch
+   * time from the server clock, crosses the completion threshold from platform settings,
+   * and — for members, on the cadence the caller asks for — persists the progress row.
    * Guests keep nothing.
    */
   private async saveViewing(
     session: StreamingSession,
     input: {
       positionSeconds: number;
-      watchedSeconds: number;
+      /** The client's claim since the last update; it may only lower the server's credit. */
+      watchedSeconds?: number;
       endReason: StreamingEndReason | null;
       forceCompleted: boolean;
       /** false on a heartbeat inside the write window; stop and complete always pass true. */
@@ -323,6 +330,9 @@ export class StreamingSessionService {
     },
   ): Promise<{ session: StreamingSession; completed: boolean }> {
     const now = new Date();
+    // Watch time is credited from the server clock — the gap since the previous update on
+    // this row — never by summing what the client claims; the claim only clamps it down.
+    const credited = watchCreditSeconds(session.lastHeartbeatAt, now, input.watchedSeconds);
     // The media length was cached on the row at creation: no media_assets read per beat.
     const duration = session.durationSeconds;
     const position = duration
@@ -341,7 +351,7 @@ export class StreamingSessionService {
       data: {
         lastPositionSeconds: position,
         lastHeartbeatAt: now,
-        totalWatchedSeconds: { increment: Math.max(0, Math.floor(input.watchedSeconds)) },
+        totalWatchedSeconds: { increment: credited },
         ...(writeProgress ? { lastProgressAt: now } : {}),
         ...(endReason ? { status: StreamingSessionStatus.ENDED, endReason, endedAt: now } : {}),
       },
@@ -462,4 +472,17 @@ export class StreamingSessionService {
 function progressWriteDue(session: StreamingSession, now: Date): boolean {
   const last = session.lastProgressAt;
   return !last || now.getTime() - last.getTime() >= PROGRESS_WRITE_INTERVAL_MS;
+}
+
+/**
+ * Watch time credited for one viewing update: the server-measured gap since the previous
+ * update, capped at two heartbeat intervals (a longer gap is not time we can vouch for).
+ * The client's claim may only clamp the credit down — an inflated number never adds a
+ * second, it is just ignored past the cap.
+ */
+function watchCreditSeconds(lastHeartbeatAt: Date, now: Date, claim: number | undefined): number {
+  const elapsed = Math.floor(Math.max(0, now.getTime() - lastHeartbeatAt.getTime()) / 1000);
+  const credit = Math.min(elapsed, MAX_WATCH_CREDIT_SECONDS);
+  if (claim === undefined || !Number.isFinite(claim)) return credit;
+  return Math.min(credit, Math.max(0, Math.floor(claim)));
 }

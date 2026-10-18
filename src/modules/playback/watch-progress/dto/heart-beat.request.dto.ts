@@ -8,7 +8,11 @@ export class HeartbeatRequestDto {
   @Min(0)
   positionSeconds: number;
 
-  @ApiPropertyOptional({ example: 12 })
+  /** Advisory: the server credits its own measured window and uses this only to clamp it down. */
+  @ApiPropertyOptional({
+    example: 12,
+    description: 'Watch time since the last beat; may only lower the server-measured credit, never raise it.',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)

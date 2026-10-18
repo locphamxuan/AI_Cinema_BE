@@ -41,7 +41,8 @@ model StreamingSession {
   status               StreamingSessionStatus @default(ACTIVE)
   startPositionSeconds Int                    @default(0) @map("start_position_seconds")
   lastPositionSeconds  Int                    @default(0) @map("last_position_seconds")
-  /// Accumulated watch time; feeds monthly revenue sharing and content analytics.
+  /// Accumulated watch time; feeds monthly revenue sharing and content analytics. Credited
+  /// from the server-measured gap between updates (capped), never from client claims.
   totalWatchedSeconds  Int                    @default(0) @map("total_watched_seconds")
   startedAt            DateTime               @default(now()) @map("started_at") @db.Timestamptz(6)
   lastHeartbeatAt      DateTime               @default(now()) @map("last_heartbeat_at") @db.Timestamptz(6)
