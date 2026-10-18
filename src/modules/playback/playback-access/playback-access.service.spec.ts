@@ -109,6 +109,33 @@ describe('PlaybackAccessService.verify', () => {
       response: expect.objectContaining({ details: expect.objectContaining({ reason: 'PLAYBACK_ACCESS_REQUIRED' }) }),
     });
   });
+
+  it('asks for only the media columns the answer is built from (hardening #14)', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ plan: { code: 'MONTHLY' } });
+
+    await service.verify('ep-1', 'u-1');
+
+    // The studio-only media columns (ai_disclosure JSON, storage_key, failure_reason) no longer
+    // ride back on a query that runs on every session creation.
+    expect(prisma.episode.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          approvedMediaAsset: {
+            select: {
+              id: true,
+              isSelfHosted: true,
+              streamUrl: true,
+              qualities: true,
+              durationSeconds: true,
+              ingestStatus: true,
+              subtitles: { select: { language: true, fileUrl: true, isDefault: true } },
+              aiContentLabel: { select: { labelType: true, labelText: true, displayLocation: true } },
+            },
+          },
+        },
+      }),
+    );
+  });
 });
 
 describe('PlaybackAccessService.stillEntitled', () => {

@@ -40,7 +40,16 @@ export class PlaybackAccessService {
       where: { id: episodeId, ...VISIBLE_EPISODE },
       include: {
         approvedMediaAsset: {
-          include: {
+          // Hardening #14: only the columns the answer is built from. The rest of media_assets
+          // (ai_disclosure JSON, storage_key, failure_reason…) is studio data nothing downstream
+          // reads, and verify() runs on every session creation.
+          select: {
+            id: true,
+            isSelfHosted: true,
+            streamUrl: true,
+            qualities: true,
+            durationSeconds: true,
+            ingestStatus: true,
             subtitles: { select: { language: true, fileUrl: true, isDefault: true } },
             aiContentLabel: { select: { labelType: true, labelText: true, displayLocation: true } },
           },
