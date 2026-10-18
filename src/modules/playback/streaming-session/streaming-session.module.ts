@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { CountingDeviceEligibilityService, DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
@@ -12,7 +13,7 @@ import { StreamingSessionService } from './streaming-session.service';
 
 /** Phase 5 of Main Flow 3: sessions, progress, ads and the expiry sweep. */
 @Module({
-  imports: [PlatformSettingModule, WatchProgressModule, AdBreakModule],
+  imports: [AuditLogModule, PlatformSettingModule, WatchProgressModule, AdBreakModule],
   controllers: [StreamingSessionController],
   providers: [
     PlaybackAccessService,

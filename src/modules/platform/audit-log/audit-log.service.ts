@@ -11,8 +11,8 @@ export interface AuditEntry {
   movieId: string | null;
   /** null for events the system raises on its own (queue worker, scheduler) or a studio raises. */
   actorId: string | null;
-  /** 'STUDIO' for what an outside studio does through its portal link (no account). */
-  actorType?: 'STUDIO';
+  /** 'STUDIO' for a studio on its portal link, 'GUEST' for an unauthenticated viewer: neither has an account. */
+  actorType?: 'STUDIO' | 'GUEST';
   payload?: Record<string, unknown>;
 }
 

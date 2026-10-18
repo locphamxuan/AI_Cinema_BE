@@ -13,12 +13,15 @@ import {
   type StreamingSession,
 } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService, type VerifiedPlayback } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
 import { AdBreakService, type AdScheduleItem } from '../ad-break/ad-break.service';
 import { PlaybackUrlService } from './playback-url.service';
+import { sessionEnded, sessionStarted } from './playback-events';
+import { progressWriteDue, watchCreditSeconds } from './watch-pacing';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
 import { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/session-state.view.dto';
 
@@ -48,20 +51,6 @@ export interface NextEpisodeView {
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Heartbeats run every 10–15s to keep the session alive, but watch_progress is a resume
- * hint, not a liveness signal: one write a minute is plenty. Stop and complete always write.
- */
-export const PROGRESS_WRITE_INTERVAL_MS = 60_000;
-
-const HEARTBEAT_INTERVAL_SECONDS = 15;
-
-/**
- * Watch time one viewing update may credit at most: two beats' worth. Players beat every
- * 10–15s (see HeartbeatRequestDto), so a wider gap is not time the server can vouch for.
- */
-export const MAX_WATCH_CREDIT_SECONDS = 2 * HEARTBEAT_INTERVAL_SECONDS;
-
-/**
  * Main Flow 3: verifies playback access, opens streaming sessions (step 11) and
  * tracks viewing through heartbeats until the viewer stops or finishes (steps
  * 15, 18–21). Guests always start from 0 and keep no progress row.
@@ -76,6 +65,7 @@ export class StreamingSessionService {
     private readonly urls: PlaybackUrlService,
     private readonly progress: WatchProgressService,
     private readonly ads: AdBreakService,
+    private readonly audit: AuditLogService,
   ) {}
 
   async create(input: CreateSessionInput): Promise<StreamingSessionViewDto> {
@@ -137,6 +127,7 @@ export class StreamingSessionService {
                   idempotencyKey: null,
                 },
               });
+              await this.audit.record(sessionEnded(prior, StreamingEndReason.SUPERSEDED), tx);
             } else {
               return { session: prior, reused: true, idempotent: true };
             }
@@ -164,6 +155,7 @@ export class StreamingSessionService {
             where: { id: live.id },
             data: { status: StreamingSessionStatus.ENDED, endReason: StreamingEndReason.SUPERSEDED, endedAt: now },
           });
+          await this.audit.record(sessionEnded(live, StreamingEndReason.SUPERSEDED), tx);
         } else if (live) {
           return { session: live, reused: true, idempotent: false };
         }
@@ -185,6 +177,7 @@ export class StreamingSessionService {
             idempotencyKey: idempotencyKey ?? null,
           },
         });
+        await this.audit.record(sessionStarted(created), tx);
         return { session: created, reused: false, idempotent: false };
       });
     } catch (error) {
@@ -377,6 +370,8 @@ export class StreamingSessionService {
         ...(endReason ? { status: StreamingSessionStatus.ENDED, endReason, endedAt: now } : {}),
       },
     });
+    // Hardening #12: record the close right where it happens — the session row is deleted later.
+    if (endReason) await this.audit.record(sessionEnded(updated, endReason));
     if (writeProgress && session.userId) {
       await this.progress.save(session.userId, session.episodeId, {
         positionSeconds: position,
@@ -475,23 +470,4 @@ export class StreamingSessionService {
       ...(resumePositionSeconds !== null ? { resumePositionSeconds } : {}),
     };
   }
-}
-
-/** True when a heartbeat is allowed to write the resume hint again. */
-function progressWriteDue(session: StreamingSession, now: Date): boolean {
-  const last = session.lastProgressAt;
-  return !last || now.getTime() - last.getTime() >= PROGRESS_WRITE_INTERVAL_MS;
-}
-
-/**
- * Watch time credited for one viewing update: the server-measured gap since the previous
- * update, capped at two heartbeat intervals (a longer gap is not time we can vouch for).
- * The client's claim may only clamp the credit down — an inflated number never adds a
- * second, it is just ignored past the cap.
- */
-function watchCreditSeconds(lastHeartbeatAt: Date, now: Date, claim: number | undefined): number {
-  const elapsed = Math.floor(Math.max(0, now.getTime() - lastHeartbeatAt.getTime()) / 1000);
-  const credit = Math.min(elapsed, MAX_WATCH_CREDIT_SECONDS);
-  if (claim === undefined || !Number.isFinite(claim)) return credit;
-  return Math.min(credit, Math.max(0, Math.floor(claim)));
 }

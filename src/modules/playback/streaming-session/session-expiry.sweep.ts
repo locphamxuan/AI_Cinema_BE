@@ -3,8 +3,10 @@ import { StreamingEndReason, StreamingSessionStatus } from '@prisma/client';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
+import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
+import { sessionEnded } from './playback-events';
 
 const BATCH = 200;
 
@@ -21,6 +23,7 @@ export class SessionExpirySweep implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingService,
     private readonly progress: WatchProgressService,
+    private readonly audit: AuditLogService,
     private readonly queue: JobQueue,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
@@ -55,6 +58,8 @@ export class SessionExpirySweep implements OnModuleInit {
         });
         if (count === 0) continue;
         sessions += 1;
+        // Hardening #12: the row is retention-deleted later; this is the durable record.
+        await this.audit.record(sessionEnded(session, StreamingEndReason.EXPIRED, 'SYSTEM'));
         if (session.userId) {
           // The length was cached on the row at creation; no join back to media_assets.
           const duration = session.durationSeconds;

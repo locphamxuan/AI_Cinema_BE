@@ -1,16 +1,14 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { PlaybackAccessType, Prisma, StreamingSessionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { PlaybackAccessService } from '../playback-access/playback-access.service';
 import type { WatchProgressService } from '../watch-progress/watch-progress.service';
 import type { AdBreakService } from '../ad-break/ad-break.service';
 import type { PlaybackUrlService } from './playback-url.service';
-import {
-  StreamingSessionService,
-  MAX_WATCH_CREDIT_SECONDS,
-  PROGRESS_WRITE_INTERVAL_MS,
-} from './streaming-session.service';
+import { StreamingSessionService } from './streaming-session.service';
+import { MAX_WATCH_CREDIT_SECONDS, PROGRESS_WRITE_INTERVAL_MS } from './watch-pacing';
 
 describe('StreamingSessionService.create', () => {
   const streamingSession = { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
@@ -34,6 +32,7 @@ describe('StreamingSessionService.create', () => {
   const urls = { masterUrl: jest.fn().mockReturnValue('https://api.example/api/playback/s/sess-1/master.m3u8?s=x') };
   const progress = { progress: jest.fn(), save: jest.fn() };
   const ads = { scheduleFor: jest.fn(), scheduleOf: jest.fn() };
+  const audit = { record: jest.fn() };
   const service = new StreamingSessionService(
     prisma as unknown as PrismaService,
     access as unknown as PlaybackAccessService,
@@ -42,6 +41,7 @@ describe('StreamingSessionService.create', () => {
     urls as unknown as PlaybackUrlService,
     progress as unknown as WatchProgressService,
     ads as unknown as AdBreakService,
+    audit as unknown as AuditLogService,
   );
 
   const verified = {
