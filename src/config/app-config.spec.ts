@@ -47,6 +47,12 @@ describe('loadConfig', () => {
     expect(tuned.rateLimit.playbackHeartbeatLimit).toBe(5000);
   });
 
+  it('keeps the signed playback window inside the 30–60 minute hardening range', () => {
+    const config = loadConfig(base);
+    expect(config.playback.urlTtlSeconds).toBe(3600);
+    expect(loadConfig({ ...base, PLAYBACK_URL_TTL_SECONDS: '1800' }).playback.urlTtlSeconds).toBe(1800);
+  });
+
   it('retains finished playback sessions for a window, switchable off', () => {
     const config = loadConfig(base);
     expect(config.playback.sessionRetentionDays).toBe(90);

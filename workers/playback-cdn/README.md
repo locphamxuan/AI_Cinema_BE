@@ -21,7 +21,9 @@ Edge gate between players and MinIO. Verifies the API's signed token
 ## Notes
 
 - Token binds the session, not the path: one token opens master, variants and
-  segments of that asset until `exp` (default 2h, `PLAYBACK_URL_TTL_SECONDS`).
+  segments of that asset until `exp` (default 1h, `PLAYBACK_URL_TTL_SECONDS`).
+  The API re-signs child URLs on every master/variant serve, so active playback
+  slides forward while a leaked link expires within the TTL.
 - Revocation is expiry-based: `POST /sessions/:id/stop` stops the player from
   refreshing, and playlist endpoints re-check the session row on every load.
 - Local dev needs no Worker: `STORAGE_PUBLIC_BASE_URL` points at the API's

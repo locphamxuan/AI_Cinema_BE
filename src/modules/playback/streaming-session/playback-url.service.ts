@@ -35,8 +35,8 @@ interface PlayableAsset {
 interface CachedMasterVariant {
   /** The raw `#EXT-X-STREAM-INF` line, kept byte-for-byte. */
   tag: string;
-  /** Path below the asset folder, e.g. `720p/index.m3u8`. */
-  path: string;
+  /** Rendition folder, e.g. `720p`; the API variant route takes it as the quality. */
+  folder: string;
 }
 
 type CachedVariantLine = { raw: string } | { segment: string };
@@ -55,6 +55,9 @@ export interface PlaybackToken {
  * the variant playlists and every segment of that asset until `exp`. The edge
  * Worker verifies the same token before MinIO is touched; the API re-checks the
  * session row on the playlist endpoints (cheap text responses, not segments).
+ *
+ * P2-2: `exp` is short (default 1h) and every playlist response re-signs its child
+ * URLs, so an active viewer slides forward while a leaked link dies within the TTL.
  */
 @Injectable()
 export class PlaybackUrlService {
@@ -101,10 +104,12 @@ export class PlaybackUrlService {
         details: { reason: 'QUALITY_NOT_ALLOWED', maxQuality },
       });
     }
+    // Sliding expiry: the incoming token only gates this request; children get a fresh one.
+    const signed = { sessionId, ...this.sign(sessionId, asset.id) };
     const lines = ['#EXTM3U'];
     for (const variant of variants) {
-      // Sign per request: the cached shape must never carry another session's token.
-      lines.push(variant.tag, this.cdnUrl(asset.id, variant.path, token));
+      // Variants go through the API so each serve re-checks the session and re-signs segments.
+      lines.push(variant.tag, this.variantUrl(sessionId, variant.folder, signed));
     }
     return { text: lines.join('\n'), maxQuality };
   }
@@ -123,7 +128,9 @@ export class PlaybackUrlService {
     }
     const folder = `${wanted}p`;
     const lines = await this.cached(`variant:${asset.id}:${folder}`, () => this.readVariant(asset, folder));
-    return lines.map((line) => ('segment' in line ? this.cdnUrl(asset.id, line.segment, token) : line.raw)).join('\n');
+    // Sliding expiry: segments are re-signed on every media-playlist load.
+    const signed = { sessionId, ...this.sign(sessionId, asset.id) };
+    return lines.map((line) => ('segment' in line ? this.cdnUrl(asset.id, line.segment, signed) : line.raw)).join('\n');
   }
 
   /** Reads the origin once per (asset, ceiling) and keeps only the variants the plan may see. */
@@ -143,7 +150,7 @@ export class PlaybackUrlService {
       const height = heightByUri.get(absolute) ?? null;
       // Renditions without RESOLUTION stay (never strip the only way to play); known ones filter by ceiling.
       if (height !== null && height > ceiling) continue;
-      allowed.push({ tag: rawLines[i], path: `${folderOf(absolute)}/index.m3u8` });
+      allowed.push({ tag: rawLines[i], folder: folderOf(absolute) });
     }
     return allowed;
   }
@@ -270,6 +277,11 @@ export class PlaybackUrlService {
 
   private hmac(secret: string, sessionId: string, assetId: string, exp: number): string {
     return createHmac('sha256', secret).update(`${sessionId}|${assetId}|${exp}`).digest('hex');
+  }
+
+  /** API-issued variant URL: its response is where segment URLs receive a fresh expiry. */
+  private variantUrl(sessionId: string, quality: string, token: PlaybackToken): string {
+    return `${this.config.apiPublicUrl}/api/playback/s/${sessionId}/renditions/${quality}/index.m3u8?s=${token.sessionId}&exp=${token.exp}&sig=${token.sig}`;
   }
 
   private cdnUrl(assetId: string, path: string, token: PlaybackToken): string {

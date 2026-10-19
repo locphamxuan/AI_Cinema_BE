@@ -13,7 +13,7 @@ const ASSET_ID = 'asset-1';
 const config = {
   apiPublicUrl: 'https://api.example',
   storage: { publicBaseUrl: 'https://cdn.example' },
-  playback: { urlSecret: SECRET, urlTtlSeconds: 7200 },
+  playback: { urlSecret: SECRET, urlTtlSeconds: 3600 },
 } as unknown as AppConfig;
 
 const MASTER = [
@@ -59,6 +59,8 @@ describe('PlaybackUrlService', () => {
     prisma.mediaAsset.findUnique.mockResolvedValue({ id: ASSET_ID, streamUrl: asset.streamUrl, isSelfHosted: true });
     storage.read.mockImplementation((key: string) => Buffer.from(key.endsWith('master.m3u8') ? MASTER : VARIANT));
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it('signs and verifies a token round-trip', async () => {
     const { exp, sig } = service.sign(SESSION_ID, ASSET_ID);
@@ -129,7 +131,44 @@ describe('PlaybackUrlService', () => {
     ]);
 
     expect(storage.read).toHaveBeenCalledTimes(1);
-    expect(first.text).toBe(second.text);
+    // Expiries may differ if the two calls straddle a second boundary; the shape must not.
+    expect(first.text.replace(/[?&]exp=\d+&sig=[0-9a-f]+/g, '')).toBe(
+      second.text.replace(/[?&]exp=\d+&sig=[0-9a-f]+/g, ''),
+    );
+  });
+
+  it('points master variants at the API rendition route so segment signing can slide (P2-2)', async () => {
+    const { text } = await service.masterPlaylist(SESSION_ID, token());
+
+    expect(text).toContain(
+      `https://api.example/api/playback/s/${SESSION_ID}/renditions/720p/index.m3u8?s=${SESSION_ID}&exp=`,
+    );
+    expect(text).toContain('/renditions/360p/index.m3u8');
+    expect(text).not.toContain('https://cdn.example/public/hls/asset-1/720p/index.m3u8');
+  });
+
+  it('re-signs playlist children with a fresh expiry on every serve (P2-2)', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    const inboundExp = 1_700_000_060;
+    const inbound = {
+      sessionId: SESSION_ID,
+      exp: inboundExp,
+      sig: createHmac('sha256', SECRET).update(`${SESSION_ID}|${ASSET_ID}|${inboundExp}`).digest('hex'),
+    };
+
+    const { text: master } = await service.masterPlaylist(SESSION_ID, inbound);
+    const variant = await service.variantPlaylist(SESSION_ID, '720p', inbound);
+
+    const exps = [...`${master}\n${variant}`.matchAll(/[?&]exp=(\d+)/g)].map((match) => Number(match[1]));
+    expect(exps.length).toBeGreaterThan(0);
+    expect(new Set(exps)).toEqual(new Set([1_700_003_600]));
+    expect(Math.min(...exps)).toBeGreaterThan(inboundExp);
+  });
+
+  it('signs the initial master URL with the shortened TTL (P2-2)', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    const url = service.masterUrl(SESSION_ID, { id: ASSET_ID, streamUrl: asset.streamUrl, isSelfHosted: true });
+    expect(url).toContain('exp=1700003600&sig=');
   });
 
   it('serves a repeated rendition from cache instead of re-reading the origin', async () => {
@@ -181,7 +220,7 @@ describe('PlaybackUrlService', () => {
   it('falls back to the direct URL when signing is disabled or the asset is external', () => {
     const off = new PlaybackUrlService(prisma as unknown as PrismaService, storage as unknown as ObjectStorage, {
       ...config,
-      playback: { urlSecret: undefined, urlTtlSeconds: 7200, sessionRetentionDays: 90 },
+      playback: { urlSecret: undefined, urlTtlSeconds: 3600, sessionRetentionDays: 90 },
     });
     expect(off.masterUrl(SESSION_ID, { id: ASSET_ID, streamUrl: asset.streamUrl, isSelfHosted: true })).toBe(
       asset.streamUrl,

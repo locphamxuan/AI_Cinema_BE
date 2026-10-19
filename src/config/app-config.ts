@@ -89,6 +89,11 @@ export interface AppConfig {
    */
   playback: {
     urlSecret?: string;
+    /**
+     * Lifetime of a signed URL. Playlist responses re-sign their child URLs on every serve,
+     * so this bounds a leaked link rather than an actively playing session.
+     * Keep it inside the 30–60 minute window.
+     */
     urlTtlSeconds: number;
     /**
      * MF-3 retention: a session that ended more than this many days ago is deleted by the
@@ -275,7 +280,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
     playback: {
       urlSecret: read.optional('PLAYBACK_URL_SECRET'),
-      urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 7200, 60),
+      urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
   };
