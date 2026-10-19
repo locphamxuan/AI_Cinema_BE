@@ -49,7 +49,18 @@ export async function valid(params, assetId, secret) {
   if (exp * 1000 <= Date.now()) return false;
   if (!secret) return false;
   const expected = await hmacHex(secret, `${sessionId}|${assetId}|${exp}`);
-  return expected === sig;
+  return timingSafeEqual(expected, sig);
+}
+
+/**
+ * P2-3: compare the two fixed-length hex digests in constant time, like the API's
+ * timingSafeEqual, instead of short-circuiting on the first differing character.
+ */
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 async function hmacHex(secret, message) {
