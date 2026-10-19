@@ -35,11 +35,7 @@ describe('PlaybackUrlService', () => {
     mediaAsset: { findUnique: jest.fn() },
   };
   const storage = { read: jest.fn() };
-  const service = new PlaybackUrlService(
-    prisma as unknown as PrismaService,
-    storage as unknown as ObjectStorage,
-    config,
-  );
+  let service: PlaybackUrlService;
 
   const asset = { id: ASSET_ID, streamUrl: `https://cdn.example/public/hls/${ASSET_ID}/master.m3u8` };
   const token = (overrides = {}) => ({
@@ -51,6 +47,8 @@ describe('PlaybackUrlService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // A fresh instance per test keeps the short playlist cache from leaking between cases.
+    service = new PlaybackUrlService(prisma as unknown as PrismaService, storage as unknown as ObjectStorage, config);
     prisma.streamingSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
       status: StreamingSessionStatus.ACTIVE,
@@ -86,6 +84,83 @@ describe('PlaybackUrlService', () => {
 
   it('refuses a rendition above the ceiling (step 14)', async () => {
     await expect(service.variantPlaylist(SESSION_ID, '1080p', token())).rejects.toThrow(ForbiddenException);
+  });
+
+  it('caches the master origin read by asset+ceiling and re-signs each caller’s URLs (P2-1)', async () => {
+    const otherSession = 'sess-2';
+    prisma.streamingSession.findUnique.mockImplementation((args: { where: { id: string } }) =>
+      Promise.resolve({
+        id: args.where.id,
+        status: StreamingSessionStatus.ACTIVE,
+        userId: null,
+        mediaAssetId: ASSET_ID,
+      }),
+    );
+    const otherToken = {
+      sessionId: otherSession,
+      exp: 2000000000,
+      sig: createHmac('sha256', SECRET).update(`${otherSession}|${ASSET_ID}|2000000000`).digest('hex'),
+    };
+
+    const first = await service.masterPlaylist(SESSION_ID, token());
+    const second = await service.masterPlaylist(otherSession, otherToken);
+
+    expect(storage.read).toHaveBeenCalledTimes(1);
+    expect(first.text).toContain(`?s=${SESSION_ID}&exp=`);
+    expect(second.text).toContain(`?s=${otherSession}&exp=`);
+    expect(second.text).not.toContain(`?s=${SESSION_ID}&exp=`);
+  });
+
+  it('keeps a separate cache entry per ceiling', async () => {
+    const uncapped = await service.masterPlaylist(SESSION_ID, token());
+    prisma.subscription.findFirst.mockResolvedValue({ plan: { features: { maxQuality: '360p' } } });
+    const capped = await service.masterPlaylist(SESSION_ID, token());
+
+    expect(storage.read).toHaveBeenCalledTimes(2);
+    expect(uncapped.text).toContain('720p/index.m3u8');
+    expect(capped.text).toContain('360p/index.m3u8');
+    expect(capped.text).not.toContain('720p/index.m3u8');
+  });
+
+  it('shares one origin read across concurrent rendition switches', async () => {
+    const [first, second] = await Promise.all([
+      service.masterPlaylist(SESSION_ID, token()),
+      service.masterPlaylist(SESSION_ID, token()),
+    ]);
+
+    expect(storage.read).toHaveBeenCalledTimes(1);
+    expect(first.text).toBe(second.text);
+  });
+
+  it('serves a repeated rendition from cache instead of re-reading the origin', async () => {
+    await service.variantPlaylist(SESSION_ID, '720p', token());
+    await service.variantPlaylist(SESSION_ID, '720p', token());
+
+    expect(storage.read).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads the origin after the short cache TTL', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      await service.masterPlaylist(SESSION_ID, token());
+      now.mockReturnValue(1_700_000_000_000 + 10_000);
+      await service.masterPlaylist(SESSION_ID, token());
+      expect(storage.read).toHaveBeenCalledTimes(1);
+
+      now.mockReturnValue(1_700_000_000_000 + 15_001);
+      await service.masterPlaylist(SESSION_ID, token());
+      expect(storage.read).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('evicts a failed origin read so the next request retries', async () => {
+    storage.read.mockRejectedValueOnce(new Error('origin down'));
+
+    await expect(service.masterPlaylist(SESSION_ID, token())).rejects.toMatchObject({ name: 'NotFoundException' });
+    await expect(service.masterPlaylist(SESSION_ID, token())).resolves.toBeDefined();
+    expect(storage.read).toHaveBeenCalledTimes(2);
   });
 
   it('rejects a tampered signature and an expired token', async () => {

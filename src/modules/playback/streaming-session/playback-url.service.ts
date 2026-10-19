@@ -19,6 +19,28 @@ export const DEFAULT_MAX_QUALITY = '720p';
 
 const HEIGHT_BY_QUALITY: Record<string, number> = { '360p': 360, '720p': 720, '1080p': 1080 };
 
+/**
+ * P2-1: ABR switches re-read the same origin playlist on every rendition change. Cache the
+ * parsed/rewritten shape for a few seconds — the token and session are still checked on every
+ * request and the signed query is rebuilt per request, so one viewer's token never leaks to another.
+ */
+const PLAYLIST_CACHE_TTL_MS = 15_000;
+const PLAYLIST_CACHE_MAX_ENTRIES = 500;
+
+interface PlayableAsset {
+  id: string;
+  streamUrl: string;
+}
+
+interface CachedMasterVariant {
+  /** The raw `#EXT-X-STREAM-INF` line, kept byte-for-byte. */
+  tag: string;
+  /** Path below the asset folder, e.g. `720p/index.m3u8`. */
+  path: string;
+}
+
+type CachedVariantLine = { raw: string } | { segment: string };
+
 export interface PlaybackToken {
   sessionId: string;
   exp: number;
@@ -36,6 +58,8 @@ export interface PlaybackToken {
  */
 @Injectable()
 export class PlaybackUrlService {
+  private readonly playlistCache = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: ObjectStorage,
@@ -69,30 +93,18 @@ export class PlaybackUrlService {
   async masterPlaylist(sessionId: string, token: PlaybackToken): Promise<{ text: string; maxQuality: string }> {
     const { session, asset } = await this.assertToken(sessionId, token);
     const maxQuality = await this.maxQualityOf(session.userId);
-    const raw = await this.readText(`hls/${asset.id}/master.m3u8`, asset.streamUrl);
-    const variants = parseMasterPlaylist(raw, asset.streamUrl);
     const ceiling = HEIGHT_BY_QUALITY[maxQuality] ?? HEIGHT_BY_QUALITY[DEFAULT_MAX_QUALITY];
-    const heightByUri = new Map(variants.map((variant) => [variant.uri, variant.height]));
-    const lines = ['#EXTM3U'];
-    const rawLines = raw.split('\n');
-    for (let i = 0; i < rawLines.length; i++) {
-      const tag = rawLines[i].trim();
-      if (!tag.startsWith('#EXT-X-STREAM-INF')) continue;
-      const uri = (rawLines[i + 1] ?? '').trim();
-      if (!uri || uri.startsWith('#')) continue;
-      const height = heightByUri.get(new URL(uri, asset.streamUrl).toString()) ?? null;
-      // Renditions without RESOLUTION stay (never strip the only way to play); known ones filter by ceiling.
-      if (height !== null && height > ceiling) continue;
-      lines.push(
-        rawLines[i],
-        this.cdnUrl(asset.id, `${folderOf(new URL(uri, asset.streamUrl).toString())}/index.m3u8`, token),
-      );
-    }
-    if (lines.length === 1) {
+    const variants = await this.cached(`master:${asset.id}:${ceiling}`, () => this.readMaster(asset, ceiling));
+    if (variants.length === 0) {
       throw new ForbiddenException({
         message: 'No rendition is allowed for this plan',
         details: { reason: 'QUALITY_NOT_ALLOWED', maxQuality },
       });
+    }
+    const lines = ['#EXTM3U'];
+    for (const variant of variants) {
+      // Sign per request: the cached shape must never carry another session's token.
+      lines.push(variant.tag, this.cdnUrl(asset.id, variant.path, token));
     }
     return { text: lines.join('\n'), maxQuality };
   }
@@ -110,16 +122,73 @@ export class PlaybackUrlService {
       });
     }
     const folder = `${wanted}p`;
+    const lines = await this.cached(`variant:${asset.id}:${folder}`, () => this.readVariant(asset, folder));
+    return lines.map((line) => ('segment' in line ? this.cdnUrl(asset.id, line.segment, token) : line.raw)).join('\n');
+  }
+
+  /** Reads the origin once per (asset, ceiling) and keeps only the variants the plan may see. */
+  private async readMaster(asset: PlayableAsset, ceiling: number): Promise<CachedMasterVariant[]> {
+    const raw = await this.readText(`hls/${asset.id}/master.m3u8`, asset.streamUrl);
+    const heightByUri = new Map(
+      parseMasterPlaylist(raw, asset.streamUrl).map((variant) => [variant.uri, variant.height]),
+    );
+    const allowed: CachedMasterVariant[] = [];
+    const rawLines = raw.split('\n');
+    for (let i = 0; i < rawLines.length; i++) {
+      const tag = rawLines[i].trim();
+      if (!tag.startsWith('#EXT-X-STREAM-INF')) continue;
+      const uri = (rawLines[i + 1] ?? '').trim();
+      if (!uri || uri.startsWith('#')) continue;
+      const absolute = new URL(uri, asset.streamUrl).toString();
+      const height = heightByUri.get(absolute) ?? null;
+      // Renditions without RESOLUTION stay (never strip the only way to play); known ones filter by ceiling.
+      if (height !== null && height > ceiling) continue;
+      allowed.push({ tag: rawLines[i], path: `${folderOf(absolute)}/index.m3u8` });
+    }
+    return allowed;
+  }
+
+  /** Reads the origin once per (asset, rendition) and keeps each line ready for per-request signing. */
+  private async readVariant(asset: PlayableAsset, folder: string): Promise<CachedVariantLine[]> {
     const raw = await this.readText(`hls/${asset.id}/${folder}/index.m3u8`, asset.streamUrl);
-    return raw
-      .split('\n')
-      .map((line) => {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) return line;
-        const file = trimmed.split('/').pop()!;
-        return this.cdnUrl(asset.id, `${folder}/${file}`, token);
-      })
-      .join('\n');
+    return raw.split('\n').map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return { raw: line };
+      const file = trimmed.split('/').pop()!;
+      return { segment: `${folder}/${file}` };
+    });
+  }
+
+  /**
+   * Short-lived cache keyed by (assetId, ceiling/rendition). In-flight reads share one promise so a
+   * burst of ABR switches does not stampede the origin; failures are evicted so the next request retries.
+   */
+  private cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+    const hit = this.playlistCache.get(key);
+    if (hit && hit.expiresAt > now) return hit.value as Promise<T>;
+    const value = load();
+    this.playlistCache.set(key, { expiresAt: now + PLAYLIST_CACHE_TTL_MS, value });
+    void value.catch(() => {
+      if (this.playlistCache.get(key)?.value === value) this.playlistCache.delete(key);
+    });
+    this.pruneCache(now);
+    return value;
+  }
+
+  private pruneCache(now: number): void {
+    if (this.playlistCache.size <= PLAYLIST_CACHE_MAX_ENTRIES) return;
+    for (const [key, entry] of this.playlistCache) {
+      if (entry.expiresAt <= now) this.playlistCache.delete(key);
+    }
+    // Still full of fresh entries: drop the oldest insertions so memory stays bounded.
+    const overflow = this.playlistCache.size - PLAYLIST_CACHE_MAX_ENTRIES;
+    let removed = 0;
+    for (const key of this.playlistCache.keys()) {
+      if (removed === overflow) break;
+      this.playlistCache.delete(key);
+      removed++;
+    }
   }
 
   /** Ceiling label, e.g. '720p': the running plan's features.maxQuality, else the default. */
@@ -128,7 +197,7 @@ export class PlaybackUrlService {
     const plan = await this.prisma.subscription.findFirst({
       where: runningPlanWhere(userId),
       orderBy: { currentPeriodEnd: 'desc' },
-      include: { plan: { select: { features: true } } },
+      select: { plan: { select: { features: true } } },
     });
     const features = plan?.plan.features as { maxQuality?: unknown } | null;
     const value = features?.maxQuality;
@@ -142,14 +211,20 @@ export class PlaybackUrlService {
         details: { reason: 'PLAYBACK_TOKEN_INVALID' },
       });
     }
-    const session = await this.prisma.streamingSession.findUnique({ where: { id: sessionId } });
+    const session = await this.prisma.streamingSession.findUnique({
+      where: { id: sessionId },
+      select: { userId: true, status: true, mediaAssetId: true },
+    });
     if (!session || session.status !== StreamingSessionStatus.ACTIVE) {
       throw new ForbiddenException({
         message: 'The streaming session is no longer active',
         details: { reason: 'SESSION_NOT_ACTIVE' },
       });
     }
-    const asset = await this.prisma.mediaAsset.findUnique({ where: { id: session.mediaAssetId } });
+    const asset = await this.prisma.mediaAsset.findUnique({
+      where: { id: session.mediaAssetId },
+      select: { id: true, streamUrl: true, isSelfHosted: true },
+    });
     if (!asset?.streamUrl || !asset.isSelfHosted) {
       throw new NotFoundException({
         message: 'The episode has no playable stream',

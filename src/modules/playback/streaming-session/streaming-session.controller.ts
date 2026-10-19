@@ -79,6 +79,8 @@ export class StreamingSessionController {
   @ApiOperation({ summary: 'Filtered master playlist: only renditions at or below the plan ceiling' })
   @ApiProduces('application/vnd.apple.mpegurl')
   @Header('Content-Type', 'application/vnd.apple.mpegurl')
+  // P2-1: ten seconds bounds origin stale-ness while letting the player reuse a rendition switch.
+  @Header('Cache-Control', 'private, max-age=10')
   master(
     @Param('sessionId', ID) sessionId: string,
     @Query('s') s: string,
@@ -92,6 +94,7 @@ export class StreamingSessionController {
   @ApiOperation({ summary: 'Variant playlist with segments rewritten to signed CDN URLs' })
   @ApiProduces('application/vnd.apple.mpegurl')
   @Header('Content-Type', 'application/vnd.apple.mpegurl')
+  @Header('Cache-Control', 'private, max-age=10')
   rendition(
     @Param('sessionId', ID) sessionId: string,
     @Param('quality') quality: string,
