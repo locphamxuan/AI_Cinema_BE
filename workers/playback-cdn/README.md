@@ -11,12 +11,14 @@ Edge gate between players and MinIO. Verifies the API's signed token
 3. Add the `routes` line for the CDN domain (= API `STORAGE_PUBLIC_BASE_URL`).
 4. `wrangler deploy`.
 
-## Test vector (mirrors `playback-url.service.spec.ts`)
+## Test vector
 
-- secret `test-secret`, message `sess-1|asset-1|2000000000`
-- `node -e "console.log(require('crypto').createHmac('sha256','test-secret').update('sess-1|asset-1|2000000000').digest('hex'))"`
+- secret `test-secret`, message `sess-1|00000000-0000-4000-8000-000000000001|2000000000`
+- `node -e "console.log(require('crypto').createHmac('sha256','test-secret').update('sess-1|00000000-0000-4000-8000-000000000001|2000000000').digest('hex'))"`
+  → `cda353ff69ce01510989fad924a2a432cf96f82d1f71cd0af1d2b7217ae07b9c`
 - The Worker must accept `?s=sess-1&exp=2000000000&sig=<that hex>` on
-  `/public/hls/asset-1/720p/index.m3u8` and 403 anything tampered or expired.
+  `/public/hls/00000000-0000-4000-8000-000000000001/720p/index.m3u8`, 403
+  anything tampered/expired, and 404 a non-UUID asset id.
 
 ## Notes
 
@@ -26,5 +28,9 @@ Edge gate between players and MinIO. Verifies the API's signed token
   slides forward while a leaked link expires within the TTL.
 - Revocation is expiry-based: `POST /sessions/:id/stop` stops the player from
   refreshing, and playlist endpoints re-check the session row on every load.
+- P2-4: the third path segment must be a UUID; `Range` (and `If-Range`) pass
+  through and 206 bodies bypass the cache; origin 5xx stays visible (fetch
+  failures become 502); responses carry `Access-Control-Allow-Origin: *` for
+  future browser players.
 - Local dev needs no Worker: `STORAGE_PUBLIC_BASE_URL` points at the API's
   `/media` and the static server ignores the query string.
