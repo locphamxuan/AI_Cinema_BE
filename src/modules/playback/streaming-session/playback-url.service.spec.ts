@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import { StreamingSessionStatus } from '@prisma/client';
 import { createHmac } from 'node:crypto';
 import type { AppConfig } from 'src/config/app-config';
@@ -200,6 +200,25 @@ describe('PlaybackUrlService', () => {
     await expect(service.masterPlaylist(SESSION_ID, token())).rejects.toMatchObject({ name: 'NotFoundException' });
     await expect(service.masterPlaylist(SESSION_ID, token())).resolves.toBeDefined();
     expect(storage.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs the origin failure before mapping it to MEDIA_NOT_READY (P2-5)', async () => {
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const denied = Object.assign(new Error('Access Denied'), {
+      name: 'AccessDenied',
+      code: 'AccessDenied',
+      $metadata: { httpStatusCode: 403 },
+    });
+    storage.read.mockRejectedValueOnce(denied);
+
+    await expect(service.masterPlaylist(SESSION_ID, token())).rejects.toMatchObject({
+      response: expect.objectContaining({ details: expect.objectContaining({ reason: 'MEDIA_NOT_READY' }) }),
+    });
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringContaining(`Failed to read playlist hls/${ASSET_ID}/master.m3u8`),
+      expect.stringContaining('Access Denied'),
+    );
+    expect(logged.mock.calls[0][0]).toContain('code=AccessDenied http=403');
   });
 
   it('rejects a tampered signature and an expired token', async () => {

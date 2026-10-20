@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -61,6 +62,7 @@ export interface PlaybackToken {
  */
 @Injectable()
 export class PlaybackUrlService {
+  private readonly logger = new Logger(PlaybackUrlService.name);
   private readonly playlistCache = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
 
   constructor(
@@ -292,13 +294,29 @@ export class PlaybackUrlService {
   private async readText(key: string, streamUrl: string): Promise<string> {
     try {
       return (await this.storage.read(key, 'public')).toString('utf8');
-    } catch {
+    } catch (error) {
+      // P2-5: keep the origin failure visible. A wrong bucket, revoked credentials or a timeout
+      // is not "media not ready", and mapping it to 404 without this line leaves ops blind.
+      this.logger.error(
+        `Failed to read playlist ${key} from origin: ${describeStorageError(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       throw new NotFoundException({
         message: 'The playlist is not ready yet',
         details: { reason: 'MEDIA_NOT_READY', streamUrl },
       });
     }
   }
+}
+
+/** Error name plus the S3 error code / HTTP status when present, so logs separate 404 from 403/5xx. */
+function describeStorageError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const { code, $metadata } = error as { code?: unknown; $metadata?: { httpStatusCode?: unknown } };
+  const parts = [error.name];
+  if (typeof code === 'string' || typeof code === 'number') parts.push(`code=${code}`);
+  if (typeof $metadata?.httpStatusCode === 'number') parts.push(`http=${$metadata.httpStatusCode}`);
+  return `${parts.join(' ')}: ${error.message}`;
 }
 
 /** Last path segment's folder, e.g. `.../720p/index.m3u8` -> `720p`. */
