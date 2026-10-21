@@ -29,6 +29,16 @@ const MASTER = [
 
 const VARIANT = ['#EXTM3U', '#EXT-X-TARGETDURATION:4', '#EXTINF:4.0,', 'seg_000.ts', '#EXT-X-ENDLIST'].join('\n');
 
+const FMP4_VARIANT = [
+  '#EXTM3U',
+  '#EXT-X-VERSION:7',
+  '#EXT-X-TARGETDURATION:4',
+  '#EXT-X-MAP:URI="init.mp4",BYTERANGE="812@0"',
+  '#EXTINF:4.0,',
+  'segments/seg_000.m4s?token=abc',
+  '#EXT-X-ENDLIST',
+].join('\n');
+
 describe('PlaybackUrlService', () => {
   const prisma = {
     streamingSession: { findUnique: jest.fn() },
@@ -83,6 +93,36 @@ describe('PlaybackUrlService', () => {
     const text = await service.variantPlaylist(SESSION_ID, '720p', token());
     expect(text).toContain(`https://cdn.example/public/hls/${ASSET_ID}/720p/seg_000.ts?s=${SESSION_ID}&exp=`);
     expect(text).toContain('#EXT-X-ENDLIST');
+  });
+
+  it('signs the fMP4 #EXT-X-MAP init segment and keeps queries and sub-folders intact (P2-8)', async () => {
+    storage.read.mockResolvedValueOnce(Buffer.from(FMP4_VARIANT));
+
+    const text = await service.variantPlaylist(SESSION_ID, '720p', token());
+
+    expect(text).toMatch(
+      new RegExp(
+        `^#EXT-X-MAP:URI="https://cdn\\.example/public/hls/${ASSET_ID}/720p/init\\.mp4\\?s=${SESSION_ID}&exp=\\d+&sig=[0-9a-f]{64}",BYTERANGE="812@0"$`,
+        'm',
+      ),
+    );
+    expect(text).toContain(
+      `https://cdn.example/public/hls/${ASSET_ID}/720p/segments/seg_000.m4s?token=abc&s=${SESSION_ID}&exp=`,
+    );
+    expect(text).not.toContain('URI="init.mp4"');
+    expect(text).not.toContain('.m4s?token=abc?s=');
+  });
+
+  it('answers 502 when a rendition URI cannot be parsed (P2-8)', async () => {
+    storage.read.mockResolvedValueOnce(Buffer.from(['#EXTM3U', 'http://[broken'].join('\n')));
+
+    await expect(service.variantPlaylist(SESSION_ID, '720p', token())).rejects.toMatchObject({
+      name: 'BadGatewayException',
+      response: expect.objectContaining({
+        message: 'The rendition playlist is invalid',
+        details: expect.objectContaining({ reason: 'MEDIA_PLAYLIST_INVALID' }),
+      }),
+    });
   });
 
   it('refuses a rendition above the ceiling (step 14)', async () => {

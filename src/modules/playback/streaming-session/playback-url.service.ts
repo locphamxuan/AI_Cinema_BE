@@ -40,7 +40,18 @@ interface CachedMasterVariant {
   folder: string;
 }
 
-type CachedVariantLine = { raw: string } | { segment: string };
+interface PlaylistUri {
+  /** Object path relative to the asset folder, e.g. `720p/seg_000.ts`. */
+  path: string;
+  /** Query exactly as written, e.g. `?token=abc`; empty when the playlist had none. */
+  search: string;
+}
+
+type CachedVariantLine =
+  | { kind: 'raw'; line: string }
+  | { kind: 'segment'; uri: PlaylistUri }
+  /** A URI-bearing tag such as `#EXT-X-MAP`; the signed URL replaces the placeholder at render time. */
+  | { kind: 'tag'; prefix: string; suffix: string; uri: PlaylistUri };
 
 export interface PlaybackToken {
   sessionId: string;
@@ -132,7 +143,18 @@ export class PlaybackUrlService {
     const lines = await this.cached(`variant:${asset.id}:${folder}`, () => this.readVariant(asset, folder));
     // Sliding expiry: segments are re-signed on every media-playlist load.
     const signed = { sessionId, ...this.sign(sessionId, asset.id) };
-    return lines.map((line) => ('segment' in line ? this.cdnUrl(asset.id, line.segment, signed) : line.raw)).join('\n');
+    return lines
+      .map((line) => {
+        switch (line.kind) {
+          case 'raw':
+            return line.line;
+          case 'segment':
+            return this.cdnUrl(asset.id, line.uri, signed);
+          case 'tag':
+            return `${line.prefix}${this.cdnUrl(asset.id, line.uri, signed)}${line.suffix}`;
+        }
+      })
+      .join('\n');
   }
 
   /** Reads the origin once per (asset, ceiling) and keeps only the variants the plan may see. */
@@ -143,14 +165,7 @@ export class PlaybackUrlService {
     } catch (error) {
       // P2-6: a corrupt playlist is an origin/transcode fault, not a bad request and not a 500.
       // Log the parse error, then answer 502 so the player and ops see a broken upstream.
-      this.logger.error(
-        `Invalid master playlist hls/${asset.id}/master.m3u8: ${describeError(error)}`,
-        error instanceof Error ? error.stack : undefined,
-      );
-      throw new BadGatewayException({
-        message: 'The master playlist is invalid',
-        details: { reason: 'MEDIA_PLAYLIST_INVALID' },
-      });
+      return this.invalidPlaylist(`hls/${asset.id}/master.m3u8`, 'The master playlist is invalid', error);
     }
   }
 
@@ -175,15 +190,34 @@ export class PlaybackUrlService {
     return allowed;
   }
 
-  /** Reads the origin once per (asset, rendition) and keeps each line ready for per-request signing. */
+  /**
+   * Reads the origin once per (asset, rendition) and keeps each line ready for per-request signing.
+   * URIs are resolved against the playlist so query strings and sub-folders survive, and the
+   * fMP4 `#EXT-X-MAP` init segment is rewritten like a segment instead of leaking a relative URL.
+   */
   private async readVariant(asset: PlayableAsset, folder: string): Promise<CachedVariantLine[]> {
-    const raw = await this.readText(`hls/${asset.id}/${folder}/index.m3u8`, asset.streamUrl);
-    return raw.split('\n').map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return { raw: line };
-      const file = trimmed.split('/').pop()!;
-      return { segment: `${folder}/${file}` };
-    });
+    const key = `hls/${asset.id}/${folder}/index.m3u8`;
+    const raw = await this.readText(key, asset.streamUrl);
+    try {
+      const playlistUrl = new URL(`${folder}/index.m3u8`, asset.streamUrl);
+      const assetRoot = new URL('.', asset.streamUrl);
+      const uriOf = (uri: string): PlaylistUri | null => {
+        const resolved = new URL(uri, playlistUrl);
+        // Only objects under this asset are ours to sign; anything else stays exactly as written.
+        if (resolved.origin !== assetRoot.origin || !resolved.pathname.startsWith(assetRoot.pathname)) return null;
+        return { path: resolved.pathname.slice(assetRoot.pathname.length), search: resolved.search };
+      };
+      return raw.split('\n').map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return { kind: 'raw', line };
+        if (trimmed.startsWith('#')) return mapUriTag(line, uriOf);
+        const uri = uriOf(trimmed);
+        return uri ? { kind: 'segment', uri } : { kind: 'raw', line };
+      });
+    } catch (error) {
+      // Same contract as the master: a malformed rendition playlist is a bad upstream, not a 500.
+      return this.invalidPlaylist(key, 'The rendition playlist is invalid', error);
+    }
   }
 
   /**
@@ -310,9 +344,23 @@ export class PlaybackUrlService {
     return `${this.config.apiPublicUrl}/api/playback/s/${sessionId}/renditions/${quality}/index.m3u8?s=${token.sessionId}&exp=${token.exp}&sig=${token.sig}`;
   }
 
-  private cdnUrl(assetId: string, path: string, token: PlaybackToken): string {
+  private cdnUrl(assetId: string, uri: PlaylistUri, token: PlaybackToken): string {
     const base = this.config.storage.publicBaseUrl;
-    return `${base}/public/hls/${assetId}/${path}?s=${token.sessionId}&exp=${token.exp}&sig=${token.sig}`;
+    // Keep the playlist's own query; ours joins it instead of starting a second one.
+    const separator = uri.search ? '&' : '?';
+    return `${base}/public/hls/${assetId}/${uri.path}${uri.search}${separator}s=${token.sessionId}&exp=${token.exp}&sig=${token.sig}`;
+  }
+
+  /** Logs a playlist parse failure and answers 502: the object exists but cannot be played. */
+  private invalidPlaylist(key: string, message: string, error: unknown): never {
+    this.logger.error(
+      `Invalid playlist ${key}: ${describeError(error)}`,
+      error instanceof Error ? error.stack : undefined,
+    );
+    throw new BadGatewayException({
+      message,
+      details: { reason: 'MEDIA_PLAYLIST_INVALID' },
+    });
   }
 
   private async readText(key: string, streamUrl: string): Promise<string> {
@@ -347,4 +395,29 @@ function describeError(error: unknown): string {
 function folderOf(uri: string): string {
   const parts = new URL(uri).pathname.split('/').filter(Boolean);
   return parts.length >= 2 ? parts[parts.length - 2] : 'source';
+}
+
+/**
+ * P2-8: rewrites the URI attribute of `#EXT-X-MAP` (the fMP4 init segment), keeping any
+ * BYTERANGE and the rest of the tag intact. Other tags stay raw so signing never mangles
+ * something that is not a media object of this asset.
+ */
+function mapUriTag(line: string, uriOf: (uri: string) => PlaylistUri | null): CachedVariantLine {
+  const tagStart = line.indexOf('#');
+  if (tagStart < 0) return { kind: 'raw', line };
+  const tag = line.slice(tagStart);
+  if (!tag.startsWith('#EXT-X-MAP:')) return { kind: 'raw', line };
+  const match = /URI=("[^"]*"|[^,]*)/.exec(tag);
+  if (!match) return { kind: 'raw', line };
+  const value = match[1];
+  const quoted = value.startsWith('"');
+  const uri = uriOf(quoted ? value.slice(1, -1) : value);
+  if (!uri) return { kind: 'raw', line };
+  const valueStart = tagStart + match.index + 'URI='.length;
+  return {
+    kind: 'tag',
+    prefix: line.slice(0, valueStart + (quoted ? 1 : 0)),
+    suffix: line.slice(valueStart + value.length - (quoted ? 1 : 0)),
+    uri,
+  };
 }
