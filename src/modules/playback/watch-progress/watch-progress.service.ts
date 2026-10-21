@@ -1,8 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { HistoryItemDto } from 'src/modules/playback/watch-progress/dto/history-item.dto';
 import { ProgressViewDto } from 'src/modules/playback/watch-progress/dto/progress.view.dto';
+
+interface ProgressSaveInput {
+  positionSeconds: number;
+  durationSeconds: number | null;
+  completed: boolean;
+  at: Date;
+}
 
 /**
  * Saved resume positions (flow 3, steps 8–10, 20): one row per (member, episode).
@@ -40,15 +48,14 @@ export class WatchProgressService {
   }
 
   /** Persist one viewing update; called by heartbeats, stops and completions. */
-  async save(
-    userId: string,
-    episodeId: string,
-    input: { positionSeconds: number; durationSeconds: number | null; completed: boolean; at: Date },
-  ): Promise<void> {
-    const existing = await this.prisma.watchProgress.findUnique({
-      where: { userId_episodeId: { userId, episodeId } },
-    });
-    if (!existing) {
+  async save(userId: string, episodeId: string, input: ProgressSaveInput): Promise<void> {
+    const where = { userId_episodeId: { userId, episodeId } };
+    const existing = await this.prisma.watchProgress.findUnique({ where });
+    if (existing) {
+      await this.applyUpdate(existing, input);
+      return;
+    }
+    try {
       await this.prisma.watchProgress.create({
         data: {
           userId,
@@ -60,8 +67,20 @@ export class WatchProgressService {
           lastWatchedAt: input.at,
         },
       });
-      return;
+    } catch (error) {
+      // P3-1: two tabs can both miss the row and race the insert. The loser re-reads the row the
+      // winner created and applies its update to it, instead of surfacing P2002 as a 500.
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
+      const winner = await this.prisma.watchProgress.findUnique({ where });
+      if (!winner) throw error;
+      await this.applyUpdate(winner, input);
     }
+  }
+
+  private async applyUpdate(
+    existing: { id: string; completed: boolean; completedAt: Date | null },
+    input: ProgressSaveInput,
+  ): Promise<void> {
     await this.prisma.watchProgress.update({
       where: { id: existing.id },
       data: {
