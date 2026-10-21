@@ -15,11 +15,10 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
 import { parseMasterPlaylist } from 'src/modules/production/media-ingest/hls/hls-playlist';
+import { HLS_LADDER, qualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
 
 /** Guests and plan-less members cap here; a plan may raise it via features.maxQuality. */
 export const DEFAULT_MAX_QUALITY = '720p';
-
-const HEIGHT_BY_QUALITY: Record<string, number> = { '360p': 360, '720p': 720, '1080p': 1080 };
 
 /**
  * P2-1: ABR switches re-read the same origin playlist on every rendition change. Cache the
@@ -99,7 +98,7 @@ export class PlaybackUrlService {
   async masterPlaylist(sessionId: string, token: PlaybackToken): Promise<{ text: string; maxQuality: string }> {
     const { session, asset } = await this.assertToken(sessionId, token);
     const maxQuality = await this.maxQualityOf(session.userId);
-    const ceiling = HEIGHT_BY_QUALITY[maxQuality] ?? HEIGHT_BY_QUALITY[DEFAULT_MAX_QUALITY];
+    const ceiling = this.ceilingOf(maxQuality);
     const variants = await this.cached(`master:${asset.id}:${ceiling}`, () => this.readMaster(asset, ceiling));
     if (variants.length === 0) {
       throw new ForbiddenException({
@@ -121,15 +120,15 @@ export class PlaybackUrlService {
   async variantPlaylist(sessionId: string, quality: string, token: PlaybackToken): Promise<string> {
     const { session, asset } = await this.assertToken(sessionId, token);
     const maxQuality = await this.maxQualityOf(session.userId);
-    const ceiling = HEIGHT_BY_QUALITY[maxQuality] ?? HEIGHT_BY_QUALITY[DEFAULT_MAX_QUALITY];
-    const wanted = HEIGHT_BY_QUALITY[quality];
-    if (!wanted || wanted > ceiling) {
+    const ceiling = this.ceilingOf(maxQuality);
+    const rung = qualityRung(quality);
+    if (!rung || rung.height > ceiling) {
       throw new ForbiddenException({
         message: 'This rendition is not allowed for this plan',
         details: { reason: 'QUALITY_NOT_ALLOWED', maxQuality },
       });
     }
-    const folder = `${wanted}p`;
+    const folder = rung.name;
     const lines = await this.cached(`variant:${asset.id}:${folder}`, () => this.readVariant(asset, folder));
     // Sliding expiry: segments are re-signed on every media-playlist load.
     const signed = { sessionId, ...this.sign(sessionId, asset.id) };
@@ -229,7 +228,13 @@ export class PlaybackUrlService {
     });
     const features = plan?.plan.features as { maxQuality?: unknown } | null;
     const value = features?.maxQuality;
-    return typeof value === 'string' && HEIGHT_BY_QUALITY[value] ? value : DEFAULT_MAX_QUALITY;
+    // P2-7: labels come from the pipeline's ladder, so a newly encoded rendition is allowed here too.
+    return typeof value === 'string' && qualityRung(value) ? value : DEFAULT_MAX_QUALITY;
+  }
+
+  /** Pixel ceiling of a plan label; the default keeps an unknown or removed label from locking playback. */
+  private ceilingOf(maxQuality: string): number {
+    return (qualityRung(maxQuality) ?? qualityRung(DEFAULT_MAX_QUALITY) ?? HLS_LADDER[HLS_LADDER.length - 1]).height;
   }
 
   private async assertToken(sessionId: string, token: PlaybackToken) {

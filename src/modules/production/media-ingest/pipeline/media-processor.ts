@@ -1,13 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
-
-/** The HLS ladder of LI-02, highest first: output height, video and audio bitrate. */
-const HLS_LADDER = [
-  { name: '1080p', height: 1080, bitrate: '5000k' },
-  { name: '720p', height: 720, bitrate: '2800k' },
-  { name: '360p', height: 360, bitrate: '800k' },
-];
+import { HLS_LADDER } from '../hls/quality-ladder';
 
 const SEGMENT_SECONDS = 4;
 

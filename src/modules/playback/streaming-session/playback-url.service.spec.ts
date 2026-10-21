@@ -4,6 +4,7 @@ import { createHmac } from 'node:crypto';
 import type { AppConfig } from 'src/config/app-config';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { ObjectStorage } from 'src/infrastructure/storage/object-storage';
+import { HLS_LADDER, type QualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
 import { DEFAULT_MAX_QUALITY, PlaybackUrlService } from './playback-url.service';
 
 const SECRET = 'test-secret';
@@ -86,6 +87,20 @@ describe('PlaybackUrlService', () => {
 
   it('refuses a rendition above the ceiling (step 14)', async () => {
     await expect(service.variantPlaylist(SESSION_ID, '1080p', token())).rejects.toThrow(ForbiddenException);
+  });
+
+  it('routes a rendition added to the shared ladder without touching playback code (P2-7)', async () => {
+    const added: QualityRung = { name: '480p', height: 480, bitrate: '1400k' };
+    (HLS_LADDER as QualityRung[]).push(added);
+    try {
+      prisma.subscription.findFirst.mockResolvedValue({ plan: { features: { maxQuality: '480p' } } });
+
+      const text = await service.variantPlaylist(SESSION_ID, '480p', token());
+
+      expect(text).toContain(`https://cdn.example/public/hls/${ASSET_ID}/480p/seg_000.ts?s=${SESSION_ID}&exp=`);
+    } finally {
+      (HLS_LADDER as QualityRung[]).pop();
+    }
   });
 
   it('caches the master origin read by asset+ceiling and re-signs each caller’s URLs (P2-1)', async () => {
