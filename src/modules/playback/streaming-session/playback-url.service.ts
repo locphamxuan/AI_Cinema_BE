@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
   Inject,
@@ -138,6 +139,24 @@ export class PlaybackUrlService {
   /** Reads the origin once per (asset, ceiling) and keeps only the variants the plan may see. */
   private async readMaster(asset: PlayableAsset, ceiling: number): Promise<CachedMasterVariant[]> {
     const raw = await this.readText(`hls/${asset.id}/master.m3u8`, asset.streamUrl);
+    try {
+      return this.selectVariants(raw, asset, ceiling);
+    } catch (error) {
+      // P2-6: a corrupt playlist is an origin/transcode fault, not a bad request and not a 500.
+      // Log the parse error, then answer 502 so the player and ops see a broken upstream.
+      this.logger.error(
+        `Invalid master playlist hls/${asset.id}/master.m3u8: ${describeError(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new BadGatewayException({
+        message: 'The master playlist is invalid',
+        details: { reason: 'MEDIA_PLAYLIST_INVALID' },
+      });
+    }
+  }
+
+  /** Parses a master playlist and keeps every rendition at or below the plan ceiling. */
+  private selectVariants(raw: string, asset: PlayableAsset, ceiling: number): CachedMasterVariant[] {
     const heightByUri = new Map(
       parseMasterPlaylist(raw, asset.streamUrl).map((variant) => [variant.uri, variant.height]),
     );
@@ -298,7 +317,7 @@ export class PlaybackUrlService {
       // P2-5: keep the origin failure visible. A wrong bucket, revoked credentials or a timeout
       // is not "media not ready", and mapping it to 404 without this line leaves ops blind.
       this.logger.error(
-        `Failed to read playlist ${key} from origin: ${describeStorageError(error)}`,
+        `Failed to read playlist ${key} from origin: ${describeError(error)}`,
         error instanceof Error ? error.stack : undefined,
       );
       throw new NotFoundException({
@@ -309,8 +328,8 @@ export class PlaybackUrlService {
   }
 }
 
-/** Error name plus the S3 error code / HTTP status when present, so logs separate 404 from 403/5xx. */
-function describeStorageError(error: unknown): string {
+/** Error name plus the S3 error code / HTTP status when present, so logs separate 404, 403/5xx and bad playlists. */
+function describeError(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
   const { code, $metadata } = error as { code?: unknown; $metadata?: { httpStatusCode?: unknown } };
   const parts = [error.name];

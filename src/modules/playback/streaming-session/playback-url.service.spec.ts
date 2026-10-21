@@ -221,6 +221,28 @@ describe('PlaybackUrlService', () => {
     expect(logged.mock.calls[0][0]).toContain('code=AccessDenied http=403');
   });
 
+  it('answers 502, not 500, when the origin master playlist is corrupt (P2-6)', async () => {
+    storage.read.mockImplementationOnce(() => Buffer.from('<html><body>Access denied</body></html>'));
+
+    await expect(service.masterPlaylist(SESSION_ID, token())).rejects.toMatchObject({
+      name: 'BadGatewayException',
+      response: expect.objectContaining({
+        message: 'The master playlist is invalid',
+        details: expect.objectContaining({ reason: 'MEDIA_PLAYLIST_INVALID' }),
+      }),
+    });
+  });
+
+  it('answers 502 when a variant URI in the master playlist is malformed (P2-6)', async () => {
+    storage.read.mockImplementationOnce(() =>
+      Buffer.from(['#EXTM3U', '#EXT-X-STREAM-INF:BANDWIDTH=800000', 'http://[broken'].join('\n')),
+    );
+
+    await expect(service.masterPlaylist(SESSION_ID, token())).rejects.toMatchObject({
+      name: 'BadGatewayException',
+    });
+  });
+
   it('rejects a tampered signature and an expired token', async () => {
     await expect(service.masterPlaylist(SESSION_ID, token({ sig: `0${token().sig.slice(1)}` }))).rejects.toThrow(
       ForbiddenException,
