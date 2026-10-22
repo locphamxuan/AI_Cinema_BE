@@ -99,6 +99,9 @@ export class WatchProgressService {
   async history(userId: string, query: PaginateQuery) {
     const page = await paginate(query, this.prisma.watchProgress, {
       where: { userId },
+      // P3-5: the page only needs these columns; the rest of the row never leaves the database.
+      // `id` stays because the paginator builds its cursor links from it.
+      select: ['id', 'positionSeconds', 'durationSeconds', 'completed', 'lastWatchedAt'],
       relations: {
         episode: {
           select: {

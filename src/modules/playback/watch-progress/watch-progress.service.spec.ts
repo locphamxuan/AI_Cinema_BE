@@ -1,9 +1,13 @@
+import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { EpisodeStatus, Prisma } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { REMOVED_NOTICE, REVISION_NOTICE } from 'src/modules/catalog/episode-visibility';
 import { historyItem, WatchProgressService } from './watch-progress.service';
 
+jest.mock('@nestarc/pagination', () => ({ paginate: jest.fn() }));
+
 describe('WatchProgressService', () => {
+  const paginateMock = paginate as jest.MockedFunction<typeof paginate>;
   const prisma = {
     watchProgress: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
   };
@@ -102,6 +106,37 @@ describe('WatchProgressService', () => {
       service.save('u-1', 'ep-1', { positionSeconds: 10, durationSeconds: 1200, completed: false, at: new Date() }),
     ).rejects.toThrow('database is down');
     expect(prisma.watchProgress.update).not.toHaveBeenCalled();
+  });
+
+  describe('history query (P3-5)', () => {
+    it('selects only the columns the page reads', async () => {
+      paginateMock.mockResolvedValueOnce({ data: [] } as never);
+
+      await service.history('u-1', {} as PaginateQuery);
+
+      expect(paginateMock).toHaveBeenCalledWith(
+        {},
+        prisma.watchProgress,
+        expect.objectContaining({
+          where: { userId: 'u-1' },
+          select: ['id', 'positionSeconds', 'durationSeconds', 'completed', 'lastWatchedAt'],
+          relations: {
+            episode: {
+              select: {
+                id: true,
+                title: true,
+                episodeNumber: true,
+                thumbnailUrl: true,
+                movieId: true,
+                status: true,
+                revisionStartedAt: true,
+                movie: { select: { title: true } },
+              },
+            },
+          },
+        }),
+      );
+    });
   });
 
   describe('history availability (P3-4)', () => {
