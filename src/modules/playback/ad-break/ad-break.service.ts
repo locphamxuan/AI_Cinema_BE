@@ -51,19 +51,16 @@ export class AdBreakService {
     const positions = spreadPositions(duration, count);
     const picks = weightedOrder(eligible).slice(0, positions.length);
     // Fewer distinct ads than cues: cycle the order instead of inventing cues.
-    const rows = await Promise.all(
-      positions.map((positionSeconds, i) =>
-        this.prisma.sessionAdBreak.create({
-          data: {
-            streamingSessionId: sessionId,
-            adId: picks[i % picks.length].id,
-            positionSeconds,
-          },
-          include: { ad: true },
-        }),
-      ),
-    );
-    return rows.map(scheduleItem);
+    const data = positions.map((positionSeconds, i) => ({
+      streamingSessionId: sessionId,
+      adId: picks[i % picks.length].id,
+      positionSeconds,
+    }));
+    // P4-1: one INSERT is atomic, so a mid-way failure can never leave half a schedule.
+    // skipDuplicates makes a concurrent double-schedule reuse the cues already laid
+    // instead of answering the whole POST /sessions with a unique-constraint 500.
+    await this.prisma.sessionAdBreak.createMany({ data, skipDuplicates: true });
+    return this.scheduleOf(sessionId);
   }
 
   /** Cues already laid for a session, e.g. when a double tap reuses it. */
