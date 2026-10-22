@@ -29,6 +29,19 @@ export class HistoryItemDto {
   @ApiProperty({ example: false })
   completed: boolean;
 
+  @ApiProperty({
+    example: true,
+    description: 'False when the episode was taken down; the row stays in history but must not be opened.',
+  })
+  available: boolean;
+
+  @ApiProperty({
+    example: null,
+    nullable: true,
+    description: 'Why the row cannot be opened when available is false (under revision or removed).',
+  })
+  notice: string | null;
+
   @ApiProperty({ example: '2026-10-15T10:00:00.000Z', nullable: true })
   lastWatchedAt: Date | null;
 }

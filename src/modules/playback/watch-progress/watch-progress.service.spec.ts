@@ -1,6 +1,7 @@
-import { Prisma } from '@prisma/client';
+import { EpisodeStatus, Prisma } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { WatchProgressService } from './watch-progress.service';
+import { REMOVED_NOTICE, REVISION_NOTICE } from 'src/modules/catalog/episode-visibility';
+import { historyItem, WatchProgressService } from './watch-progress.service';
 
 describe('WatchProgressService', () => {
   const prisma = {
@@ -101,5 +102,42 @@ describe('WatchProgressService', () => {
       service.save('u-1', 'ep-1', { positionSeconds: 10, durationSeconds: 1200, completed: false, at: new Date() }),
     ).rejects.toThrow('database is down');
     expect(prisma.watchProgress.update).not.toHaveBeenCalled();
+  });
+
+  describe('history availability (P3-4)', () => {
+    const row = (overrides: { status?: EpisodeStatus; revisionStartedAt?: Date | null } = {}) => ({
+      positionSeconds: 320,
+      durationSeconds: 1200,
+      completed: false,
+      lastWatchedAt: new Date('2026-10-15T10:00:00.000Z'),
+      episode: {
+        id: 'ep-1',
+        title: 'Tập 1',
+        episodeNumber: 1,
+        thumbnailUrl: null,
+        movieId: 'm-1',
+        status: overrides.status ?? EpisodeStatus.PUBLISHED,
+        revisionStartedAt: overrides.revisionStartedAt ?? null,
+        movie: { title: 'Phim' },
+      },
+    });
+
+    it('leaves a published episode openable', () => {
+      expect(historyItem(row())).toMatchObject({ available: true, notice: null });
+    });
+
+    it('flags an episode under revision with the maintenance notice', () => {
+      expect(historyItem(row({ revisionStartedAt: new Date() }))).toMatchObject({
+        available: false,
+        notice: REVISION_NOTICE,
+      });
+    });
+
+    it('flags an episode taken down for good as removed', () => {
+      expect(historyItem(row({ status: EpisodeStatus.UNPUBLISHED }))).toMatchObject({
+        available: false,
+        notice: REMOVED_NOTICE,
+      });
+    });
   });
 });

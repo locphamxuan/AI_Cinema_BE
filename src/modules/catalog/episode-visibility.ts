@@ -13,6 +13,23 @@ export const VISIBLE_EPISODE: Prisma.EpisodeWhereInput = {
 /** Shown wherever an episode under maintenance appears (BR-56). */
 export const REVISION_NOTICE = 'Tập đang được bảo trì / sửa đổi nội dung';
 
+/** Shown in watch history for an episode taken down for good (BR-52). */
+export const REMOVED_NOTICE = 'Tập đã được gỡ khỏi nền tảng';
+
+/**
+ * Whether an episode can be played right now. Watch history keeps what the member watched
+ * after a take-down, so it needs the same answer the catalog and Main Flow 2 give — without
+ * linking the member into a dead 404/409 (P3-4).
+ */
+export function playbackAvailability(episode: { status: EpisodeStatus; revisionStartedAt: Date | null }): {
+  available: boolean;
+  notice: string | null;
+} {
+  if (episode.revisionStartedAt !== null) return { available: false, notice: REVISION_NOTICE };
+  if (episode.status !== EpisodeStatus.PUBLISHED) return { available: false, notice: REMOVED_NOTICE };
+  return { available: true, notice: null };
+}
+
 /**
  * Whether an episode can be played right now. The catalog shows it, and the access decision
  * answers with the same value so a handoff to playback never disagrees with what the viewer saw.

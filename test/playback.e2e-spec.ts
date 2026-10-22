@@ -3,6 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
+import { REMOVED_NOTICE } from 'src/modules/catalog/episode-visibility';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
@@ -175,5 +176,22 @@ describe('Playback viewing experience (e2e)', () => {
     // Main Flow 3: a caller who skips the decision still gets the reason, not a 404.
     const refused = await member.post<ApiErrorBody>('/playback/sessions', { episodeId: episodeId(2) }, 409);
     expect(refused.error.details).toMatchObject({ reason: 'EPISODE_UNDER_REVISION' });
+  });
+
+  it('keeps a removed episode in history, flagged so the player is not opened (P3-4)', async () => {
+    const live = (
+      await reviewer.get<{ id: string; publishedAt: string | null }[]>(`/episodes/${episodeId(1)}/publications`)
+    ).find((publication) => publication.publishedAt)!;
+    await reviewer.post(
+      `/publications/${live.id}/unpublish`,
+      { mode: 'REMOVAL', reason: 'COMPLIANCE_ISSUE', note: 'Tập bị gỡ khỏi nền tảng.' },
+      200,
+    );
+
+    const history = await member.get<{
+      data: { episodeId: string; available: boolean; notice: string | null }[];
+    }>('/playback/history');
+    const removed = history.data.find((row) => row.episodeId === episodeId(1));
+    expect(removed).toMatchObject({ available: false, notice: REMOVED_NOTICE });
   });
 });

@@ -22,7 +22,10 @@ export class WatchProgressController {
   }
 
   @Get('history')
-  @ApiOperation({ summary: "Member's watch history, newest first" })
+  @ApiOperation({
+    summary: "Member's watch history, newest first",
+    description: 'Episodes taken down stay in history with available=false and a notice, so the player is not opened.',
+  })
   history(@Paginate() query: PaginateQuery, @CurrentUser('id') userId: string) {
     return this.progress.history(userId, query);
   }

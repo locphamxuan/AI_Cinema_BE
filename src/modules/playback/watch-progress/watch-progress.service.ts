@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
-import { Prisma } from '@prisma/client';
+import { Prisma, type EpisodeStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { playbackAvailability } from 'src/modules/catalog/episode-visibility';
 import { HistoryItemDto } from 'src/modules/playback/watch-progress/dto/history-item.dto';
 import { ProgressViewDto } from 'src/modules/playback/watch-progress/dto/progress.view.dto';
 
@@ -94,12 +95,24 @@ export class WatchProgressService {
     });
   }
 
-  /** Continue-watching list, newest first. */
+  /** Continue-watching list, newest first. Removed episodes stay, flagged unavailable (P3-4). */
   async history(userId: string, query: PaginateQuery) {
     const page = await paginate(query, this.prisma.watchProgress, {
       where: { userId },
       relations: {
-        episode: { include: { movie: { select: { id: true, title: true } } } },
+        episode: {
+          select: {
+            id: true,
+            title: true,
+            episodeNumber: true,
+            thumbnailUrl: true,
+            movieId: true,
+            // P3-4: enough to answer whether the row can still be opened.
+            status: true,
+            revisionStartedAt: true,
+            movie: { select: { title: true } },
+          },
+        },
       },
       sortableColumns: ['lastWatchedAt', 'createdAt'],
       defaultSortBy: [['lastWatchedAt', 'DESC']],
@@ -119,11 +132,15 @@ type HistoryRow = {
     episodeNumber: number;
     thumbnailUrl: string | null;
     movieId: string;
+    status: EpisodeStatus;
+    revisionStartedAt: Date | null;
     movie: { title: string };
   };
 };
 
-function historyItem(row: HistoryRow): HistoryItemDto {
+/** Maps one row; exported so the availability rules stay under test without the HTTP stack. */
+export function historyItem(row: HistoryRow): HistoryItemDto {
+  const { available, notice } = playbackAvailability(row.episode);
   return {
     episodeId: row.episode.id,
     episodeTitle: row.episode.title,
@@ -135,5 +152,7 @@ function historyItem(row: HistoryRow): HistoryItemDto {
     durationSeconds: row.durationSeconds,
     completed: row.completed,
     lastWatchedAt: row.lastWatchedAt,
+    available,
+    notice,
   };
 }
