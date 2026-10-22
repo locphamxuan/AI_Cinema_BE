@@ -249,7 +249,6 @@ export class StreamingSessionService {
       positionSeconds: input.positionSeconds,
       watchedSeconds: input.watchedSeconds,
       endReason: null,
-      forceCompleted: false,
       persistProgress: progressWriteDue(session, new Date()),
     });
     return this.state(saved.session, saved.completed);
@@ -265,14 +264,19 @@ export class StreamingSessionService {
     const saved = await this.saveViewing(session, {
       positionSeconds: input.positionSeconds,
       endReason: StreamingEndReason.STOPPED,
-      forceCompleted: false,
       // Whatever the cadence, the last position must land before the session closes.
       persistProgress: true,
     });
     return this.state(saved.session, saved.completed);
   }
 
-  /** Step 18/20: the viewer finishes; history marks the episode completed. */
+  /**
+   * Step 18/20: the player reports that playback ended. Finishing is not a completion
+   * claim (P3-3): the episode is marked completed only when the final position reaches
+   * `episodeCompletionPercent`, the same rule heartbeats and the expiry sweep apply.
+   * Below the threshold the session closes like a stop, so one call can no longer
+   * inflate history/completion stats.
+   */
   async complete(
     sessionId: string,
     caller: SessionCaller,
@@ -281,11 +285,11 @@ export class StreamingSessionService {
     const session = await this.owned(sessionId, caller);
     const saved = await this.saveViewing(session, {
       positionSeconds: input.positionSeconds ?? session.lastPositionSeconds,
-      endReason: StreamingEndReason.COMPLETED,
-      forceCompleted: true,
+      // saveViewing upgrades this to COMPLETED only when the threshold is actually crossed.
+      endReason: StreamingEndReason.STOPPED,
       persistProgress: true,
     });
-    return this.state(saved.session, true);
+    return this.state(saved.session, saved.completed);
   }
 
   /** Ends a session whose entitlement vanished mid-viewing: position saved, row closed as KICKED. */
@@ -293,7 +297,6 @@ export class StreamingSessionService {
     await this.saveViewing(session, {
       positionSeconds,
       endReason: StreamingEndReason.KICKED,
-      forceCompleted: false,
       persistProgress: true,
     });
   }
@@ -343,7 +346,6 @@ export class StreamingSessionService {
       /** The client's claim since the last update; it may only lower the server's credit. */
       watchedSeconds?: number;
       endReason: StreamingEndReason | null;
-      forceCompleted: boolean;
       /** false on a heartbeat inside the write window; stop and complete always pass true. */
       persistProgress: boolean;
     },
@@ -359,7 +361,8 @@ export class StreamingSessionService {
       : Math.max(0, Math.floor(input.positionSeconds));
     const { episodeCompletionPercent } = await this.settings.get();
     const crossed = Boolean(duration) && duration! > 0 && (position / duration!) * 100 >= episodeCompletionPercent;
-    const completed = input.forceCompleted || crossed;
+    // Completion is always derived here, never asserted by the caller (P3-3).
+    const completed = crossed;
     const endReason = completed ? StreamingEndReason.COMPLETED : input.endReason;
     // A session that ends now (stop/complete, or a beat that crossed the threshold) must
     // leave its final position behind; otherwise the once-a-minute cadence applies.

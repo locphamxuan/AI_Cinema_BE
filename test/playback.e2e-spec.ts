@@ -101,7 +101,19 @@ describe('Playback viewing experience (e2e)', () => {
     }>(`/playback/episodes/${episodeId(1)}/progress`);
     expect(progress).toMatchObject({ found: true, positionSeconds: 30, completed: false });
 
-    await member.post(`/playback/sessions/${second.sessionId}/complete`, {});
+    // P3-3: finishing below the completion threshold closes the session but must not
+    // mark the episode watched — one call alone cannot inflate history/completion stats.
+    const unfinished = await member.post<{ completed: boolean }>(`/playback/sessions/${second.sessionId}/complete`, {
+      positionSeconds: 30,
+    });
+    expect(unfinished).toMatchObject({ completed: false });
+    const stillOpen = await member.get<{ completed: boolean }>(`/playback/episodes/${episodeId(1)}/progress`);
+    expect(stillOpen).toMatchObject({ completed: false });
+
+    // Reaching the threshold (mock duration 60s, 90% = 54s) does mark it completed.
+    const third = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(1) }, 201);
+    await member.post(`/playback/sessions/${third.sessionId}/complete`, { positionSeconds: 55 });
+
     const done = await member.get<{ completed: boolean }>(`/playback/episodes/${episodeId(1)}/progress`);
     expect(done).toMatchObject({ completed: true });
 

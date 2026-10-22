@@ -17,6 +17,10 @@ export class SessionStateViewDto {
   @ApiProperty({ example: 640, description: 'Accumulated watch time; feeds monthly revenue sharing' })
   totalWatchedSeconds: number;
 
-  @ApiProperty({ example: false })
+  @ApiProperty({
+    example: false,
+    description:
+      'Server-decided: true only when the position reached episodeCompletionPercent, not merely because complete was called.',
+  })
   completed: boolean;
 }

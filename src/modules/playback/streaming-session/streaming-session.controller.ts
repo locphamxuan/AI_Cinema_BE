@@ -11,6 +11,7 @@ import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
 import { StreamingSessionService } from './streaming-session.service';
 import { NextEpisodeViewDto } from 'src/modules/playback/streaming-session/dto/next-episode.view.dto';
 import { CreateStreamingSessionRequestDto } from 'src/modules/playback/streaming-session/dto/create-streaming-session.request.dto';
+import { CompleteSessionRequestDto } from 'src/modules/playback/streaming-session/dto/complete-session.request.dto';
 import { HeartbeatRequestDto } from 'src/modules/playback/watch-progress/dto/heart-beat.request.dto';
 import { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/session-state.view.dto';
 import { StopSessionRequestDto } from 'src/modules/playback/watch-progress/dto/stop-session.request.dto';
@@ -133,14 +134,19 @@ export class StreamingSessionController {
   }
 
   @Post('sessions/:sessionId/complete')
-  @ApiOperation({ summary: 'Viewer finishes: mark completed and close the session (flow 3, steps 18/20)' })
+  @ApiOperation({
+    summary:
+      'Viewer finishes: close the session and mark completed only at the position threshold (flow 3, steps 18/20)',
+    description:
+      'The episode is marked completed only when the final position reaches episodeCompletionPercent; below it the session closes like a stop. A finish call is not proof of watching.',
+  })
   @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
   @ApiOkResponse({ type: SessionStateViewDto })
   complete(
     @Param('sessionId', ID) sessionId: string,
     @OptionalUser() user: AuthenticatedUser | undefined,
     @Headers('x-guest-key') guestKey?: string,
-    @Body() dto?: StopSessionRequestDto,
+    @Body() dto?: CompleteSessionRequestDto,
   ) {
     return this.sessions.complete(sessionId, { userId: user?.id, guestKey }, { positionSeconds: dto?.positionSeconds });
   }

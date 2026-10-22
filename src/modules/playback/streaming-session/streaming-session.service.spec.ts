@@ -369,9 +369,17 @@ describe('StreamingSessionService.create', () => {
       expect(progress.save).not.toHaveBeenCalled();
     });
 
-    it('complete forces completion even below the threshold', async () => {
+    it('complete below the threshold closes the session without marking it watched (P3-3)', async () => {
       const state = await service.complete('sess-1', { userId: 'u-1' }, {});
-      expect(state).toMatchObject({ completed: true, status: 'ENDED' });
+      expect(state).toMatchObject({ completed: false, status: 'ENDED', positionSeconds: 300 });
+      expect(updateData()).toMatchObject({ endReason: 'STOPPED' });
+      expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ completed: false }));
+    });
+
+    it('complete at the threshold marks the episode completed', async () => {
+      const state = await service.complete('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
+      expect(state).toMatchObject({ completed: true, status: 'ENDED', positionSeconds: 1100 });
+      expect(updateData()).toMatchObject({ endReason: 'COMPLETED' });
       expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ completed: true }));
     });
 
