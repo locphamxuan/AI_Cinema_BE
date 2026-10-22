@@ -11,7 +11,13 @@ import { StreamingSessionService } from './streaming-session.service';
 import { MAX_WATCH_CREDIT_SECONDS, PROGRESS_WRITE_INTERVAL_MS } from './watch-pacing';
 
 describe('StreamingSessionService.create', () => {
-  const streamingSession = { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
+  const streamingSession = {
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  };
   const tx = {
     streamingSession,
     mediaAsset: { findUnique: jest.fn() },
@@ -254,22 +260,19 @@ describe('StreamingSessionService.create', () => {
       ...overrides,
     });
 
-    /** The `data` of the nth streaming_sessions.update call. */
+    /** The `data` of the nth streaming_sessions.updateMany call. */
     const updateData = (n = 0) =>
-      ((prisma.streamingSession.update.mock.calls[n] as unknown[])[0] as { data: Record<string, unknown> }).data;
+      ((prisma.streamingSession.updateMany.mock.calls[n] as unknown[])[0] as { data: Record<string, unknown> }).data;
 
     beforeEach(() => {
       prisma.streamingSession.findUnique.mockResolvedValue(live());
-      prisma.streamingSession.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
-        ...live(),
-        ...data,
-      }));
+      prisma.streamingSession.updateMany.mockResolvedValue({ count: 1 });
     });
 
     it('heartbeat persists position and watch time (step 15)', async () => {
       const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 320, watchedSeconds: 12 });
       expect(state).toMatchObject({ sessionId: 'sess-1', positionSeconds: 320, completed: false });
-      expect(prisma.streamingSession.update).toHaveBeenCalledWith(
+      expect(prisma.streamingSession.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             lastPositionSeconds: 320,
@@ -322,7 +325,7 @@ describe('StreamingSessionService.create', () => {
       const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 330, watchedSeconds: 12 });
 
       expect(state).toMatchObject({ positionSeconds: 330 });
-      expect(prisma.streamingSession.update).toHaveBeenCalledTimes(1);
+      expect(prisma.streamingSession.updateMany).toHaveBeenCalledTimes(1);
       expect(updateData()).not.toHaveProperty('lastProgressAt');
       expect(progress.save).not.toHaveBeenCalled();
     });
@@ -354,7 +357,7 @@ describe('StreamingSessionService.create', () => {
     it('heartbeat past the threshold completes and ends the session (steps 18/20)', async () => {
       const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
       expect(state).toMatchObject({ completed: true, status: 'ENDED' });
-      expect(prisma.streamingSession.update).toHaveBeenCalledWith(
+      expect(prisma.streamingSession.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ endReason: 'COMPLETED' }) }),
       );
     });
@@ -427,6 +430,22 @@ describe('StreamingSessionService.create', () => {
       await expect(service.stop('sess-1', { userId: 'u-1' }, { positionSeconds: 1 })).rejects.toMatchObject({
         response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_ACTIVE' }) }),
       });
+    });
+
+    it('does not write a heartbeat onto a row a concurrent stop already closed (P3-2)', async () => {
+      prisma.streamingSession.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 999 })).rejects.toMatchObject({
+        response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_ACTIVE' }) }),
+      });
+      expect(prisma.streamingSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sess-1', status: StreamingSessionStatus.ACTIVE },
+        }),
+      );
+      // Nothing is credited or persisted after the session moved on.
+      expect(progress.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 

@@ -317,12 +317,17 @@ export class StreamingSessionService {
       });
     }
     if (session.status !== StreamingSessionStatus.ACTIVE) {
-      throw new ForbiddenException({
-        message: 'The streaming session is no longer active',
-        details: { reason: 'SESSION_NOT_ACTIVE' },
-      });
+      this.notActive();
     }
     return session;
+  }
+
+  /** The one answer for a row that is no longer ACTIVE, whichever path notices it. */
+  private notActive(): never {
+    throw new ForbiddenException({
+      message: 'The streaming session is no longer active',
+      details: { reason: 'SESSION_NOT_ACTIVE' },
+    });
   }
 
   /**
@@ -360,8 +365,10 @@ export class StreamingSessionService {
     // leave its final position behind; otherwise the once-a-minute cadence applies.
     const writeProgress = Boolean(session.userId) && (input.persistProgress || endReason !== null);
 
-    const updated = await this.prisma.streamingSession.update({
-      where: { id: session.id },
+    const written = await this.prisma.streamingSession.updateMany({
+      // P3-2: the row may have been closed by a concurrent stop/complete after owned() read it.
+      // Guard the write on ACTIVE so a late heartbeat cannot write a position onto an ENDED row.
+      where: { id: session.id, status: StreamingSessionStatus.ACTIVE },
       data: {
         lastPositionSeconds: position,
         lastHeartbeatAt: now,
@@ -370,8 +377,18 @@ export class StreamingSessionService {
         ...(endReason ? { status: StreamingSessionStatus.ENDED, endReason, endedAt: now } : {}),
       },
     });
+    if (written.count === 0) this.notActive();
+    // updateMany returns no row: rebuild the fields the response and the audit row read.
+    const current: StreamingSession = {
+      ...session,
+      lastPositionSeconds: position,
+      lastHeartbeatAt: now,
+      totalWatchedSeconds: session.totalWatchedSeconds + credited,
+      lastProgressAt: writeProgress ? now : session.lastProgressAt,
+      ...(endReason ? { status: StreamingSessionStatus.ENDED, endReason, endedAt: now } : {}),
+    };
     // Hardening #12: record the close right where it happens — the session row is deleted later.
-    if (endReason) await this.audit.record(sessionEnded(updated, endReason));
+    if (endReason) await this.audit.record(sessionEnded(current, endReason));
     if (writeProgress && session.userId) {
       await this.progress.save(session.userId, session.episodeId, {
         positionSeconds: position,
@@ -380,7 +397,7 @@ export class StreamingSessionService {
         at: now,
       });
     }
-    return { session: updated, completed };
+    return { session: current, completed };
   }
 
   private state(session: StreamingSession, completed: boolean): SessionStateViewDto {

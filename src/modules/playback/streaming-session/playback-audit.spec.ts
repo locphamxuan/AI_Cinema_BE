@@ -97,7 +97,13 @@ describe('playback audit rows (hardening #12)', () => {
   });
 
   describe('StreamingSessionService wiring', () => {
-    const streamingSession = { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
+    const streamingSession = {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    };
     const tx = { streamingSession, $executeRaw: jest.fn() };
     const prisma = {
       streamingSession,
@@ -202,10 +208,7 @@ describe('playback audit rows (hardening #12)', () => {
       beforeEach(() => {
         current = row();
         prisma.streamingSession.findUnique.mockImplementation(() => Promise.resolve(current));
-        prisma.streamingSession.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
-          ...current,
-          ...data,
-        }));
+        prisma.streamingSession.updateMany.mockResolvedValue({ count: 1 });
       });
 
       it('records STOPPED with the final position when the viewer stops', async () => {
