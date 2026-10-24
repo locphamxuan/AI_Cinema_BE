@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsInt, IsOptional, IsString, IsUrl, MaxLength, Min } from 'class-validator';
+import { IsDate, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
+import { MAX_AD_DURATION_SECONDS, MAX_AD_WEIGHT } from '../ad-limits';
 
 export class CreateAdRequestDto {
   @ApiProperty({ example: 'Trà sữa Gong Cha — mua 1 tặng 1' })
@@ -19,15 +20,21 @@ export class CreateAdRequestDto {
   @MaxLength(1000)
   clickUrl?: string;
 
-  @ApiProperty({ example: 15 })
+  @ApiProperty({ example: 15, maximum: MAX_AD_DURATION_SECONDS })
   @IsInt()
   @Min(1)
+  @Max(MAX_AD_DURATION_SECONDS)
   durationSeconds: number;
 
-  @ApiPropertyOptional({ example: 3, description: 'Pick weight for the mid-roll draw; higher shows more often' })
+  @ApiPropertyOptional({
+    example: 3,
+    maximum: MAX_AD_WEIGHT,
+    description: 'Pick weight for the mid-roll draw; higher shows more often',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(MAX_AD_WEIGHT)
   weight?: number;
 
   @ApiPropertyOptional({ example: '2026-10-01T00:00:00.000Z' })

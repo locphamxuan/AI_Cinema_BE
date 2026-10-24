@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AdViewDto } from 'src/modules/playback/ad-break/dto/ad.view.dto';
@@ -18,6 +18,9 @@ export class AdCatalogService {
   }
 
   async create(dto: CreateAdRequestDto): Promise<AdViewDto> {
+    const validFrom = dto.validFrom ?? null;
+    const validTo = dto.validTo ?? null;
+    assertValidityWindow(validFrom, validTo);
     const ad = await this.prisma.ad.create({
       data: {
         title: dto.title,
@@ -25,8 +28,8 @@ export class AdCatalogService {
         clickUrl: dto.clickUrl ?? null,
         durationSeconds: dto.durationSeconds,
         weight: dto.weight ?? 1,
-        validFrom: dto.validFrom ?? null,
-        validTo: dto.validTo ?? null,
+        validFrom,
+        validTo,
       },
     });
     return view(ad);
@@ -37,6 +40,11 @@ export class AdCatalogService {
     if (!existing) {
       throw new NotFoundException({ message: 'Ad not found', details: { reason: 'AD_NOT_FOUND' } });
     }
+    // P4-6: a PATCH may move one end of the window, so the merged row must still be valid.
+    assertValidityWindow(
+      dto.validFrom !== undefined ? dto.validFrom : existing.validFrom,
+      dto.validTo !== undefined ? dto.validTo : existing.validTo,
+    );
     const ad = await this.prisma.ad.update({
       where: { id },
       data: {
@@ -51,6 +59,19 @@ export class AdCatalogService {
       },
     });
     return view(ad);
+  }
+}
+
+/**
+ * P4-6: reject a window that can never match an ad. An equal pair is empty too —
+ * scheduleFor() looks for `validFrom <= now < validTo`. One-sided windows stay open.
+ */
+function assertValidityWindow(validFrom: Date | null, validTo: Date | null): void {
+  if (validFrom && validTo && validFrom.getTime() >= validTo.getTime()) {
+    throw new BadRequestException({
+      message: 'validFrom must be earlier than validTo',
+      details: { reason: 'AD_VALIDITY_WINDOW_INVALID', validFrom, validTo },
+    });
   }
 }
 
