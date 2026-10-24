@@ -69,10 +69,13 @@ export class AdBreakService {
     const count = Math.min(settings.adMaxBreaksPerEpisode, eligible.length);
     const positions = spreadPositions(duration, count);
     const picks = weightedOrder(eligible).slice(0, positions.length);
-    // Fewer distinct ads than cues: cycle the order instead of inventing cues.
+    // P4-4: one cue per distinct ad. count is capped by eligible.length and weightedOrder
+    // draws without replacement, so an ad can never repeat inside the same episode; when
+    // there are fewer ads than the platform cap, the episode simply gets fewer cues.
+    // Cross-session / per-viewer frequency caps are tracked in docs/backlog-billing-ads.md.
     const data = positions.map((positionSeconds, i) => ({
       streamingSessionId: sessionId,
-      adId: picks[i % picks.length].id,
+      adId: picks[i].id,
       positionSeconds,
     }));
     // P4-1: one INSERT is atomic, so a mid-way failure can never leave half a schedule.

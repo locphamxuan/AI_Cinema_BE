@@ -68,6 +68,20 @@ describe('AdBreakService', () => {
     });
   });
 
+  it('never repeats an ad inside one episode when ads are scarce (P4-4)', async () => {
+    prisma.ad.findMany.mockResolvedValue([ad({ id: 'ad-1' })]);
+    prisma.sessionAdBreak.findMany.mockResolvedValue([{ id: 'br-660', positionSeconds: 660, ad: ad({ id: 'ad-1' }) }]);
+
+    const schedule = await service.scheduleFor('sess-1', { durationSeconds: 1320 });
+
+    // Only one distinct ad is eligible, so the episode gets one cue instead of cycling it.
+    expect(schedule).toHaveLength(1);
+    expect(prisma.sessionAdBreak.createMany).toHaveBeenCalledWith({
+      data: [{ streamingSessionId: 'sess-1', adId: 'ad-1', positionSeconds: 660 }],
+      skipDuplicates: true,
+    });
+  });
+
   it('schedules nothing for ad-free plans, short episodes or no valid ad', async () => {
     prisma.subscription.findFirst.mockResolvedValue({ plan: { features: { adFree: true } } });
     await expect(service.scheduleFor('sess-1', { userId: 'u-1', durationSeconds: 1320 })).resolves.toEqual([]);
