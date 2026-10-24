@@ -9,13 +9,13 @@ import { SessionExpirySweep } from './session-expiry.sweep';
 
 describe('SessionExpirySweep.expireDue', () => {
   const prisma = {
-    streamingSession: { findMany: jest.fn(), updateMany: jest.fn() },
+    streamingSession: { findMany: jest.fn(), updateManyAndReturn: jest.fn() },
   };
   const settings = {
     get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
   };
   const progress = { save: jest.fn() };
-  const audit = { record: jest.fn() };
+  const audit = { recordMany: jest.fn() };
   const queue = { every: jest.fn() };
   const config = { schedules: { streamingSessionSweepMs: 30000 } } as unknown as AppConfig;
   const sweep = new SessionExpirySweep(
@@ -43,11 +43,13 @@ describe('SessionExpirySweep.expireDue', () => {
     jest.clearAllMocks();
     // mockReset drops any unconsumed mockResolvedValueOnce queue a previous test left behind.
     prisma.streamingSession.findMany.mockReset().mockResolvedValue([]);
-    prisma.streamingSession.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    // The guarded UPDATE returns only the rows it actually closed; a heartbeat can save the rest.
+    prisma.streamingSession.updateManyAndReturn.mockReset().mockResolvedValue([]);
   });
 
   it('closes timed-out sessions and saves the member position (step 21)', async () => {
-    prisma.streamingSession.findMany.mockResolvedValueOnce([stale()]).mockResolvedValueOnce([]);
+    prisma.streamingSession.findMany.mockResolvedValueOnce([stale()]);
+    prisma.streamingSession.updateManyAndReturn.mockResolvedValueOnce([stale()]);
     await expect(sweep.expireDue(new Date('2026-10-15T10:00:00.000Z'))).resolves.toEqual({ sessions: 1 });
     expect(prisma.streamingSession.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -57,9 +59,9 @@ describe('SessionExpirySweep.expireDue', () => {
         }),
       }),
     );
-    expect(prisma.streamingSession.updateMany).toHaveBeenCalledWith(
+    expect(prisma.streamingSession.updateManyAndReturn).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'sess-1', status: StreamingSessionStatus.ACTIVE },
+        where: { id: { in: ['sess-1'] }, status: StreamingSessionStatus.ACTIVE },
         data: expect.objectContaining({ status: StreamingSessionStatus.ENDED, endReason: StreamingEndReason.EXPIRED }),
       }),
     );
@@ -69,7 +71,7 @@ describe('SessionExpirySweep.expireDue', () => {
       expect.objectContaining({ positionSeconds: 300, completed: false }),
     );
     // Hardening #12: the close is recorded durably for later investigations.
-    expect(audit.record).toHaveBeenCalledWith(
+    expect(audit.recordMany).toHaveBeenCalledWith([
       expect.objectContaining({
         action: 'PLAYBACK_SESSION_ENDED',
         entityType: 'StreamingSession',
@@ -82,30 +84,90 @@ describe('SessionExpirySweep.expireDue', () => {
           userId: 'u-1',
         }),
       }),
+    ]);
+  });
+
+  it('closes a whole page with one guarded UPDATE and one audit INSERT (P5-1)', async () => {
+    const page = [
+      stale({ id: 'sess-a', userId: 'u-a', episodeId: 'ep-a' }),
+      stale({ id: 'sess-b', userId: 'u-b', episodeId: 'ep-b' }),
+    ];
+    prisma.streamingSession.findMany.mockResolvedValueOnce(page);
+    prisma.streamingSession.updateManyAndReturn.mockResolvedValueOnce(page);
+
+    await expect(sweep.expireDue()).resolves.toEqual({ sessions: 2 });
+
+    expect(prisma.streamingSession.updateManyAndReturn).toHaveBeenCalledTimes(1);
+    expect(prisma.streamingSession.updateManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['sess-a', 'sess-b'] }, status: StreamingSessionStatus.ACTIVE } }),
     );
+    expect(audit.recordMany).toHaveBeenCalledTimes(1);
+    const [entries] = audit.recordMany.mock.calls[0] as [unknown[]];
+    expect(entries).toHaveLength(2);
+    expect(progress.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('saves progress only for rows the guarded UPDATE actually closed (P5-1)', async () => {
+    const closed = stale({ id: 'sess-a', userId: 'u-a', episodeId: 'ep-a' });
+    const heartbeatSaved = stale({ id: 'sess-b', userId: 'u-b', episodeId: 'ep-b' });
+    prisma.streamingSession.findMany.mockResolvedValueOnce([closed, heartbeatSaved]);
+    prisma.streamingSession.updateManyAndReturn.mockResolvedValueOnce([closed]);
+
+    await expect(sweep.expireDue()).resolves.toEqual({ sessions: 1 });
+
+    expect(progress.save).toHaveBeenCalledTimes(1);
+    expect(progress.save).toHaveBeenCalledWith('u-a', 'ep-a', expect.objectContaining({ positionSeconds: 300 }));
+    const [entries] = audit.recordMany.mock.calls[0] as [unknown[]];
+    expect(entries).toEqual([expect.objectContaining({ entityId: 'sess-a' })]);
   });
 
   it('skips a row a heartbeat already saved and keeps guests progress-free', async () => {
     prisma.streamingSession.findMany.mockResolvedValueOnce([stale({ id: 'sess-2', userId: null })]);
-    prisma.streamingSession.updateMany.mockResolvedValue({ count: 0 });
     await expect(sweep.expireDue()).resolves.toEqual({ sessions: 0 });
     expect(progress.save).not.toHaveBeenCalled();
     // The row is still ACTIVE for someone else: no false ENDED event.
-    expect(audit.record).not.toHaveBeenCalled();
+    expect(audit.recordMany).not.toHaveBeenCalled();
   });
 
   it('records the sweep close with the guest key in the payload (hardening #12)', async () => {
-    prisma.streamingSession.findMany.mockResolvedValueOnce([stale({ id: 'sess-3', userId: null, guestKey: 'g-1' })]);
+    const guest = stale({ id: 'sess-3', userId: null, guestKey: 'g-1' });
+    prisma.streamingSession.findMany.mockResolvedValueOnce([guest]);
+    prisma.streamingSession.updateManyAndReturn.mockResolvedValueOnce([guest]);
     await expect(sweep.expireDue()).resolves.toEqual({ sessions: 1 });
 
-    expect(audit.record).toHaveBeenCalledWith(
+    expect(audit.recordMany).toHaveBeenCalledWith([
       expect.objectContaining({
         action: 'PLAYBACK_SESSION_ENDED',
         entityId: 'sess-3',
         actorId: null,
         payload: expect.objectContaining({ endReason: 'EXPIRED', guestKey: 'g-1', totalWatchedSeconds: 600 }),
       }),
-    );
+    ]);
     expect(progress.save).not.toHaveBeenCalled();
+  });
+
+  it('skips a tick while the previous sweep is still draining (P5-1)', async () => {
+    let releaseSettings!: (value: {
+      playbackHeartbeatTimeoutSeconds: number;
+      episodeCompletionPercent: number;
+    }) => void;
+    settings.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseSettings = resolve;
+      }),
+    );
+
+    const first = sweep.expireDue();
+    // The second tick sees `running` set and returns without touching the database.
+    await expect(sweep.expireDue()).resolves.toEqual({ sessions: 0 });
+    expect(prisma.streamingSession.findMany).not.toHaveBeenCalled();
+
+    releaseSettings({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 });
+    await expect(first).resolves.toEqual({ sessions: 0 });
+    expect(prisma.streamingSession.findMany).toHaveBeenCalledTimes(1);
+
+    // The guard is released in `finally`, so the next tick runs normally.
+    await expect(sweep.expireDue()).resolves.toEqual({ sessions: 0 });
+    expect(prisma.streamingSession.findMany).toHaveBeenCalledTimes(2);
   });
 });

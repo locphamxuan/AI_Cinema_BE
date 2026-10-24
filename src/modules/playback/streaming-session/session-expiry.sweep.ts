@@ -8,16 +8,22 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
 import { sessionEnded } from './playback-events';
 
-const BATCH = 200;
+const BATCH = 500;
 
 /**
  * Flow 3, step 21 for viewers who just close the app: ACTIVE sessions whose
  * heartbeat timed out are closed as EXPIRED, and the member's last position is
  * saved so nothing watched is lost. The device slot frees with the row.
+ *
+ * P5-1: a tick that lands while the previous one is still draining is skipped,
+ * and each page is closed by one guarded UPDATE (RETURNING the rows it actually
+ * closed) instead of one UPDATE per session. Progress is still an upsert per
+ * member/episode, but only after the page has been closed.
  */
 @Injectable()
 export class SessionExpirySweep implements OnModuleInit {
   private readonly logger = new Logger(SessionExpirySweep.name);
+  private running = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -36,6 +42,19 @@ export class SessionExpirySweep implements OnModuleInit {
 
   /** Closes every timed-out session; returns how many rows were closed. */
   async expireDue(now = new Date()): Promise<{ sessions: number }> {
+    if (this.running) {
+      this.logger.warn('Previous expiry sweep is still running; skipping this tick');
+      return { sessions: 0 };
+    }
+    this.running = true;
+    try {
+      return await this.closeDue(now);
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async closeDue(now: Date): Promise<{ sessions: number }> {
     const { playbackHeartbeatTimeoutSeconds, episodeCompletionPercent } = await this.settings.get();
     const cutoff = new Date(now.getTime() - playbackHeartbeatTimeoutSeconds * 1000);
     let sessions = 0;
@@ -46,21 +65,35 @@ export class SessionExpirySweep implements OnModuleInit {
         take: BATCH,
       });
       if (!due.length) break;
-      for (const session of due) {
-        // A heartbeat may have landed while this batch waited: only the still-ACTIVE row closes.
-        const { count } = await this.prisma.streamingSession.updateMany({
-          where: { id: session.id, status: StreamingSessionStatus.ACTIVE },
-          data: {
-            status: StreamingSessionStatus.ENDED,
-            endReason: StreamingEndReason.EXPIRED,
-            endedAt: now,
-          },
-        });
-        if (count === 0) continue;
-        sessions += 1;
+      // A heartbeat may land while this page waits: the guard keeps the row ACTIVE, and
+      // RETURNING names exactly the rows this statement closed — never the saved ones.
+      const closed = await this.prisma.streamingSession.updateManyAndReturn({
+        where: { id: { in: due.map((session) => session.id) }, status: StreamingSessionStatus.ACTIVE },
+        data: {
+          status: StreamingSessionStatus.ENDED,
+          endReason: StreamingEndReason.EXPIRED,
+          endedAt: now,
+        },
+        // Only the columns the audit row and the progress upsert read.
+        select: {
+          id: true,
+          userId: true,
+          guestKey: true,
+          episodeId: true,
+          lastPositionSeconds: true,
+          totalWatchedSeconds: true,
+          durationSeconds: true,
+        },
+      });
+      if (closed.length) {
+        sessions += closed.length;
         // Hardening #12: the row is retention-deleted later; this is the durable record.
-        await this.audit.record(sessionEnded(session, StreamingEndReason.EXPIRED, 'SYSTEM'));
-        if (session.userId) {
+        // P5-1: one INSERT per page instead of one per session.
+        await this.audit.recordMany(
+          closed.map((session) => sessionEnded(session, StreamingEndReason.EXPIRED, 'SYSTEM')),
+        );
+        for (const session of closed) {
+          if (!session.userId) continue;
           // The length was cached on the row at creation; no join back to media_assets.
           const duration = session.durationSeconds;
           const completed =
