@@ -55,6 +55,7 @@ model StudioHandoff {
     materials       StudioHandoffMaterial[]
     milestoneEvents StudioMilestoneEvent[]
     deliveries      MediaAsset[]
+    filmLinks       StudioFilmLink[]
 
     @@index([movieId, createdAt])
     @@index([studioId])
@@ -99,4 +100,24 @@ model StudioMilestoneEvent {
 
     @@index([handoffId, createdAt])
     @@map("studio_milestone_events")
+}
+
+/// The link the Studio Web last mailed for one episode of a hand-off (BR-58): the Creator downloads it, or
+/// imports it as the Submission. A later mail for the same episode replaces it.
+model StudioFilmLink {
+    id        String   @id @default(uuid()) @db.Uuid
+    handoffId String   @map("handoff_id") @db.Uuid
+    episodeId String   @map("episode_id") @db.Uuid
+    /// The studio's own name for the cut, e.g. v2.
+    version   String   @db.VarChar(100)
+    fileName  String   @map("file_name") @db.VarChar(255)
+    url       String   @db.VarChar(2048)
+    sentAt    DateTime @map("sent_at") @db.Timestamptz(6)
+
+    handoff StudioHandoff @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+    episode Episode       @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+    @@unique([handoffId, episodeId])
+    @@index([episodeId])
+    @@map("studio_film_links")
 }
