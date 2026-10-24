@@ -1,5 +1,6 @@
 // Shares the films of AI_Film through the project's R2 bucket (the videos are too big for git).
-//   npm run film:push   upload the videos that are new, then rewrite MANIFEST.json / MANIFEST.md (commit those)
+//   npm run film:push   upload the videos that are new, then rewrite MANIFEST.json / MANIFEST.md (commit those);
+//                       films listed but not on this machine stay listed, so pulling the old ones first is not needed
 //   npm run film:pull   download the videos listed in MANIFEST.json that this machine lacks
 //   npm run film:list   show what a pull would download, without downloading
 // Needs S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY in .env (the ones the BE uses).
@@ -53,8 +54,9 @@ function writeManifest(files) {
   const lines = [
     '# AI_Film - danh sách phim',
     '',
-    'Video không nằm trong git mà nằm trên R2. Có phim mới thì chạy `npm run film:push` rồi commit `MANIFEST.json` + file này;',
-    'đồng nghiệp pull git xong chạy `npm run film:pull` để tải các phim còn thiếu về `AI_Film/`.',
+    'Video không nằm trong git mà nằm trên R2. Có phim mới thì chỉ cần đặt phim mới vào `AI_Film_v2/`, chạy `npm run film:push`',
+    'rồi `npm run film:catalog`, commit `MANIFEST.json`, file này và `CATALOG.json` (không cần tải phim cũ về).',
+    'Chỉ khi cần xem/sửa video trên máy mới chạy `npm run film:pull`.',
     '',
     `Tổng: ${files.length} video.`,
     '',
@@ -94,7 +96,10 @@ async function push() {
     );
     uploaded += 1;
   }
-  writeManifest(files);
+  // Films already listed but not pulled to this machine stay listed: they are still on R2.
+  const local = new Set(files.map((file) => file.path));
+  const kept = readManifest().filter((file) => !local.has(file.path) && !existsSync(path.join(root, file.path)));
+  writeManifest([...files, ...kept].sort((a, b) => a.path.localeCompare(b.path, 'vi')));
   console.log(`${uploaded} uploaded, ${files.length - uploaded} already on R2. Commit AI_Film/MANIFEST.json and MANIFEST.md.`);
 }
 

@@ -1,4 +1,6 @@
-# Videos are shared out of band; MANIFEST.md (gen-manifest.mjs) records which ones exist.
+# Videos live on R2 (npm run film:push / film:pull); MANIFEST.json and CATALOG.json record which ones exist.
 *.mp4
 *.mov
 *.mkv
+*.webm
+*.part
