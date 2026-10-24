@@ -17,10 +17,13 @@ const OPEN: StudioMilestoneStatus[] = [
   StudioMilestoneStatus.DELIVERED,
 ];
 
+type ScopeEpisode = { id: string; assignedCreatorId: string | null };
+
 /**
  * BR-58: the studio hands films back by email only, so the Studio Web reports each mail it sent. The hand-off
- * remembers it (the Studio tab shows it) and the Creator and Reviewer are told; the milestone itself moves to
- * DELIVERED once the Submission the Creator uploads is READY (deliverOnSubmission).
+ * keeps the link of every episode mailed (the Studio tab and the episode page show it) and the Creator and
+ * Reviewer are told; the milestone itself moves to DELIVERED once the Submission the Creator uploads is READY
+ * (deliverOnSubmission).
  */
 @Injectable()
 export class FilmSentService {
@@ -49,9 +52,18 @@ export class FilmSentService {
       });
       if (!handoff) throw new NotFoundException('No open hand-off matches this film');
 
-      const label = dto.label ? `${dto.label} ${dto.version}` : dto.version;
-      const note = `Studio đã gửi phim qua email: ${label} (${dto.episodeCount} tập).`;
+      const { movie } = handoff;
+      // The episodes of the scope in the order the brief lists them, so a position in the mail is one episode.
+      const scope = await tx.episode.findMany({
+        where: { movieId: movie.id, ...(handoff.seasonId ? { seasonId: handoff.seasonId } : {}) },
+        orderBy: { episodeNumber: 'asc' },
+        select: { id: true, assignedCreatorId: true },
+      });
       const sentAt = new Date();
+      await this.saveLinks(tx, handoff.id, dto, scope, sentAt);
+
+      const label = dto.label ? `${dto.label} ${dto.version}` : dto.version;
+      const note = `Studio đã gửi phim qua email: ${label} (${dto.episodes.length} tập).`;
       await tx.studioHandoff.update({ where: { id: handoff.id }, data: { filmSentAt: sentAt, filmSentNote: note } });
       await this.auditLog.record(
         {
@@ -60,33 +72,23 @@ export class FilmSentService {
           entityId: handoff.id,
           movieId: handoff.movieId,
           actorId: null,
-          payload: { version: dto.version, episodeCount: dto.episodeCount, scope: dto.scope },
+          payload: { version: dto.version, episodeCount: dto.episodes.length, scope: dto.scope },
         },
         tx,
       );
-      const { movie } = handoff;
       // The Creators given episodes of the scope were CC'd on the brief ("Đồng gửi") and get the film too.
-      const coCreators = await tx.episode.findMany({
-        where: {
-          movieId: movie.id,
-          assignedCreatorId: { not: null },
-          ...(handoff.seasonId ? { seasonId: handoff.seasonId } : {}),
-        },
-        select: { assignedCreatorId: true },
-        distinct: ['assignedCreatorId'],
-      });
       const recipients = [
         handoff.createdById,
         movie.creatorId,
         movie.reviewerId,
-        ...coCreators.map((e) => e.assignedCreatorId),
+        ...scope.map((episode) => episode.assignedCreatorId),
       ];
       await this.notifications.notify(
         [...new Set(recipients.filter((id): id is string => !!id))],
         {
           type: NOTIFICATION_TYPE.STUDIO_FILM_SENT,
           title: `Studio đã gửi phim "${movie.title}" (${dto.scope})`,
-          body: `${note} Creator tải phim từ email và upload Submission để Reviewer kiểm tra.`,
+          body: `${note} Creator xem link từng tập ở tab Studio và upload Submission để Reviewer kiểm tra.`,
           link: `/projects/${movie.id}/studio`,
           payload: { movieId: movie.id, handoffId: handoff.id, version: dto.version },
         },
@@ -94,6 +96,28 @@ export class FilmSentService {
       );
       return { handoffId: handoff.id, sentAt };
     });
+  }
+
+  /** One link per episode of the hand-off: a later mail for the same episode replaces it. */
+  private async saveLinks(
+    tx: Prisma.TransactionClient,
+    handoffId: string,
+    dto: FilmSentRequestDto,
+    scope: ScopeEpisode[],
+    sentAt: Date,
+  ) {
+    const matched = dto.episodes.flatMap((link) => {
+      const episode = scope[link.episode - 1];
+      return episode ? [{ episodeId: episode.id, link }] : [];
+    });
+    for (const { episodeId, link } of matched) {
+      const data = { version: dto.version, fileName: link.fileName, url: link.url, sentAt };
+      await tx.studioFilmLink.upsert({
+        where: { handoffId_episodeId: { handoffId, episodeId } },
+        create: { handoffId, episodeId, ...data },
+        update: data,
+      });
+    }
   }
 
   private scopeFilter(scope: string): Prisma.StudioHandoffWhereInput {

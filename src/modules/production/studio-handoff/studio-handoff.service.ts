@@ -23,6 +23,10 @@ const HISTORY_INCLUDE = {
   createdBy: { select: { id: true, fullName: true } },
   emailMessage: { select: { status: true, sentAt: true, errorMessage: true } },
   materials: { orderBy: { createdAt: 'asc' } },
+  filmLinks: {
+    orderBy: { episode: { episodeNumber: 'asc' } },
+    include: { episode: { select: { episodeNumber: true } } },
+  },
   milestoneEvents: {
     orderBy: { createdAt: 'asc' },
     include: {

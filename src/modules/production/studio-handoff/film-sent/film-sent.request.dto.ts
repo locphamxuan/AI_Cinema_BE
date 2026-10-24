@@ -1,9 +1,44 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsEmail, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsEmail,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 
 const trimmed = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 const lowered = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
+
+/** One episode of the mail: where it sits in the order and the link the Creator downloads it from. */
+export class FilmSentEpisodeDto {
+  @ApiProperty({ example: 1, description: '1-based position in the order, as the brief lists the episodes.' })
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  episode: number;
+
+  @ApiProperty({ example: 'tap-1.mp4' })
+  @Transform(trimmed)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  fileName: string;
+
+  @ApiProperty({ example: 'https://studio.example/films/7f1c/tap-1.mp4' })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
+  @MaxLength(2048)
+  url: string;
+}
 
 /** What the Studio Web tells AI Cinema once it has mailed a prepared film back to the Creator. */
 export class FilmSentRequestDto {
@@ -46,9 +81,11 @@ export class FilmSentRequestDto {
   @IsOptional()
   label?: string;
 
-  @ApiProperty({ example: 3 })
-  @IsInt()
-  @Min(0)
-  @Max(1000)
-  episodeCount: number;
+  @ApiProperty({ type: [FilmSentEpisodeDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => FilmSentEpisodeDto)
+  episodes: FilmSentEpisodeDto[];
 }
