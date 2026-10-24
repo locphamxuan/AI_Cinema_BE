@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { OverdueEpisodesJob } from 'src/modules/production/studio-handoff/overdue-episodes.job';
@@ -13,7 +14,9 @@ interface Handoff {
   changeReason: string | null;
   productionFeeTokens: number;
   lostTokens: number;
-  studio: { id: string; name: string };
+  studio: { id: string; name: string; email: string };
+  filmSentNote: string | null;
+  filmLinks: { episodeId: string; version: string; fileName: string; url: string }[];
   emailMessage: { status: string };
   materials: { id: string; kind: string; fileName: string }[];
   milestoneEvents: { fromStatus: string | null; toStatus: string; mediaAsset: { id: string } | null }[];
@@ -103,6 +106,43 @@ describe('Studio hand-off (e2e)', () => {
     );
     expect(material.body.equals(PDF)).toBe(true);
     await otherCreator.get(`/projects/${project.id}/handoffs`, 404);
+  });
+
+  it('keeps the link of every episode the studio mails back, the newest one each (BR-58)', async () => {
+    const [first, second] = episodesOf(project);
+    const [handoff] = await handoffs();
+    const film = (episode: number, version: string) => ({
+      episode,
+      fileName: `tap-${episode}.mp4`,
+      url: `http://127.0.0.1:3100/films/${version}/tap-${episode}.mp4`,
+    });
+    const report = {
+      studioEmail: handoff.studio.email,
+      creatorEmail: 'creator01@aicinema.com',
+      movieTitle: project.title,
+      scope: 'Toàn bộ dự án',
+      version: 'v1',
+      label: 'Bản giao đầu',
+      episodes: [film(1, 'v1')],
+    };
+    const inbound = (token: string, body: object) =>
+      request(app.getHttpServer()).post('/api/studio-inbound/film-sent').set('x-studio-token', token).send(body);
+
+    await inbound('wrong-token', report).expect(401);
+    await inbound('e2e-studio-token', { ...report, episodes: [] }).expect(400);
+    await inbound('e2e-studio-token', report).expect(200);
+    await inbound('e2e-studio-token', {
+      ...report,
+      version: 'v2',
+      episodes: [film(1, 'v2'), film(2, 'v2'), film(9, 'v2')],
+    }).expect(200);
+
+    const [after] = await handoffs();
+    expect(after.filmSentNote).toContain('v2');
+    expect(after.filmLinks.map((link) => [link.episodeId, link.version, link.url])).toEqual([
+      [first.id, 'v2', film(1, 'v2').url],
+      [second.id, 'v2', film(2, 'v2').url],
+    ]);
   });
 
   it('lets only the Creator move the milestone, step by step, and DELIVERED needs the Submission (BR-58)', async () => {
