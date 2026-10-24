@@ -10,7 +10,8 @@ enum AdBreakStatus {
 }
 
 /// Mid-roll ad catalog. Schedule and impression share one SessionAdBreak row: a break moves
-/// SCHEDULED -> PLAYED when the player reaches its cue, which also counts the impression.
+/// SCHEDULED -> PLAYED when the player reaches its cue, which counts the impression. The
+/// separate completedView flag records a player-confirmed full view, never the start alone.
 model Ad {
   id              String    @id @default(uuid()) @db.Uuid
   title           String    @db.VarChar(255)

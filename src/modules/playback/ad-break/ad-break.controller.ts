@@ -18,9 +18,9 @@ export class AdBreakController {
 
   @Post('sessions/:sessionId/ad-breaks/:breakId/played')
   @ApiOperation({
-    summary: 'Player reached the cue: play the ad and count the impression (flow 3, step 17)',
+    summary: 'Player reached the cue: start the ad and count the impression (flow 3, step 17)',
     description:
-      'An impression is only counted when positionSeconds is within 30s of the scheduled cue. A position before the cue is refused with AD_BREAK_NOT_REACHED; a forward seek past the cue is refused with AD_BREAK_MISSED and is not billed (product decision: a skipped cue earns no impression).',
+      'An impression is only counted when positionSeconds is within 30s of the scheduled cue. A position before the cue is refused with AD_BREAK_NOT_REACHED; a forward seek past the cue is refused with AD_BREAK_MISSED and is not billed (product decision: a skipped cue earns no impression). Starting an ad does not set completedView — the player confirms completion separately.',
   })
   @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
   @ApiOkResponse({ type: AdBreakPlayedViewDto })
@@ -32,5 +32,22 @@ export class AdBreakController {
     @Headers('x-guest-key') guestKey?: string,
   ) {
     return this.breaks.markPlayed(sessionId, breakId, { userId: user?.id, guestKey }, dto);
+  }
+
+  @Post('sessions/:sessionId/ad-breaks/:breakId/completed')
+  @ApiOperation({
+    summary: 'Player finished the ad: record a completed view (flow 3, step 17)',
+    description:
+      'Completion is only recorded after the break was started and at least the ad duration (minus a 2s tolerance) has elapsed on the server clock. A confirmation right after played is refused with AD_BREAK_NOT_FINISHED, so advertiser completion numbers are not inflated by the start call.',
+  })
+  @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
+  @ApiOkResponse({ type: AdBreakPlayedViewDto })
+  completed(
+    @Param('sessionId', ID) sessionId: string,
+    @Param('breakId', ID) breakId: string,
+    @OptionalUser() user: AuthenticatedUser | undefined,
+    @Headers('x-guest-key') guestKey?: string,
+  ) {
+    return this.breaks.markCompleted(sessionId, breakId, { userId: user?.id, guestKey });
   }
 }

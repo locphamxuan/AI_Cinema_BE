@@ -20,6 +20,12 @@ export const AD_EDGE_SECONDS = 60;
  */
 export const AD_IMPRESSION_TOLERANCE_SECONDS = 30;
 
+/**
+ * P4-3: a completion claim is accepted once the ad itself could have played. Two seconds
+ * absorb player-timer and network jitter without letting an instant "finished" call through.
+ */
+export const AD_COMPLETION_TOLERANCE_SECONDS = 2;
+
 export interface AdScheduleItem {
   breakId: string;
   positionSeconds: number;
@@ -28,8 +34,9 @@ export interface AdScheduleItem {
 
 /**
  * Mid-roll cues (flow 3, steps 12–13, 16–17). Schedule and impression share one
- * SessionAdBreak row: SCHEDULED at session creation, PLAYED when the player
- * reaches the cue — which also counts the impression.
+ * SessionAdBreak row: SCHEDULED at session creation, PLAYED when the player reaches
+ * the cue (the billable impression). completedView is a separate, player-confirmed
+ * signal that the ad played to the end — never inferred from the start call (P4-3).
  */
 @Injectable()
 export class AdBreakService {
@@ -96,13 +103,88 @@ export class AdBreakService {
    * SCHEDULED (an untrusted out-of-window call is not proof of intent): if the viewer seeks
    * back and genuinely reaches the cue, it can still play — and count — once.
    *
+   * P4-3: starting an ad is not a completed view. `completedView` stays false here and is
+   * only set by markCompleted after the player confirms the ad actually finished; without
+   * that call advertiser completion numbers stay conservatively empty, never inflated.
+   *
    * The playhead is still client-reported: this is a bar against buggy or casual callers,
    * not cryptographic proof of playback; segment-level verification is the stronger follow-up.
    */
   async markPlayed(sessionId: string, breakId: string, caller: SessionCaller, input: { positionSeconds: number }) {
+    const row = await this.ownedBreak(sessionId, breakId, caller);
+    if (row.status === AdBreakStatus.PLAYED) {
+      return adBreakView(row);
+    }
+    const distance = Math.abs(input.positionSeconds - row.positionSeconds);
+    if (distance > AD_IMPRESSION_TOLERANCE_SECONDS) {
+      const early = input.positionSeconds < row.positionSeconds;
+      throw new ConflictException({
+        message: early
+          ? 'The player has not reached this ad break yet'
+          : 'The player moved past this ad break without playing it; no impression is counted',
+        details: {
+          reason: early ? 'AD_BREAK_NOT_REACHED' : 'AD_BREAK_MISSED',
+          cuePositionSeconds: row.positionSeconds,
+          positionSeconds: input.positionSeconds,
+          toleranceSeconds: AD_IMPRESSION_TOLERANCE_SECONDS,
+        },
+      });
+    }
+    const played = await this.prisma.sessionAdBreak.update({
+      where: { id: row.id },
+      // P4-3: the start call records the impression only; completion needs its own confirmation.
+      data: { status: AdBreakStatus.PLAYED, playedAt: new Date(), completedView: false },
+    });
+    return adBreakView(played);
+  }
+
+  /**
+   * P4-3: the player reports that the ad played to the end. Completion is never inferred
+   * from the start call: the break must already be PLAYED, and at least the ad's own
+   * duration (minus a small clock tolerance) must have elapsed on the server clock. This
+   * keeps advertiser completion numbers honest instead of claiming every impression
+   * completed the moment it began.
+   *
+   * The elapsed-time gate proves enough time passed, not that the ad was on screen;
+   * segment-level telemetry is the stronger follow-up. Like the start call, this is
+   * idempotent: a retried confirmation returns the row.
+   */
+  async markCompleted(sessionId: string, breakId: string, caller: SessionCaller) {
+    const row = await this.ownedBreak(sessionId, breakId, caller);
+    if (row.status !== AdBreakStatus.PLAYED || !row.playedAt) {
+      throw new ConflictException({
+        message: 'The ad break has not started yet',
+        details: { reason: 'AD_BREAK_NOT_PLAYED' },
+      });
+    }
+    if (row.completedView) return adBreakView(row);
+    const elapsedSeconds = (Date.now() - row.playedAt.getTime()) / 1000;
+    const requiredSeconds = Math.max(1, row.ad.durationSeconds - AD_COMPLETION_TOLERANCE_SECONDS);
+    if (elapsedSeconds < requiredSeconds) {
+      throw new ConflictException({
+        message: 'The ad has not finished playing yet',
+        details: {
+          reason: 'AD_BREAK_NOT_FINISHED',
+          elapsedSeconds: Math.floor(elapsedSeconds),
+          requiredSeconds,
+        },
+      });
+    }
+    const completed = await this.prisma.sessionAdBreak.update({
+      where: { id: row.id },
+      data: { completedView: true },
+    });
+    return adBreakView(completed);
+  }
+
+  /**
+   * The break only its session owner may touch, checked against the caller and the
+   * session's liveness. Shared by start and completion so both answer the same errors.
+   */
+  private async ownedBreak(sessionId: string, breakId: string, caller: SessionCaller) {
     const row = await this.prisma.sessionAdBreak.findUnique({
       where: { id: breakId },
-      include: { session: true },
+      include: { session: true, ad: { select: { durationSeconds: true } } },
     });
     if (!row || row.streamingSessionId !== sessionId) {
       throw new NotFoundException({
@@ -125,29 +207,7 @@ export class AdBreakService {
         details: { reason: 'SESSION_NOT_ACTIVE' },
       });
     }
-    if (row.status === AdBreakStatus.PLAYED) {
-      return { breakId: row.id, status: row.status, playedAt: row.playedAt };
-    }
-    const distance = Math.abs(input.positionSeconds - row.positionSeconds);
-    if (distance > AD_IMPRESSION_TOLERANCE_SECONDS) {
-      const early = input.positionSeconds < row.positionSeconds;
-      throw new ConflictException({
-        message: early
-          ? 'The player has not reached this ad break yet'
-          : 'The player moved past this ad break without playing it; no impression is counted',
-        details: {
-          reason: early ? 'AD_BREAK_NOT_REACHED' : 'AD_BREAK_MISSED',
-          cuePositionSeconds: row.positionSeconds,
-          positionSeconds: input.positionSeconds,
-          toleranceSeconds: AD_IMPRESSION_TOLERANCE_SECONDS,
-        },
-      });
-    }
-    const played = await this.prisma.sessionAdBreak.update({
-      where: { id: row.id },
-      data: { status: AdBreakStatus.PLAYED, playedAt: new Date(), completedView: true },
-    });
-    return { breakId: played.id, status: played.status, playedAt: played.playedAt };
+    return row;
   }
 
   private async adFreeOf(userId: string | undefined): Promise<boolean> {
@@ -189,6 +249,15 @@ export function weightedOrder<T extends Pick<Ad, 'weight'>>(ads: T[]): T[] {
     ordered.push(...remaining.splice(index === -1 ? remaining.length - 1 : index, 1));
   }
   return ordered;
+}
+
+function adBreakView(row: { id: string; status: AdBreakStatus; playedAt: Date | null; completedView: boolean }) {
+  return {
+    breakId: row.id,
+    status: row.status,
+    playedAt: row.playedAt,
+    completedView: row.completedView,
+  };
 }
 
 function scheduleItem(row: { id: string; positionSeconds: number; ad: Ad }): AdScheduleItem {

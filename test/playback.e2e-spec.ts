@@ -149,6 +149,11 @@ describe('Playback viewing experience (e2e)', () => {
       { positionSeconds: 0 },
       404,
     );
+    await member.post(
+      `/playback/sessions/${session.sessionId}/ad-breaks/00000000-0000-4000-8000-000000000000/completed`,
+      {},
+      404,
+    );
   });
 
   it('answers a taken-down episode with its maintenance reason, before and during the handoff (BR-56)', async () => {
