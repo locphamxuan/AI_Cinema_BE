@@ -1,13 +1,14 @@
 # playback-cdn Worker (MF-3 phase 2)
 
-Edge gate between players and MinIO. Verifies the API's signed token
+Edge gate between players and the Cloudflare R2 bucket. Verifies the API's signed token
 (`?s=&exp=&sig=`, HMAC-SHA256 over `sessionId|assetId|exp`) on every
-`/public/hls/*` request, proxies valid ones to MinIO, caches by path.
+`/public/hls/*` request, proxies valid ones to R2, caches by path.
 
 ## Deploy
 
 1. `wrangler secret put PLAYBACK_URL_SECRET` — same value as the API's env.
-2. Set `ORIGIN_BASE` in `wrangler.toml` — public gateway of the MinIO bucket.
+2. Set `ORIGIN_BASE` in `wrangler.toml` — public origin of the R2 bucket
+   (`https://pub-xxxx.r2.dev` or the bucket's custom domain).
 3. Add the `routes` line for the CDN domain (= API `STORAGE_PUBLIC_BASE_URL`).
 4. `wrangler deploy`.
 

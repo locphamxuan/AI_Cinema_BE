@@ -65,7 +65,7 @@ export interface PlaybackToken {
  * Token: `?s=<sessionId>&exp=<unix>&sig=HMAC(secret, sessionId|assetId|exp)`.
  * The signature binds the session, not the path, so one token opens the master,
  * the variant playlists and every segment of that asset until `exp`. The edge
- * Worker verifies the same token before MinIO is touched; the API re-checks the
+ * Worker verifies the same token before the R2 bucket is touched; the API re-checks the
  * session row on the playlist endpoints (cheap text responses, not segments).
  *
  * P2-2: `exp` is short (default 1h) and every playlist response re-signs its child

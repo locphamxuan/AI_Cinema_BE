@@ -6,7 +6,7 @@ compatibility_date = "2026-01-01"
 # routes = [{ pattern = "cdn.aicinema.example/public/hls/*", zone_name = "aicinema.example" }]
 
 [vars]
-# Public gateway of the MinIO bucket holding public/*, e.g. https://minio.example.com/aicinema
+# Public origin of the R2 bucket holding public/*, e.g. https://pub-xxxx.r2.dev
 # ORIGIN_BASE = ""
 
 [secrets]
