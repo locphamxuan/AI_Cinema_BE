@@ -1,10 +1,11 @@
 // Builds AI_Film/CATALOG.json, the list of films `npm run seed:catalog` puts into the catalog.
 //   npm run film:catalog   (after `npm run film:push`, so every video is already on R2)
+// Only the films on this machine are rebuilt; the others keep their CATALOG.json entry, so no film:pull is needed.
 // A film is a folder "<genre> - <genre>/<title>/" of episodes "...ep1.mp4"; a video straight in AI_Film_v2 is a
 // one-episode film described in ROOT_FILMS. For each film it measures the episodes with ffmpeg, takes a poster
 // (the .jpg beside the video, else a frame of episode 1), uploads the poster next to the videos on R2 and
 // writes the public URLs. Subtitles beside a video ("<video name>.<lang>.srt") are turned into WebVTT and uploaded too.
-// Synopsis and year can be set by hand in catalog-meta.json ({ "<title>": {...} }).
+// Synopsis, year and language can be set by hand in catalog-meta.json ({ "<title>": { synopsis, releaseYear, language } }).
 // Needs ffmpeg on PATH and the S3_* settings of .env.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -166,7 +167,7 @@ async function main() {
         title: film.title,
         slug: movieSlug,
         genres: film.genres,
-        language: film.language ?? 'vi',
+        language: extra.language ?? film.language ?? 'vi',
         releaseYear: extra.releaseYear ?? DEFAULT_YEAR,
         synopsis:
           extra.synopsis ??
@@ -180,8 +181,14 @@ async function main() {
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
-  writeFileSync(path.join(root, 'CATALOG.json'), `${JSON.stringify({ movies }, null, 2)}\n`);
-  console.log(`${movies.length} films written to AI_Film/CATALOG.json; now run npm run seed:catalog.`);
+  // Films whose videos are not on this machine keep their entry: they are on R2 already, no pull needed.
+  const catalogPath = path.join(root, 'CATALOG.json');
+  const previous = existsSync(catalogPath) ? JSON.parse(readFileSync(catalogPath, 'utf8')).movies : [];
+  const built = new Set(movies.map((movie) => movie.title));
+  const kept = previous.filter((movie) => !built.has(movie.title));
+  const all = [...movies, ...kept].sort((a, b) => a.title.localeCompare(b.title, 'vi'));
+  writeFileSync(catalogPath, `${JSON.stringify({ movies: all }, null, 2)}\n`);
+  console.log(`${movies.length} films built, ${kept.length} kept from CATALOG.json; now run npm run seed:catalog.`);
 }
 
 await main();

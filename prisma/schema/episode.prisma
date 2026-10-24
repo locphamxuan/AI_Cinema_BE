@@ -53,6 +53,7 @@ model Episode {
     changeRequests     ProjectChangeRequest[]
     accesses           EpisodeAccess[]
     views              EpisodeView[]
+    studioFilmLinks    StudioFilmLink[]
 
     @@unique([movieId, episodeNumber])
     @@index([movieId, status])

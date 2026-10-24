@@ -10,13 +10,19 @@ const dto: FilmSentRequestDto = {
   scope: 'Mùa 2',
   version: 'v2',
   label: 'Bản dựng cuối',
-  episodeCount: 3,
+  episodes: [
+    { episode: 1, fileName: 'tap-1.mp4', url: 'http://studio.test/films/a/tap-1.mp4' },
+    { episode: 2, fileName: 'tap-2.mp4', url: 'http://studio.test/films/b/tap-2.mp4' },
+  ],
 };
 
-function setup(handoff: unknown, coCreators: string[] = []) {
+/** The episodes of the hand-off scope, in brief order, with the Creator each one is given to. */
+function setup(handoff: unknown, owners: (string | null)[] = [null, null]) {
+  const scope = owners.map((assignedCreatorId, i) => ({ id: `e${i + 1}`, assignedCreatorId }));
   const tx = {
     studioHandoff: { findFirst: jest.fn().mockResolvedValue(handoff), update: jest.fn() },
-    episode: { findMany: jest.fn().mockResolvedValue(coCreators.map((assignedCreatorId) => ({ assignedCreatorId }))) },
+    episode: { findMany: jest.fn().mockResolvedValue(scope) },
+    studioFilmLink: { upsert: jest.fn() },
   };
   const prisma = { $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)) };
   const auditLog = { record: jest.fn() };
@@ -52,14 +58,30 @@ describe('FilmSentService', () => {
   });
 
   it('also tells the Creators given episodes of the season, once each', async () => {
-    const { service, tx, notifications } = setup({ ...handoff, seasonId: 's2' }, ['c3', 'c1']);
+    const { service, tx, notifications } = setup({ ...handoff, seasonId: 's2' }, ['c3', 'c1', 'c3']);
 
     await service.record(dto);
 
     expect(tx.episode.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { movieId: 'm1', assignedCreatorId: { not: null }, seasonId: 's2' } }),
+      expect.objectContaining({ where: { movieId: 'm1', seasonId: 's2' }, orderBy: { episodeNumber: 'asc' } }),
     );
     expect(notifications.notify).toHaveBeenCalledWith(['c2', 'c1', 'r1', 'c3'], expect.anything(), tx);
+  });
+
+  it('keeps one link per episode of the scope, matched by its position in the order', async () => {
+    const { service, tx } = setup(handoff);
+
+    await service.record({
+      ...dto,
+      episodes: [...dto.episodes, { episode: 9, fileName: 'x.mp4', url: 'http://x.test/x' }],
+    });
+
+    expect(tx.studioFilmLink.upsert).toHaveBeenCalledTimes(2);
+    expect(tx.studioFilmLink.upsert).toHaveBeenCalledWith({
+      where: { handoffId_episodeId: { handoffId: 'h1', episodeId: 'e2' } },
+      create: expect.objectContaining({ handoffId: 'h1', episodeId: 'e2', version: 'v2', url: dto.episodes[1].url }),
+      update: expect.objectContaining({ version: 'v2', fileName: 'tap-2.mp4', url: dto.episodes[1].url }),
+    });
   });
 
   it('looks a season scope up by its number and a whole-project scope by no season', async () => {
