@@ -87,6 +87,8 @@ describe('PlaybackAccessService.verify', () => {
     await expect(service.verify('ep-1')).rejects.toMatchObject({
       response: expect.objectContaining({ details: expect.objectContaining({ reason: 'PLAYBACK_ACCESS_REQUIRED' }) }),
     });
+    // P4-5: a guest has no plan to look for.
+    expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
   });
 
   it('hands a running plan straight to playback (steps 5-7)', async () => {
@@ -102,6 +104,39 @@ describe('PlaybackAccessService.verify', () => {
     await expect(service.verify('ep-1', 'u-1')).resolves.toMatchObject({
       accessType: PlaybackAccessType.EPISODE_PURCHASE,
     });
+  });
+
+  it('reads the running plan once, with code and features in the same row (P4-5)', async () => {
+    const features = { maxDevices: 3, adFree: true };
+    prisma.subscription.findFirst.mockResolvedValue({ plan: { code: 'PREMIUM', features } });
+
+    await expect(service.runningPlanOf('u-1')).resolves.toEqual({ code: 'PREMIUM', features });
+    expect(prisma.subscription.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({ userId: 'u-1' }),
+      orderBy: { currentPeriodEnd: 'desc' },
+      select: { plan: { select: { code: true, features: true } } },
+    });
+  });
+
+  it('uses the supplied plan snapshot instead of reading the subscription again (P4-5)', async () => {
+    const plan = { code: 'YEARLY', features: { maxDevices: 4, adFree: true } };
+
+    await expect(service.verify('ep-1', 'u-1', plan)).resolves.toMatchObject({
+      accessType: PlaybackAccessType.PLAN,
+      planCode: 'YEARLY',
+    });
+    // The snapshot answers access, so neither the plan nor an unlock is read again.
+    expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
+    expect(prisma.episodeAccess.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('treats an explicit null snapshot as "no plan" without a second read (P4-5)', async () => {
+    prisma.episodeAccess.findFirst.mockResolvedValue({ source: 'EPISODE_PURCHASE' });
+
+    await expect(service.verify('ep-1', 'u-1', null)).resolves.toMatchObject({
+      accessType: PlaybackAccessType.EPISODE_PURCHASE,
+    });
+    expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
   });
 
   it('denies a member with nothing (step 3, back to Main Flow 2)', async () => {

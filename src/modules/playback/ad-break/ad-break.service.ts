@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { AdBreakStatus, AdStatus, StreamingSessionStatus, type Ad } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
+import type { RunningPlanSnapshot } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { SessionCaller } from '../streaming-session/streaming-session.service';
 
@@ -49,15 +49,18 @@ export class AdBreakService {
    * Step 13: lay up to adMaxBreaksPerEpisode cues evenly across the episode,
    * each holding a weighted draw among the currently valid ads. Ad-free plans
    * and episodes too short for a clean window get no cue at all.
+   *
+   * ad-free comes from the plan snapshot create() already read; this
+   * service never queries subscriptions.
    */
   async scheduleFor(
     sessionId: string,
-    input: { userId?: string; durationSeconds: number | null },
+    input: { adFree: boolean; durationSeconds: number | null },
   ): Promise<AdScheduleItem[]> {
-    const [settings, adFree] = await Promise.all([this.settings.get(), this.adFreeOf(input.userId)]);
-    if (adFree) return [];
+    if (input.adFree) return [];
     const duration = input.durationSeconds;
     if (!duration || duration <= AD_EDGE_SECONDS * 2) return [];
+    const settings = await this.settings.get();
     const eligible = await this.prisma.ad.findMany({
       where: {
         status: AdStatus.ACTIVE,
@@ -212,16 +215,16 @@ export class AdBreakService {
     }
     return row;
   }
+}
 
-  private async adFreeOf(userId: string | undefined): Promise<boolean> {
-    if (!userId) return false;
-    const plan = await this.prisma.subscription.findFirst({
-      where: runningPlanWhere(userId),
-      orderBy: { currentPeriodEnd: 'desc' },
-      include: { plan: { select: { features: true } } },
-    });
-    return (plan?.plan.features as { adFree?: unknown } | null)?.adFree === true;
-  }
+/**
+ * P4-5: whether the running plan removes ads, read off the snapshot create() already
+ * fetched. Only a literal `true` counts: missing/typed-wrong JSON leaves ads on.
+ */
+export function isAdFreePlan(runningPlan: Pick<RunningPlanSnapshot, 'features'> | null): boolean {
+  const features = runningPlan?.features;
+  if (!features || typeof features !== 'object' || Array.isArray(features)) return false;
+  return (features as { adFree?: unknown }).adFree === true;
 }
 
 /** Evenly spaced cue points inside (edge, duration - edge); nudged apart on rounding collisions. */

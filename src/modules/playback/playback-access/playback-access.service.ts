@@ -2,7 +2,11 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { AccessSource, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
-import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
+import {
+  RUNNING_PLAN_SELECT,
+  runningPlanWhere,
+  type RunningPlanSnapshot,
+} from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 
 export interface VerifiedPlayback {
@@ -32,7 +36,30 @@ export class PlaybackAccessService {
     private readonly settings: PlatformSettingService,
   ) {}
 
-  async verify(episodeId: string, userId?: string): Promise<VerifiedPlayback> {
+  /**
+   * P4-5: the one plan read behind a POST /sessions. The caller takes this snapshot and
+   * hands the same object to verify(), the device check and ad scheduling, so a paid
+   * session checks the subscription once instead of once per consumer.
+   */
+  async runningPlanOf(userId: string): Promise<RunningPlanSnapshot | null> {
+    const subscription = await this.prisma.subscription.findFirst({
+      where: runningPlanWhere(userId),
+      orderBy: { currentPeriodEnd: 'desc' },
+      select: RUNNING_PLAN_SELECT,
+    });
+    return subscription?.plan ?? null;
+  }
+
+  async verify(
+    episodeId: string,
+    userId?: string,
+    /**
+     * P4-5: the snapshot create() already read. `undefined` means "not supplied" (direct
+     * callers), so verify reads it itself; `null` means "this member has no running plan"
+     * and must not trigger a second read.
+     */
+    runningPlan?: RunningPlanSnapshot | null,
+  ): Promise<VerifiedPlayback> {
     // The same visibility rule as the catalog and the Main Flow 2 decision (BR-56): an episode
     // taken down to be fixed is found here and refused with its reason below, instead of the
     // caller hearing 404 about an episode the viewer can see listed.
@@ -113,14 +140,10 @@ export class PlaybackAccessService {
     }
 
     const [plan, episodeAccess] = await Promise.all([
-      this.prisma.subscription.findFirst({
-        where: runningPlanWhere(userId),
-        orderBy: { currentPeriodEnd: 'desc' },
-        include: { plan: { select: { code: true } } },
-      }),
-      this.prisma.episodeAccess.findFirst({ where: { userId, episodeId, revokedAt: null } }),
+      runningPlan === undefined ? this.runningPlanOf(userId) : runningPlan,
+      runningPlan ? null : this.prisma.episodeAccess.findFirst({ where: { userId, episodeId, revokedAt: null } }),
     ]);
-    if (plan) return { ...base, accessType: PlaybackAccessType.PLAN, planCode: plan.plan.code };
+    if (plan) return { ...base, accessType: PlaybackAccessType.PLAN, planCode: plan.code };
     if (episodeAccess) {
       return {
         ...base,

@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { AdBreakStatus, StreamingSessionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { AdBreakService, spreadPositions, weightedOrder } from './ad-break.service';
+import { AdBreakService, isAdFreePlan, spreadPositions, weightedOrder } from './ad-break.service';
 
 describe('spreadPositions', () => {
   it('lays cues evenly inside the clean window (step 13)', () => {
@@ -24,10 +24,20 @@ describe('weightedOrder', () => {
   });
 });
 
+describe('isAdFreePlan (P4-5)', () => {
+  it('is true only when the running plan features say so', () => {
+    expect(isAdFreePlan({ features: { adFree: true } })).toBe(true);
+    expect(isAdFreePlan({ features: { adFree: false } })).toBe(false);
+    expect(isAdFreePlan({ features: { maxDevices: 2 } })).toBe(false);
+    expect(isAdFreePlan({ features: { adFree: 'true' } })).toBe(false);
+    expect(isAdFreePlan({ features: null })).toBe(false);
+    expect(isAdFreePlan(null)).toBe(false);
+  });
+});
+
 describe('AdBreakService', () => {
   const prisma = {
     ad: { findMany: jest.fn() },
-    subscription: { findFirst: jest.fn() },
     sessionAdBreak: { createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ adMaxBreaksPerEpisode: 2 }) };
@@ -46,7 +56,6 @@ describe('AdBreakService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     settings.get.mockResolvedValue({ adMaxBreaksPerEpisode: 2 });
-    prisma.subscription.findFirst.mockResolvedValue(null);
     prisma.ad.findMany.mockResolvedValue([ad({ id: 'ad-1' }), ad({ id: 'ad-2' })]);
     prisma.sessionAdBreak.createMany.mockResolvedValue({ count: 2 });
     prisma.sessionAdBreak.findMany.mockResolvedValue([
@@ -56,7 +65,7 @@ describe('AdBreakService', () => {
   });
 
   it('schedules up to the platform cap with one atomic insert (steps 12–13, P4-1)', async () => {
-    const schedule = await service.scheduleFor('sess-1', { userId: 'u-1', durationSeconds: 1320 });
+    const schedule = await service.scheduleFor('sess-1', { adFree: false, durationSeconds: 1320 });
     expect(schedule.map((item) => item.positionSeconds)).toEqual([460, 860]);
     expect(prisma.sessionAdBreak.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.sessionAdBreak.createMany).toHaveBeenCalledWith({
@@ -72,7 +81,7 @@ describe('AdBreakService', () => {
     prisma.ad.findMany.mockResolvedValue([ad({ id: 'ad-1' })]);
     prisma.sessionAdBreak.findMany.mockResolvedValue([{ id: 'br-660', positionSeconds: 660, ad: ad({ id: 'ad-1' }) }]);
 
-    const schedule = await service.scheduleFor('sess-1', { durationSeconds: 1320 });
+    const schedule = await service.scheduleFor('sess-1', { adFree: false, durationSeconds: 1320 });
 
     // Only one distinct ad is eligible, so the episode gets one cue instead of cycling it.
     expect(schedule).toHaveLength(1);
@@ -83,12 +92,10 @@ describe('AdBreakService', () => {
   });
 
   it('schedules nothing for ad-free plans, short episodes or no valid ad', async () => {
-    prisma.subscription.findFirst.mockResolvedValue({ plan: { features: { adFree: true } } });
-    await expect(service.scheduleFor('sess-1', { userId: 'u-1', durationSeconds: 1320 })).resolves.toEqual([]);
-    await expect(service.scheduleFor('sess-1', { durationSeconds: 100 })).resolves.toEqual([]);
-    prisma.subscription.findFirst.mockResolvedValue(null);
+    await expect(service.scheduleFor('sess-1', { adFree: true, durationSeconds: 1320 })).resolves.toEqual([]);
+    await expect(service.scheduleFor('sess-1', { adFree: false, durationSeconds: 100 })).resolves.toEqual([]);
     prisma.ad.findMany.mockResolvedValue([]);
-    await expect(service.scheduleFor('sess-1', { durationSeconds: 1320 })).resolves.toEqual([]);
+    await expect(service.scheduleFor('sess-1', { adFree: false, durationSeconds: 1320 })).resolves.toEqual([]);
     expect(prisma.sessionAdBreak.createMany).not.toHaveBeenCalled();
   });
 

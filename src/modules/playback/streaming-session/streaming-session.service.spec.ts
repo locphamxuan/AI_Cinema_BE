@@ -30,7 +30,7 @@ describe('StreamingSessionService.create', () => {
     episode: { findUnique: jest.fn(), findFirst: jest.fn() },
     $transaction: jest.fn((work: (db: typeof tx) => Promise<never>) => work(tx)),
   };
-  const access = { verify: jest.fn(), stillEntitled: jest.fn() };
+  const access = { verify: jest.fn(), runningPlanOf: jest.fn(), stillEntitled: jest.fn() };
   const devices = { check: jest.fn() };
   const settings = {
     get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
@@ -64,9 +64,12 @@ describe('StreamingSessionService.create', () => {
     aiLabel: null,
   };
 
+  const runningPlan = { code: 'MONTHLY', features: { maxDevices: 2, adFree: false } };
+
   beforeEach(() => {
     jest.clearAllMocks();
     access.verify.mockResolvedValue(verified);
+    access.runningPlanOf.mockResolvedValue(runningPlan);
     access.stillEntitled.mockResolvedValue(true);
     devices.check.mockResolvedValue(undefined);
     progress.progress.mockResolvedValue({ found: false, positionSeconds: 0, completed: false });
@@ -84,8 +87,8 @@ describe('StreamingSessionService.create', () => {
   it('opens a member session after access and device checks (step 11)', async () => {
     const view = await service.create({ episodeId: 'ep-1', userId: 'u-1' });
 
-    expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1');
-    expect(devices.check).toHaveBeenCalledWith('u-1', tx);
+    expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1', runningPlan);
+    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx);
     expect(prisma.streamingSession.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ userId: 'u-1', episodeId: 'ep-1', mediaAssetId: 'asset-1' }),
@@ -103,7 +106,7 @@ describe('StreamingSessionService.create', () => {
     const rawCall = tx.$executeRaw.mock.calls[0] as unknown[];
     expect(String((rawCall[0] as unknown[])[0])).toContain('pg_advisory_xact_lock');
     // The device count runs after the lock, on the transaction client.
-    expect(devices.check).toHaveBeenCalledWith('u-1', tx);
+    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx);
     const checkOrder = devices.check.mock.invocationCallOrder[0];
     const createOrder = prisma.streamingSession.create.mock.invocationCallOrder[0];
     expect(checkOrder).toBeLessThan(createOrder);
@@ -116,13 +119,26 @@ describe('StreamingSessionService.create', () => {
     );
   });
 
-  it('opens a guest session from X-Guest-Key without a device check', async () => {
+  it('opens a guest session from X-Guest-Key without a device check or plan read (P4-5)', async () => {
     const guestKey = '123e4567-e89b-4123-a456-426614174000';
     const view = await service.create({ episodeId: 'ep-1', guestKey });
 
-    expect(access.verify).toHaveBeenCalledWith('ep-1', undefined);
+    expect(access.runningPlanOf).not.toHaveBeenCalled();
+    expect(access.verify).toHaveBeenCalledWith('ep-1', undefined, null);
     expect(devices.check).not.toHaveBeenCalled();
+    expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { adFree: false, durationSeconds: 600 });
     expect(view).toMatchObject({ sessionId: 'sess-1' });
+  });
+
+  it('hands the same plan snapshot to access, devices and ads (P4-5)', async () => {
+    await service.create({ episodeId: 'ep-1', userId: 'u-1' });
+    expect(access.runningPlanOf).toHaveBeenCalledTimes(1);
+    expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1', runningPlan);
+    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx);
+    expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { adFree: false, durationSeconds: 600 });
+    access.runningPlanOf.mockResolvedValue({ code: 'PREMIUM', features: { adFree: true } });
+    await service.create({ episodeId: 'ep-1', userId: 'u-1' });
+    expect(ads.scheduleFor).toHaveBeenLastCalledWith('sess-1', { adFree: true, durationSeconds: 600 });
   });
 
   it('reuses the live session on a double tap instead of opening a second row', async () => {

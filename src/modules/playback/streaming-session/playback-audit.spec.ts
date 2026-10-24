@@ -111,7 +111,7 @@ describe('playback audit rows (hardening #12)', () => {
       episode: { findUnique: jest.fn(), findFirst: jest.fn() },
       $transaction: jest.fn((work: (db: typeof tx) => Promise<never>) => work(tx)),
     };
-    const access = { verify: jest.fn(), stillEntitled: jest.fn() };
+    const access = { verify: jest.fn(), runningPlanOf: jest.fn(), stillEntitled: jest.fn() };
     const devices = { check: jest.fn() };
     const settings = {
       get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
@@ -148,6 +148,7 @@ describe('playback audit rows (hardening #12)', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       access.verify.mockResolvedValue(verified);
+      access.runningPlanOf.mockResolvedValue({ code: 'MONTHLY', features: { maxDevices: 2, adFree: false } });
       access.stillEntitled.mockResolvedValue(true);
       devices.check.mockResolvedValue(undefined);
       progress.progress.mockResolvedValue({ found: false, positionSeconds: 0, completed: false });

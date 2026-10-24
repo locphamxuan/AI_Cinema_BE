@@ -18,7 +18,7 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService, type VerifiedPlayback } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
-import { AdBreakService, type AdScheduleItem } from '../ad-break/ad-break.service';
+import { AdBreakService, isAdFreePlan, type AdScheduleItem } from '../ad-break/ad-break.service';
 import { PlaybackUrlService } from './playback-url.service';
 import { sessionEnded, sessionStarted } from './playback-events';
 import { progressWriteDue, watchCreditSeconds } from './watch-pacing';
@@ -96,7 +96,11 @@ export class StreamingSessionService {
       });
     }
 
-    const verified = await this.access.verify(input.episodeId, userId);
+    // P4-5: one plan read for the whole request. The same snapshot answers access,
+    // the device limit and ad-free, so a paid session never reads the subscription
+    // three times. Guests have no plan and skip the read entirely.
+    const runningPlan = userId ? await this.access.runningPlanOf(userId) : null;
+    const verified = await this.access.verify(input.episodeId, userId, runningPlan);
 
     // F-2: the device count, the live-session lookup and the insert serialize on a
     // per-owner advisory lock. The lock releases with the transaction, so a second
@@ -133,7 +137,7 @@ export class StreamingSessionService {
             }
           }
         }
-        if (userId) await this.devices.check(userId, tx);
+        if (userId) await this.devices.check(userId, runningPlan, tx);
 
         // Double taps share one live session: an ACTIVE row on the same episode whose
         // heartbeat has not timed out is handed back instead of opening a second row —
@@ -202,7 +206,10 @@ export class StreamingSessionService {
       verified,
       false,
       await this.resumeOf(userId, verified.episodeId),
-      await this.ads.scheduleFor(session.id, { userId, durationSeconds: verified.durationSeconds }),
+      await this.ads.scheduleFor(session.id, {
+        adFree: isAdFreePlan(runningPlan),
+        durationSeconds: verified.durationSeconds,
+      }),
       idempotent,
     );
   }

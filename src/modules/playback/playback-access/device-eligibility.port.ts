@@ -1,6 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
-import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
+import type { RunningPlanSnapshot } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 
 /** Fallback when neither the plan nor the episode carries a device limit. */
@@ -13,11 +13,12 @@ export const DEFAULT_MAX_DEVICES = 2;
  */
 export abstract class DeviceEligibilityPort {
   /**
-   * May this member open one more stream right now? `db` carries the creation
-   * transaction so the count and the insert serialize (F-2); without it the
-   * count is only best-effort.
+   * May this member open one more stream right now? `runningPlan` is the snapshot
+   * create() already read (P4-5), so the check never re-reads the subscription;
+   * `null` is a known "no plan". `db` carries the creation transaction so the count
+   * and the insert serialize (F-2).
    */
-  abstract check(userId: string, db?: PrismaTx): Promise<void>;
+  abstract check(userId: string, runningPlan: RunningPlanSnapshot | null, db?: PrismaTx): Promise<void>;
 }
 
 /**
@@ -33,21 +34,14 @@ export class CountingDeviceEligibilityService extends DeviceEligibilityPort {
     super();
   }
 
-  async check(userId: string, db?: PrismaTx): Promise<void> {
+  async check(userId: string, runningPlan: RunningPlanSnapshot | null, db?: PrismaTx): Promise<void> {
     const { playbackHeartbeatTimeoutSeconds } = await this.settings.get();
     const aliveSince = new Date(Date.now() - playbackHeartbeatTimeoutSeconds * 1000);
     const client: PrismaService | PrismaTx = db ?? this.prisma;
-    const [plan, liveSessions] = await Promise.all([
-      client.subscription.findFirst({
-        where: runningPlanWhere(userId),
-        orderBy: { currentPeriodEnd: 'desc' },
-        include: { plan: { select: { features: true } } },
-      }),
-      client.streamingSession.count({
-        where: { userId, status: 'ACTIVE', lastHeartbeatAt: { gt: aliveSince } },
-      }),
-    ]);
-    const maxDevices = maxDevicesOf(plan?.plan.features) ?? DEFAULT_MAX_DEVICES;
+    const liveSessions = await client.streamingSession.count({
+      where: { userId, status: 'ACTIVE', lastHeartbeatAt: { gt: aliveSince } },
+    });
+    const maxDevices = maxDevicesOf(runningPlan?.features) ?? DEFAULT_MAX_DEVICES;
     if (liveSessions >= maxDevices) {
       throw new ForbiddenException({
         message: 'Too many concurrent streams for this plan',
