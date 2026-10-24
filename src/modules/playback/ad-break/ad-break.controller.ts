@@ -1,9 +1,10 @@
-import { Controller, Headers, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Headers, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { OptionalUser } from 'src/common/decorators/optional-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { AdBreakService } from './ad-break.service';
+import { AdBreakPlayedRequestDto } from 'src/modules/playback/ad-break/dto/ad-break-played.request.dto';
 import { AdBreakPlayedViewDto } from 'src/modules/playback/ad-break/dto/ad-break-played.view.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -16,15 +17,20 @@ export class AdBreakController {
   constructor(private readonly breaks: AdBreakService) {}
 
   @Post('sessions/:sessionId/ad-breaks/:breakId/played')
-  @ApiOperation({ summary: 'Player reached the cue: play the ad and count the impression (flow 3, step 17)' })
+  @ApiOperation({
+    summary: 'Player reached the cue: play the ad and count the impression (flow 3, step 17)',
+    description:
+      'An impression is only counted when positionSeconds is within 30s of the scheduled cue. A position before the cue is refused with AD_BREAK_NOT_REACHED; a forward seek past the cue is refused with AD_BREAK_MISSED and is not billed (product decision: a skipped cue earns no impression).',
+  })
   @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
   @ApiOkResponse({ type: AdBreakPlayedViewDto })
   played(
     @Param('sessionId', ID) sessionId: string,
     @Param('breakId', ID) breakId: string,
+    @Body() dto: AdBreakPlayedRequestDto,
     @OptionalUser() user: AuthenticatedUser | undefined,
     @Headers('x-guest-key') guestKey?: string,
   ) {
-    return this.breaks.markPlayed(sessionId, breakId, { userId: user?.id, guestKey });
+    return this.breaks.markPlayed(sessionId, breakId, { userId: user?.id, guestKey }, dto);
   }
 }

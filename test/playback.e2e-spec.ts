@@ -146,7 +146,7 @@ describe('Playback viewing experience (e2e)', () => {
     );
     await member.post(
       `/playback/sessions/${session.sessionId}/ad-breaks/00000000-0000-4000-8000-000000000000/played`,
-      {},
+      { positionSeconds: 0 },
       404,
     );
   });

@@ -82,6 +82,7 @@ describe('AdBreakService', () => {
     const row = (status: AdBreakStatus) => ({
       id: 'br-1',
       streamingSessionId: 'sess-1',
+      positionSeconds: 460,
       status,
       playedAt: status === AdBreakStatus.PLAYED ? new Date() : null,
       session: { userId: 'u-1', guestKey: null, status: StreamingSessionStatus.ACTIVE },
@@ -89,25 +90,72 @@ describe('AdBreakService', () => {
     prisma.sessionAdBreak.findUnique.mockResolvedValue(row(AdBreakStatus.SCHEDULED));
     prisma.sessionAdBreak.update.mockResolvedValue(row(AdBreakStatus.PLAYED));
 
-    const played = await service.markPlayed('sess-1', 'br-1', { userId: 'u-1' });
+    const played = await service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 460 });
     expect(played).toMatchObject({ breakId: 'br-1', status: 'PLAYED' });
 
     prisma.sessionAdBreak.findUnique.mockResolvedValue(row(AdBreakStatus.PLAYED));
-    await expect(service.markPlayed('sess-1', 'br-1', { userId: 'u-1' })).resolves.toMatchObject({ status: 'PLAYED' });
+    await expect(
+      service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 460 }),
+    ).resolves.toMatchObject({ status: 'PLAYED' });
+    expect(prisma.sessionAdBreak.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts an impression only inside the cue window (P4-2)', async () => {
+    prisma.sessionAdBreak.findUnique.mockResolvedValue({
+      id: 'br-1',
+      streamingSessionId: 'sess-1',
+      positionSeconds: 460,
+      status: AdBreakStatus.SCHEDULED,
+      playedAt: null,
+      session: { userId: 'u-1', guestKey: null, status: StreamingSessionStatus.ACTIVE },
+    });
+    prisma.sessionAdBreak.update.mockResolvedValue({
+      id: 'br-1',
+      status: AdBreakStatus.PLAYED,
+      playedAt: new Date(),
+    });
+
+    // Opening the movie and claiming every cue: far before the cue, no money.
+    await expect(service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 0 })).rejects.toMatchObject(
+      {
+        response: expect.objectContaining({
+          details: expect.objectContaining({ reason: 'AD_BREAK_NOT_REACHED', cuePositionSeconds: 460 }),
+        }),
+      },
+    );
+    // Forward seek over the cue: the ad never started, so it is not billed.
+    await expect(
+      service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 491 }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({ reason: 'AD_BREAK_MISSED', cuePositionSeconds: 460 }),
+      }),
+    });
+    expect(prisma.sessionAdBreak.update).not.toHaveBeenCalled();
+
+    // The tolerance is inclusive: cue + 30s still counts once.
+    await expect(
+      service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 490 }),
+    ).resolves.toMatchObject({ status: 'PLAYED' });
     expect(prisma.sessionAdBreak.update).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a cue of another session or another owner', async () => {
     prisma.sessionAdBreak.findUnique.mockResolvedValue(null);
-    await expect(service.markPlayed('sess-1', 'missing', { userId: 'u-1' })).rejects.toMatchObject({
+    await expect(
+      service.markPlayed('sess-1', 'missing', { userId: 'u-1' }, { positionSeconds: 460 }),
+    ).rejects.toMatchObject({
       response: expect.objectContaining({ details: expect.objectContaining({ reason: 'AD_BREAK_NOT_FOUND' }) }),
     });
     prisma.sessionAdBreak.findUnique.mockResolvedValue({
       id: 'br-1',
       streamingSessionId: 'sess-2',
+      positionSeconds: 460,
       session: { userId: 'u-1', status: StreamingSessionStatus.ACTIVE },
     });
-    await expect(service.markPlayed('sess-1', 'br-1', { userId: 'u-1' })).rejects.toMatchObject({
+    await expect(
+      service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 460 }),
+    ).rejects.toMatchObject({
       response: expect.objectContaining({ details: expect.objectContaining({ reason: 'AD_BREAK_NOT_FOUND' }) }),
     });
   });

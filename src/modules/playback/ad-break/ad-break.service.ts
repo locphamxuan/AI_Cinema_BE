@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AdBreakStatus, AdStatus, StreamingSessionStatus, type Ad } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
@@ -7,6 +13,12 @@ import type { SessionCaller } from '../streaming-session/streaming-session.servi
 
 /** No cue in the first or last minute: intros and credits stay clean. */
 export const AD_EDGE_SECONDS = 60;
+
+/**
+ * How far the reported playhead may sit from the cue and still count (P4-2). The window
+ * absorbs keyframe granularity and the player's trigger delay, not a whole scrubbed gap.
+ */
+export const AD_IMPRESSION_TOLERANCE_SECONDS = 30;
 
 export interface AdScheduleItem {
   breakId: string;
@@ -73,8 +85,21 @@ export class AdBreakService {
     return rows.map(scheduleItem);
   }
 
-  /** Step 17: pause the episode content, play the cue, count the impression. Idempotent. */
-  async markPlayed(sessionId: string, breakId: string, caller: SessionCaller) {
+  /**
+   * Step 17: pause the episode content, play the cue, count the impression. Idempotent.
+   *
+   * P4-2: an impression is money, so it only counts when the player reports a playhead
+   * inside AD_IMPRESSION_TOLERANCE_SECONDS of the cue. A player that calls `played` for
+   * every cue when the movie opens now gets AD_BREAK_NOT_REACHED instead of billing every
+   * advertiser. Product decision for a forward seek over a cue: the ad was never started,
+   * so it is neither shown nor billed and no impression exists. The row deliberately stays
+   * SCHEDULED (an untrusted out-of-window call is not proof of intent): if the viewer seeks
+   * back and genuinely reaches the cue, it can still play — and count — once.
+   *
+   * The playhead is still client-reported: this is a bar against buggy or casual callers,
+   * not cryptographic proof of playback; segment-level verification is the stronger follow-up.
+   */
+  async markPlayed(sessionId: string, breakId: string, caller: SessionCaller, input: { positionSeconds: number }) {
     const row = await this.prisma.sessionAdBreak.findUnique({
       where: { id: breakId },
       include: { session: true },
@@ -102,6 +127,21 @@ export class AdBreakService {
     }
     if (row.status === AdBreakStatus.PLAYED) {
       return { breakId: row.id, status: row.status, playedAt: row.playedAt };
+    }
+    const distance = Math.abs(input.positionSeconds - row.positionSeconds);
+    if (distance > AD_IMPRESSION_TOLERANCE_SECONDS) {
+      const early = input.positionSeconds < row.positionSeconds;
+      throw new ConflictException({
+        message: early
+          ? 'The player has not reached this ad break yet'
+          : 'The player moved past this ad break without playing it; no impression is counted',
+        details: {
+          reason: early ? 'AD_BREAK_NOT_REACHED' : 'AD_BREAK_MISSED',
+          cuePositionSeconds: row.positionSeconds,
+          positionSeconds: input.positionSeconds,
+          toleranceSeconds: AD_IMPRESSION_TOLERANCE_SECONDS,
+        },
+      });
     }
     const played = await this.prisma.sessionAdBreak.update({
       where: { id: row.id },
