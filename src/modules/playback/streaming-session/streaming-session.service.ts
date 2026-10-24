@@ -429,7 +429,7 @@ export class StreamingSessionService {
   }
 
   /**
-   * Steps 22–24: the episode after this one in the same movie, if it is out.
+   * Steps 22–24: the episode after this one in the same movie, if it is out and playable.
    * Access is NOT granted here — the caller hands the id back to Main Flow 2.
    */
   async nextEpisode(episodeId: string): Promise<NextEpisodeView> {
@@ -438,16 +438,14 @@ export class StreamingSessionService {
       select: { movieId: true, episodeNumber: true },
     });
     if (!current) {
-      throw new NotFoundException({
-        message: 'Episode not found',
-        details: { reason: 'EPISODE_NOT_FOUND' },
-      });
+      throw new NotFoundException({ message: 'Episode not found', details: { reason: 'EPISODE_NOT_FOUND' } });
     }
     const next = await this.prisma.episode.findFirst({
       where: {
         movieId: current.movieId,
         episodeNumber: { gt: current.episodeNumber },
         status: EpisodeStatus.PUBLISHED,
+        revisionStartedAt: null,
       },
       orderBy: { episodeNumber: 'asc' },
       select: { id: true, movieId: true, episodeNumber: true, title: true },

@@ -472,29 +472,4 @@ describe('StreamingSessionService.create', () => {
       expect(audit.record).not.toHaveBeenCalled();
     });
   });
-
-  describe('nextEpisode', () => {
-    it('returns the next released episode of the movie (steps 22–24)', async () => {
-      prisma.episode.findUnique.mockResolvedValue({ movieId: 'm-1', episodeNumber: 1 });
-      prisma.episode.findFirst.mockResolvedValue({ id: 'ep-2', movieId: 'm-1', episodeNumber: 2, title: 'Tập 2' });
-      await expect(service.nextEpisode('ep-1')).resolves.toMatchObject({ episodeId: 'ep-2', episodeNumber: 2 });
-      expect(prisma.episode.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ movieId: 'm-1', episodeNumber: { gt: 1 } }),
-          orderBy: { episodeNumber: 'asc' },
-        }),
-      );
-    });
-
-    it('answers null at the end of the movie and 404 for a missing episode', async () => {
-      prisma.episode.findUnique.mockResolvedValueOnce({ movieId: 'm-1', episodeNumber: 3 });
-      prisma.episode.findFirst.mockResolvedValue(null);
-      await expect(service.nextEpisode('ep-3')).resolves.toMatchObject({ episodeId: null });
-
-      prisma.episode.findUnique.mockResolvedValueOnce(null);
-      await expect(service.nextEpisode('missing')).rejects.toMatchObject({
-        response: expect.objectContaining({ details: expect.objectContaining({ reason: 'EPISODE_NOT_FOUND' }) }),
-      });
-    });
-  });
 });

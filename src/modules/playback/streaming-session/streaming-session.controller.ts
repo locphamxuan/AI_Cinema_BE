@@ -152,7 +152,9 @@ export class StreamingSessionController {
   }
 
   @Get('episodes/:episodeId/next')
-  @ApiOperation({ summary: 'Episode after this one, if released; access still goes through Main Flow 2' })
+  @ApiOperation({
+    summary: 'Episode after this one, if released and not under revision; access still goes through Main Flow 2',
+  })
   @ApiOkResponse({ type: NextEpisodeViewDto })
   next(@Param('episodeId', ID) episodeId: string) {
     return this.sessions.nextEpisode(episodeId);
