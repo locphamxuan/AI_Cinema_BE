@@ -36,6 +36,7 @@ describe('SessionExpirySweep.expireDue', () => {
     totalWatchedSeconds: 600,
     // Cached on the row at session creation; the sweep does not join media_assets.
     durationSeconds: 1200,
+    lastHeartbeatAt: new Date('2026-10-15T09:50:00.000Z'),
     ...overrides,
   });
 
@@ -61,7 +62,12 @@ describe('SessionExpirySweep.expireDue', () => {
     );
     expect(prisma.streamingSession.updateManyAndReturn).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: { in: ['sess-1'] }, status: StreamingSessionStatus.ACTIVE },
+        where: {
+          id: { in: ['sess-1'] },
+          status: StreamingSessionStatus.ACTIVE,
+          // Re-checked at UPDATE time: a heartbeat between SELECT and UPDATE keeps the row open.
+          lastHeartbeatAt: { lte: new Date('2026-10-15T09:58:30.000Z') },
+        },
         data: expect.objectContaining({ status: StreamingSessionStatus.ENDED, endReason: StreamingEndReason.EXPIRED }),
       }),
     );
@@ -99,7 +105,12 @@ describe('SessionExpirySweep.expireDue', () => {
 
     expect(prisma.streamingSession.updateManyAndReturn).toHaveBeenCalledTimes(1);
     expect(prisma.streamingSession.updateManyAndReturn).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: { in: ['sess-a', 'sess-b'] }, status: StreamingSessionStatus.ACTIVE } }),
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ['sess-a', 'sess-b'] },
+          status: StreamingSessionStatus.ACTIVE,
+        }),
+      }),
     );
     expect(audit.recordMany).toHaveBeenCalledTimes(1);
     const [entries] = audit.recordMany.mock.calls[0] as [unknown[]];
@@ -144,6 +155,41 @@ describe('SessionExpirySweep.expireDue', () => {
       }),
     ]);
     expect(progress.save).not.toHaveBeenCalled();
+  });
+
+  it('writes one progress row per member/episode, keeping the newest heartbeat (P5-1)', async () => {
+    const older = stale({ id: 'sess-old', lastPositionSeconds: 100 });
+    const newer = stale({
+      id: 'sess-new',
+      lastPositionSeconds: 500,
+      lastHeartbeatAt: new Date('2026-10-15T09:55:00.000Z'),
+    });
+    prisma.streamingSession.findMany.mockResolvedValueOnce([older, newer]);
+    prisma.streamingSession.updateManyAndReturn.mockResolvedValueOnce([older, newer]);
+
+    await expect(sweep.expireDue()).resolves.toEqual({ sessions: 2 });
+
+    expect(progress.save).toHaveBeenCalledTimes(1);
+    expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ positionSeconds: 500 }));
+    // Both sessions still get their own audit row.
+    const [entries] = audit.recordMany.mock.calls[0] as [unknown[]];
+    expect(entries).toHaveLength(2);
+  });
+
+  it('keeps saving the rest of the page when one progress write fails (P5-1)', async () => {
+    const page = [
+      stale({ id: 'sess-a', userId: 'u-a', episodeId: 'ep-a' }),
+      stale({ id: 'sess-b', userId: 'u-b', episodeId: 'ep-b' }),
+    ];
+    prisma.streamingSession.findMany.mockResolvedValueOnce(page);
+    prisma.streamingSession.updateManyAndReturn.mockResolvedValueOnce(page);
+    progress.save.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValueOnce(undefined);
+
+    // The sessions are already ENDED: a failed position must not abort the remaining rows.
+    await expect(sweep.expireDue()).resolves.toEqual({ sessions: 2 });
+
+    expect(progress.save).toHaveBeenCalledTimes(2);
+    expect(audit.recordMany).toHaveBeenCalledTimes(1);
   });
 
   it('skips a tick while the previous sweep is still draining (P5-1)', async () => {
