@@ -17,7 +17,7 @@ describe('StreamingSessionService.create', () => {
         data: expect.objectContaining({ userId: 'u-1', episodeId: 'ep-1', mediaAssetId: 'asset-1' }),
       }),
     );
-    expect(view).toMatchObject({ sessionId: 'sess-1', accessType: 'PLAN', startPositionSeconds: 0 });
+    expect(view).toMatchObject({ sessionId: 'sess-1', accessType: 'SUBSCRIPTION', startPositionSeconds: 0 });
     expect(view.stream.masterUrl).toContain('/api/playback/s/sess-1/master.m3u8');
     expect(view.reused).toBeUndefined();
   });
@@ -141,7 +141,7 @@ describe('StreamingSessionService.create', () => {
       guestKey: null,
       episodeId: 'ep-1',
       mediaAssetId: 'asset-1',
-      accessType: PlaybackAccessType.PLAN,
+      accessType: PlaybackAccessType.SUBSCRIPTION,
       durationSeconds: 1200,
       lastProgressAt: null,
       // The previous update landed one beat ago: the server may credit 12s.
@@ -298,7 +298,7 @@ describe('StreamingSessionService.create', () => {
 
     describe('entitlement lost mid-session (hardening #11)', () => {
       it('ends the session before crediting the beat when the unlock was revoked', async () => {
-        prisma.streamingSession.findUnique.mockResolvedValue(live({ accessType: PlaybackAccessType.EPISODE_PURCHASE }));
+        prisma.streamingSession.findUnique.mockResolvedValue(live({ accessType: PlaybackAccessType.COIN_UNLOCK }));
         access.stillEntitled.mockResolvedValue(false);
 
         await expect(service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 420 })).rejects.toMatchObject({

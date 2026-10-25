@@ -3,14 +3,17 @@ enum AdStatus {
   PAUSED
 }
 
+/// BR-33: a cue triggers only while PENDING and turns COMPLETED once the ad started, so it never
+/// plays twice on progress updates or resume; SKIPPED when a later cue played instead (a seek).
 enum AdBreakStatus {
-  SCHEDULED
-  PLAYED
+  PENDING
+  COMPLETED
   SKIPPED
 }
 
-/// Mid-roll ad catalog. Schedule and impression share one SessionAdBreak row: a break moves
-/// SCHEDULED -> PLAYED when the player reaches its cue, which counts the impression. The
+/// Mid-roll ad catalog (BR-51). Schedule and impression share one SessionAdBreak row — there is
+/// no separate ad_impressions table: a break moves PENDING -> COMPLETED when the player reaches
+/// its cue, which counts the impression. The
 /// separate completedView flag records a player-confirmed full view, never the start alone.
 model Ad {
   id              String    @id @default(uuid()) @db.Uuid

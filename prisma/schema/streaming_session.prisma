@@ -1,16 +1,17 @@
+/// The access_type MF-2 hands to playback: FREE_STARTER (free or zero-priced episode),
+/// SUBSCRIPTION (running Monthly plan), COIN_UNLOCK (episode bought with Coin), ADMIN_GRANT
+/// (an episode the Admin granted by hand).
 enum PlaybackAccessType {
   FREE_STARTER
-  PLAN
-  EPISODE_PURCHASE
-  SERIES_PURCHASE
+  SUBSCRIPTION
+  COIN_UNLOCK
   ADMIN_GRANT
 }
 
+/// Why a session closed lives in end_reason; the status only says whether it is still open.
 enum StreamingSessionStatus {
   ACTIVE
   ENDED
-  EXPIRED
-  KICKED
 }
 
 enum StreamingEndReason {
@@ -20,7 +21,6 @@ enum StreamingEndReason {
   KICKED
   /// A newer approved media version replaced the one this session was pinned to.
   SUPERSEDED
-  ERROR
 }
 
 /// One playback attempt of Main Flow 3 (steps 11/14/15/21). A member session carries userId;

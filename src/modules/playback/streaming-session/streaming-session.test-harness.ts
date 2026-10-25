@@ -62,7 +62,7 @@ export function sessionHarness() {
     streamUrl: 'https://cdn.example/hls/asset-1/master.m3u8',
     qualities: ['360p'],
     durationSeconds: 600,
-    accessType: PlaybackAccessType.PLAN,
+    accessType: PlaybackAccessType.SUBSCRIPTION,
     planCode: 'MONTHLY',
     subtitles: [],
     aiLabel: null,

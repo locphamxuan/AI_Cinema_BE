@@ -160,14 +160,14 @@ export class PlaybackAccessService {
       runningPlan === undefined ? this.runningPlanOf(userId) : runningPlan,
       runningPlan ? null : this.prisma.episodeAccess.findFirst({ where: { userId, episodeId, revokedAt: null } }),
     ]);
-    if (plan) return { ...base, accessType: PlaybackAccessType.PLAN, planCode: plan.code };
+    if (plan) return { ...base, accessType: PlaybackAccessType.SUBSCRIPTION, planCode: plan.code };
     if (episodeAccess) {
       return {
         ...base,
         accessType:
           episodeAccess.source === AccessSource.ADMIN_GRANT
             ? PlaybackAccessType.ADMIN_GRANT
-            : PlaybackAccessType.EPISODE_PURCHASE,
+            : PlaybackAccessType.COIN_UNLOCK,
         planCode: null,
       };
     }
@@ -191,7 +191,7 @@ export class PlaybackAccessService {
   }): Promise<boolean> {
     const { userId, episodeId, accessType } = session;
     if (!userId || accessType === PlaybackAccessType.FREE_STARTER) return true;
-    if (accessType === PlaybackAccessType.PLAN) {
+    if (accessType === PlaybackAccessType.SUBSCRIPTION) {
       const plan = await this.prisma.subscription.findFirst({
         where: runningPlanWhere(userId),
         select: { id: true },

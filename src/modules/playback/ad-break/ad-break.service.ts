@@ -26,7 +26,7 @@ export interface AdScheduleItem {
 
 /**
  * Mid-roll cues (flow 3, steps 12–13, 16–17). Schedule and impression share one
- * SessionAdBreak row: SCHEDULED at session creation, PLAYED when the player reaches or
+ * SessionAdBreak row: PENDING at session creation, COMPLETED when the player reaches or
  * seeks past the cue (the billable impression), SKIPPED when a later cue played instead. completedView is a separate, player-confirmed
  * signal that the ad played to the end — never inferred from the start call (P4-3).
  */
@@ -112,7 +112,7 @@ export class AdBreakService {
    */
   async markPlayed(sessionId: string, breakId: string, caller: SessionCaller, input: { positionSeconds: number }) {
     const row = await this.ownedBreak(sessionId, breakId, caller);
-    if (row.status !== AdBreakStatus.SCHEDULED) {
+    if (row.status !== AdBreakStatus.PENDING) {
       return adBreakView(row);
     }
     if (input.positionSeconds < row.positionSeconds - AD_IMPRESSION_TOLERANCE_SECONDS) {
@@ -130,12 +130,12 @@ export class AdBreakService {
       this.prisma.sessionAdBreak.update({
         where: { id: row.id },
         // P4-3: the start call records the impression only; completion needs its own confirmation.
-        data: { status: AdBreakStatus.PLAYED, playedAt: new Date(), completedView: false },
+        data: { status: AdBreakStatus.COMPLETED, playedAt: new Date(), completedView: false },
       }),
       this.prisma.sessionAdBreak.updateMany({
         where: {
           streamingSessionId: sessionId,
-          status: AdBreakStatus.SCHEDULED,
+          status: AdBreakStatus.PENDING,
           positionSeconds: { lt: row.positionSeconds },
         },
         data: { status: AdBreakStatus.SKIPPED },
@@ -152,7 +152,7 @@ export class AdBreakService {
     const due = await this.prisma.sessionAdBreak.findFirst({
       where: {
         streamingSessionId: sessionId,
-        status: AdBreakStatus.SCHEDULED,
+        status: AdBreakStatus.PENDING,
         positionSeconds: { lte: positionSeconds },
       },
       orderBy: { positionSeconds: 'desc' },
@@ -163,7 +163,7 @@ export class AdBreakService {
 
   /**
    * P4-3: the player reports that the ad played to the end. Completion is never inferred
-   * from the start call: the break must already be PLAYED, and at least the ad's own
+   * from the start call: the break must already be COMPLETED, and at least the ad's own
    * duration (minus a small clock tolerance) must have elapsed on the server clock. This
    * keeps advertiser completion numbers honest instead of claiming every impression
    * completed the moment it began.
@@ -174,7 +174,7 @@ export class AdBreakService {
    */
   async markCompleted(sessionId: string, breakId: string, caller: SessionCaller) {
     const row = await this.ownedBreak(sessionId, breakId, caller);
-    if (row.status !== AdBreakStatus.PLAYED || !row.playedAt) {
+    if (row.status !== AdBreakStatus.COMPLETED || !row.playedAt) {
       throw new ConflictException({
         message: 'The ad break has not started yet',
         details: { reason: 'AD_BREAK_NOT_PLAYED' },

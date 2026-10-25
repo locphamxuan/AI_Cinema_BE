@@ -32,7 +32,7 @@ const row = (overrides: Partial<Row> = {}): Row => ({
   guestKey: null,
   episodeId: 'ep-1',
   mediaAssetId: 'asset-1',
-  accessType: PlaybackAccessType.PLAN,
+  accessType: PlaybackAccessType.SUBSCRIPTION,
   status: StreamingSessionStatus.ACTIVE,
   startPositionSeconds: 0,
   lastPositionSeconds: 300,
@@ -53,7 +53,7 @@ describe('playback audit rows (hardening #12)', () => {
         entityId: 'sess-1',
         movieId: null,
         actorId: 'u-1',
-        payload: { episodeId: 'ep-1', accessType: 'PLAN', userId: 'u-1', ipAddress: '203.0.113.7' },
+        payload: { episodeId: 'ep-1', accessType: 'SUBSCRIPTION', userId: 'u-1', ipAddress: '203.0.113.7' },
       });
     });
 
@@ -144,7 +144,7 @@ describe('playback audit rows (hardening #12)', () => {
       streamUrl: 'https://cdn.example/hls/master.m3u8',
       qualities: ['360p'],
       durationSeconds: 600,
-      accessType: PlaybackAccessType.PLAN,
+      accessType: PlaybackAccessType.SUBSCRIPTION,
       planCode: 'MONTHLY',
       subtitles: [],
       aiLabel: null,
