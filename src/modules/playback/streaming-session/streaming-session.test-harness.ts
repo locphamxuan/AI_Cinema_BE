@@ -41,7 +41,7 @@ export function sessionHarness() {
   };
   const urls = { masterUrl: jest.fn().mockReturnValue('https://api.example/api/playback/s/sess-1/master.m3u8?s=x') };
   const progress = { progress: jest.fn(), save: jest.fn() };
-  const ads = { scheduleFor: jest.fn(), scheduleOf: jest.fn() };
+  const ads = { scheduleFor: jest.fn(), scheduleOf: jest.fn(), dueBreakOf: jest.fn().mockResolvedValue(null) };
   const audit = { record: jest.fn() };
   const service = new StreamingSessionService(
     prisma as unknown as PrismaService,

@@ -18,7 +18,15 @@ describe('AdBreakService', () => {
   const prisma = {
     ad: { findMany: jest.fn() },
     episodeAdSlot: { findMany: jest.fn() },
-    sessionAdBreak: { createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    sessionAdBreak: {
+      createMany: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
   const settings = { get: jest.fn().mockResolvedValue({ adMaxBreaksPerEpisode: 2 }) };
   const service = new AdBreakService(prisma as unknown as PrismaService, settings as unknown as PlatformSettingService);
@@ -131,7 +139,7 @@ describe('AdBreakService', () => {
     expect(prisma.sessionAdBreak.update).toHaveBeenCalledTimes(1);
   });
 
-  it('counts an impression only inside the cue window (P4-2)', async () => {
+  it('refuses a call before the cue but counts one after a forward seek (P4-2, BR-33)', async () => {
     prisma.sessionAdBreak.findUnique.mockResolvedValue(breakRow());
     prisma.sessionAdBreak.update.mockResolvedValue(breakRow({ status: AdBreakStatus.PLAYED, playedAt: new Date() }));
 
@@ -143,21 +151,37 @@ describe('AdBreakService', () => {
         }),
       },
     );
-    // Forward seek over the cue: the ad never started, so it is not billed.
-    await expect(
-      service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 491 }),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({
-        details: expect.objectContaining({ reason: 'AD_BREAK_MISSED', cuePositionSeconds: 460 }),
-      }),
-    });
     expect(prisma.sessionAdBreak.update).not.toHaveBeenCalled();
 
-    // The tolerance is inclusive: cue + 30s still counts once.
+    // A seek far past the cue does not skip the ad: it plays now and counts.
     await expect(
-      service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 490 }),
+      service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 900 }),
     ).resolves.toMatchObject({ status: 'PLAYED' });
-    expect(prisma.sessionAdBreak.update).toHaveBeenCalledTimes(1);
+    // Earlier pending cues jumped by the same seek are closed instead of stacking up.
+    expect(prisma.sessionAdBreak.updateMany).toHaveBeenCalledWith({
+      where: { streamingSessionId: 'sess-1', status: AdBreakStatus.SCHEDULED, positionSeconds: { lt: 460 } },
+      data: { status: AdBreakStatus.SKIPPED },
+    });
+  });
+
+  it('never replays a skipped cue', async () => {
+    prisma.sessionAdBreak.findUnique.mockResolvedValue(breakRow({ status: AdBreakStatus.SKIPPED }));
+    await expect(
+      service.markPlayed('sess-1', 'br-1', { userId: 'u-1' }, { positionSeconds: 460 }),
+    ).resolves.toMatchObject({ status: 'SKIPPED' });
+    expect(prisma.sessionAdBreak.update).not.toHaveBeenCalled();
+  });
+
+  it('names the latest pending cue the playhead passed as the ad due now', async () => {
+    prisma.sessionAdBreak.findFirst.mockResolvedValue({ id: 'br-860' });
+    await expect(service.dueBreakOf('sess-1', 900)).resolves.toBe('br-860');
+    expect(prisma.sessionAdBreak.findFirst).toHaveBeenCalledWith({
+      where: { streamingSessionId: 'sess-1', status: AdBreakStatus.SCHEDULED, positionSeconds: { lte: 900 } },
+      orderBy: { positionSeconds: 'desc' },
+      select: { id: true },
+    });
+    prisma.sessionAdBreak.findFirst.mockResolvedValue(null);
+    await expect(service.dueBreakOf('sess-1', 10)).resolves.toBeNull();
   });
 
   it('never treats starting an ad as a completed view (P4-3)', async () => {

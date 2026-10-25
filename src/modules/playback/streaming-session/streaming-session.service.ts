@@ -261,7 +261,11 @@ export class StreamingSessionService {
       endReason: null,
       persistProgress: progressWriteDue(session, new Date()),
     });
-    return this.state(saved.session, saved.completed);
+    return this.state(
+      saved.session,
+      saved.completed,
+      await this.ads.dueBreakOf(session.id, saved.session.lastPositionSeconds),
+    );
   }
 
   /** Step 19/21: the viewer stops; the position is saved and the slot is freed. */
@@ -400,7 +404,11 @@ export class StreamingSessionService {
     return { session: current, completed };
   }
 
-  private state(session: StreamingSession, completed: boolean): SessionStateViewDto {
+  private state(
+    session: StreamingSession,
+    completed: boolean,
+    dueAdBreakId: string | null = null,
+  ): SessionStateViewDto {
     return {
       sessionId: session.id,
       episodeId: session.episodeId,
@@ -408,6 +416,7 @@ export class StreamingSessionService {
       positionSeconds: session.lastPositionSeconds,
       totalWatchedSeconds: session.totalWatchedSeconds,
       completed,
+      dueAdBreakId,
     };
   }
 

@@ -212,6 +212,13 @@ describe('StreamingSessionService.create', () => {
       });
     });
 
+    it('heartbeat tells the player which passed ad break to play now (BR-33)', async () => {
+      ads.dueBreakOf.mockResolvedValueOnce('br-460');
+      const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 500 });
+      expect(ads.dueBreakOf).toHaveBeenCalledWith('sess-1', 500);
+      expect(state).toMatchObject({ dueAdBreakId: 'br-460' });
+    });
+
     it('heartbeat inside the write window only touches the session row', async () => {
       prisma.streamingSession.findUnique.mockResolvedValue(live({ lastProgressAt: new Date() }));
       const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 330, watchedSeconds: 12 });

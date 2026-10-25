@@ -7,8 +7,8 @@ import { assertLiveSessionOf, type SessionCaller } from '../streaming-session/se
 import { planCues } from './ad-schedule';
 
 /**
- * How far the reported playhead may sit from the cue and still count (P4-2). The window
- * absorbs keyframe granularity and the player's trigger delay, not a whole scrubbed gap.
+ * How early the reported playhead may sit before the cue and still count (P4-2): it absorbs
+ * keyframe granularity and the player's trigger delay.
  */
 export const AD_IMPRESSION_TOLERANCE_SECONDS = 30;
 
@@ -26,8 +26,8 @@ export interface AdScheduleItem {
 
 /**
  * Mid-roll cues (flow 3, steps 12–13, 16–17). Schedule and impression share one
- * SessionAdBreak row: SCHEDULED at session creation, PLAYED when the player reaches
- * the cue (the billable impression). completedView is a separate, player-confirmed
+ * SessionAdBreak row: SCHEDULED at session creation, PLAYED when the player reaches or
+ * seeks past the cue (the billable impression), SKIPPED when a later cue played instead. completedView is a separate, player-confirmed
  * signal that the ad played to the end — never inferred from the start call (P4-3).
  */
 @Injectable()
@@ -95,47 +95,70 @@ export class AdBreakService {
   /**
    * Step 17: pause the episode content, play the cue, count the impression. Idempotent.
    *
-   * P4-2: an impression is money, so it only counts when the player reports a playhead
-   * inside AD_IMPRESSION_TOLERANCE_SECONDS of the cue. A player that calls `played` for
-   * every cue when the movie opens now gets AD_BREAK_NOT_REACHED instead of billing every
-   * advertiser. Product decision for a forward seek over a cue: the ad was never started,
-   * so it is neither shown nor billed and no impression exists. The row deliberately stays
-   * SCHEDULED (an untrusted out-of-window call is not proof of intent): if the viewer seeks
-   * back and genuinely reaches the cue, it can still play — and count — once.
+   * P4-2: an impression is money, so a call before the player reached the cue (minus a small
+   * tolerance) is refused with AD_BREAK_NOT_REACHED: a player that calls `played` for every cue
+   * when the movie opens bills nobody.
    *
-   * P4-3: starting an ad is not a completed view. `completedView` stays false here and is
-   * only set by markCompleted after the player confirms the ad actually finished; without
-   * that call advertiser completion numbers stay conservatively empty, never inflated.
+   * BR-32/33: a forward seek over a cue does not skip the ad. The heartbeat names the cue the
+   * playhead passed (dueAdBreakId) and the player plays it now, so a call past the cue counts.
+   * Seeking over several cues plays only the last one; the earlier cues still pending are closed
+   * as SKIPPED so a viewer never sits through a stack of ads, and none of them triggers again.
    *
-   * The playhead is still client-reported: this is a bar against buggy or casual callers,
-   * not cryptographic proof of playback; segment-level verification is the stronger follow-up.
+   * P4-3: starting an ad is not a completed view. `completedView` stays false here and is only
+   * set by markCompleted after the player confirms the ad actually finished.
+   *
+   * The playhead is still client-reported: this is a bar against buggy or casual callers, not
+   * cryptographic proof of playback; segment-level verification is the stronger follow-up.
    */
   async markPlayed(sessionId: string, breakId: string, caller: SessionCaller, input: { positionSeconds: number }) {
     const row = await this.ownedBreak(sessionId, breakId, caller);
-    if (row.status === AdBreakStatus.PLAYED) {
+    if (row.status !== AdBreakStatus.SCHEDULED) {
       return adBreakView(row);
     }
-    const distance = Math.abs(input.positionSeconds - row.positionSeconds);
-    if (distance > AD_IMPRESSION_TOLERANCE_SECONDS) {
-      const early = input.positionSeconds < row.positionSeconds;
+    if (input.positionSeconds < row.positionSeconds - AD_IMPRESSION_TOLERANCE_SECONDS) {
       throw new ConflictException({
-        message: early
-          ? 'The player has not reached this ad break yet'
-          : 'The player moved past this ad break without playing it; no impression is counted',
+        message: 'The player has not reached this ad break yet',
         details: {
-          reason: early ? 'AD_BREAK_NOT_REACHED' : 'AD_BREAK_MISSED',
+          reason: 'AD_BREAK_NOT_REACHED',
           cuePositionSeconds: row.positionSeconds,
           positionSeconds: input.positionSeconds,
           toleranceSeconds: AD_IMPRESSION_TOLERANCE_SECONDS,
         },
       });
     }
-    const played = await this.prisma.sessionAdBreak.update({
-      where: { id: row.id },
-      // P4-3: the start call records the impression only; completion needs its own confirmation.
-      data: { status: AdBreakStatus.PLAYED, playedAt: new Date(), completedView: false },
-    });
+    const [played] = await this.prisma.$transaction([
+      this.prisma.sessionAdBreak.update({
+        where: { id: row.id },
+        // P4-3: the start call records the impression only; completion needs its own confirmation.
+        data: { status: AdBreakStatus.PLAYED, playedAt: new Date(), completedView: false },
+      }),
+      this.prisma.sessionAdBreak.updateMany({
+        where: {
+          streamingSessionId: sessionId,
+          status: AdBreakStatus.SCHEDULED,
+          positionSeconds: { lt: row.positionSeconds },
+        },
+        data: { status: AdBreakStatus.SKIPPED },
+      }),
+    ]);
     return adBreakView(played);
+  }
+
+  /**
+   * BR-33: the pending cue the playhead has passed, i.e. the ad the player must play now — the
+   * latest one when a seek jumped over several. null when no ad is due.
+   */
+  async dueBreakOf(sessionId: string, positionSeconds: number): Promise<string | null> {
+    const due = await this.prisma.sessionAdBreak.findFirst({
+      where: {
+        streamingSessionId: sessionId,
+        status: AdBreakStatus.SCHEDULED,
+        positionSeconds: { lte: positionSeconds },
+      },
+      orderBy: { positionSeconds: 'desc' },
+      select: { id: true },
+    });
+    return due?.id ?? null;
   }
 
   /**

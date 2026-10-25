@@ -123,7 +123,7 @@ describe('playback audit rows (hardening #12)', () => {
     };
     const urls = { masterUrl: jest.fn().mockReturnValue('https://api.example/master.m3u8') };
     const progress = { progress: jest.fn(), save: jest.fn() };
-    const ads = { scheduleFor: jest.fn(), scheduleOf: jest.fn() };
+    const ads = { scheduleFor: jest.fn(), scheduleOf: jest.fn(), dueBreakOf: jest.fn().mockResolvedValue(null) };
     const audit = { record: jest.fn() };
     const service = new StreamingSessionService(
       prisma as unknown as PrismaService,

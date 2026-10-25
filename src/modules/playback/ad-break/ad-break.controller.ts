@@ -20,7 +20,7 @@ export class AdBreakController {
   @ApiOperation({
     summary: 'Player reached the cue: start the ad and count the impression (flow 3, step 17)',
     description:
-      'An impression is only counted when positionSeconds is within 30s of the scheduled cue. A position before the cue is refused with AD_BREAK_NOT_REACHED; a forward seek past the cue is refused with AD_BREAK_MISSED and is not billed (product decision: a skipped cue earns no impression). Starting an ad does not set completedView — the player confirms completion separately.',
+      'A position more than 30s before the cue is refused with AD_BREAK_NOT_REACHED. Seeking past a cue does not skip it: the heartbeat answers dueAdBreakId and the player plays that ad now, which counts; earlier pending cues passed by the same seek become SKIPPED. Starting an ad does not set completedView — the player confirms completion separately.',
   })
   @ApiHeader({ name: 'X-Guest-Key', required: false, description: 'Must match the key the session was opened with' })
   @ApiOkResponse({ type: AdBreakPlayedViewDto })
