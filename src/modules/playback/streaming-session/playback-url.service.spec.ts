@@ -5,7 +5,7 @@ import type { AppConfig } from 'src/config/app-config';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { HLS_LADDER, type QualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
-import { DEFAULT_MAX_QUALITY, maxQualityOf, PlaybackUrlService } from './playback-url.service';
+import { DEFAULT_MAX_QUALITY, isHlsPlaylist, maxQualityOf, PlaybackUrlService } from './playback-url.service';
 
 const SECRET = 'test-secret';
 const SESSION_ID = 'sess-1';
@@ -323,6 +323,13 @@ describe('PlaybackUrlService', () => {
     expect(
       service.masterUrl(SESSION_ID, { id: ASSET_ID, streamUrl: 'https://third.example/m.m3u8', isSelfHosted: false }),
     ).toBe('https://third.example/m.m3u8');
+  });
+
+  it('hands a self-hosted MP4 out as is: there is no HLS playlist to sign', () => {
+    const mp4 = 'https://cdn.example/catalog/zero-hour/ep1.mp4';
+    expect(service.masterUrl(SESSION_ID, { id: ASSET_ID, streamUrl: mp4, isSelfHosted: true })).toBe(mp4);
+    expect(isHlsPlaylist('https://cdn.example/hls/a/master.m3u8?v=2')).toBe(true);
+    expect(isHlsPlaylist(mp4)).toBe(false);
   });
 
   it('status is ACTIVE-gated, not heartbeat-gated', async () => {

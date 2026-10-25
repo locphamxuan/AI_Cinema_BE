@@ -85,9 +85,12 @@ export class PlaybackUrlService {
     return Boolean(this.config.playback.urlSecret);
   }
 
-  /** Absolute master URL for `POST /sessions`; direct origin URL when signing is off or external. */
+  /**
+   * Absolute master URL for `POST /sessions`; direct origin URL when signing is off, the asset is
+   * external, or the stream is a progressive file (an MP4 has no `hls/<asset>/` playlists to sign).
+   */
   masterUrl(sessionId: string, asset: { id: string; streamUrl: string; isSelfHosted: boolean }): string {
-    if (!asset.isSelfHosted || !this.enabled()) return asset.streamUrl;
+    if (!asset.isSelfHosted || !this.enabled() || !isHlsPlaylist(asset.streamUrl)) return asset.streamUrl;
     const { exp, sig } = this.sign(sessionId, asset.id);
     return `${this.config.apiPublicUrl}/api/playback/s/${sessionId}/master.m3u8?s=${sessionId}&exp=${exp}&sig=${sig}`;
   }
@@ -364,6 +367,11 @@ export class PlaybackUrlService {
       });
     }
   }
+}
+
+/** HLS master playlist (`.m3u8`, query string allowed), as opposed to a progressive MP4. */
+export function isHlsPlaylist(url: string): boolean {
+  return /\.m3u8(\?|#|$)/i.test(url);
 }
 
 /**
