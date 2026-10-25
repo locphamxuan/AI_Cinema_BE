@@ -26,7 +26,8 @@ enum StreamingEndReason {
 /// One playback attempt of Main Flow 3 (steps 11/14/15/21). A member session carries userId;
 /// a guest session carries guestKey instead and always starts from position 0. mediaAssetId pins
 /// the reviewed version being played, the same way Publication pins its version. Either userId
-/// or guestKey is set, never both and never neither; enforced in application code. deviceId is
+/// or guestKey is set, never both and never neither; enforced by the hand-written CHECK
+/// streaming_sessions_owner_check (migration 20261025130000), which prisma migrate diff does not see. deviceId is
 /// intentionally absent: Main Flow 4 adds the Device model and the FK later.
 model StreamingSession {
   id                   String                 @id @default(uuid()) @db.Uuid
