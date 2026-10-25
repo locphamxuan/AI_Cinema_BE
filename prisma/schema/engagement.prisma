@@ -1,0 +1,29 @@
+/// A Member's heart on a movie: one per account and movie; the count is shown to viewers and the Admin.
+model MovieLike {
+    userId    String   @map("user_id") @db.Uuid
+    movieId   String   @map("movie_id") @db.Uuid
+    createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+    movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+    @@id([userId, movieId])
+    @@index([movieId])
+    @@map("movie_likes")
+}
+
+/// One start of playback of an episode. A signed-in viewer counts once per episode every 30 minutes.
+model EpisodeView {
+    id        String   @id @default(uuid()) @db.Uuid
+    episodeId String   @map("episode_id") @db.Uuid
+    /// Null for a Guest.
+    userId    String?  @map("user_id") @db.Uuid
+    createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+    user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+    @@index([episodeId, createdAt])
+    @@index([userId, episodeId, createdAt])
+    @@map("episode_views")
+}

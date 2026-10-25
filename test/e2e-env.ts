@@ -31,6 +31,8 @@ process.env.MEDIA_PIPELINE = 'mock';
 // The studio CDN of the media suite runs on 127.0.0.1.
 process.env.MEDIA_ALLOW_PRIVATE_URLS = 'true';
 process.env.SMTP_HOST = '';
+// Opens the studio inbound channel (POST /studio-inbound/film-sent) to the hand-off suite.
+process.env.STUDIO_WEBHOOK_TOKEN = 'e2e-studio-token';
 process.env.STORAGE_DRIVER = 'local';
 process.env.STORAGE_LOCAL_ROOT = join(tmpdir(), 'ai-cinema-e2e-storage');
 process.env.SWAGGER_ENABLED = 'false';

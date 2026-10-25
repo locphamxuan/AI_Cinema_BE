@@ -1,0 +1,1008 @@
+{
+  "movies": [
+    {
+      "title": "Bài kiểm tra thanh xuân",
+      "slug": "bai-kiem-tra-thanh-xuan",
+      "genres": [
+        "Học đường",
+        "Lãng mạn"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Bài kiểm tra thanh xuân - phim AI thể loại học đường, lãng mạn, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/bai-kiem-tra-thanh-xuan.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng%20-%20L%C3%A3ng%20m%E1%BA%A1n/B%C3%A0i%20ki%E1%BB%83m%20tra%20thanh%20xu%C3%A2n/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng-%20B%C3%A0i%20ki%E1%BB%83m%20tra%20thanh%20xu%C3%A2n.ep1.mp4",
+          "size": 7989834,
+          "duration": 92,
+          "width": 576,
+          "height": 1024,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng%20-%20L%C3%A3ng%20m%E1%BA%A1n/B%C3%A0i%20ki%E1%BB%83m%20tra%20thanh%20xu%C3%A2n/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng-%20B%C3%A0i%20ki%E1%BB%83m%20tra%20thanh%20xu%C3%A2n.ep2.mp4",
+          "size": 13254097,
+          "duration": 180,
+          "width": 576,
+          "height": 1024,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Học đường - Lãng mạn/Bài kiểm tra thanh xuân/Học đường- Bài kiểm tra thanh xuân.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng%20-%20L%C3%A3ng%20m%E1%BA%A1n/B%C3%A0i%20ki%E1%BB%83m%20tra%20thanh%20xu%C3%A2n/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng-%20B%C3%A0i%20ki%E1%BB%83m%20tra%20thanh%20xu%C3%A2n.ep3.mp4",
+          "size": 14234170,
+          "duration": 163,
+          "width": 576,
+          "height": 1024,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Đội tập tin số 0",
+      "slug": "doi-tap-tin-so-0",
+      "genres": [
+        "Bí ẩn",
+        "Giật gân",
+        "Khoa học viễn tưởng"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Đội tập tin số 0 - phim AI thể loại bí ẩn, giật gân, khoa học viễn tưởng, 2 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/doi-tap-tin-so-0.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Bí ẩn - Giật gân - Khoa học viễn tưởng/Đội tập tin số 0/Tội phạm- Đội tập tin số 0.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/B%C3%AD%20%E1%BA%A9n%20-%20Gi%E1%BA%ADt%20g%C3%A2n%20-%20Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng/%C4%90%E1%BB%99i%20t%E1%BA%ADp%20tin%20s%E1%BB%91%200/T%E1%BB%99i%20ph%E1%BA%A1m-%20%C4%90%E1%BB%99i%20t%E1%BA%ADp%20tin%20s%E1%BB%91%200.ep1.mp4",
+          "size": 37671504,
+          "duration": 421,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Bí ẩn - Giật gân - Khoa học viễn tưởng/Đội tập tin số 0/Tội phạm- Đội tập tin số 0.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/B%C3%AD%20%E1%BA%A9n%20-%20Gi%E1%BA%ADt%20g%C3%A2n%20-%20Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng/%C4%90%E1%BB%99i%20t%E1%BA%ADp%20tin%20s%E1%BB%91%200/T%E1%BB%99i%20ph%E1%BA%A1m-%20%C4%90%E1%BB%99i%20t%E1%BA%ADp%20tin%20s%E1%BB%91%200.ep2.mp4",
+          "size": 46537167,
+          "duration": 478,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Hitoner",
+      "slug": "hitoner",
+      "genres": [
+        "Khoa học viễn tưởng",
+        "Phiêu lưu"
+      ],
+      "language": "en",
+      "releaseYear": 2026,
+      "synopsis": "Hitoner - phim AI thể loại khoa học viễn tưởng, phiêu lưu, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/hitoner.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Phiêu lưu/Hitoner/Hitoner.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Hitoner/Hitoner.ep1.mp4",
+          "size": 129856792,
+          "duration": 1171,
+          "width": 1280,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/hitoner/ep1.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Phiêu lưu/Hitoner/Hitoner.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Hitoner/Hitoner.ep2.mp4",
+          "size": 99217990,
+          "duration": 930,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Phiêu lưu/Hitoner/Hitoner.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Hitoner/Hitoner.ep3.mp4",
+          "size": 82491165,
+          "duration": 697,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Im lặng thất hứa",
+      "slug": "im-lang-that-hua",
+      "genres": [
+        "Học đường",
+        "Lãng mạn",
+        "Chính kịch"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Im lặng thất hứa - phim AI thể loại học đường, lãng mạn, chính kịch, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/im-lang-that-hua.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng%20-%20L%C3%A3ng%20m%E1%BA%A1n%20-%20Ch%C3%ADnh%20k%E1%BB%8Bch/Im%20l%E1%BA%B7ng%20th%E1%BA%A5t%20h%E1%BB%A9a/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng-%20Im%20l%E1%BA%B7ng%20th%E1%BA%A5t%20h%E1%BB%A9a.ep1.mp4",
+          "size": 68586978,
+          "duration": 855,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng%20-%20L%C3%A3ng%20m%E1%BA%A1n%20-%20Ch%C3%ADnh%20k%E1%BB%8Bch/Im%20l%E1%BA%B7ng%20th%E1%BA%A5t%20h%E1%BB%A9a/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng-%20Im%20l%E1%BA%B7ng%20th%E1%BA%A5t%20h%E1%BB%A9a.ep2.mp4",
+          "size": 8333123,
+          "duration": 132,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng%20-%20L%C3%A3ng%20m%E1%BA%A1n%20-%20Ch%C3%ADnh%20k%E1%BB%8Bch/Im%20l%E1%BA%B7ng%20th%E1%BA%A5t%20h%E1%BB%A9a/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng-%20Im%20l%E1%BA%B7ng%20th%E1%BA%A5t%20h%E1%BB%A9a.ep3.mp4",
+          "size": 7254990,
+          "duration": 119,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "JACKPOT",
+      "slug": "jackpot",
+      "genres": [
+        "Khoa học viễn tưởng",
+        "Hài"
+      ],
+      "language": "en",
+      "releaseYear": 2026,
+      "synopsis": "JACKPOT - phim AI thể loại khoa học viễn tưởng, hài, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/jackpot.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Hài/JACKPOT/JACKPOT.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20H%C3%A0i/JACKPOT/JACKPOT.ep1.mp4",
+          "size": 160857477,
+          "duration": 776,
+          "width": 1280,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/jackpot/ep1.en.vtt",
+              "isDefault": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Khoa học đồ long tại dị giới",
+      "slug": "khoa-hoc-do-long-tai-di-gioi",
+      "genres": [
+        "Khoa học viễn tưởng",
+        "Giả tưởng",
+        "Phiêu lưu"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Khoa học đồ long tại dị giới - phim AI thể loại khoa học viễn tưởng, giả tưởng, phiêu lưu, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/khoa-hoc-do-long-tai-di-gioi.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Giả tưởng - Phiêu lưu/Khoa học đồ long tại dị giới/Khoa học viễn tưởng- Khoa học đồ long tại dị giới.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Khoa%20h%E1%BB%8Dc%20%C4%91%E1%BB%93%20long%20t%E1%BA%A1i%20d%E1%BB%8B%20gi%E1%BB%9Bi/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng-%20Khoa%20h%E1%BB%8Dc%20%C4%91%E1%BB%93%20long%20t%E1%BA%A1i%20d%E1%BB%8B%20gi%E1%BB%9Bi.ep1.mp4",
+          "size": 84815002,
+          "duration": 600,
+          "width": 1344,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Giả tưởng - Phiêu lưu/Khoa học đồ long tại dị giới/Khoa học viễn tưởng- Khoa học đồ long tại dị giới.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Khoa%20h%E1%BB%8Dc%20%C4%91%E1%BB%93%20long%20t%E1%BA%A1i%20d%E1%BB%8B%20gi%E1%BB%9Bi/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng-%20Khoa%20h%E1%BB%8Dc%20%C4%91%E1%BB%93%20long%20t%E1%BA%A1i%20d%E1%BB%8B%20gi%E1%BB%9Bi.ep2.mp4",
+          "size": 42241403,
+          "duration": 300,
+          "width": 1344,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Giả tưởng - Phiêu lưu/Khoa học đồ long tại dị giới/Khoa học viễn tưởng- Khoa học đồ long tại dị giới.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Khoa%20h%E1%BB%8Dc%20%C4%91%E1%BB%93%20long%20t%E1%BA%A1i%20d%E1%BB%8B%20gi%E1%BB%9Bi/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng-%20Khoa%20h%E1%BB%8Dc%20%C4%91%E1%BB%93%20long%20t%E1%BA%A1i%20d%E1%BB%8B%20gi%E1%BB%9Bi.ep3.mp4",
+          "size": 46408225,
+          "duration": 301,
+          "width": 1344,
+          "height": 576,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Mạc ngôn tâm động",
+      "slug": "mac-ngon-tam-dong",
+      "genres": [
+        "Lãng mạn",
+        "Chính kịch"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Mạc ngôn tâm động - phim AI thể loại lãng mạn, chính kịch, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/mac-ngon-tam-dong.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Lãng mạn - Chính kịch/Mạc ngôn tâm động/Lãng mạn -Mạc Ngôn Tâm Động-ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/L%C3%A3ng%20m%E1%BA%A1n%20-%20Ch%C3%ADnh%20k%E1%BB%8Bch/M%E1%BA%A1c%20ng%C3%B4n%20t%C3%A2m%20%C4%91%E1%BB%99ng/L%C3%A3ng%20m%E1%BA%A1n%20-M%E1%BA%A1c%20Ng%C3%B4n%20T%C3%A2m%20%C4%90%E1%BB%99ng-ep1.mp4",
+          "size": 3999185,
+          "duration": 44,
+          "width": 576,
+          "height": 904,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Lãng mạn - Chính kịch/Mạc ngôn tâm động/Lãng mạn -Mạc Ngôn Tâm Động-ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/L%C3%A3ng%20m%E1%BA%A1n%20-%20Ch%C3%ADnh%20k%E1%BB%8Bch/M%E1%BA%A1c%20ng%C3%B4n%20t%C3%A2m%20%C4%91%E1%BB%99ng/L%C3%A3ng%20m%E1%BA%A1n%20-M%E1%BA%A1c%20Ng%C3%B4n%20T%C3%A2m%20%C4%90%E1%BB%99ng-ep2.mp4",
+          "size": 15122996,
+          "duration": 168,
+          "width": 576,
+          "height": 1024,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Lãng mạn - Chính kịch/Mạc ngôn tâm động/Lãng mạn -Mạc Ngôn Tâm Động-ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/L%C3%A3ng%20m%E1%BA%A1n%20-%20Ch%C3%ADnh%20k%E1%BB%8Bch/M%E1%BA%A1c%20ng%C3%B4n%20t%C3%A2m%20%C4%91%E1%BB%99ng/L%C3%A3ng%20m%E1%BA%A1n%20-M%E1%BA%A1c%20Ng%C3%B4n%20T%C3%A2m%20%C4%90%E1%BB%99ng-ep3.mp4",
+          "size": 14802585,
+          "duration": 151,
+          "width": 576,
+          "height": 1024,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Nexus",
+      "slug": "nexus",
+      "genres": [
+        "Giả tưởng",
+        "Phiêu lưu"
+      ],
+      "language": "en",
+      "releaseYear": 2026,
+      "synopsis": "Nexus - phim AI thể loại giả tưởng, phiêu lưu, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/nexus.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Giả tưởng - Phiêu lưu/Nexus/Nexus.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Nexus/Nexus.ep1.mp4",
+          "size": 61104008,
+          "duration": 319,
+          "width": 1280,
+          "height": 544,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Giả tưởng - Phiêu lưu/Nexus/Nexus.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Nexus/Nexus.ep2.mp4",
+          "size": 36087147,
+          "duration": 151,
+          "width": 1280,
+          "height": 548,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/nexus/ep2.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Giả tưởng - Phiêu lưu/Nexus/Nexus.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Nexus/Nexus.ep3.mp4",
+          "size": 52440315,
+          "duration": 298,
+          "width": 1280,
+          "height": 544,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Nương nương được sủng",
+      "slug": "nuong-nuong-duoc-sung",
+      "genres": [
+        "Cổ trang",
+        "Lãng mạn"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Nương nương được sủng - phim AI thể loại cổ trang, lãng mạn, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/nuong-nuong-duoc-sung.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Cổ trang - Lãng mạn/Nương nương được sủng/Cổ trang-Nương nương được sủng mà kiêu.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/C%E1%BB%95%20trang%20-%20L%C3%A3ng%20m%E1%BA%A1n/N%C6%B0%C6%A1ng%20n%C6%B0%C6%A1ng%20%C4%91%C6%B0%E1%BB%A3c%20s%E1%BB%A7ng/C%E1%BB%95%20trang-N%C6%B0%C6%A1ng%20n%C6%B0%C6%A1ng%20%C4%91%C6%B0%E1%BB%A3c%20s%E1%BB%A7ng%20m%C3%A0%20ki%C3%AAu.ep1.mp4",
+          "size": 127525330,
+          "duration": 2486,
+          "width": 576,
+          "height": 1022,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Cổ trang - Lãng mạn/Nương nương được sủng/Cổ trang- Nương nương được sủng mà kiêu.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/C%E1%BB%95%20trang%20-%20L%C3%A3ng%20m%E1%BA%A1n/N%C6%B0%C6%A1ng%20n%C6%B0%C6%A1ng%20%C4%91%C6%B0%E1%BB%A3c%20s%E1%BB%A7ng/C%E1%BB%95%20trang-%20N%C6%B0%C6%A1ng%20n%C6%B0%C6%A1ng%20%C4%91%C6%B0%E1%BB%A3c%20s%E1%BB%A7ng%20m%C3%A0%20ki%C3%AAu.ep2.mp4",
+          "size": 118400267,
+          "duration": 2331,
+          "width": 576,
+          "height": 1022,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Cổ trang - Lãng mạn/Nương nương được sủng/Cổ trang-Nương nương được sủng mà kiêu.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/C%E1%BB%95%20trang%20-%20L%C3%A3ng%20m%E1%BA%A1n/N%C6%B0%C6%A1ng%20n%C6%B0%C6%A1ng%20%C4%91%C6%B0%E1%BB%A3c%20s%E1%BB%A7ng/C%E1%BB%95%20trang-N%C6%B0%C6%A1ng%20n%C6%B0%C6%A1ng%20%C4%91%C6%B0%E1%BB%A3c%20s%E1%BB%A7ng%20m%C3%A0%20ki%C3%AAu.ep3.mp4",
+          "size": 149009314,
+          "duration": 2807,
+          "width": 576,
+          "height": 1022,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Phim hay mỗi ngày",
+      "slug": "phim-hay-moi-ngay",
+      "genres": [
+        "Phim ngắn"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Phim hay mỗi ngày - phim AI thể loại phim ngắn, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/phim-hay-moi-ngay.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/#phimhaymoingay #phimai [7693915943465930005].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/%23phimhaymoingay%20%23phimai%20%5B7693915943465930005%5D.mp4",
+          "size": 25835467,
+          "duration": 628,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "She Raised a Monster They Tried to Kill",
+      "slug": "she-raised-a-monster-they-tried-to-kill",
+      "genres": [
+        "Giả tưởng",
+        "Phiêu lưu"
+      ],
+      "language": "en",
+      "releaseYear": 2026,
+      "synopsis": "Sau khi thợ săn giết mẹ của một sinh vật nhỏ bí ẩn, Elara liều mình cứu đứa con của nó, Kiro, nhưng nỗi sợ hãi khiến cả hai bị xua khỏi ngôi làng từng là nhà. Nhiều năm sau, khi một con quái vật cổ xưa thức giấc dưới lòng núi, Kiro phải đưa ra lựa chọn.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/she-raised-a-monster-they-tried-to-kill.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/She Raised a Monster They Tried to Kill [iXpEcPsswpU].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/She%20Raised%20a%20Monster%20They%20Tried%20to%20Kill%20%5BiXpEcPsswpU%5D.mp4",
+          "size": 107174127,
+          "duration": 1400,
+          "width": 854,
+          "height": 480,
+          "subtitles": [
+            {
+              "language": "vi",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/she-raised-a-monster-they-tried-to-kill/ep1.vi.vtt",
+              "isDefault": true
+            },
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/she-raised-a-monster-they-tried-to-kill/ep1.en.vtt",
+              "isDefault": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Thái tử trọng sinh",
+      "slug": "thai-tu-trong-sinh",
+      "genres": [
+        "Cổ trang",
+        "Lãng mạn"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Thái tử trọng sinh - phim AI thể loại cổ trang, lãng mạn, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/thai-tu-trong-sinh.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Cổ trang - Lãng mạn/Thái tử trọng sinh/Cổ trang- Thái tử trọng sinh lại không chọn nàng.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/C%E1%BB%95%20trang%20-%20L%C3%A3ng%20m%E1%BA%A1n/Th%C3%A1i%20t%E1%BB%AD%20tr%E1%BB%8Dng%20sinh/C%E1%BB%95%20trang-%20Th%C3%A1i%20t%E1%BB%AD%20tr%E1%BB%8Dng%20sinh%20l%E1%BA%A1i%20kh%C3%B4ng%20ch%E1%BB%8Dn%20n%C3%A0ng.ep1.mp4",
+          "size": 23876614,
+          "duration": 203,
+          "width": 576,
+          "height": 1024,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "The Chronicles of Bone",
+      "slug": "the-chronicles-of-bone",
+      "genres": [
+        "Giả tưởng",
+        "Phiêu lưu"
+      ],
+      "language": "en",
+      "releaseYear": 2026,
+      "synopsis": "The Chronicles of Bone - phim AI thể loại giả tưởng, phiêu lưu, 5 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/the-chronicles-of-bone.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Giả tưởng - Phiêu lưu/The Chronicles of Bone/The Chronicles of Bone.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/The%20Chronicles%20of%20Bone/The%20Chronicles%20of%20Bone.ep1.mp4",
+          "size": 11183719,
+          "duration": 92,
+          "width": 1200,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-chronicles-of-bone/ep1.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Giả tưởng - Phiêu lưu/The Chronicles of Bone/The Chronicles of Bone.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/The%20Chronicles%20of%20Bone/The%20Chronicles%20of%20Bone.ep2.mp4",
+          "size": 44740547,
+          "duration": 318,
+          "width": 1200,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-chronicles-of-bone/ep2.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Giả tưởng - Phiêu lưu/The Chronicles of Bone/The Chronicles of Bone.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/The%20Chronicles%20of%20Bone/The%20Chronicles%20of%20Bone.ep3.mp4",
+          "size": 107228592,
+          "duration": 770,
+          "width": 1200,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-chronicles-of-bone/ep3.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 4,
+          "title": "Tập 4",
+          "file": "AI_Film_v2/Giả tưởng - Phiêu lưu/The Chronicles of Bone/The Chronicles of Bone.ep4.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/The%20Chronicles%20of%20Bone/The%20Chronicles%20of%20Bone.ep4.mp4",
+          "size": 88854881,
+          "duration": 598,
+          "width": 1200,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-chronicles-of-bone/ep4.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 5,
+          "title": "Tập 5",
+          "file": "AI_Film_v2/Giả tưởng - Phiêu lưu/The Chronicles of Bone/The Chronicles of Bone.ep5.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%A3%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/The%20Chronicles%20of%20Bone/The%20Chronicles%20of%20Bone.ep5.mp4",
+          "size": 127897695,
+          "duration": 896,
+          "width": 1200,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-chronicles-of-bone/ep5.en.vtt",
+              "isDefault": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "The Fallen",
+      "slug": "the-fallen",
+      "genres": [
+        "Khoa học viễn tưởng",
+        "Hành động"
+      ],
+      "language": "en",
+      "releaseYear": 2026,
+      "synopsis": "The Fallen - phim AI thể loại khoa học viễn tưởng, hành động, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/the-fallen.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Hành động/The Fallen/The Fallen.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng/The%20Fallen/The%20Fallen.ep1.mp4",
+          "size": 99225546,
+          "duration": 731,
+          "width": 1280,
+          "height": 704,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-fallen/ep1.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Hành động/The Fallen/The Fallen.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng/The%20Fallen/The%20Fallen.ep2.mp4",
+          "size": 82398423,
+          "duration": 481,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Hành động/The Fallen/The Fallen.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng/The%20Fallen/The%20Fallen.ep3.mp4",
+          "size": 85251971,
+          "duration": 496,
+          "width": 1280,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-fallen/ep3.en.vtt",
+              "isDefault": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "The Silent Giant",
+      "slug": "the-silent-giant",
+      "genres": [
+        "Khoa học viễn tưởng",
+        "Giật gân"
+      ],
+      "language": "en",
+      "releaseYear": 2026,
+      "synopsis": "The Silent Giant - phim AI thể loại khoa học viễn tưởng, giật gân, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/the-silent-giant.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Giật gân/The Silent Giant/The Silent Giant.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Gi%E1%BA%ADt%20g%C3%A2n/The%20Silent%20Giant/The%20Silent%20Giant.ep1.mp4",
+          "size": 57964178,
+          "duration": 370,
+          "width": 1280,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-silent-giant/ep1.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Giật gân/The Silent Giant/The Silent Giant.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Gi%E1%BA%ADt%20g%C3%A2n/The%20Silent%20Giant/The%20Silent%20Giant.ep2.mp4",
+          "size": 87575940,
+          "duration": 608,
+          "width": 1280,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-silent-giant/ep2.en.vtt",
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Giật gân/The Silent Giant/The Silent Giant.ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Gi%E1%BA%ADt%20g%C3%A2n/The%20Silent%20Giant/The%20Silent%20Giant.ep3.mp4",
+          "size": 29662523,
+          "duration": 123,
+          "width": 1280,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/the-silent-giant/ep3.en.vtt",
+              "isDefault": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Trò chơi ma sói",
+      "slug": "tro-choi-ma-soi",
+      "genres": [
+        "Giật gân",
+        "Bí ẩn",
+        "Học đường"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Trò chơi ma sói - phim AI thể loại giật gân, bí ẩn, học đường, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/tro-choi-ma-soi.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Giật gân - Bí ẩn - Học đường/Trò chơi ma sói/Tội phạm- Trò chơi ma sói.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Gi%E1%BA%ADt%20g%C3%A2n%20-%20B%C3%AD%20%E1%BA%A9n%20-%20H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng/Tr%C3%B2%20ch%C6%A1i%20ma%20s%C3%B3i/T%E1%BB%99i%20ph%E1%BA%A1m-%20Tr%C3%B2%20ch%C6%A1i%20ma%20s%C3%B3i.mp4",
+          "size": 6185082,
+          "duration": 215,
+          "width": 576,
+          "height": 1024,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Twenty Two Minutes",
+      "slug": "twenty-two-minutes",
+      "genres": [
+        "Chiến tranh",
+        "Hành động",
+        "Khoa học viễn tưởng"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Twenty Two Minutes - phim AI thể loại chiến tranh, hành động, khoa học viễn tưởng, 2 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/twenty-two-minutes.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Chiến tranh - Hành động - Khoa học viễn tưởng/Twenty Two Minutes/Chiến tranh- Twenty two minutes-ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Chi%E1%BA%BFn%20tranh%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng%20-%20Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng/Twenty%20Two%20Minutes/Chi%E1%BA%BFn%20tranh-%20Twenty%20two%20minutes-ep1.mp4",
+          "size": 74644027,
+          "duration": 619,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Chiến tranh - Hành động - Khoa học viễn tưởng/Twenty Two Minutes/Chiến tranh- Twenty two minutes-ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Chi%E1%BA%BFn%20tranh%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng%20-%20Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng/Twenty%20Two%20Minutes/Chi%E1%BA%BFn%20tranh-%20Twenty%20two%20minutes-ep2.mp4",
+          "size": 69828039,
+          "duration": 452,
+          "width": 1680,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Void Core",
+      "slug": "void-core",
+      "genres": [
+        "Hành động",
+        "Võ thuật",
+        "Khoa học viễn tưởng"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Void Core - phim AI thể loại hành động, võ thuật, khoa học viễn tưởng, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/void-core.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành động-Võ thuật- Void Core-ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%C3%A0nh%20%C4%91%E1%BB%99ng%20-%20V%C3%B5%20thu%E1%BA%ADt%20-%20Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng/Void%20Core/H%C3%A0nh%20%C4%91%E1%BB%99ng-V%C3%B5%20thu%E1%BA%ADt-%20Void%20Core-ep1.mp4",
+          "size": 12355432,
+          "duration": 113,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành đọng- Võ thuật- Void Core-ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%C3%A0nh%20%C4%91%E1%BB%99ng%20-%20V%C3%B5%20thu%E1%BA%ADt%20-%20Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng/Void%20Core/H%C3%A0nh%20%C4%91%E1%BB%8Dng-%20V%C3%B5%20thu%E1%BA%ADt-%20Void%20Core-ep2.mp4",
+          "size": 78112069,
+          "duration": 616,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành đọng- Võ thuật- Void Core-ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/H%C3%A0nh%20%C4%91%E1%BB%99ng%20-%20V%C3%B5%20thu%E1%BA%ADt%20-%20Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng/Void%20Core/H%C3%A0nh%20%C4%91%E1%BB%8Dng-%20V%C3%B5%20thu%E1%BA%ADt-%20Void%20Core-ep3.mp4",
+          "size": 63693840,
+          "duration": 539,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Vùng dịch 704",
+      "slug": "vung-dich-704",
+      "genres": [
+        "Kinh dị",
+        "Giật gân",
+        "Bí ẩn"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Vùng dịch 704 - phim AI thể loại kinh dị, giật gân, bí ẩn, 4 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/vung-dich-704.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Kinh dị - Giật gân - Bí ẩn/Vùng dịch 704/KINH DỊ - Vùng dịch 704-ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Kinh%20d%E1%BB%8B%20-%20Gi%E1%BA%ADt%20g%C3%A2n%20-%20B%C3%AD%20%E1%BA%A9n/V%C3%B9ng%20d%E1%BB%8Bch%20704/KINH%20D%E1%BB%8A%20-%20V%C3%B9ng%20d%E1%BB%8Bch%20704-ep1.mp4",
+          "size": 7485549,
+          "duration": 151,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Kinh dị - Giật gân - Bí ẩn/Vùng dịch 704/KINH DỊ - Vùng dịch 704-ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Kinh%20d%E1%BB%8B%20-%20Gi%E1%BA%ADt%20g%C3%A2n%20-%20B%C3%AD%20%E1%BA%A9n/V%C3%B9ng%20d%E1%BB%8Bch%20704/KINH%20D%E1%BB%8A%20-%20V%C3%B9ng%20d%E1%BB%8Bch%20704-ep2.mp4",
+          "size": 31880036,
+          "duration": 449,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Kinh dị - Giật gân - Bí ẩn/Vùng dịch 704/KINH DỊ - Vùng dịch 704-ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Kinh%20d%E1%BB%8B%20-%20Gi%E1%BA%ADt%20g%C3%A2n%20-%20B%C3%AD%20%E1%BA%A9n/V%C3%B9ng%20d%E1%BB%8Bch%20704/KINH%20D%E1%BB%8A%20-%20V%C3%B9ng%20d%E1%BB%8Bch%20704-ep3.mp4",
+          "size": 20839319,
+          "duration": 306,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 4,
+          "title": "Tập 4",
+          "file": "AI_Film_v2/Kinh dị - Giật gân - Bí ẩn/Vùng dịch 704/KINH DỊ - Vùng dịch 704-ep4.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Kinh%20d%E1%BB%8B%20-%20Gi%E1%BA%ADt%20g%C3%A2n%20-%20B%C3%AD%20%E1%BA%A9n/V%C3%B9ng%20d%E1%BB%8Bch%20704/KINH%20D%E1%BB%8A%20-%20V%C3%B9ng%20d%E1%BB%8Bch%20704-ep4.mp4",
+          "size": 19240949,
+          "duration": 353,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Vương phi bất đắc dĩ",
+      "slug": "vuong-phi-bat-dac-di",
+      "genres": [
+        "Cổ trang",
+        "Lãng mạn"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Vương phi bất đắc dĩ - phim AI thể loại cổ trang, lãng mạn, 2 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/vuong-phi-bat-dac-di.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Cổ trang - Lãng mạn/Vương phi bất đắc dĩ/Cổ trang- Vương phi bất đắc dĩ.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/C%E1%BB%95%20trang%20-%20L%C3%A3ng%20m%E1%BA%A1n/V%C6%B0%C6%A1ng%20phi%20b%E1%BA%A5t%20%C4%91%E1%BA%AFc%20d%C4%A9/C%E1%BB%95%20trang-%20V%C6%B0%C6%A1ng%20phi%20b%E1%BA%A5t%20%C4%91%E1%BA%AFc%20d%C4%A9.ep1.mp4",
+          "size": 157390439,
+          "duration": 1880,
+          "width": 576,
+          "height": 768,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Cổ trang - Lãng mạn/Vương phi bất đắc dĩ/Cổ trang- Vương phi bất đắc dĩ.ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/C%E1%BB%95%20trang%20-%20L%C3%A3ng%20m%E1%BA%A1n/V%C6%B0%C6%A1ng%20phi%20b%E1%BA%A5t%20%C4%91%E1%BA%AFc%20d%C4%A9/C%E1%BB%95%20trang-%20V%C6%B0%C6%A1ng%20phi%20b%E1%BA%A5t%20%C4%91%E1%BA%AFc%20d%C4%A9.ep2.mp4",
+          "size": 130958247,
+          "duration": 1880,
+          "width": 576,
+          "height": 768,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "WANTED RELOADED",
+      "slug": "wanted-reloaded",
+      "genres": [
+        "Khoa học viễn tưởng",
+        "Hành động"
+      ],
+      "language": "en",
+      "releaseYear": 2026,
+      "synopsis": "WANTED RELOADED - phim AI thể loại khoa học viễn tưởng, hành động, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/wanted-reloaded.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Hành động/WANTED RELOADED/WANTED RELOADED.ep1.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng/WANTED%20RELOADED/WANTED%20RELOADED.ep1.mp4",
+          "size": 155364162,
+          "duration": 756,
+          "width": 1280,
+          "height": 720,
+          "subtitles": [
+            {
+              "language": "en",
+              "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/subtitles/wanted-reloaded/ep1.en.vtt",
+              "isDefault": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Zero Hour",
+      "slug": "zero-hour",
+      "genres": [
+        "Khoa học viễn tưởng",
+        "Hành động",
+        "Giật gân"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Zero Hour - phim AI thể loại khoa học viễn tưởng, hành động, giật gân, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/zero-hour.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Hành động - Giật gân/Zero Hour/Phiêu lưu - Zero Hour-ep2.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng%20-%20Gi%E1%BA%ADt%20g%C3%A2n/Zero%20Hour/Phi%C3%AAu%20l%C6%B0u%20-%20Zero%20Hour-ep2.mp4",
+          "size": 61708948,
+          "duration": 500,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Hành động - Giật gân/Zero Hour/Phiêu lưu - Zero Hour-ep3.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng%20-%20Gi%E1%BA%ADt%20g%C3%A2n/Zero%20Hour/Phi%C3%AAu%20l%C6%B0u%20-%20Zero%20Hour-ep3.mp4",
+          "size": 62646554,
+          "duration": 500,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Khoa học viễn tưởng - Hành động - Giật gân/Zero Hour/Phiêu lưu - Zero Hour-ep4.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20H%C3%A0nh%20%C4%91%E1%BB%99ng%20-%20Gi%E1%BA%ADt%20g%C3%A2n/Zero%20Hour/Phi%C3%AAu%20l%C6%B0u%20-%20Zero%20Hour-ep4.mp4",
+          "size": 59972903,
+          "duration": 500,
+          "width": 1024,
+          "height": 576,
+          "subtitles": []
+        }
+      ]
+    }
+  ]
+}

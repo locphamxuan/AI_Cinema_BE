@@ -8,7 +8,7 @@ enum SubscriptionStatus {
   EXPIRED
 }
 
-/// How a subscription started: bought with Coins, or given by a reward spin (BR-09) — the latter
+/// How a subscription started: bought with Coins, or given by a reward spin (BR-09) - the latter
 /// never auto-renews unless the member turns auto-renew on.
 enum SubscriptionSource {
   PURCHASE

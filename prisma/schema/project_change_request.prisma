@@ -1,25 +1,42 @@
+enum ChangeRequestType {
+    PROJECT_UPDATE
+    BUDGET_SUPPLEMENT
+    DEADLINE_EXTENSION
+    OTHER
+}
+
 enum ChangeRequestStatus {
     OPEN
-    ACCEPTED
+    APPROVED
     REJECTED
 }
 
-/// Admin proposals to change a project; the Reviewer accepts or rejects them (BR-55, §4.1.8).
-/// episode_id NULL = the proposal is about the whole project.
+/// A Reviewer or Creator asks the Admin to change a project, with the reason and the documents that
+/// prove it; the Admin approves or rejects (BR-55, §4.1.8). season_id / episode_id narrow the scope;
+/// both NULL = the whole project.
 model ProjectChangeRequest {
-    id               String              @id @default(uuid()) @db.Uuid
-    movieId          String              @map("movie_id") @db.Uuid
-    episodeId        String?             @map("episode_id") @db.Uuid
-    requestedById    String              @map("requested_by_id") @db.Uuid
-    content          String              @db.Text
-    status           ChangeRequestStatus @default(OPEN)
+    id                 String              @id @default(uuid()) @db.Uuid
+    movieId            String              @map("movie_id") @db.Uuid
+    seasonId           String?             @map("season_id") @db.Uuid
+    episodeId          String?             @map("episode_id") @db.Uuid
+    requestedById      String              @map("requested_by_id") @db.Uuid
+    requestType        ChangeRequestType   @default(PROJECT_UPDATE) @map("request_type")
+    content            String              @db.Text
+    reason             String              @db.Text
+    /// Only for BUDGET_SUPPLEMENT: the Token asked for.
+    requestedTokens    BigInt?             @map("requested_tokens")
+    attachmentName     String?             @map("attachment_name") @db.VarChar(255)
+    attachmentKey      String?             @map("attachment_key") @db.VarChar(500)
+    attachmentMimeType String?             @map("attachment_mime_type") @db.VarChar(100)
+    status             ChangeRequestStatus @default(OPEN)
     /// Required when REJECTED.
-    reviewerResponse String?             @map("reviewer_response") @db.Text
-    resolvedById     String?             @map("resolved_by_id") @db.Uuid
-    resolvedAt       DateTime?           @map("resolved_at") @db.Timestamptz(6)
-    createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+    adminResponse      String?             @map("admin_response") @db.Text
+    resolvedById       String?             @map("resolved_by_id") @db.Uuid
+    resolvedAt         DateTime?           @map("resolved_at") @db.Timestamptz(6)
+    createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
     movie       Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    season      Season?  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
     episode     Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
     requestedBy User     @relation("ChangeRequestRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
     resolvedBy  User?    @relation("ChangeRequestResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)

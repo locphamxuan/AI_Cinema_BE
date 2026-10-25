@@ -1,5 +1,5 @@
 /** Deadlines are calendar days in Vietnam, whatever time zone the server runs in. */
-export const BUSINESS_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+const BUSINESS_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 
 const dayFormat = new Intl.DateTimeFormat('en-CA', {
   timeZone: BUSINESS_TIME_ZONE,

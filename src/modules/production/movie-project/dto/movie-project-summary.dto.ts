@@ -12,8 +12,8 @@ export class MovieProjectSummaryDto {
   @ApiProperty({ enum: MovieStatus })
   status: MovieStatus;
 
-  @ApiPropertyOptional({ example: 'Studio Ánh Trăng' })
-  studioName: string | null;
+  @ApiPropertyOptional({ example: { id: '8c1b2f3e-…', name: 'Studio Ánh Trăng' }, nullable: true })
+  studio: { id: string; name: string } | null;
 
   @ApiProperty()
   reviewerId: string;
@@ -23,4 +23,7 @@ export class MovieProjectSummaryDto {
 
   @ApiProperty()
   updatedAt: Date;
+
+  @ApiProperty({ description: 'Newest change of the project: its latest content event, else its own update time.' })
+  lastActivityAt: Date;
 }

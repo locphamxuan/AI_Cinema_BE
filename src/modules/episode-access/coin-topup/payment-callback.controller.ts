@@ -61,7 +61,7 @@ export class PaymentCallbackController {
   ) {
     const provider = providerOf(providerParam);
     // VNPay returns here too (GET query, same URL family as its IPN): verify first,
-    // then forward. Nothing settles on this trip on purpose — the IPN (or the
+    // then forward. Nothing settles on this trip on purpose - the IPN (or the
     // reconcile sweep) owns the ledger, and the app polls the order meanwhile.
     if (provider === PaymentProvider.VNPAY) {
       return res.redirect(await this.vnpayReturnUrl(query));

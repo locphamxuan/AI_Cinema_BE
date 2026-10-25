@@ -20,16 +20,6 @@ import { PLAN_REASON, purchasablePlan } from '../membership-plan/membership-plan
 
 const DAY_MS = 86_400_000;
 
-/** One cycle of a subscription, as it is shown on the screens that quote a price. */
-export interface CycleLine {
-  id: string;
-  cycleNumber: number;
-  periodStart: Date;
-  periodEnd: Date;
-  priceCoins: number;
-  status: CycleStatus;
-}
-
 export const SUB_REASON = {
   EXISTS: 'SUBSCRIPTION_EXISTS',
   NOT_PENDING: 'SUBSCRIPTION_NOT_PENDING',
@@ -123,7 +113,7 @@ export class SubscriptionService {
   }
 
   /**
-   * Step 16 (with steps 11 and 14 inside): takes the first cycle's Coins — main before bonus —
+   * Step 16 (with steps 11 and 14 inside): takes the first cycle's Coins - main before bonus -
    * and starts the period. Short of Coins the wallet answers 422 INSUFFICIENT_COINS and the
    * subscription stays PENDING, so the member tops up and activates again. Anything but PENDING
    * answers 409 SUBSCRIPTION_NOT_PENDING.

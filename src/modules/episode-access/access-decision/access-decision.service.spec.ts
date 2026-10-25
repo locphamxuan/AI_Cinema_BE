@@ -9,7 +9,7 @@ import { ACCESS_METHOD, ACCESS_SOURCE, ACTOR_TYPE, NEXT_ACTION } from './constan
 
 describe('AccessDecisionService.decide', () => {
   const prisma = {
-    episode: { findFirst: jest.fn() },
+    episode: { findFirst: jest.fn(), findUnique: jest.fn() },
     subscription: { findFirst: jest.fn() },
     episodeAccess: { findFirst: jest.fn() },
     membershipPlanPrice: { findFirst: jest.fn() },
@@ -32,6 +32,7 @@ describe('AccessDecisionService.decide', () => {
       ingestStatus: MediaIngestStatus.READY,
       streamUrl: 'https://cdn.example/hls/ep-1/master.m3u8',
     },
+    movie: { freeEpisodeCount: null },
     ...overrides,
   });
 
@@ -39,6 +40,7 @@ describe('AccessDecisionService.decide', () => {
     jest.clearAllMocks();
     settings.get.mockResolvedValue({ freeStarterEpisodeCount: 2, episodeCoinPriceMin: 1 });
     prisma.episode.findFirst.mockResolvedValue(episode());
+    prisma.episode.findUnique.mockResolvedValue({ approvedMediaAsset: { streamUrl: 'https://cdn/ep-1.mp4' } });
     prisma.subscription.findFirst.mockResolvedValue(null);
     prisma.episodeAccess.findFirst.mockResolvedValue(null);
     prisma.membershipPlanPrice.findFirst.mockResolvedValue({ priceCoins: 900 });
@@ -92,6 +94,9 @@ describe('AccessDecisionService.decide', () => {
     prisma.episode.findFirst.mockResolvedValue(episode({ approvedMediaAsset: null }));
     await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
       availability: EPISODE_AVAILABILITY.MEDIA_NOT_READY,
+    expect(prisma.episode.findFirst).toHaveBeenCalledWith({
+      where: { id: 'missing', status: EpisodeStatus.PUBLISHED },
+      include: { movie: { select: { freeEpisodeCount: true } } },
     });
   });
 
@@ -110,12 +115,33 @@ describe('AccessDecisionService.decide', () => {
     await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({ actorType: ACTOR_TYPE.MEMBER });
   });
 
+  it('hands the stream to the player only once access is granted', async () => {
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1 }));
+    await expect(service.decide('ep-1')).resolves.toMatchObject({ streamUrl: 'https://cdn/ep-1.mp4' });
+
+    prisma.episode.findFirst.mockResolvedValue(episode());
+    const refused = await service.decide('ep-1');
+    expect(refused.accessGranted).toBe(false);
+    expect(refused).not.toHaveProperty('streamUrl');
+  });
+
   it('opens an episode priced at zero', async () => {
     prisma.episode.findFirst.mockResolvedValue(episode({ coinPrice: 0 }));
 
     await expect(service.decide('ep-1')).resolves.toMatchObject({
       accessGranted: true,
       source: ACCESS_SOURCE.FREE,
+    });
+  });
+
+  it("follows the movie's own free count over the platform's (BR-03)", async () => {
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1, movie: { freeEpisodeCount: 0 } }));
+    await expect(service.decide('ep-1')).resolves.toMatchObject({ accessGranted: false });
+
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 5, movie: { freeEpisodeCount: 5 } }));
+    await expect(service.decide('ep-1')).resolves.toMatchObject({
+      accessGranted: true,
+      source: ACCESS_SOURCE.FREE_STARTER,
     });
   });
 

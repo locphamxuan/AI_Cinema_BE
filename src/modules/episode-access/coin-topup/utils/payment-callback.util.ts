@@ -14,7 +14,7 @@ export interface GatewayCallback {
   paidAt?: Date;
 }
 
-export const textOf = (value: unknown): string | undefined =>
+const textOf = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() ? value.trim() : undefined;
 
 /** A gateway reference: MoMo sends `transId` as a JSON number, the others as text. */
@@ -25,7 +25,7 @@ const refOf = (value: unknown): string | undefined =>
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: string): boolean => UUID_RE.test(value);
 
-export const intOf = (value: unknown): number | undefined => {
+const intOf = (value: unknown): number | undefined => {
   const parsed =
     typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value.trim()) : NaN;
   return Number.isInteger(parsed) ? parsed : undefined;

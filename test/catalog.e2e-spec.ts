@@ -69,7 +69,7 @@ describe('Public catalog (e2e)', () => {
 
     expect(card).toMatchObject({ ageRating: 'T16', aiGenerated: true });
     expect(card.genres.length).toBeGreaterThan(0);
-    for (const internal of ['reviewerId', 'creatorId', 'studioName', 'studioEmail', 'ideaDescription', 'status']) {
+    for (const internal of ['reviewerId', 'creatorId', 'studioId', 'studio', 'ideaDescription', 'status']) {
       expect(card).not.toHaveProperty(internal);
     }
     expect(page.data.some((m) => m.id === unreleased.id)).toBe(false);
@@ -97,7 +97,7 @@ describe('Public catalog (e2e)', () => {
     expect(episodes.map((e) => e.isFreeStarter)).toEqual([true, true, false]);
     expect(episodes[2]).toMatchObject({ availability: 'AVAILABLE', notice: null, coinPrice: 12, durationSeconds: 60 });
     expect(episodes[0].aiLabel).toMatchObject({ labelType: 'AI_GENERATED' });
-    for (const internal of ['streamUrl', 'approvedMediaAssetId', 'status', 'dueDate', 'milestoneDate']) {
+    for (const internal of ['streamUrl', 'approvedMediaAssetId', 'status', 'dueDate', 'deliveryDeadline']) {
       expect(episodes[0]).not.toHaveProperty(internal);
     }
 

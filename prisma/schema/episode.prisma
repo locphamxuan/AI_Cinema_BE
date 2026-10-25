@@ -17,6 +17,8 @@ model Episode {
     id                    String        @id @default(uuid()) @db.Uuid
     movieId               String        @map("movie_id") @db.Uuid
     seasonId              String        @map("season_id") @db.Uuid
+    /// The Creator in charge of this episode; null = any Creator of the project (BR-13).
+    assignedCreatorId     String?       @map("assigned_creator_id") @db.Uuid
     /// Numbered across the whole movie, used by Free Starter Episodes (BR-03).
     episodeNumber         Int           @map("episode_number")
     title                 String        @db.VarChar(255)
@@ -26,10 +28,12 @@ model Episode {
     /// BR-31: set by the Reviewer, no platform limit.
     targetDurationSeconds Int           @map("target_duration_seconds")
     /// Set by the Reviewer when creating the project; the studio due date cannot be later.
-    /// Null only on episodes created before milestones existed.
-    milestoneDate         DateTime?     @map("milestone_date") @db.Date
+    /// Null only on episodes created before deadlines existed.
+    deliveryDeadline      DateTime?     @map("delivery_deadline") @db.Date
     /// BR-38: when the studio must deliver.
     dueDate               DateTime?     @map("due_date") @db.Date
+    /// BR-60: within the season's release window, never before the delivery deadline.
+    expectedReleaseDate   DateTime?     @map("expected_release_date") @db.Date
     /// BR-14: the reviewed version that gets published.
     approvedMediaAssetId  String?       @unique @map("approved_media_asset_id") @db.Uuid
     /// BR-29: null until the Reviewer prices the episode.
@@ -41,6 +45,7 @@ model Episode {
 
     movie              Movie                  @relation(fields: [movieId], references: [id], onDelete: Cascade)
     season             Season                 @relation(fields: [seasonId, movieId], references: [id, movieId], onDelete: Cascade)
+    assignedCreator    User?                  @relation("EpisodeAssignedCreator", fields: [assignedCreatorId], references: [id], onDelete: SetNull)
     approvedMediaAsset MediaAsset?            @relation("EpisodeApprovedMedia", fields: [approvedMediaAssetId], references: [id], onDelete: SetNull)
     mediaAssets        MediaAsset[]           @relation("EpisodeMedia")
     publications       Publication[]
@@ -49,9 +54,12 @@ model Episode {
     accesses           EpisodeAccess[]
     streamingSessions  StreamingSession[]
     watchProgresses    WatchProgress[]
+    views              EpisodeView[]
+    studioFilmLinks    StudioFilmLink[]
 
     @@unique([movieId, episodeNumber])
     @@index([movieId, status])
     @@index([dueDate])
+    @@index([assignedCreatorId])
     @@map("episodes")
 }

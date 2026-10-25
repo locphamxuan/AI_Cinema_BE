@@ -30,7 +30,7 @@ describe('EpisodePurchaseService.purchase', () => {
   );
 
   const user = { id: 'u1' } as unknown as AuthenticatedUser;
-  const episode = { id: 'ep-1', movieId: 'm1', episodeNumber: 5, coinPrice: 25 };
+  const episode = { id: 'ep-1', movieId: 'm1', episodeNumber: 5, coinPrice: 25, movie: { freeEpisodeCount: null } };
   const movement = { transactionId: 'tx-1', mainCoins: 10, bonusCoins: 15, mainBalance: 0, bonusBalance: 0 };
 
   beforeEach(() => {

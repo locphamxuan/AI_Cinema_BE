@@ -17,7 +17,14 @@ export function configureApp(app: INestApplication) {
   if (config.trustProxy) express.set('trust proxy', 1);
   express.disable('x-powered-by');
   // Swagger UI needs inline scripts, so the Content-Security-Policy is relaxed only where it is served.
-  app.use(helmet({ contentSecurityPolicy: config.swaggerEnabled ? false : undefined }));
+  // Posters and HLS are loaded by the web app from another origin (:3000 → :3001), so helmet's default
+  // `Cross-Origin-Resource-Policy: same-origin` would make the browser block every artwork image.
+  app.use(
+    helmet({
+      contentSecurityPolicy: config.swaggerEnabled ? false : undefined,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   app.use(requestIdMiddleware);
   app.enableCors({ origin: config.corsOrigins, credentials: true });
   app.setGlobalPrefix('api');

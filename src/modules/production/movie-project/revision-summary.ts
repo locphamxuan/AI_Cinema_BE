@@ -1,5 +1,5 @@
 /**
- * BR-56: the episodes taken down to be fixed, by season ("fixing 2 episodes — season 1: 3;
+ * BR-56: the episodes taken down to be fixed, by season ("fixing 2 episodes - season 1: 3;
  * season 2: 1"). Derived from the episodes, never stored on the project status.
  */
 export function revisionSummary(

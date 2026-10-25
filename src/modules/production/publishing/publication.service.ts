@@ -194,7 +194,7 @@ export class PublicationService {
     if (!mediaAssetId) missing.push('an approved media version');
     if (episode.coinPrice === null) missing.push('a Coin price (BR-29)');
     if (!episode.movie.synopsis?.trim()) missing.push('the movie synopsis');
-    if (!episode.movie.ageRating) missing.push('the movie age rating (BR-54)');
+    if (!episode.movie.ageRating) missing.push('the movie age rating');
     if (mediaAssetId) {
       const [label, passed] = await Promise.all([
         this.prisma.aiContentLabel.count({ where: { mediaAssetId } }),

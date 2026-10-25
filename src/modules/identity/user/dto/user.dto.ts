@@ -15,6 +15,9 @@ export class UserDto implements UserProfile {
   @ApiProperty({ example: '2003-05-14T00:00:00.000Z', nullable: true, description: 'Members only (BR-54).' })
   dateOfBirth: Date | null;
 
+  @ApiProperty({ example: '0912345678', nullable: true })
+  phoneNumber: string | null;
+
   @ApiProperty({ enum: UserRole, example: UserRole.MEMBER })
   role: UserRole;
 

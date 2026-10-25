@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
-import { EpisodeStatus, MediaIngestStatus, MediaSourceMethod, type MediaAsset, type Prisma } from '@prisma/client';
+import {
+  EpisodeStatus,
+  MediaIngestStatus,
+  MediaSourceMethod,
+  StudioMilestoneStatus,
+  type MediaAsset,
+  type Prisma,
+} from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind } from 'src/common/validation/uploaded-file';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
@@ -9,6 +16,8 @@ import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.s
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
+import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import {
@@ -35,11 +44,8 @@ const SUBMITTABLE: EpisodeStatus[] = [
 const ASSET_DETAIL = {
   ingestJobs: { orderBy: { createdAt: 'asc' } },
   submittedBy: { select: { id: true, fullName: true } },
-  studioHandoff: { select: { id: true, studioName: true } },
+  studioHandoff: { select: { id: true, studio: { select: { id: true, name: true } } } },
 } satisfies Prisma.MediaAssetInclude;
-
-/** Who delivers: the assigned Creator on the studio's behalf, or the studio itself through its portal link. */
-export type Submitter = { user: AuthenticatedUser } | { studio: { handoffId: string; studioName: string } };
 
 interface NewVersion {
   id: string;
@@ -53,19 +59,6 @@ interface NewVersion {
   submissionNote?: string;
 }
 
-/** The columns and audit actor recording who delivered a version. */
-function submittedBy(submitter: Submitter) {
-  if ('user' in submitter) {
-    return { columns: { submittedById: submitter.user.id }, actor: { actorId: submitter.user.id }, payload: {} };
-  }
-  const { handoffId, studioName } = submitter.studio;
-  return {
-    columns: { studioHandoffId: handoffId },
-    actor: { actorId: null, actorType: 'STUDIO' as const },
-    payload: { studioHandoffId: handoffId, studioName },
-  };
-}
-
 /** MF-1 step 5: the Creator delivers an episode; every delivery is a new immutable version (BR-14). */
 @Injectable()
 export class MediaIngestService {
@@ -76,16 +69,17 @@ export class MediaIngestService {
     private readonly queue: JobQueue,
     private readonly auditLog: AuditLogService,
     private readonly outcomes: MediaOutcomeService,
+    private readonly notifications: NotificationService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async submitLink(episodeId: string, dto: SubmitMediaLinkRequestDto, submitter: Submitter) {
-    await this.assertCanSubmit(episodeId, submitter);
+  async submitLink(episodeId: string, dto: SubmitMediaLinkRequestDto, user: AuthenticatedUser) {
+    await this.assertCanSubmit(episodeId, user);
     // Refused up front for a quick answer; the worker checks every hop again (redirects, DNS changes).
     await assertPublicUrl(dto.sourceUrl, { allowPrivate: this.config.media.allowPrivateUrls }).catch((error) => {
       throw error instanceof UnsafeUrlError ? new BadRequestException(error.message) : error;
     });
-    const asset = await this.createVersion(episodeId, submitter, {
+    const asset = await this.createVersion(episodeId, user, {
       id: randomUUID(),
       sourceMethod: dto.sourceMethod,
       sourceUrl: dto.sourceUrl,
@@ -103,10 +97,10 @@ export class MediaIngestService {
     file: Express.Multer.File | undefined,
     dto: SubmitMediaUploadRequestDto,
     disclosure: AiDisclosureDto,
-    submitter: Submitter,
+    user: AuthenticatedUser,
   ) {
     if (!file) throw new BadRequestException('Attach the episode video as "file"');
-    await this.assertCanSubmit(episodeId, submitter);
+    await this.assertCanSubmit(episodeId, user);
     const kind = detectKind(file.originalname, await this.headOf(file.path), VIDEO_KINDS);
     const id = randomUUID();
     const storageKey = `media/${id}/source${kind.extensions[0]}`;
@@ -114,7 +108,7 @@ export class MediaIngestService {
     // a transaction would hold the episode lock far too long.
     await this.storage.putFile(storageKey, file.path, kind.mimeType, 'private');
 
-    const asset = await this.createVersion(episodeId, submitter, {
+    const asset = await this.createVersion(episodeId, user, {
       id,
       sourceMethod: MediaSourceMethod.UPLOAD,
       storageKey,
@@ -171,12 +165,8 @@ export class MediaIngestService {
     return this.enqueue(asset.id, `${asset.id}-retry-${Date.now()}`);
   }
 
-  /** The studio portal resolves its own episode (scoped to the hand-off's project) before calling in. */
-  private async assertCanSubmit(episodeId: string, submitter: Submitter) {
-    const episode =
-      'user' in submitter
-        ? await this.access.episode(episodeId, submitter.user, 'creator')
-        : await this.prisma.episode.findUniqueOrThrow({ where: { id: episodeId }, include: { movie: true } });
+  private async assertCanSubmit(episodeId: string, user: AuthenticatedUser) {
+    const episode = await this.access.episode(episodeId, user, 'creator');
     assertProjectStatus(episode.movie.status, DELIVERY_PROJECT_STATUSES, 'deliver media');
     if (episode.status === EpisodeStatus.PROCESSING) {
       throw new ConflictException('The previous delivery of this episode is still being processed');
@@ -184,34 +174,74 @@ export class MediaIngestService {
     assertEpisodeStatus(episode.status, SUBMITTABLE, 'deliver media');
   }
 
-  private async createVersion(episodeId: string, submitter: Submitter, data: NewVersion): Promise<MediaAsset> {
-    const by = submittedBy(submitter);
+  private async createVersion(episodeId: string, user: AuthenticatedUser, data: NewVersion): Promise<MediaAsset> {
     return this.prisma.$transaction(async (tx) => {
       await this.lockEpisode(tx, episodeId);
       const last = await tx.mediaAsset.aggregate({ where: { episodeId }, _max: { version: true } });
+      const studioHandoffId = await this.currentHandoffId(tx, episodeId);
       const asset = await tx.mediaAsset.create({
         data: {
           ...data,
           aiDisclosure: { ...data.aiDisclosure },
           episodeId,
           version: (last._max.version ?? 0) + 1,
-          ...by.columns,
+          submittedById: user.id,
+          studioHandoffId,
         },
-        include: { episode: { select: { movieId: true } } },
+        include: {
+          episode: {
+            select: {
+              movieId: true,
+              episodeNumber: true,
+              movie: { select: { title: true, reviewerId: true, creatorId: true } },
+            },
+          },
+        },
       });
+      // A Creator other than the lead passes their episode up: the lead follows it along with the Reviewer.
+      const lead = asset.episode.movie.creatorId;
+      await this.notifications.notify(
+        [asset.episode.movie.reviewerId, ...(lead && lead !== user.id ? [lead] : [])],
+        {
+          type: NOTIFICATION_TYPE.MEDIA_SUBMITTED,
+          title: `Creator vừa nộp tập ${asset.episode.episodeNumber} của phim "${asset.episode.movie.title}"`,
+          body: `Bản ${asset.version}, đang được xử lý.`,
+          link: `/projects/${asset.episode.movieId}/episodes/${episodeId}`,
+          payload: { movieId: asset.episode.movieId, episodeId, mediaAssetId: asset.id },
+        },
+        tx,
+      );
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.MEDIA_SUBMITTED,
           entityType: 'MediaAsset',
           entityId: asset.id,
           movieId: asset.episode.movieId,
-          ...by.actor,
-          payload: { episodeId, version: asset.version, sourceMethod: asset.sourceMethod, ...by.payload },
+          actorId: user.id,
+          payload: { episodeId, version: asset.version, sourceMethod: asset.sourceMethod, studioHandoffId },
         },
         tx,
       );
       return asset;
     });
+  }
+
+  /** The live hand-off covering the episode (its season, or the whole project): the one the studio delivers for. */
+  private async currentHandoffId(tx: PrismaTx, episodeId: string): Promise<string | null> {
+    const episode = await tx.episode.findUniqueOrThrow({
+      where: { id: episodeId },
+      select: { movieId: true, seasonId: true },
+    });
+    const handoff = await tx.studioHandoff.findFirst({
+      where: {
+        movieId: episode.movieId,
+        milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED },
+        OR: [{ seasonId: null }, { seasonId: episode.seasonId }],
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    return handoff?.id ?? null;
   }
 
   /** Moves the episode to PROCESSING; a concurrent delivery finds it locked and is refused. */

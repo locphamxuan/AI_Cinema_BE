@@ -1,38 +1,123 @@
-/// The studio's answer to a hand-off, given through its portal link.
-enum StudioResponse {
-    ACCEPTED
-    DECLINED
+/// Progress of a hand-off, set by the Creator as the studio works outside the platform (BR-58).
+enum StudioMilestoneStatus {
+    BRIEF_SENT
+    STUDIO_ACCEPTED
+    IN_PROGRESS
+    /// Always recorded with the Submission the studio delivered.
+    DELIVERED
+    STUDIO_DECLINED
+    /// Replaced when the project moved to another studio.
+    SUPERSEDED
 }
 
-/// Every hand-off and studio change (BR-13, SF-J); the newest row is the current studio.
-model StudioHandoff {
-    id                  String          @id @default(uuid()) @db.Uuid
-    movieId             String          @map("movie_id") @db.Uuid
-    studioName          String          @map("studio_name") @db.VarChar(255)
-    studioEmail         String          @map("studio_email") @db.VarChar(255)
-    studioContact       String?         @map("studio_contact") @db.VarChar(255)
-    /// Production fee printed in the brief when it was sent.
-    productionFeeTokens BigInt          @map("production_fee_tokens")
-    /// Required when the studio is changed.
-    changeReason        String?         @map("change_reason") @db.Text
-    briefFileKey        String?         @map("brief_file_key") @db.VarChar(500)
-    emailMessageId      String?         @map("email_message_id") @db.Uuid
-    createdById         String          @map("created_by_id") @db.Uuid
-    createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-    /// SHA-256 of the studio's portal link token; the token itself is only ever in the email.
-    portalTokenHash     String?         @unique @map("portal_token_hash") @db.Char(64)
-    /// Set when the studio is changed or the Creator sends a new link.
-    portalRevokedAt     DateTime?       @map("portal_revoked_at") @db.Timestamptz(6)
-    studioResponse      StudioResponse? @map("studio_response")
-    respondedAt         DateTime?       @map("responded_at") @db.Timestamptz(6)
-    /// Required when the studio declines.
-    declineReason       String?         @map("decline_reason") @db.Text
+enum HandoffMaterialKind {
+    BRIEF
+    SCRIPT
+    REFERENCE
+    OTHER
+}
 
-    movie        Movie         @relation(fields: [movieId], references: [id], onDelete: Cascade)
-    emailMessage EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: SetNull)
-    createdBy    User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
-    deliveries   MediaAsset[]
+/// Every hand-off and studio change (BR-13, BR-59, SF-J): which studio, which season (null = the whole
+/// project), when and with which materials.
+model StudioHandoff {
+    id                  String                @id @default(uuid()) @db.Uuid
+    movieId             String                @map("movie_id") @db.Uuid
+    studioId            String                @map("studio_id") @db.Uuid
+    seasonId            String?               @map("season_id") @db.Uuid
+    /// Production fee printed in the brief when it was sent.
+    productionFeeTokens BigInt                @map("production_fee_tokens")
+    /// Token spent on this hand-off when it was replaced: the studio got the brief and did not decline (BR-59).
+    lostTokens          BigInt                @default(0) @map("lost_tokens")
+    /// Required when the studio is changed.
+    changeReason        String?               @map("change_reason") @db.Text
+    briefFileKey        String?               @map("brief_file_key") @db.VarChar(500)
+    emailMessageId      String?               @map("email_message_id") @db.Uuid
+    milestoneStatus     StudioMilestoneStatus @default(BRIEF_SENT) @map("milestone_status")
+    /// Note of the latest milestone change.
+    statusNote          String?               @map("status_note") @db.Text
+    /// When the studio accepted or declined.
+    respondedAt         DateTime?             @map("responded_at") @db.Timestamptz(6)
+    /// Required when the studio declines.
+    declineReason       String?               @map("decline_reason") @db.Text
+    /// When the Studio Web last reported a film mailed back to the Creator, and what it said.
+    filmSentAt          DateTime?             @map("film_sent_at") @db.Timestamptz(6)
+    filmSentNote        String?               @map("film_sent_note") @db.Text
+    createdById        String                @map("created_by_id") @db.Uuid
+    createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt           DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+    movie           Movie                   @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    studio          Studio                  @relation(fields: [studioId], references: [id], onDelete: Restrict)
+    /// Plain key: Prisma cannot make (season_id, movie_id) optional; the service checks the season's movie.
+    season          Season?                 @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+    emailMessage    EmailMessage?           @relation(fields: [emailMessageId], references: [id], onDelete: SetNull)
+    createdBy       User                    @relation(fields: [createdById], references: [id], onDelete: Restrict)
+    materials       StudioHandoffMaterial[]
+    milestoneEvents StudioMilestoneEvent[]
+    deliveries      MediaAsset[]
+    filmLinks       StudioFilmLink[]
 
     @@index([movieId, createdAt])
+    @@index([studioId])
+    @@index([seasonId])
     @@map("studio_handoffs")
+}
+
+/// Files sent to the studio with a hand-off besides the generated brief: scripts, references (BR-59).
+model StudioHandoffMaterial {
+    id           String              @id @default(uuid()) @db.Uuid
+    handoffId    String              @map("handoff_id") @db.Uuid
+    kind         HandoffMaterialKind @default(REFERENCE)
+    fileName     String              @map("file_name") @db.VarChar(255)
+    storageKey   String              @map("storage_key") @db.VarChar(500)
+    mimeType     String              @map("mime_type") @db.VarChar(100)
+    sizeBytes    BigInt              @map("size_bytes")
+    uploadedById String              @map("uploaded_by_id") @db.Uuid
+    createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    handoff    StudioHandoff @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+    uploadedBy User          @relation("HandoffMaterialUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+    @@index([handoffId])
+    @@map("studio_handoff_materials")
+}
+
+/// One row per milestone change of a hand-off; DELIVERED carries the Submission (BR-58, BR-59).
+model StudioMilestoneEvent {
+    id           String                 @id @default(uuid()) @db.Uuid
+    handoffId    String                 @map("handoff_id") @db.Uuid
+    /// Null on the event that opened the hand-off.
+    fromStatus   StudioMilestoneStatus? @map("from_status")
+    toStatus     StudioMilestoneStatus  @map("to_status")
+    note         String?                @db.Text
+    mediaAssetId String?                @map("media_asset_id") @db.Uuid
+    changedById  String                 @map("changed_by_id") @db.Uuid
+    createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    handoff    StudioHandoff @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+    mediaAsset MediaAsset?   @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+    changedBy  User          @relation("MilestoneChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+    @@index([handoffId, createdAt])
+    @@map("studio_milestone_events")
+}
+
+/// The link the Studio Web last mailed for one episode of a hand-off (BR-58): the Creator downloads it, or
+/// imports it as the Submission. A later mail for the same episode replaces it.
+model StudioFilmLink {
+    id        String   @id @default(uuid()) @db.Uuid
+    handoffId String   @map("handoff_id") @db.Uuid
+    episodeId String   @map("episode_id") @db.Uuid
+    /// The studio's own name for the cut, e.g. v2.
+    version   String   @db.VarChar(100)
+    fileName  String   @map("file_name") @db.VarChar(255)
+    url       String   @db.VarChar(2048)
+    sentAt    DateTime @map("sent_at") @db.Timestamptz(6)
+
+    handoff StudioHandoff @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+    episode Episode       @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+    @@unique([handoffId, episodeId])
+    @@index([episodeId])
+    @@map("studio_film_links")
 }

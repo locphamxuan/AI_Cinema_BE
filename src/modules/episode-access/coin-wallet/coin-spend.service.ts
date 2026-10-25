@@ -1,7 +1,9 @@
-import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, type CoinTransaction, type Prisma } from '@prisma/client';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { noticeReceived, noticeSpent } from './coin-notices';
 import { COIN_REASON, type CoinMovement, type CreditRequest, type SpendRequest } from './coin-wallet.types';
 import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './lot-usage';
 
@@ -17,6 +19,7 @@ export class CoinSpendService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingService,
+    @Optional() private readonly notifications?: NotificationService,
   ) {}
 
   /** Takes Coins out: main first, then the bonus lots that expire first. */
@@ -73,7 +76,15 @@ export class CoinSpendService {
 
     const [first] = await tx.coinTransaction.createManyAndReturn({ data: rows });
     await bumpWallet(tx, walletId, mainAfter, bonusAfter);
-    return { transactionId: first.id, mainCoins, bonusCoins, mainBalance: mainAfter, bonusBalance: bonusAfter };
+    const movement = {
+      transactionId: first.id,
+      mainCoins,
+      bonusCoins,
+      mainBalance: mainAfter,
+      bonusBalance: bonusAfter,
+    };
+    await noticeSpent(this.notifications, tx, walletId, request.entryType, movement);
+    return movement;
   }
 
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */
@@ -110,7 +121,15 @@ export class CoinSpendService {
       ],
     });
     await bumpWallet(tx, walletId, mainBalance, bonusBalance);
-    return { transactionId: entry.id, mainCoins: mainAmount, bonusCoins: bonusAmount, mainBalance, bonusBalance };
+    const movement = {
+      transactionId: entry.id,
+      mainCoins: mainAmount,
+      bonusCoins: bonusAmount,
+      mainBalance,
+      bonusBalance,
+    };
+    await noticeReceived(this.notifications, tx, walletId, request.entryType, movement);
+    return movement;
   }
 
   /**

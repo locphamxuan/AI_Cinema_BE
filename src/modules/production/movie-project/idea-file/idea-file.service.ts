@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { TextDecoder } from 'node:util';
 import { BadRequestException, Injectable, NotFoundException, StreamableFile } from '@nestjs/common';
+import type { IdeaFilePurpose } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -10,15 +11,26 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 
-/** BR-12: PDF, DOCX, UTF-8 TXT or images, at most 20 MB each. */
-export const IDEA_FILE_MAX_BYTES = 20 * 1024 * 1024;
+/** BR-12: documents, UTF-8 TXT, images or video, at most 100 MB each. */
+export const IDEA_FILE_MAX_BYTES = 100 * 1024 * 1024;
 const IDEA_FILE_KINDS = [
   FILE_KINDS.pdf,
   FILE_KINDS.docx,
+  FILE_KINDS.doc,
+  FILE_KINDS.rtf,
+  FILE_KINDS.xlsx,
+  FILE_KINDS.pptx,
   FILE_KINDS.txt,
   FILE_KINDS.png,
   FILE_KINDS.jpeg,
   FILE_KINDS.webp,
+  FILE_KINDS.gif,
+  FILE_KINDS.bmp,
+  FILE_KINDS.avif,
+  FILE_KINDS.mp4,
+  FILE_KINDS.mov,
+  FILE_KINDS.webm,
+  FILE_KINDS.avi,
 ];
 
 function isUtf8Text(file: Buffer): boolean {
@@ -46,7 +58,12 @@ export class IdeaFileService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  async upload(movieId: string, file: Express.Multer.File | undefined, user: AuthenticatedUser) {
+  async upload(
+    movieId: string,
+    file: Express.Multer.File | undefined,
+    user: AuthenticatedUser,
+    purpose: IdeaFilePurpose = 'IDEA',
+  ) {
     if (!file?.buffer.length) throw new BadRequestException('Attach a file in the "file" field');
     const movie = await this.access.movie(movieId, user, 'reviewer');
     assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'add idea files');
@@ -66,6 +83,7 @@ export class IdeaFileService {
         data: {
           movieId,
           fileName,
+          purpose,
           version: (last._max.version ?? 0) + 1,
           storageKey,
           mimeType: kind.mimeType,
@@ -80,7 +98,7 @@ export class IdeaFileService {
           entityId: created.id,
           movieId,
           actorId: user.id,
-          payload: { fileName, version: created.version },
+          payload: { fileName, purpose, version: created.version },
         },
         tx,
       );
@@ -94,6 +112,16 @@ export class IdeaFileService {
       where: { movieId },
       orderBy: [{ fileName: 'asc' }, { version: 'desc' }],
     });
+  }
+
+  /** The Reviewer takes a file version off an open project; the stored object goes with it. */
+  async remove(movieId: string, fileId: string, user: AuthenticatedUser): Promise<void> {
+    const movie = await this.access.movie(movieId, user, 'reviewer');
+    assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'remove idea files');
+    const file = await this.prisma.movieIdeaFile.findFirst({ where: { id: fileId, movieId } });
+    if (!file) throw new NotFoundException('Idea file not found');
+    await this.prisma.movieIdeaFile.delete({ where: { id: file.id } });
+    await this.storage.remove(file.storageKey, 'private').catch(() => undefined);
   }
 
   async download(movieId: string, fileId: string, user: AuthenticatedUser): Promise<StreamableFile> {

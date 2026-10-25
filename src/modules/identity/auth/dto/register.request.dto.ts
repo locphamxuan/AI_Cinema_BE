@@ -2,12 +2,15 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsDateString, IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { PASSWORD_HINT, PASSWORD_RULE } from './password-rule';
 
+import { NormalizeEmail, Trim } from 'src/common/validation/trim';
+
 /**
  * Public sign-up of a viewer account. Staff roles (Creator, Reviewer, Staff, Admin) are
  * never self-assigned: the Admin creates them.
  */
 export class RegisterRequestDto {
   @ApiProperty({ example: 'member01@aicinema.com', description: 'Email of the new account.' })
+  @NormalizeEmail()
   @IsEmail()
   @MaxLength(255)
   email: string;
@@ -20,6 +23,7 @@ export class RegisterRequestDto {
   password: string;
 
   @ApiProperty({ example: 'Nguyen Minh Anh', description: 'Display name of the account owner.' })
+  @Trim()
   @IsString()
   @MinLength(2)
   @MaxLength(255)
