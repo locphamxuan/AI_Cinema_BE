@@ -1,15 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { AdBreakStatus, AdStatus, StreamingSessionStatus, type Ad } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { AdBreakStatus, AdStatus, type Ad } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { RunningPlanSnapshot } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import type { SessionCaller } from '../streaming-session/streaming-session.service';
+import { assertLiveSessionOf, type SessionCaller } from '../streaming-session/session-owner';
 
 /** No cue in the first or last minute: intros and credits stay clean. */
 export const AD_EDGE_SECONDS = 60;
@@ -198,21 +192,7 @@ export class AdBreakService {
         details: { reason: 'AD_BREAK_NOT_FOUND' },
       });
     }
-    const mine = row.session.userId
-      ? Boolean(caller.userId) && row.session.userId === caller.userId
-      : Boolean(caller.guestKey) && row.session.guestKey === caller.guestKey;
-    if (!mine) {
-      throw new ForbiddenException({
-        message: 'This session belongs to someone else',
-        details: { reason: 'SESSION_NOT_OWNER' },
-      });
-    }
-    if (row.session.status !== StreamingSessionStatus.ACTIVE) {
-      throw new ForbiddenException({
-        message: 'The streaming session is no longer active',
-        details: { reason: 'SESSION_NOT_ACTIVE' },
-      });
-    }
+    assertLiveSessionOf(row.session, caller);
     return row;
   }
 }

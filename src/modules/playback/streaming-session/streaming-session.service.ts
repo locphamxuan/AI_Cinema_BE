@@ -21,6 +21,7 @@ import { WatchProgressService } from '../watch-progress/watch-progress.service';
 import { AdBreakService, isAdFreePlan, type AdScheduleItem } from '../ad-break/ad-break.service';
 import { maxQualityOf, PlaybackUrlService } from './playback-url.service';
 import { sessionEnded, sessionStarted } from './playback-events';
+import { assertLiveSessionOf, sessionNotActive, type SessionCaller } from './session-owner';
 import { progressWriteDue, watchCreditSeconds } from './watch-pacing';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
 import { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/session-state.view.dto';
@@ -32,12 +33,6 @@ export interface CreateSessionInput {
   idempotencyKey?: string;
   ipAddress?: string | null;
   userAgent?: string | null;
-}
-
-/** Who is calling a session-owned route: the member, the guest key, or nobody. */
-export interface SessionCaller {
-  userId?: string;
-  guestKey?: string;
 }
 
 /** The episode after this one (flow 3, steps 22–24); null when the movie ends here. */
@@ -324,27 +319,8 @@ export class StreamingSessionService {
         details: { reason: 'SESSION_NOT_FOUND' },
       });
     }
-    const mine = session.userId
-      ? Boolean(caller.userId) && session.userId === caller.userId
-      : Boolean(caller.guestKey) && session.guestKey === caller.guestKey;
-    if (!mine) {
-      throw new ForbiddenException({
-        message: 'This session belongs to someone else',
-        details: { reason: 'SESSION_NOT_OWNER' },
-      });
-    }
-    if (session.status !== StreamingSessionStatus.ACTIVE) {
-      this.notActive();
-    }
+    assertLiveSessionOf(session, caller);
     return session;
-  }
-
-  /** The one answer for a row that is no longer ACTIVE, whichever path notices it. */
-  private notActive(): never {
-    throw new ForbiddenException({
-      message: 'The streaming session is no longer active',
-      details: { reason: 'SESSION_NOT_ACTIVE' },
-    });
   }
 
   /**
@@ -400,7 +376,7 @@ export class StreamingSessionService {
         ...(endReason ? { status: StreamingSessionStatus.ENDED, endReason, endedAt: now } : {}),
       },
     });
-    if (written.count === 0) this.notActive();
+    if (written.count === 0) sessionNotActive();
     // updateMany returns no row: rebuild the fields the response and the audit row read.
     const current: StreamingSession = {
       ...session,
