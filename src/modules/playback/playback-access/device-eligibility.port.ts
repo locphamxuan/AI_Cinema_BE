@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import type { RunningPlanSnapshot } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
@@ -26,6 +26,7 @@ export abstract class DeviceEligibilityPort {
  * `features.maxConcurrentStreams` as the Admin configured it (or the default). Stale sessions
  * whose heartbeat already timed out do not occupy a slot; the expiry sweep closes them.
  */
+@Injectable()
 export class CountingDeviceEligibilityService extends DeviceEligibilityPort {
   constructor(
     private readonly prisma: PrismaService,
