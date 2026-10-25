@@ -83,6 +83,8 @@ function view(ad: {
   durationSeconds: number;
   weight: number;
   status: 'ACTIVE' | 'PAUSED';
+  validFrom: Date | null;
+  validTo: Date | null;
 }): AdViewDto {
   return {
     id: ad.id,
@@ -92,5 +94,7 @@ function view(ad: {
     durationSeconds: ad.durationSeconds,
     weight: ad.weight,
     status: ad.status,
+    validFrom: ad.validFrom,
+    validTo: ad.validTo,
   };
 }

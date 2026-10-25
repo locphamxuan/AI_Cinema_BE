@@ -22,4 +22,14 @@ export class AdViewDto {
 
   @ApiProperty({ enum: AdStatus, example: 'ACTIVE' })
   status: AdStatus;
+
+  @ApiProperty({ example: null, nullable: true, description: 'The ad is drawn only from this moment; null = open' })
+  validFrom: Date | null;
+
+  @ApiProperty({
+    example: null,
+    nullable: true,
+    description: 'The ad is no longer drawn from this moment; null = open',
+  })
+  validTo: Date | null;
 }
