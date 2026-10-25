@@ -55,7 +55,10 @@ export class AccessDecisionService {
     private readonly wallets: WalletService,
   ) {}
 
-  /** The decision, plus the stream to hand to the player once access is granted. */
+  /**
+   * The decision, plus the stream to hand to the player once access is granted. `streamUrl` is
+   * deprecated: it bypasses Main Flow 3 and stays only until the clients open playback sessions.
+   */
   async decide(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
     const decision = await this.evaluate(episodeId, userId);
     if (!decision.accessGranted) return decision;

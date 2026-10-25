@@ -70,9 +70,16 @@ export class AccessDecisionDto {
   @ApiProperty({ type: AccessRequired })
   required: AccessRequired;
 
+  /**
+   * @deprecated The raw origin URL plays without Main Flow 3 — no ads, stream limit or progress.
+   * Players move to POST /playback/sessions (signed stream URL, ad schedule, heartbeat); this field
+   * goes once the web and mobile clients have switched.
+   */
   @ApiPropertyOptional({
     example: 'https://cdn.example.com/public/episodes/1/master.m3u8',
-    description: 'What the player loads (HLS or MP4); only present when access is granted',
+    deprecated: true,
+    description:
+      'Deprecated: open POST /playback/sessions instead, which applies ads, the stream limit and progress. Only present when access is granted.',
   })
   streamUrl?: string;
 
