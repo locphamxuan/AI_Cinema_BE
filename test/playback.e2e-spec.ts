@@ -49,6 +49,11 @@ describe('Playback viewing experience (e2e)', () => {
       signIn(app, 'admin@aicinema.com'),
     ]);
     project = await projectInProduction(reviewer, creator, 3);
+    // The release gate asks for both before an episode goes out (BR-19).
+    await reviewer.patch(`/projects/${project.id}`, {
+      synopsis: 'Một nhóm bạn đi tìm tín hiệu lạ phát ra từ trạm vũ trụ bỏ hoang.',
+      ageRating: 'T16',
+    });
     for (let i = 0; i < 3; i += 1) {
       await compliantEpisode(reviewer, creator, episodeId(i));
       await reviewer.patch(`/episodes/${episodeId(i)}/coin-price`, { coinPrice: 10 });
@@ -79,6 +84,7 @@ describe('Playback viewing experience (e2e)', () => {
       'post',
       `/playback/sessions/${session.sessionId}/stop`,
       { positionSeconds: 40 },
+      201,
     );
     expect(stopped).toMatchObject({ status: 'ENDED', positionSeconds: 40 });
   });
@@ -154,6 +160,59 @@ describe('Playback viewing experience (e2e)', () => {
       {},
       404,
     );
+  });
+
+  it('admin places where and how many ads an episode gets; a seek past a cue still plays it (BR-32/33)', async () => {
+    const ad = await admin.post<{ id: string }>('/admin/ads', {
+      title: `Ghim e2e ${Date.now()}`,
+      mediaUrl: 'https://cdn.aicinema.example/public/ads/pinned-15s.mp4',
+      durationSeconds: 15,
+    });
+    const slotsPath = `/admin/episodes/${episodeId(0)}/ad-slots`;
+    // The mock episodes last 60s: a cue at the very end is refused.
+    await admin.put(slotsPath, { slots: [{ positionSeconds: 60 }] }, 400);
+    const placed = await admin.put<{ mode: string; slots: { positionSeconds: number }[] }>(slotsPath, {
+      slots: [{ positionSeconds: 40 }, { positionSeconds: 20, adId: ad.id }],
+    });
+    expect(placed).toMatchObject({ mode: 'MANUAL', slots: [{ positionSeconds: 20 }, { positionSeconds: 40 }] });
+
+    const viewer = randomUUID();
+    const asGuest = async <T>(method: 'post' | 'patch', path: string, body: object, status: number): Promise<T> => {
+      const res = await request(app.getHttpServer())[method](`/api${path}`).set('X-Guest-Key', viewer).send(body);
+      expect(res.status).toBe(status);
+      return res.body as T;
+    };
+    const session = await asGuest<
+      SessionView & { adSchedule: { breakId: string; positionSeconds: number; ad: { id: string } }[] }
+    >('post', '/playback/sessions', { episodeId: episodeId(0) }, 201);
+    expect(session.adSchedule.map((cue) => cue.positionSeconds)).toEqual([20, 40]);
+    expect(session.adSchedule[0].ad.id).toBe(ad.id);
+
+    // A seek straight to 45s jumps both cues: the heartbeat names the last one, which plays now.
+    const beat = await asGuest<{ dueAdBreakId: string | null }>(
+      'patch',
+      `/playback/sessions/${session.sessionId}/heartbeat`,
+      { positionSeconds: 45 },
+      200,
+    );
+    expect(beat.dueAdBreakId).toBe(session.adSchedule[1].breakId);
+    const played = await asGuest<{ status: string }>(
+      'post',
+      `/playback/sessions/${session.sessionId}/ad-breaks/${beat.dueAdBreakId}/played`,
+      { positionSeconds: 45 },
+      201,
+    );
+    expect(played.status).toBe('COMPLETED');
+    // The earlier cue was skipped, so nothing is due any more.
+    const after = await asGuest<{ dueAdBreakId: string | null }>(
+      'patch',
+      `/playback/sessions/${session.sessionId}/heartbeat`,
+      { positionSeconds: 46 },
+      200,
+    );
+    expect(after.dueAdBreakId).toBeNull();
+
+    await expect(admin.put(slotsPath, { slots: [] })).resolves.toMatchObject({ mode: 'RANDOM', slots: [] });
   });
 
   it('answers a taken-down episode with its maintenance reason, before and during the handoff (BR-56)', async () => {
