@@ -233,7 +233,7 @@ export class StreamingSessionService {
   /**
    * Step 15: heartbeat keeps the session alive and persists the position. The session row
    * takes every beat (liveness feeds the expiry sweep); the member's resume hint lands at
-   * most once a minute — and always when this beat ends the session. Before anything is
+   * most once a minute — and always on the beat that crosses the completion threshold. Before anything is
    * credited, the beat re-checks that the entitlement is still there (hardening #11).
    */
   async heartbeat(
@@ -367,13 +367,19 @@ export class StreamingSessionService {
       ? Math.min(Math.max(0, Math.floor(input.positionSeconds)), duration)
       : Math.max(0, Math.floor(input.positionSeconds));
     const { episodeCompletionPercent } = await this.settings.get();
-    const crossed = Boolean(duration) && duration! > 0 && (position / duration!) * 100 >= episodeCompletionPercent;
+    const reached = (seconds: number) =>
+      Boolean(duration) && duration! > 0 && (seconds / duration!) * 100 >= episodeCompletionPercent;
     // Completion is always derived here, never asserted by the caller (P3-3).
-    const completed = crossed;
-    const endReason = completed ? StreamingEndReason.COMPLETED : input.endReason;
-    // A session that ends now (stop/complete, or a beat that crossed the threshold) must
-    // leave its final position behind; otherwise the once-a-minute cadence applies.
-    const writeProgress = Boolean(session.userId) && (input.persistProgress || endReason !== null);
+    const completed = reached(position);
+    // Crossing the threshold marks the episode completed but never closes the session: the
+    // viewer is still watching the last minutes, so a beat keeps it open and only a stop or
+    // complete call (or the expiry sweep) ends it. A viewer stop past the threshold is COMPLETED.
+    const endReason =
+      completed && input.endReason === StreamingEndReason.STOPPED ? StreamingEndReason.COMPLETED : input.endReason;
+    // A session that ends now must leave its final position behind, and so must the beat that
+    // first crosses the threshold; otherwise the once-a-minute cadence applies.
+    const justCompleted = completed && !reached(session.lastPositionSeconds);
+    const writeProgress = Boolean(session.userId) && (input.persistProgress || endReason !== null || justCompleted);
 
     const written = await this.prisma.streamingSession.updateMany({
       // P3-2: the row may have been closed by a concurrent stop/complete after owned() read it.

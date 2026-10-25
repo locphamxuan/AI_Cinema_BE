@@ -234,11 +234,12 @@ describe('playback audit rows (hardening #12)', () => {
         );
       });
 
-      it('leaves plain beats unrecorded and records the threshold crossing', async () => {
+      it('leaves beats unrecorded, the threshold crossing included: only a close is audited', async () => {
         await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 320 });
+        await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
         expect(audit.record).not.toHaveBeenCalled();
 
-        await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
+        await service.stop('sess-1', { userId: 'u-1' }, { positionSeconds: 1150 });
         expect(audit.record).toHaveBeenCalledWith(
           expect.objectContaining({ payload: expect.objectContaining({ endReason: 'COMPLETED' }) }),
         );

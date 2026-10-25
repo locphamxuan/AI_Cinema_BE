@@ -360,8 +360,16 @@ describe('StreamingSessionService.create', () => {
       prisma.streamingSession.findUnique.mockResolvedValue(live({ lastProgressAt: new Date() }));
       const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
 
-      expect(state).toMatchObject({ completed: true, status: 'ENDED' });
+      expect(state).toMatchObject({ completed: true, status: 'ACTIVE' });
       expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ completed: true }));
+    });
+
+    it('later beats past the threshold keep the once-a-minute cadence', async () => {
+      prisma.streamingSession.findUnique.mockResolvedValue(
+        live({ lastPositionSeconds: 1100, lastProgressAt: new Date() }),
+      );
+      await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1110 });
+      expect(progress.save).not.toHaveBeenCalled();
     });
 
     it('stop inside the write window still lands the final position', async () => {
@@ -370,12 +378,18 @@ describe('StreamingSessionService.create', () => {
       expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', expect.objectContaining({ positionSeconds: 360 }));
     });
 
-    it('heartbeat past the threshold completes and ends the session (steps 18/20)', async () => {
+    it('heartbeat past the threshold marks completion but keeps the session open (steps 18/20)', async () => {
+      // The viewer still watches the last minutes: playlists and the slot must stay live.
       const state = await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
+      expect(state).toMatchObject({ completed: true, status: 'ACTIVE' });
+      expect(updateData()).not.toHaveProperty('endReason');
+      expect(updateData()).not.toHaveProperty('status');
+    });
+
+    it('stop past the threshold closes the session as COMPLETED', async () => {
+      const state = await service.stop('sess-1', { userId: 'u-1' }, { positionSeconds: 1150 });
       expect(state).toMatchObject({ completed: true, status: 'ENDED' });
-      expect(prisma.streamingSession.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ endReason: 'COMPLETED' }) }),
-      );
+      expect(updateData()).toMatchObject({ endReason: 'COMPLETED' });
     });
 
     it('stop saves the position and frees the slot without progress for guests (steps 19/21)', async () => {
