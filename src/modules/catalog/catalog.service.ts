@@ -5,17 +5,6 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { EPISODE_AVAILABILITY, REVISION_NOTICE, VISIBLE_EPISODE } from './episode-visibility';
 
-/** Shown on an episode taken down to be fixed (BR-56). */
-export const REVISION_NOTICE = 'Tập đang được bảo trì / sửa đổi nội dung';
-
-/**
- * Episodes viewers see: released ones, and the ones taken down to be fixed, which stay listed
- * with a maintenance notice (BR-56). Scheduled, removed and unfinished episodes stay hidden.
- */
-export const VISIBLE_EPISODE: Prisma.EpisodeWhereInput = {
-  OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }],
-};
-
 /** A movie is listed once one of its episodes is out (MF-1 step 14), never once cancelled. */
 export const LISTED_MOVIE: Prisma.MovieWhereInput = {
   status: { not: MovieStatus.CANCELLED },
