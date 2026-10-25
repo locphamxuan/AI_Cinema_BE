@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, MovieStatus, type Prisma } from '@prisma/client';
+import { MovieStatus, type Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { EPISODE_AVAILABILITY, REVISION_NOTICE, VISIBLE_EPISODE } from './episode-visibility';
 
 /** Shown on an episode taken down to be fixed (BR-56). */
 export const REVISION_NOTICE = 'Tập đang được bảo trì / sửa đổi nội dung';
@@ -175,7 +176,7 @@ export function episodeView(episode: EpisodeRow, freeStarterCount: number) {
     title: episode.title,
     synopsis: episode.synopsis,
     thumbnailUrl: episode.thumbnailUrl,
-    availability: underRevision ? 'UNDER_REVISION' : 'AVAILABLE',
+    availability: underRevision ? EPISODE_AVAILABILITY.UNDER_REVISION : EPISODE_AVAILABILITY.AVAILABLE,
     notice: underRevision ? REVISION_NOTICE : null,
     // BR-03: the first episodes of every movie, counted across seasons.
     isFreeStarter: episode.episodeNumber <= freeStarterCount,

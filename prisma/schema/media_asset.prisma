@@ -60,6 +60,7 @@ model MediaAsset {
     aiContentLabel    AiContentLabel?
     complianceChecks  ComplianceCheck[]
     publications      Publication[]
+    streamingSessions StreamingSession[]
 
     @@unique([episodeId, version])
     @@index([studioHandoffId])

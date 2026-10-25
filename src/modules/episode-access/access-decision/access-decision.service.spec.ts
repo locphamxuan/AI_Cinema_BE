@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
-import { EpisodeStatus } from '@prisma/client';
+import { EpisodeStatus, MediaIngestStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { EPISODE_AVAILABILITY, REVISION_NOTICE } from 'src/modules/catalog/episode-visibility';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { WalletService } from '../coin-wallet/wallet.service';
 import { AccessDecisionService } from './access-decision.service';
@@ -26,6 +27,11 @@ describe('AccessDecisionService.decide', () => {
     movieId: 'm1',
     episodeNumber: 5,
     coinPrice: 25,
+    revisionStartedAt: null,
+    approvedMediaAsset: {
+      ingestStatus: MediaIngestStatus.READY,
+      streamUrl: 'https://cdn.example/hls/ep-1/master.m3u8',
+    },
     movie: { freeEpisodeCount: null },
     ...overrides,
   });
@@ -46,9 +52,48 @@ describe('AccessDecisionService.decide', () => {
     });
   });
 
-  it('answers 404 when the episode is not published', async () => {
+  it('answers 404 when the episode is not listed', async () => {
     prisma.episode.findFirst.mockResolvedValue(null);
     await expect(service.decide('missing')).rejects.toThrow(NotFoundException);
+    expect(prisma.episode.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'missing', OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }] },
+      }),
+    );
+  });
+
+  it('answers UNDER_REVISION for an episode under maintenance, without handoff or prices (BR-56)', async () => {
+    prisma.episode.findFirst.mockResolvedValue(episode({ revisionStartedAt: new Date(), approvedMediaAsset: null }));
+
+    await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
+      accessGranted: false,
+      availability: EPISODE_AVAILABILITY.UNDER_REVISION,
+      notice: REVISION_NOTICE,
+      source: ACCESS_SOURCE.NONE,
+      actorType: ACTOR_TYPE.MEMBER,
+      accessMethods: [],
+      nextAction: NEXT_ACTION.NOT_PLAYABLE,
+    });
+    // Nothing about the membership is read: the caller cannot watch, so there is nothing to price.
+    expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
+    expect(prisma.membershipPlanPrice.findFirst).not.toHaveBeenCalled();
+    expect(wallets.affordability).not.toHaveBeenCalled();
+  });
+
+  it('answers MEDIA_NOT_READY when no approved version streams yet', async () => {
+    prisma.episode.findFirst.mockResolvedValue(
+      episode({ approvedMediaAsset: { ingestStatus: MediaIngestStatus.FAILED, streamUrl: null } }),
+    );
+
+    await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
+      accessGranted: false,
+      availability: EPISODE_AVAILABILITY.MEDIA_NOT_READY,
+      nextAction: NEXT_ACTION.NOT_PLAYABLE,
+    });
+
+    prisma.episode.findFirst.mockResolvedValue(episode({ approvedMediaAsset: null }));
+    await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
+      availability: EPISODE_AVAILABILITY.MEDIA_NOT_READY,
     expect(prisma.episode.findFirst).toHaveBeenCalledWith({
       where: { id: 'missing', status: EpisodeStatus.PUBLISHED },
       include: { movie: { select: { freeEpisodeCount: true } } },
@@ -60,6 +105,8 @@ describe('AccessDecisionService.decide', () => {
 
     await expect(service.decide('ep-1')).resolves.toMatchObject({
       accessGranted: true,
+      availability: EPISODE_AVAILABILITY.AVAILABLE,
+      notice: null,
       source: ACCESS_SOURCE.FREE_STARTER,
       actorType: ACTOR_TYPE.GUEST,
       nextAction: NEXT_ACTION.HANDOFF_TO_PLAYBACK,
@@ -101,6 +148,8 @@ describe('AccessDecisionService.decide', () => {
   it('sends a Guest to register or log in (step 4)', async () => {
     await expect(service.decide('ep-1')).resolves.toMatchObject({
       accessGranted: false,
+      availability: EPISODE_AVAILABILITY.AVAILABLE,
+      notice: null,
       actorType: ACTOR_TYPE.GUEST,
       accessMethods: [ACCESS_METHOD.REGISTER_OR_LOGIN],
       nextAction: NEXT_ACTION.REGISTER_OR_LOGIN,

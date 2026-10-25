@@ -1,0 +1,14 @@
+name = "aicinema-playback-cdn"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Custom domain serving STORAGE_PUBLIC_BASE_URL, e.g. https://cdn.aicinema.example
+# routes = [{ pattern = "cdn.aicinema.example/public/hls/*", zone_name = "aicinema.example" }]
+
+[vars]
+# Public origin of the R2 bucket holding public/*, e.g. https://pub-xxxx.r2.dev
+# ORIGIN_BASE = ""
+
+[secrets]
+# Must equal the API's PLAYBACK_URL_SECRET.
+# Set with: wrangler secret put PLAYBACK_URL_SECRET

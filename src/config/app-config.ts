@@ -14,7 +14,17 @@ export interface AppConfig {
   databaseUrl: string;
   redisUrl: string | null;
   jwt: { secret: string; accessTtlSeconds: number; refreshTtlDays: number; issuer: string; audience: string };
-  rateLimit: { ttlMs: number; limit: number; authLimit: number };
+  rateLimit: {
+    ttlMs: number;
+    limit: number;
+    authLimit: number;
+    /** MF-3: opening a playback session (flow 3, step 11); a deliberate tap, kept tight. */
+    playbackSessionLimit: number;
+    /** MF-3: heartbeats; a viewer sends 4–6/min and CGNAT puts many viewers on one IP. */
+    playbackHeartbeatLimit: number;
+  };
+  /** Absolute base players resolve API-issued playlist URLs against. */
+  apiPublicUrl: string;
   storage: {
     driver: 'local' | 's3';
     localRoot: string;
@@ -41,6 +51,10 @@ export interface AppConfig {
     coinExpirySweepMs: number;
     coinTopUpSweepMs: number;
     paymentReconcileSweepMs: number;
+    /** MF-3: closing sessions whose heartbeat timed out. */
+    streamingSessionSweepMs: number;
+    /** MF-3: deleting finished sessions older than `playback.sessionRetentionDays`. */
+    streamingSessionRetentionSweepMs: number;
   };
   /**
    * Real payment gateways (MF-2 top-ups). Secrets are optional: a provider with no
@@ -68,6 +82,26 @@ export interface AppConfig {
     };
   };
   briefFontPath: string | null;
+  /**
+   * MF-3 playback: signed URLs and session retention. Empty `urlSecret` = signing disabled:
+   * the API hands out direct stream URLs and the token playlist endpoints refuse with 422,
+   * so local development boots without any secret.
+   */
+  playback: {
+    urlSecret?: string;
+    /**
+     * Lifetime of a signed URL. Playlist responses re-sign their child URLs on every serve,
+     * so this bounds a leaked link rather than an actively playing session.
+     * Keep it inside the 30–60 minute window.
+     */
+    urlTtlSeconds: number;
+    /**
+     * MF-3 retention: a session that ended more than this many days ago is deleted by the
+     * retention sweep, and its ad-break rows cascade with it. 0 keeps every row forever;
+     * keep the window longer than any report that reads session rows.
+     */
+    sessionRetentionDays: number;
+  };
   /** The Studio Web reports the films it mails back; null leaves that channel closed. */
   studio: { webhookToken: string | null };
 }
@@ -206,7 +240,13 @@ export function loadConfig(env: Env = process.env): AppConfig {
       ttlMs: read.int('RATE_LIMIT_TTL_MS', 60_000, 1000),
       limit: read.int('RATE_LIMIT_MAX', 300, 1),
       authLimit: read.int('RATE_LIMIT_AUTH_MAX', 10, 1),
+      // Beating players sit behind shared CGNAT IPs: the heartbeat budget covers ~200
+      // concurrent viewers (6 req/min each) while session creation is tightened so guest
+      // minting cannot ride the API-wide budget.
+      playbackSessionLimit: read.int('RATE_LIMIT_PLAYBACK_SESSION_MAX', 60, 1),
+      playbackHeartbeatLimit: read.int('RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX', 1200, 1),
     },
+    apiPublicUrl: (read.optional('API_PUBLIC_URL') ?? `http://localhost:${port}`).replace(/\/+$/, ''),
     storage: storageConfig(read, port),
     mail: {
       host: read.optional('SMTP_HOST') ?? null,
@@ -233,9 +273,18 @@ export function loadConfig(env: Env = process.env): AppConfig {
       coinExpirySweepMs: read.int('COIN_EXPIRY_SWEEP_MS', 24 * 60 * 60_000),
       coinTopUpSweepMs: read.int('COIN_TOPUP_SWEEP_MS', 5 * 60_000),
       paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
+      /** MF-3: sessions whose heartbeat timed out are closed and their progress saved. */
+      streamingSessionSweepMs: read.int('STREAMING_SESSION_SWEEP_MS', 30_000),
+      /** MF-3: the retention sweep runs once a day by default; it is cheap when nothing is due. */
+      streamingSessionRetentionSweepMs: read.int('STREAMING_SESSION_RETENTION_SWEEP_MS', 24 * 60 * 60_000),
     },
     payments: paymentConfig(read),
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
+    playback: {
+      urlSecret: read.optional('PLAYBACK_URL_SECRET'),
+      urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
+      sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
+    },
     studio: { webhookToken: read.optional('STUDIO_WEBHOOK_TOKEN') ?? null },
   };
 

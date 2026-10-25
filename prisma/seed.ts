@@ -110,6 +110,34 @@ async function seedRewards() {
   }
 }
 
+/** Sample mid-roll ads for development; rows the Admin already has are left as they are. */
+async function seedAds() {
+  if (await prisma.ad.count()) return;
+  await prisma.ad.createMany({
+    data: [
+      {
+        title: 'Trà sữa Gong Cha — mua 1 tặng 1',
+        mediaUrl: 'https://cdn.aicinema.example/public/ads/gongcha-15s.mp4',
+        clickUrl: 'https://gongcha.example/promo',
+        durationSeconds: 15,
+        weight: 3,
+      },
+      {
+        title: 'Shopee 10.10 — miễn phí vận chuyển',
+        mediaUrl: 'https://cdn.aicinema.example/public/ads/shopee-30s.mp4',
+        durationSeconds: 30,
+        weight: 2,
+      },
+      {
+        title: 'Vinamilk — 50 năm vươn cao Việt Nam',
+        mediaUrl: 'https://cdn.aicinema.example/public/ads/vinamilk-15s.mp4',
+        durationSeconds: 15,
+        weight: 1,
+      },
+    ],
+  });
+}
+
 async function main() {
   for (const { name, description } of GENRE_CATALOG) {
     await prisma.genre.upsert({ where: { name }, update: { description }, create: { name, description } });
@@ -119,7 +147,8 @@ async function main() {
   await seedUsers();
   await seedReviewerBudgets();
   await seedRewards();
-  console.log('Seeded genres, permissions, policies, development accounts, Reviewer budgets and rewards.');
+  await seedAds();
+  console.log('Seeded genres, permissions, policies, development accounts, Reviewer budgets, rewards and ads.');
 }
 
 main()

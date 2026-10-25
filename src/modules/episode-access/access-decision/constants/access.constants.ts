@@ -31,6 +31,8 @@ export const NEXT_ACTION = {
   UNLOCK_EPISODE: 'UNLOCK_EPISODE',
   MONTHLY_PLAN: 'MONTHLY_PLAN',
   HANDOFF_TO_PLAYBACK: 'HANDOFF_TO_PLAYBACK',
+  /** The episode exists but cannot be played now (see `availability`); show `notice` and keep still. */
+  NOT_PLAYABLE: 'NOT_PLAYABLE',
 } as const;
 
 export type NextAction = (typeof NEXT_ACTION)[keyof typeof NEXT_ACTION];

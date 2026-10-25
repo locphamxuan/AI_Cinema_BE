@@ -1,0 +1,22 @@
+/// One mid-roll cue of a streaming session (Main Flow 3 steps 13/16/17). Never more rows per
+/// session than PlatformSetting.adMaxBreaksPerEpisode. PLAYED is the billable impression
+/// (the ad started); completedView only flips when the player confirms the ad finished.
+model SessionAdBreak {
+    id                 String        @id @default(uuid()) @db.Uuid
+    streamingSessionId String        @map("streaming_session_id") @db.Uuid
+    adId               String        @map("ad_id") @db.Uuid
+    positionSeconds    Int           @map("position_seconds")
+    status             AdBreakStatus @default(SCHEDULED)
+    playedAt           DateTime?     @map("played_at") @db.Timestamptz(6)
+    /// Player-confirmed completion, never inferred from playedAt (P4-3).
+    completedView      Boolean       @default(false) @map("completed_view")
+    createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    session StreamingSession @relation(fields: [streamingSessionId], references: [id], onDelete: Cascade)
+    ad      Ad               @relation(fields: [adId], references: [id], onDelete: Restrict)
+
+    @@unique([streamingSessionId, positionSeconds])
+    @@index([streamingSessionId])
+    @@index([adId])
+    @@map("session_ad_breaks")
+}

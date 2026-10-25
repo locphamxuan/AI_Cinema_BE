@@ -1,3 +1,4 @@
+import { EPISODE_AVAILABILITY, type EpisodeAvailability } from 'src/modules/catalog/episode-visibility';
 import {
   ACCESS_SOURCE,
   ACTOR_TYPE,
@@ -23,6 +24,20 @@ export class AccessDecisionDto {
     example: '3a71f0d4-9c22-4c6b-8f31-1a2b3c4d5e6f',
   })
   movieId?: string;
+
+  @ApiProperty({
+    enum: EPISODE_AVAILABILITY,
+    example: 'AVAILABLE',
+    description: 'Whether the episode can be played right now; anything but AVAILABLE is never handed off',
+  })
+  availability: EpisodeAvailability;
+
+  @ApiProperty({
+    example: null,
+    nullable: true,
+    description: 'The maintenance notice to show when availability is not AVAILABLE',
+  })
+  notice: string | null;
 
   @ApiProperty({ example: false })
   accessGranted: boolean;

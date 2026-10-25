@@ -41,6 +41,23 @@ export function contentTypeOf(fileName: string): string {
   return MIME_BY_EXTENSION[dot >= 0 ? fileName.slice(dot).toLowerCase() : ''] ?? 'application/octet-stream';
 }
 
+/** Long-lived segments stay on the edge; playlists revalidate quickly; subtitles hourly. */
+export function cacheControlOf(fileName: string): string {
+  const dot = fileName.lastIndexOf('.');
+  switch (dot >= 0 ? fileName.slice(dot).toLowerCase() : '') {
+    case '.ts':
+    case '.m4s':
+    case '.mp4':
+      return 'public, max-age=31536000, immutable';
+    case '.m3u8':
+      return 'public, max-age=10';
+    case '.vtt':
+      return 'public, max-age=3600';
+    default:
+      return 'public, max-age=86400';
+  }
+}
+
 /** Keeps object keys free of path tricks: only safe characters, no "..", no leading slash. */
 export function assertSafeKey(key: string): void {
   if (!/^[\w./-]+$/.test(key) || key.includes('..') || key.startsWith('/')) {

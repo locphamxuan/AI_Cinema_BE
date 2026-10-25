@@ -36,6 +36,31 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...production, SWAGGER_ENABLED: 'true' }).swaggerEnabled).toBe(true);
   });
 
+  it('gives playback its own rate budgets: tight on creation, generous on heartbeats', () => {
+    const config = loadConfig(base);
+    expect(config.rateLimit).toMatchObject({
+      limit: 300,
+      playbackSessionLimit: 60,
+      playbackHeartbeatLimit: 1200,
+    });
+    const tuned = loadConfig({ ...base, RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX: '5000' });
+    expect(tuned.rateLimit.playbackHeartbeatLimit).toBe(5000);
+  });
+
+  it('keeps the signed playback window inside the 30–60 minute hardening range', () => {
+    const config = loadConfig(base);
+    expect(config.playback.urlTtlSeconds).toBe(3600);
+    expect(loadConfig({ ...base, PLAYBACK_URL_TTL_SECONDS: '1800' }).playback.urlTtlSeconds).toBe(1800);
+  });
+
+  it('retains finished playback sessions for a window, switchable off', () => {
+    const config = loadConfig(base);
+    expect(config.playback.sessionRetentionDays).toBe(90);
+    expect(config.schedules.streamingSessionRetentionSweepMs).toBe(86_400_000);
+    const off = loadConfig({ ...base, STREAMING_SESSION_RETENTION_DAYS: '0' });
+    expect(off.playback.sessionRetentionDays).toBe(0);
+  });
+
   it('leaves payment gateways unconfigured by default (sandbox URLs kept)', () => {
     const config = loadConfig(base);
     expect(config.payments.momo).toMatchObject({

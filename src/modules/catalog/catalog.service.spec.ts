@@ -1,4 +1,5 @@
-import { episodeView, REVISION_NOTICE } from './catalog.service';
+import { episodeView } from './catalog.service';
+import { REVISION_NOTICE } from './episode-visibility';
 
 const base = {
   id: 'e1',

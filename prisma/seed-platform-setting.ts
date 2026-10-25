@@ -39,6 +39,10 @@ const PLATFORM_SETTING_SEED = {
   coinTopUpMaxVnd: 2000000,
   // A purchase of an episode taken down for good is refunded in main Coins.
   refundOnRemoval: true,
+  // MF-3 step 18: position/duration percent that counts as completed.
+  episodeCompletionPercent: 90,
+  // MF-3 step 13: max mid-roll cues generated per streaming session.
+  adMaxBreaksPerEpisode: 2,
 };
 
 async function main() {

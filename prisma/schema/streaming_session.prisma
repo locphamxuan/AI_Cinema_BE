@@ -1,0 +1,69 @@
+enum PlaybackAccessType {
+  FREE_STARTER
+  PLAN
+  EPISODE_PURCHASE
+  SERIES_PURCHASE
+  ADMIN_GRANT
+}
+
+enum StreamingSessionStatus {
+  ACTIVE
+  ENDED
+  EXPIRED
+  KICKED
+}
+
+enum StreamingEndReason {
+  COMPLETED
+  STOPPED
+  EXPIRED
+  KICKED
+  /// A newer approved media version replaced the one this session was pinned to.
+  SUPERSEDED
+  ERROR
+}
+
+/// One playback attempt of Main Flow 3 (steps 11/14/15/21). A member session carries userId;
+/// a guest session carries guestKey instead and always starts from position 0. mediaAssetId pins
+/// the reviewed version being played, the same way Publication pins its version. Either userId
+/// or guestKey is set, never both and never neither; enforced in application code. deviceId is
+/// intentionally absent: Main Flow 4 adds the Device model and the FK later.
+model StreamingSession {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  userId               String?                @map("user_id") @db.Uuid
+  guestKey             String?                @map("guest_key") @db.VarChar(255)
+  episodeId            String                 @map("episode_id") @db.Uuid
+  mediaAssetId         String                 @map("media_asset_id") @db.Uuid
+  /// The pinned media version's length, cached at creation: heartbeats clamp and complete
+  /// against this instead of re-reading media_assets on every beat.
+  durationSeconds      Int?                   @map("duration_seconds")
+  accessType           PlaybackAccessType     @map("access_type")
+  status               StreamingSessionStatus @default(ACTIVE)
+  startPositionSeconds Int                    @default(0) @map("start_position_seconds")
+  lastPositionSeconds  Int                    @default(0) @map("last_position_seconds")
+  /// Accumulated watch time; feeds monthly revenue sharing and content analytics. Credited
+  /// from the server-measured gap between updates (capped), never from client claims.
+  totalWatchedSeconds  Int                    @default(0) @map("total_watched_seconds")
+  startedAt            DateTime               @default(now()) @map("started_at") @db.Timestamptz(6)
+  lastHeartbeatAt      DateTime               @default(now()) @map("last_heartbeat_at") @db.Timestamptz(6)
+  /// When watch_progress was last written for this session. Heartbeats persist the resume
+  /// hint at most once a minute; stop and complete always write.
+  lastProgressAt       DateTime?              @map("last_progress_at") @db.Timestamptz(6)
+  endedAt              DateTime?              @map("ended_at") @db.Timestamptz(6)
+  endReason            StreamingEndReason?    @map("end_reason")
+  ipAddress            String?                @map("ip_address") @db.VarChar(45)
+  userAgent            String?                @map("user_agent") @db.VarChar(500)
+  /// Same key + same owner + same episode replays the first session instead of opening a new one.
+  idempotencyKey       String?                @unique @map("idempotency_key") @db.VarChar(100)
+
+  user       User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode    Episode          @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset       @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  adBreaks   SessionAdBreak[]
+
+  @@index([userId, status])
+  @@index([guestKey])
+  @@index([episodeId])
+  @@index([status, lastHeartbeatAt])
+  @@map("streaming_sessions")
+}
