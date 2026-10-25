@@ -9,6 +9,7 @@ describe('PlaybackAccessService.verify', () => {
     episode: { findFirst: jest.fn() },
     subscription: { findFirst: jest.fn() },
     episodeAccess: { findFirst: jest.fn() },
+    membershipPlan: { findFirst: jest.fn() },
   };
   const settings = {
     get: jest.fn().mockResolvedValue({ freeStarterEpisodeCount: 2, episodeCoinPriceMin: 1 }),
@@ -46,6 +47,14 @@ describe('PlaybackAccessService.verify', () => {
     prisma.episode.findFirst.mockResolvedValue(episode());
     prisma.subscription.findFirst.mockResolvedValue(null);
     prisma.episodeAccess.findFirst.mockResolvedValue(null);
+  });
+
+  it("reads the Admin's active Free plan for members with no running plan (BR-34)", async () => {
+    prisma.membershipPlan.findFirst.mockResolvedValue({ code: 'free', features: { maxConcurrentStreams: 1 } });
+    await expect(service.freePlanOf()).resolves.toEqual({ code: 'free', features: { maxConcurrentStreams: 1 } });
+    expect(prisma.membershipPlan.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { isFree: true, isActive: true } }),
+    );
   });
 
   it('answers 404 when the episode is not listed', async () => {

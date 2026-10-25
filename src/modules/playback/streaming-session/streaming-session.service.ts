@@ -101,6 +101,9 @@ export class StreamingSessionService {
     // three times. Guests have no plan and skip the read entirely.
     const runningPlan = userId ? await this.access.runningPlanOf(userId) : null;
     const verified = await this.access.verify(input.episodeId, userId, runningPlan);
+    // BR-34: a member without a running plan is on the Free plan, whose stream limit and ads
+    // the Admin configures like any other plan. Guests have no plan and no stream limit.
+    const memberPlan = userId ? (runningPlan ?? (await this.access.freePlanOf())) : null;
 
     // F-2: the device count, the live-session lookup and the insert serialize on a
     // per-owner advisory lock. The lock releases with the transaction, so a second
@@ -164,7 +167,7 @@ export class StreamingSessionService {
         }
         // Only a new row takes a slot: the reuse above runs first so a member at the limit who
         // reloads the episode gets the session back, and a superseded row is already freed.
-        if (userId) await this.devices.check(userId, runningPlan, tx);
+        if (userId) await this.devices.check(userId, memberPlan, tx);
 
         const created = await tx.streamingSession.create({
           data: {
@@ -209,7 +212,7 @@ export class StreamingSessionService {
       false,
       await this.resumeOf(userId, verified.episodeId),
       await this.ads.scheduleFor(session.id, {
-        adFree: isAdFreePlan(runningPlan),
+        adFree: isAdFreePlan(memberPlan),
         durationSeconds: verified.durationSeconds,
       }),
       idempotent,

@@ -30,7 +30,12 @@ describe('StreamingSessionService.create', () => {
     episode: { findUnique: jest.fn(), findFirst: jest.fn() },
     $transaction: jest.fn((work: (db: typeof tx) => Promise<never>) => work(tx)),
   };
-  const access = { verify: jest.fn(), runningPlanOf: jest.fn(), stillEntitled: jest.fn() };
+  const access = {
+    verify: jest.fn(),
+    runningPlanOf: jest.fn(),
+    freePlanOf: jest.fn().mockResolvedValue(null),
+    stillEntitled: jest.fn(),
+  };
   const devices = { check: jest.fn() };
   const settings = {
     get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
@@ -139,6 +144,19 @@ describe('StreamingSessionService.create', () => {
     access.runningPlanOf.mockResolvedValue({ code: 'PREMIUM', features: { adFree: true } });
     await service.create({ episodeId: 'ep-1', userId: 'u-1' });
     expect(ads.scheduleFor).toHaveBeenLastCalledWith('sess-1', { adFree: true, durationSeconds: 600 });
+  });
+
+  it("applies the Free plan's limits and ads to a member with no running plan (BR-34)", async () => {
+    const freePlan = { code: 'free', features: { maxConcurrentStreams: 1, adFree: false } };
+    access.runningPlanOf.mockResolvedValue(null);
+    access.freePlanOf.mockResolvedValue(freePlan);
+
+    await service.create({ episodeId: 'ep-1', userId: 'u-1' });
+
+    // Access still sees "no plan"; only the limits come from the Free plan.
+    expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1', null);
+    expect(devices.check).toHaveBeenCalledWith('u-1', freePlan, tx);
+    expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { adFree: false, durationSeconds: 600 });
   });
 
   it('reuses the live session on a double tap instead of opening a second row', async () => {

@@ -50,6 +50,19 @@ export class PlaybackAccessService {
     return subscription?.plan ?? null;
   }
 
+  /**
+   * BR-34: the plan whose limits apply to a member with no running plan — the Free plan every
+   * account starts on, as the Admin configured it. It has no subscription row, so it is read
+   * from membership_plans; null when the Admin has not set one up.
+   */
+  async freePlanOf(): Promise<RunningPlanSnapshot | null> {
+    return this.prisma.membershipPlan.findFirst({
+      where: { isFree: true, isActive: true },
+      orderBy: { sortOrder: 'asc' },
+      select: { code: true, features: true },
+    });
+  }
+
   async verify(
     episodeId: string,
     userId?: string,
