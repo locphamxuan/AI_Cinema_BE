@@ -19,7 +19,7 @@ import { DeviceEligibilityPort } from '../playback-access/device-eligibility.por
 import { PlaybackAccessService, type VerifiedPlayback } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
 import { AdBreakService, isAdFreePlan, type AdScheduleItem } from '../ad-break/ad-break.service';
-import { PlaybackUrlService } from './playback-url.service';
+import { maxQualityOf, PlaybackUrlService } from './playback-url.service';
 import { sessionEnded, sessionStarted } from './playback-events';
 import { progressWriteDue, watchCreditSeconds } from './watch-pacing';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
@@ -178,6 +178,8 @@ export class StreamingSessionService {
             // Cached once here so every later beat reads the length off this row.
             durationSeconds: verified.durationSeconds,
             accessType: verified.accessType,
+            // Pinned once: the playlist endpoints read the ceiling off this row.
+            maxQuality: maxQualityOf(memberPlan?.features),
             status: StreamingSessionStatus.ACTIVE,
             startPositionSeconds: 0,
             lastPositionSeconds: 0,

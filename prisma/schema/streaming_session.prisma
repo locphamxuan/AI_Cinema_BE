@@ -38,6 +38,9 @@ model StreamingSession {
   /// against this instead of re-reading media_assets on every beat.
   durationSeconds      Int?                   @map("duration_seconds")
   accessType           PlaybackAccessType     @map("access_type")
+  /// Rendition ceiling of the plan the session was opened under (features.maxQuality), pinned
+  /// here so the playlist endpoints never re-read the subscription. NULL = default ceiling.
+  maxQuality           String?                @map("max_quality") @db.VarChar(10)
   status               StreamingSessionStatus @default(ACTIVE)
   startPositionSeconds Int                    @default(0) @map("start_position_seconds")
   lastPositionSeconds  Int                    @default(0) @map("last_position_seconds")
