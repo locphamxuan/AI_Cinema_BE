@@ -35,6 +35,7 @@ describe('PlaybackAccessService.verify', () => {
     episodeNumber: 5,
     coinPrice: 25,
     revisionStartedAt: null,
+    movie: { freeEpisodeCount: null },
     approvedMediaAsset: media(),
     ...overrides,
   });
@@ -80,6 +81,16 @@ describe('PlaybackAccessService.verify', () => {
       planCode: null,
     });
     expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("follows the movie's own free count over the platform's, like Main Flow 2 (BR-03)", async () => {
+    // The platform frees 2 episodes, this movie only 1: episode 2 is paid here.
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 2, movie: { freeEpisodeCount: 1 } }));
+    await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
+
+    // This movie frees 5: episode 5 needs no account.
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 5, movie: { freeEpisodeCount: 5 } }));
+    await expect(service.verify('ep-1')).resolves.toMatchObject({ accessType: PlaybackAccessType.FREE_STARTER });
   });
 
   it('sends a guest without free access back to Main Flow 2 (steps 3-4)', async () => {
@@ -155,6 +166,7 @@ describe('PlaybackAccessService.verify', () => {
     expect(prisma.episode.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: {
+          movie: { select: { freeEpisodeCount: true } },
           approvedMediaAsset: {
             select: {
               id: true,

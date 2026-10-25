@@ -66,6 +66,7 @@ export class PlaybackAccessService {
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, ...VISIBLE_EPISODE },
       include: {
+        movie: { select: { freeEpisodeCount: true } },
         approvedMediaAsset: {
           // Hardening #14: only the columns the answer is built from. The rest of media_assets
           // (ai_disclosure JSON, storage_key, failure_reason…) is studio data nothing downstream
@@ -127,9 +128,12 @@ export class PlaybackAccessService {
     const settings = await this.settings.get();
     // A published episode always carries a price; rows predating the column fall back to the floor.
     const coinPrice = episode.coinPrice ?? settings.episodeCoinPriceMin;
+    // BR-03: the movie's own free count when its Reviewer set one, else the platform's — the
+    // same rule Main Flow 2 granted with, so the two flows never disagree on a free episode.
+    const freeCount = episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount;
     // Free rules need no account. A zero-priced episode is stored as FREE_STARTER:
     // PlaybackAccessType has no FREE value and both cases mean "free for everyone".
-    if (episode.episodeNumber <= settings.freeStarterEpisodeCount || coinPrice === 0) {
+    if (episode.episodeNumber <= freeCount || coinPrice === 0) {
       return { ...base, accessType: PlaybackAccessType.FREE_STARTER, planCode: null };
     }
     if (!userId) {
