@@ -1,0 +1,17 @@
+/// Viewing of one episode on one Vietnam calendar day (the day the session started), rolled up
+/// from streaming_sessions before the retention sweep deletes them, so monthly revenue sharing
+/// and content analytics keep their watch time once the session rows are gone.
+model EpisodeWatchStat {
+  episodeId           String   @map("episode_id") @db.Uuid
+  statDate            DateTime @map("stat_date") @db.Date
+  sessions            Int      @default(0)
+  completedSessions   Int      @default(0) @map("completed_sessions")
+  totalWatchedSeconds BigInt   @default(0) @map("total_watched_seconds")
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@id([episodeId, statDate])
+  @@index([statDate])
+  @@map("episode_watch_stats")
+}
