@@ -27,6 +27,7 @@ model Ad {
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   breaks SessionAdBreak[]
+  slots  EpisodeAdSlot[]
 
   @@index([status])
   @@map("ads")

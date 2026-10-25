@@ -56,6 +56,7 @@ model Episode {
     watchProgresses    WatchProgress[]
     views              EpisodeView[]
     studioFilmLinks    StudioFilmLink[]
+    adSlots            EpisodeAdSlot[]
 
     @@unique([movieId, episodeNumber])
     @@index([movieId, status])

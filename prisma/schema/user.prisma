@@ -66,6 +66,7 @@ model User {
   payments                Payment[]
   streamingSessions       StreamingSession[]
   watchProgresses         WatchProgress[]
+  episodeAdSlotsCreated   EpisodeAdSlot[]        @relation("EpisodeAdSlotCreatedBy")
 
   @@index([role])
   @@map("users")
