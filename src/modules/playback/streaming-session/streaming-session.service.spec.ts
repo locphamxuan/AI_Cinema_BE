@@ -155,6 +155,20 @@ describe('StreamingSessionService.create', () => {
     expect(view).toMatchObject({ sessionId: 'sess-live', reused: true });
   });
 
+  it('hands the live session back to a member at the stream limit instead of refusing', async () => {
+    prisma.streamingSession.findFirst.mockResolvedValue({
+      id: 'sess-live',
+      status: StreamingSessionStatus.ACTIVE,
+      startPositionSeconds: 0,
+      mediaAssetId: 'asset-1',
+    });
+    devices.check.mockRejectedValue(new Error('CONCURRENT_LIMIT_REACHED'));
+
+    // A reload of the episode being watched takes no new slot, so the limit is never asked.
+    await expect(service.create({ episodeId: 'ep-1', userId: 'u-1' })).resolves.toMatchObject({ reused: true });
+    expect(devices.check).not.toHaveBeenCalled();
+  });
+
   it('requires exactly one owner', async () => {
     await expect(service.create({ episodeId: 'ep-1' })).rejects.toThrow(BadRequestException);
     await expect(

@@ -137,7 +137,6 @@ export class StreamingSessionService {
             }
           }
         }
-        if (userId) await this.devices.check(userId, runningPlan, tx);
 
         // Double taps share one live session: an ACTIVE row on the same episode whose
         // heartbeat has not timed out is handed back instead of opening a second row —
@@ -163,6 +162,9 @@ export class StreamingSessionService {
         } else if (live) {
           return { session: live, reused: true, idempotent: false };
         }
+        // Only a new row takes a slot: the reuse above runs first so a member at the limit who
+        // reloads the episode gets the session back, and a superseded row is already freed.
+        if (userId) await this.devices.check(userId, runningPlan, tx);
 
         const created = await tx.streamingSession.create({
           data: {
