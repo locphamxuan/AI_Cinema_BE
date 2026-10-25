@@ -5,3 +5,5 @@
  */
 export const MAX_AD_DURATION_SECONDS = 300;
 export const MAX_AD_WEIGHT = 1000;
+/** BR-32: cues the Admin may place on one episode; more turns the episode into an ad reel. */
+export const MAX_AD_SLOTS_PER_EPISODE = 20;

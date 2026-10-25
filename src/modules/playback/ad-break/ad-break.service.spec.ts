@@ -1,28 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
 import { AdBreakStatus, StreamingSessionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { AdBreakService, isAdFreePlan, spreadPositions, weightedOrder } from './ad-break.service';
-
-describe('spreadPositions', () => {
-  it('lays cues evenly inside the clean window (step 13)', () => {
-    expect(spreadPositions(1320, 2)).toEqual([460, 860]);
-    expect(spreadPositions(300, 1)).toEqual([150]);
-  });
-
-  it('rejects a non-positive count', () => {
-    expect(() => spreadPositions(300, 0)).toThrow(BadRequestException);
-  });
-});
-
-describe('weightedOrder', () => {
-  it('draws every ad exactly once, heavier ones first on average', () => {
-    const ads = [{ weight: 1 }, { weight: 100 }, { weight: 1 }];
-    const firsts = Array.from({ length: 20 }, () => weightedOrder(ads)[0]?.weight);
-    expect(firsts).toContain(100);
-    expect(weightedOrder(ads)).toHaveLength(3);
-  });
-});
+import { AdBreakService, isAdFreePlan } from './ad-break.service';
 
 describe('isAdFreePlan (P4-5)', () => {
   it('is true only when the running plan features say so', () => {
@@ -38,6 +17,7 @@ describe('isAdFreePlan (P4-5)', () => {
 describe('AdBreakService', () => {
   const prisma = {
     ad: { findMany: jest.fn() },
+    episodeAdSlot: { findMany: jest.fn() },
     sessionAdBreak: { createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ adMaxBreaksPerEpisode: 2 }) };
@@ -57,6 +37,7 @@ describe('AdBreakService', () => {
     jest.clearAllMocks();
     settings.get.mockResolvedValue({ adMaxBreaksPerEpisode: 2 });
     prisma.ad.findMany.mockResolvedValue([ad({ id: 'ad-1' }), ad({ id: 'ad-2' })]);
+    prisma.episodeAdSlot.findMany.mockResolvedValue([]);
     prisma.sessionAdBreak.createMany.mockResolvedValue({ count: 2 });
     prisma.sessionAdBreak.findMany.mockResolvedValue([
       { id: 'br-460', positionSeconds: 460, ad: ad({ id: 'ad-1' }) },
@@ -64,38 +45,45 @@ describe('AdBreakService', () => {
     ]);
   });
 
-  it('schedules up to the platform cap with one atomic insert (steps 12–13, P4-1)', async () => {
-    const schedule = await service.scheduleFor('sess-1', { adFree: false, durationSeconds: 1320 });
+  it('lays random cues up to the platform cap with one atomic insert when no cue is placed (P4-1)', async () => {
+    const schedule = await service.scheduleFor('sess-1', { episodeId: 'ep-1', adFree: false, durationSeconds: 1320 });
     expect(schedule.map((item) => item.positionSeconds)).toEqual([460, 860]);
+    expect(prisma.episodeAdSlot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { episodeId: 'ep-1' } }),
+    );
     expect(prisma.sessionAdBreak.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.sessionAdBreak.createMany).toHaveBeenCalledWith({
       data: [
-        { streamingSessionId: 'sess-1', adId: expect.any(String), positionSeconds: 460 },
-        { streamingSessionId: 'sess-1', adId: expect.any(String), positionSeconds: 860 },
+        { streamingSessionId: 'sess-1', adId: expect.any(String), positionSeconds: expect.any(Number) },
+        { streamingSessionId: 'sess-1', adId: expect.any(String), positionSeconds: expect.any(Number) },
       ],
       skipDuplicates: true,
     });
   });
 
-  it('never repeats an ad inside one episode when ads are scarce (P4-4)', async () => {
-    prisma.ad.findMany.mockResolvedValue([ad({ id: 'ad-1' })]);
-    prisma.sessionAdBreak.findMany.mockResolvedValue([{ id: 'br-660', positionSeconds: 660, ad: ad({ id: 'ad-1' }) }]);
-
-    const schedule = await service.scheduleFor('sess-1', { adFree: false, durationSeconds: 1320 });
-
-    // Only one distinct ad is eligible, so the episode gets one cue instead of cycling it.
-    expect(schedule).toHaveLength(1);
+  it('follows the cues the Admin placed on the episode, as many as there are (BR-32)', async () => {
+    prisma.episodeAdSlot.findMany.mockResolvedValue([
+      { positionSeconds: 120, adId: 'ad-2' },
+      { positionSeconds: 600, adId: null },
+      { positionSeconds: 1000, adId: null },
+    ]);
+    await service.scheduleFor('sess-1', { episodeId: 'ep-1', adFree: false, durationSeconds: 1320 });
     expect(prisma.sessionAdBreak.createMany).toHaveBeenCalledWith({
-      data: [{ streamingSessionId: 'sess-1', adId: 'ad-1', positionSeconds: 660 }],
+      data: [
+        { streamingSessionId: 'sess-1', adId: 'ad-2', positionSeconds: 120 },
+        { streamingSessionId: 'sess-1', adId: expect.any(String), positionSeconds: 600 },
+        { streamingSessionId: 'sess-1', adId: expect.any(String), positionSeconds: 1000 },
+      ],
       skipDuplicates: true,
     });
   });
 
-  it('schedules nothing for ad-free plans, short episodes or no valid ad', async () => {
-    await expect(service.scheduleFor('sess-1', { adFree: true, durationSeconds: 1320 })).resolves.toEqual([]);
-    await expect(service.scheduleFor('sess-1', { adFree: false, durationSeconds: 100 })).resolves.toEqual([]);
+  it('schedules nothing for ad-free plans, unknown lengths or no valid ad', async () => {
+    const input = { episodeId: 'ep-1', adFree: false, durationSeconds: 1320 };
+    await expect(service.scheduleFor('sess-1', { ...input, adFree: true })).resolves.toEqual([]);
+    await expect(service.scheduleFor('sess-1', { ...input, durationSeconds: null })).resolves.toEqual([]);
     prisma.ad.findMany.mockResolvedValue([]);
-    await expect(service.scheduleFor('sess-1', { adFree: false, durationSeconds: 1320 })).resolves.toEqual([]);
+    await expect(service.scheduleFor('sess-1', input)).resolves.toEqual([]);
     expect(prisma.sessionAdBreak.createMany).not.toHaveBeenCalled();
   });
 

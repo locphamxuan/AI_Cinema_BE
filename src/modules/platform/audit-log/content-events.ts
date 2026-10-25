@@ -60,6 +60,8 @@ export const CONTENT_EVENT = {
   // MF-3 — playback sessions (hardening #12); kept off the movie timeline, see playback-events.ts
   PLAYBACK_SESSION_STARTED: 'PLAYBACK_SESSION_STARTED',
   PLAYBACK_SESSION_ENDED: 'PLAYBACK_SESSION_ENDED',
+  // MF-3 — the Admin places the mid-roll ads of an episode (BR-32)
+  EPISODE_AD_SLOTS_SET: 'EPISODE_AD_SLOTS_SET',
 } as const;
 
 export type ContentEvent = (typeof CONTENT_EVENT)[keyof typeof CONTENT_EVENT];

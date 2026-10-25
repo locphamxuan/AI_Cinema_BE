@@ -209,6 +209,7 @@ export class StreamingSessionService {
       false,
       await this.resumeOf(userId, verified.episodeId),
       await this.ads.scheduleFor(session.id, {
+        episodeId: verified.episodeId,
         adFree: isAdFreePlan(memberPlan),
         durationSeconds: verified.durationSeconds,
       }),
