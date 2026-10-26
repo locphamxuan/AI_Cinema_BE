@@ -1,11 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PlanPeriod } from '@prisma/client';
-import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { MONTHLY_DAYS, PLAN_CODE_PATTERN } from './plan-rules';
+import { PlanFeaturesDto } from './plan-features.dto';
 
 export class CreateMembershipPlanRequestDto {
-  @ApiProperty({ example: 'premium_monthly', description: 'Short key of the plan, unique' })
+  @ApiProperty({ example: 'premium_monthly', description: 'Short key of the plan, unique: letters, digits, _ or -' })
   @IsString()
   @Length(2, 50)
+  @Matches(PLAN_CODE_PATTERN, { message: 'code may only hold letters, digits, _ and -' })
   code: string;
 
   @ApiProperty({ example: 'Premium Tháng' })
@@ -15,6 +31,7 @@ export class CreateMembershipPlanRequestDto {
 
   @ApiPropertyOptional({ example: 'Xem mọi tập, không quảng cáo' })
   @IsString()
+  @MaxLength(1000)
   @IsOptional()
   description?: string;
 
@@ -22,10 +39,15 @@ export class CreateMembershipPlanRequestDto {
   @IsIn([PlanPeriod.MONTHLY])
   period: PlanPeriod;
 
-  @ApiProperty({ example: 30, minimum: 1, description: 'Calendar days one cycle covers' })
+  @ApiProperty({
+    example: 30,
+    minimum: MONTHLY_DAYS.min,
+    maximum: MONTHLY_DAYS.max,
+    description: 'Calendar days one monthly cycle covers',
+  })
   @IsInt()
-  @Min(1)
-  @Max(365)
+  @Min(MONTHLY_DAYS.min)
+  @Max(MONTHLY_DAYS.max)
   durationDays: number;
 
   @ApiPropertyOptional({ example: false, description: 'The free plan has no price row and no subscription' })
@@ -33,8 +55,10 @@ export class CreateMembershipPlanRequestDto {
   @IsOptional()
   isFree?: boolean;
 
-  @ApiPropertyOptional({ example: 10, description: 'Order on the plan screen' })
+  @ApiPropertyOptional({ example: 10, minimum: 0, description: 'Order on the plan screen, smallest first' })
   @IsInt()
+  @Min(0)
+  @Max(999)
   @IsOptional()
   sortOrder?: number;
 
@@ -43,10 +67,9 @@ export class CreateMembershipPlanRequestDto {
   @IsOptional()
   isFeatured?: boolean;
 
-  @ApiPropertyOptional({
-    example: { maxRegisteredDevices: 4, maxConcurrentStreams: 2, adFree: true, maxQuality: '1080p' },
-  })
-  @IsObject()
+  @ApiPropertyOptional({ type: PlanFeaturesDto })
+  @ValidateNested()
+  @Type(() => PlanFeaturesDto)
   @IsOptional()
-  features?: Record<string, unknown>;
+  features?: PlanFeaturesDto;
 }

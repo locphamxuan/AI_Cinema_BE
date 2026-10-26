@@ -54,4 +54,6 @@ export const orderView = (order: OrderRow, payment: PaymentRow | null) => ({
   failureReason: order.failureReason,
   paidAt: payment?.paidAt ?? null,
   expiresAt: order.expiresAt,
+  /** When the member placed the order; a pending one has no paidAt to date it by. */
+  createdAt: order.createdAt,
 });
