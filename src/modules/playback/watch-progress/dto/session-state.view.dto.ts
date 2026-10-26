@@ -23,4 +23,12 @@ export class SessionStateViewDto {
       'Server-decided: true only when the position reached episodeCompletionPercent, not merely because complete was called.',
   })
   completed: boolean;
+
+  @ApiProperty({
+    example: null,
+    nullable: true,
+    description:
+      'Heartbeat only: the ad break the playhead passed without playing it (e.g. a forward seek). The player must play it now.',
+  })
+  dueAdBreakId: string | null;
 }

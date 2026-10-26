@@ -5,7 +5,7 @@ export class AdBreakPlayedViewDto {
   @ApiProperty({ example: 'c31d...' })
   breakId: string;
 
-  @ApiProperty({ example: 'PLAYED' })
+  @ApiProperty({ example: 'COMPLETED', enum: ['PENDING', 'COMPLETED', 'SKIPPED'] })
   status: string;
 
   @ApiProperty({ example: '2026-10-15T10:00:00.000Z', nullable: true })

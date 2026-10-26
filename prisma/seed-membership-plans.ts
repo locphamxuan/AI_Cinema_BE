@@ -43,7 +43,7 @@ const SEED_PLANS: SeedPlan[] = [
     isFree: true,
     sortOrder: 0,
     isFeatured: false,
-    features: { maxDevices: 1, adFree: false, maxQuality: '720p' },
+    features: { maxRegisteredDevices: 2, maxConcurrentStreams: 1, adFree: false, maxQuality: '720p' },
   },
   {
     code: 'monthly',
@@ -54,7 +54,7 @@ const SEED_PLANS: SeedPlan[] = [
     isFree: false,
     sortOrder: 2,
     isFeatured: true,
-    features: { maxDevices: 2, adFree: true, maxQuality: '1080p' },
+    features: { maxRegisteredDevices: 4, maxConcurrentStreams: 2, adFree: true, maxQuality: '1080p' },
     priceCoins: 500,
   },
 ];

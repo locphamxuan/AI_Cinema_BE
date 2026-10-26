@@ -43,8 +43,6 @@ interface DecisionBase {
  * (BR-56 maintenance, an approved version that still streams), Free Starter episode, an episode
  * priced at zero, a running plan (the whole movie, BR-02), the episode bought, and only then the
  * ways left.
- * The order of the checks is the order of the flow - Free Starter episode, an episode priced at
- * zero, a running plan (the whole movie, BR-02), the episode bought, and only then the ways left.
  *
  * A running plan grants every episode without writing a row per episode, which is what keeps
  * episode_accesses small; the bought rights are the rows this service reads here.
@@ -57,7 +55,10 @@ export class AccessDecisionService {
     private readonly wallets: WalletService,
   ) {}
 
-  /** The decision, plus the stream to hand to the player once access is granted. */
+  /**
+   * The decision, plus the stream to hand to the player once access is granted. `streamUrl` is
+   * deprecated: it bypasses Main Flow 3 and stays only until the clients open playback sessions.
+   */
   async decide(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
     const decision = await this.evaluate(episodeId, userId);
     if (!decision.accessGranted) return decision;
@@ -72,9 +73,10 @@ export class AccessDecisionService {
   private async evaluate(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, ...VISIBLE_EPISODE },
-      include: { approvedMediaAsset: { select: { ingestStatus: true, streamUrl: true } } },
-      where: { id: episodeId, status: EpisodeStatus.PUBLISHED },
-      include: { movie: { select: { freeEpisodeCount: true } } },
+      include: {
+        approvedMediaAsset: { select: { ingestStatus: true, streamUrl: true } },
+        movie: { select: { freeEpisodeCount: true } },
+      },
     });
     if (!episode) {
       throw new NotFoundException({ message: 'Episode not found', details: { reason: 'EPISODE_NOT_FOUND' } });
@@ -83,11 +85,9 @@ export class AccessDecisionService {
     // A published episode always carries a price (the release gate insists on one); the lowest
     // price of the platform stands in while a row predates the column.
     const coinPrice = episode.coinPrice ?? settings.episodeCoinPriceMin;
-    const isFreeStarter = episode.episodeNumber <= settings.freeStarterEpisodeCount;
-    const base: DecisionBase = {
     // BR-03: the movie's own count when its Reviewer set one, else the platform's.
     const isFreeStarter = episode.episodeNumber <= (episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount);
-    const base = {
+    const base: DecisionBase = {
       episodeId: episode.id,
       movieId: episode.movieId,
       availability: EPISODE_AVAILABILITY.AVAILABLE,

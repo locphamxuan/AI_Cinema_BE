@@ -28,7 +28,8 @@ model PlatformSetting {
   refundOnRemoval                 Boolean  @default(true) @map("refund_on_removal")
   /// MF-3 step 18: position/duration percent that counts as completed.
   episodeCompletionPercent        Int      @default(90) @map("episode_completion_percent")
-  /// MF-3 step 13: max mid-roll cues generated per streaming session.
+  /// MF-3 step 13: how many random mid-roll cues an episode gets when the Admin has not placed
+  /// its cues by hand (episode_ad_slots).
   adMaxBreaksPerEpisode           Int      @default(2) @map("ad_max_breaks_per_episode")
   updatedById                     String?  @map("updated_by") @db.Uuid
   updatedAt                       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

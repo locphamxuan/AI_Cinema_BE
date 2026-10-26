@@ -32,7 +32,7 @@ const row = (overrides: Partial<Row> = {}): Row => ({
   guestKey: null,
   episodeId: 'ep-1',
   mediaAssetId: 'asset-1',
-  accessType: PlaybackAccessType.PLAN,
+  accessType: PlaybackAccessType.SUBSCRIPTION,
   status: StreamingSessionStatus.ACTIVE,
   startPositionSeconds: 0,
   lastPositionSeconds: 300,
@@ -53,7 +53,7 @@ describe('playback audit rows (hardening #12)', () => {
         entityId: 'sess-1',
         movieId: null,
         actorId: 'u-1',
-        payload: { episodeId: 'ep-1', accessType: 'PLAN', userId: 'u-1', ipAddress: '203.0.113.7' },
+        payload: { episodeId: 'ep-1', accessType: 'SUBSCRIPTION', userId: 'u-1', ipAddress: '203.0.113.7' },
       });
     });
 
@@ -111,14 +111,19 @@ describe('playback audit rows (hardening #12)', () => {
       episode: { findUnique: jest.fn(), findFirst: jest.fn() },
       $transaction: jest.fn((work: (db: typeof tx) => Promise<never>) => work(tx)),
     };
-    const access = { verify: jest.fn(), runningPlanOf: jest.fn(), stillEntitled: jest.fn() };
+    const access = {
+      verify: jest.fn(),
+      runningPlanOf: jest.fn(),
+      freePlanOf: jest.fn().mockResolvedValue(null),
+      stillEntitled: jest.fn(),
+    };
     const devices = { check: jest.fn() };
     const settings = {
       get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
     };
     const urls = { masterUrl: jest.fn().mockReturnValue('https://api.example/master.m3u8') };
     const progress = { progress: jest.fn(), save: jest.fn() };
-    const ads = { scheduleFor: jest.fn(), scheduleOf: jest.fn() };
+    const ads = { scheduleFor: jest.fn(), scheduleOf: jest.fn(), dueBreakOf: jest.fn().mockResolvedValue(null) };
     const audit = { record: jest.fn() };
     const service = new StreamingSessionService(
       prisma as unknown as PrismaService,
@@ -139,7 +144,7 @@ describe('playback audit rows (hardening #12)', () => {
       streamUrl: 'https://cdn.example/hls/master.m3u8',
       qualities: ['360p'],
       durationSeconds: 600,
-      accessType: PlaybackAccessType.PLAN,
+      accessType: PlaybackAccessType.SUBSCRIPTION,
       planCode: 'MONTHLY',
       subtitles: [],
       aiLabel: null,
@@ -234,11 +239,12 @@ describe('playback audit rows (hardening #12)', () => {
         );
       });
 
-      it('leaves plain beats unrecorded and records the threshold crossing', async () => {
+      it('leaves beats unrecorded, the threshold crossing included: only a close is audited', async () => {
         await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 320 });
+        await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
         expect(audit.record).not.toHaveBeenCalled();
 
-        await service.heartbeat('sess-1', { userId: 'u-1' }, { positionSeconds: 1100 });
+        await service.stop('sess-1', { userId: 'u-1' }, { positionSeconds: 1150 });
         expect(audit.record).toHaveBeenCalledWith(
           expect.objectContaining({ payload: expect.objectContaining({ endReason: 'COMPLETED' }) }),
         );

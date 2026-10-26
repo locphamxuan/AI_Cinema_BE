@@ -2,7 +2,7 @@ import { Controller, Get, Header, NotFoundException, Param, ParseUUIDPipe } from
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { VISIBLE_EPISODE } from '../catalog.service';
+import { VISIBLE_EPISODE } from '../episode-visibility';
 
 /** WebVTT of a released episode, read from storage by the API so any player can load it. */
 @ApiTags('catalog')

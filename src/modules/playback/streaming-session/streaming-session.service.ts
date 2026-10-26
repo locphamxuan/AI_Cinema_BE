@@ -19,8 +19,9 @@ import { DeviceEligibilityPort } from '../playback-access/device-eligibility.por
 import { PlaybackAccessService, type VerifiedPlayback } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
 import { AdBreakService, isAdFreePlan, type AdScheduleItem } from '../ad-break/ad-break.service';
-import { PlaybackUrlService } from './playback-url.service';
+import { maxQualityOf, PlaybackUrlService } from './playback-url.service';
 import { sessionEnded, sessionStarted } from './playback-events';
+import { assertLiveSessionOf, sessionNotActive, type SessionCaller } from './session-owner';
 import { progressWriteDue, watchCreditSeconds } from './watch-pacing';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
 import { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/session-state.view.dto';
@@ -32,12 +33,6 @@ export interface CreateSessionInput {
   idempotencyKey?: string;
   ipAddress?: string | null;
   userAgent?: string | null;
-}
-
-/** Who is calling a session-owned route: the member, the guest key, or nobody. */
-export interface SessionCaller {
-  userId?: string;
-  guestKey?: string;
 }
 
 /** The episode after this one (flow 3, steps 22–24); null when the movie ends here. */
@@ -101,6 +96,9 @@ export class StreamingSessionService {
     // three times. Guests have no plan and skip the read entirely.
     const runningPlan = userId ? await this.access.runningPlanOf(userId) : null;
     const verified = await this.access.verify(input.episodeId, userId, runningPlan);
+    // BR-34: a member without a running plan is on the Free plan, whose stream limit and ads
+    // the Admin configures like any other plan. Guests have no plan and no stream limit.
+    const memberPlan = userId ? (runningPlan ?? (await this.access.freePlanOf())) : null;
 
     // F-2: the device count, the live-session lookup and the insert serialize on a
     // per-owner advisory lock. The lock releases with the transaction, so a second
@@ -137,7 +135,6 @@ export class StreamingSessionService {
             }
           }
         }
-        if (userId) await this.devices.check(userId, runningPlan, tx);
 
         // Double taps share one live session: an ACTIVE row on the same episode whose
         // heartbeat has not timed out is handed back instead of opening a second row —
@@ -163,6 +160,9 @@ export class StreamingSessionService {
         } else if (live) {
           return { session: live, reused: true, idempotent: false };
         }
+        // Only a new row takes a slot: the reuse above runs first so a member at the limit who
+        // reloads the episode gets the session back, and a superseded row is already freed.
+        if (userId) await this.devices.check(userId, memberPlan, tx);
 
         const created = await tx.streamingSession.create({
           data: {
@@ -173,6 +173,8 @@ export class StreamingSessionService {
             // Cached once here so every later beat reads the length off this row.
             durationSeconds: verified.durationSeconds,
             accessType: verified.accessType,
+            // Pinned once: the playlist endpoints read the ceiling off this row.
+            maxQuality: maxQualityOf(memberPlan?.features),
             status: StreamingSessionStatus.ACTIVE,
             startPositionSeconds: 0,
             lastPositionSeconds: 0,
@@ -207,7 +209,8 @@ export class StreamingSessionService {
       false,
       await this.resumeOf(userId, verified.episodeId),
       await this.ads.scheduleFor(session.id, {
-        adFree: isAdFreePlan(runningPlan),
+        episodeId: verified.episodeId,
+        adFree: isAdFreePlan(memberPlan),
         durationSeconds: verified.durationSeconds,
       }),
       idempotent,
@@ -233,7 +236,7 @@ export class StreamingSessionService {
   /**
    * Step 15: heartbeat keeps the session alive and persists the position. The session row
    * takes every beat (liveness feeds the expiry sweep); the member's resume hint lands at
-   * most once a minute — and always when this beat ends the session. Before anything is
+   * most once a minute — and always on the beat that crosses the completion threshold. Before anything is
    * credited, the beat re-checks that the entitlement is still there (hardening #11).
    */
   async heartbeat(
@@ -258,7 +261,11 @@ export class StreamingSessionService {
       endReason: null,
       persistProgress: progressWriteDue(session, new Date()),
     });
-    return this.state(saved.session, saved.completed);
+    return this.state(
+      saved.session,
+      saved.completed,
+      await this.ads.dueBreakOf(session.id, saved.session.lastPositionSeconds),
+    );
   }
 
   /** Step 19/21: the viewer stops; the position is saved and the slot is freed. */
@@ -317,27 +324,8 @@ export class StreamingSessionService {
         details: { reason: 'SESSION_NOT_FOUND' },
       });
     }
-    const mine = session.userId
-      ? Boolean(caller.userId) && session.userId === caller.userId
-      : Boolean(caller.guestKey) && session.guestKey === caller.guestKey;
-    if (!mine) {
-      throw new ForbiddenException({
-        message: 'This session belongs to someone else',
-        details: { reason: 'SESSION_NOT_OWNER' },
-      });
-    }
-    if (session.status !== StreamingSessionStatus.ACTIVE) {
-      this.notActive();
-    }
+    assertLiveSessionOf(session, caller);
     return session;
-  }
-
-  /** The one answer for a row that is no longer ACTIVE, whichever path notices it. */
-  private notActive(): never {
-    throw new ForbiddenException({
-      message: 'The streaming session is no longer active',
-      details: { reason: 'SESSION_NOT_ACTIVE' },
-    });
   }
 
   /**
@@ -367,13 +355,19 @@ export class StreamingSessionService {
       ? Math.min(Math.max(0, Math.floor(input.positionSeconds)), duration)
       : Math.max(0, Math.floor(input.positionSeconds));
     const { episodeCompletionPercent } = await this.settings.get();
-    const crossed = Boolean(duration) && duration! > 0 && (position / duration!) * 100 >= episodeCompletionPercent;
+    const reached = (seconds: number) =>
+      Boolean(duration) && duration! > 0 && (seconds / duration!) * 100 >= episodeCompletionPercent;
     // Completion is always derived here, never asserted by the caller (P3-3).
-    const completed = crossed;
-    const endReason = completed ? StreamingEndReason.COMPLETED : input.endReason;
-    // A session that ends now (stop/complete, or a beat that crossed the threshold) must
-    // leave its final position behind; otherwise the once-a-minute cadence applies.
-    const writeProgress = Boolean(session.userId) && (input.persistProgress || endReason !== null);
+    const completed = reached(position);
+    // Crossing the threshold marks the episode completed but never closes the session: the
+    // viewer is still watching the last minutes, so a beat keeps it open and only a stop or
+    // complete call (or the expiry sweep) ends it. A viewer stop past the threshold is COMPLETED.
+    const endReason =
+      completed && input.endReason === StreamingEndReason.STOPPED ? StreamingEndReason.COMPLETED : input.endReason;
+    // A session that ends now must leave its final position behind, and so must the beat that
+    // first crosses the threshold; otherwise the once-a-minute cadence applies.
+    const justCompleted = completed && !reached(session.lastPositionSeconds);
+    const writeProgress = Boolean(session.userId) && (input.persistProgress || endReason !== null || justCompleted);
 
     const written = await this.prisma.streamingSession.updateMany({
       // P3-2: the row may have been closed by a concurrent stop/complete after owned() read it.
@@ -387,7 +381,7 @@ export class StreamingSessionService {
         ...(endReason ? { status: StreamingSessionStatus.ENDED, endReason, endedAt: now } : {}),
       },
     });
-    if (written.count === 0) this.notActive();
+    if (written.count === 0) sessionNotActive();
     // updateMany returns no row: rebuild the fields the response and the audit row read.
     const current: StreamingSession = {
       ...session,
@@ -410,7 +404,11 @@ export class StreamingSessionService {
     return { session: current, completed };
   }
 
-  private state(session: StreamingSession, completed: boolean): SessionStateViewDto {
+  private state(
+    session: StreamingSession,
+    completed: boolean,
+    dueAdBreakId: string | null = null,
+  ): SessionStateViewDto {
     return {
       sessionId: session.id,
       episodeId: session.episodeId,
@@ -418,6 +416,7 @@ export class StreamingSessionService {
       positionSeconds: session.lastPositionSeconds,
       totalWatchedSeconds: session.totalWatchedSeconds,
       completed,
+      dueAdBreakId,
     };
   }
 

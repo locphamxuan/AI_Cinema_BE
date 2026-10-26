@@ -13,7 +13,6 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
-import { runningPlanWhere } from 'src/modules/episode-access/subscription/running-plan';
 import { parseMasterPlaylist } from 'src/modules/production/media-ingest/hls/hls-playlist';
 import { HLS_LADDER, qualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
 
@@ -86,9 +85,12 @@ export class PlaybackUrlService {
     return Boolean(this.config.playback.urlSecret);
   }
 
-  /** Absolute master URL for `POST /sessions`; direct origin URL when signing is off or external. */
+  /**
+   * Absolute master URL for `POST /sessions`; direct origin URL when signing is off, the asset is
+   * external, or the stream is a progressive file (an MP4 has no `hls/<asset>/` playlists to sign).
+   */
   masterUrl(sessionId: string, asset: { id: string; streamUrl: string; isSelfHosted: boolean }): string {
-    if (!asset.isSelfHosted || !this.enabled()) return asset.streamUrl;
+    if (!asset.isSelfHosted || !this.enabled() || !isHlsPlaylist(asset.streamUrl)) return asset.streamUrl;
     const { exp, sig } = this.sign(sessionId, asset.id);
     return `${this.config.apiPublicUrl}/api/playback/s/${sessionId}/master.m3u8?s=${sessionId}&exp=${exp}&sig=${sig}`;
   }
@@ -108,7 +110,7 @@ export class PlaybackUrlService {
   /** Master playlist with only renditions at or below the caller's ceiling. */
   async masterPlaylist(sessionId: string, token: PlaybackToken): Promise<{ text: string; maxQuality: string }> {
     const { session, asset } = await this.assertToken(sessionId, token);
-    const maxQuality = await this.maxQualityOf(session.userId);
+    const maxQuality = session.maxQuality ?? DEFAULT_MAX_QUALITY;
     const ceiling = this.ceilingOf(maxQuality);
     const variants = await this.cached(`master:${asset.id}:${ceiling}`, () => this.readMaster(asset, ceiling));
     if (variants.length === 0) {
@@ -130,7 +132,7 @@ export class PlaybackUrlService {
   /** Variant playlist with every segment rewritten to an absolute signed CDN URL. */
   async variantPlaylist(sessionId: string, quality: string, token: PlaybackToken): Promise<string> {
     const { session, asset } = await this.assertToken(sessionId, token);
-    const maxQuality = await this.maxQualityOf(session.userId);
+    const maxQuality = session.maxQuality ?? DEFAULT_MAX_QUALITY;
     const ceiling = this.ceilingOf(maxQuality);
     const rung = qualityRung(quality);
     if (!rung || rung.height > ceiling) {
@@ -252,20 +254,6 @@ export class PlaybackUrlService {
     }
   }
 
-  /** Ceiling label, e.g. '720p': the running plan's features.maxQuality, else the default. */
-  async maxQualityOf(userId: string | null): Promise<string> {
-    if (!userId) return DEFAULT_MAX_QUALITY;
-    const plan = await this.prisma.subscription.findFirst({
-      where: runningPlanWhere(userId),
-      orderBy: { currentPeriodEnd: 'desc' },
-      select: { plan: { select: { features: true } } },
-    });
-    const features = plan?.plan.features as { maxQuality?: unknown } | null;
-    const value = features?.maxQuality;
-    // P2-7: labels come from the pipeline's ladder, so a newly encoded rendition is allowed here too.
-    return typeof value === 'string' && qualityRung(value) ? value : DEFAULT_MAX_QUALITY;
-  }
-
   /** Pixel ceiling of a plan label; the default keeps an unknown or removed label from locking playback. */
   private ceilingOf(maxQuality: string): number {
     return (qualityRung(maxQuality) ?? qualityRung(DEFAULT_MAX_QUALITY) ?? HLS_LADDER[HLS_LADDER.length - 1]).height;
@@ -280,7 +268,7 @@ export class PlaybackUrlService {
     }
     const session = await this.prisma.streamingSession.findUnique({
       where: { id: sessionId },
-      select: { userId: true, status: true, mediaAssetId: true },
+      select: { status: true, mediaAssetId: true, maxQuality: true },
     });
     if (!session || session.status !== StreamingSessionStatus.ACTIVE) {
       throw new ForbiddenException({
@@ -379,6 +367,21 @@ export class PlaybackUrlService {
       });
     }
   }
+}
+
+/** HLS master playlist (`.m3u8`, query string allowed), as opposed to a progressive MP4. */
+export function isHlsPlaylist(url: string): boolean {
+  return /\.m3u8(\?|#|$)/i.test(url);
+}
+
+/**
+ * Ceiling label, e.g. '720p', read off the member's plan features (running plan or Free plan)
+ * when the session is opened; guests and unknown labels get the default. P2-7: labels come from
+ * the pipeline's ladder, so a newly encoded rendition is allowed here too.
+ */
+export function maxQualityOf(features: unknown): string {
+  const value = features && typeof features === 'object' ? (features as { maxQuality?: unknown }).maxQuality : null;
+  return typeof value === 'string' && qualityRung(value) ? value : DEFAULT_MAX_QUALITY;
 }
 
 /** Error name plus the S3 error code / HTTP status when present, so logs separate 404, 403/5xx and bad playlists. */

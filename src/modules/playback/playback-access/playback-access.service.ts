@@ -50,6 +50,19 @@ export class PlaybackAccessService {
     return subscription?.plan ?? null;
   }
 
+  /**
+   * BR-34: the plan whose limits apply to a member with no running plan — the Free plan every
+   * account starts on, as the Admin configured it. It has no subscription row, so it is read
+   * from membership_plans; null when the Admin has not set one up.
+   */
+  async freePlanOf(): Promise<RunningPlanSnapshot | null> {
+    return this.prisma.membershipPlan.findFirst({
+      where: { isFree: true, isActive: true },
+      orderBy: { sortOrder: 'asc' },
+      select: { code: true, features: true },
+    });
+  }
+
   async verify(
     episodeId: string,
     userId?: string,
@@ -66,6 +79,7 @@ export class PlaybackAccessService {
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, ...VISIBLE_EPISODE },
       include: {
+        movie: { select: { freeEpisodeCount: true } },
         approvedMediaAsset: {
           // Hardening #14: only the columns the answer is built from. The rest of media_assets
           // (ai_disclosure JSON, storage_key, failure_reason…) is studio data nothing downstream
@@ -127,9 +141,12 @@ export class PlaybackAccessService {
     const settings = await this.settings.get();
     // A published episode always carries a price; rows predating the column fall back to the floor.
     const coinPrice = episode.coinPrice ?? settings.episodeCoinPriceMin;
+    // BR-03: the movie's own free count when its Reviewer set one, else the platform's — the
+    // same rule Main Flow 2 granted with, so the two flows never disagree on a free episode.
+    const freeCount = episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount;
     // Free rules need no account. A zero-priced episode is stored as FREE_STARTER:
     // PlaybackAccessType has no FREE value and both cases mean "free for everyone".
-    if (episode.episodeNumber <= settings.freeStarterEpisodeCount || coinPrice === 0) {
+    if (episode.episodeNumber <= freeCount || coinPrice === 0) {
       return { ...base, accessType: PlaybackAccessType.FREE_STARTER, planCode: null };
     }
     if (!userId) {
@@ -143,14 +160,14 @@ export class PlaybackAccessService {
       runningPlan === undefined ? this.runningPlanOf(userId) : runningPlan,
       runningPlan ? null : this.prisma.episodeAccess.findFirst({ where: { userId, episodeId, revokedAt: null } }),
     ]);
-    if (plan) return { ...base, accessType: PlaybackAccessType.PLAN, planCode: plan.code };
+    if (plan) return { ...base, accessType: PlaybackAccessType.SUBSCRIPTION, planCode: plan.code };
     if (episodeAccess) {
       return {
         ...base,
         accessType:
           episodeAccess.source === AccessSource.ADMIN_GRANT
             ? PlaybackAccessType.ADMIN_GRANT
-            : PlaybackAccessType.EPISODE_PURCHASE,
+            : PlaybackAccessType.COIN_UNLOCK,
         planCode: null,
       };
     }
@@ -174,7 +191,7 @@ export class PlaybackAccessService {
   }): Promise<boolean> {
     const { userId, episodeId, accessType } = session;
     if (!userId || accessType === PlaybackAccessType.FREE_STARTER) return true;
-    if (accessType === PlaybackAccessType.PLAN) {
+    if (accessType === PlaybackAccessType.SUBSCRIPTION) {
       const plan = await this.prisma.subscription.findFirst({
         where: runningPlanWhere(userId),
         select: { id: true },

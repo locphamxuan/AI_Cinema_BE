@@ -12,7 +12,11 @@ export class StreamingSessionViewDto {
   @ApiProperty({ example: '3a71f0d4-9c22-4c6b-8f31-1a2b3c4d5e6f' })
   movieId: string;
 
-  @ApiProperty({ example: 'PLAN', description: 'How the playback access was granted' })
+  @ApiProperty({
+    example: 'SUBSCRIPTION',
+    enum: ['FREE_STARTER', 'SUBSCRIPTION', 'COIN_UNLOCK', 'ADMIN_GRANT'],
+    description: 'How the playback access was granted (MF-2 handoff access_type)',
+  })
   accessType: string;
 
   @ApiPropertyOptional({ example: 'MONTHLY', description: 'Present when accessType is PLAN' })

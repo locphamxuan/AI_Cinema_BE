@@ -9,6 +9,7 @@ describe('PlaybackAccessService.verify', () => {
     episode: { findFirst: jest.fn() },
     subscription: { findFirst: jest.fn() },
     episodeAccess: { findFirst: jest.fn() },
+    membershipPlan: { findFirst: jest.fn() },
   };
   const settings = {
     get: jest.fn().mockResolvedValue({ freeStarterEpisodeCount: 2, episodeCoinPriceMin: 1 }),
@@ -35,6 +36,7 @@ describe('PlaybackAccessService.verify', () => {
     episodeNumber: 5,
     coinPrice: 25,
     revisionStartedAt: null,
+    movie: { freeEpisodeCount: null },
     approvedMediaAsset: media(),
     ...overrides,
   });
@@ -45,6 +47,14 @@ describe('PlaybackAccessService.verify', () => {
     prisma.episode.findFirst.mockResolvedValue(episode());
     prisma.subscription.findFirst.mockResolvedValue(null);
     prisma.episodeAccess.findFirst.mockResolvedValue(null);
+  });
+
+  it("reads the Admin's active Free plan for members with no running plan (BR-34)", async () => {
+    prisma.membershipPlan.findFirst.mockResolvedValue({ code: 'free', features: { maxConcurrentStreams: 1 } });
+    await expect(service.freePlanOf()).resolves.toEqual({ code: 'free', features: { maxConcurrentStreams: 1 } });
+    expect(prisma.membershipPlan.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { isFree: true, isActive: true } }),
+    );
   });
 
   it('answers 404 when the episode is not listed', async () => {
@@ -82,6 +92,16 @@ describe('PlaybackAccessService.verify', () => {
     expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
   });
 
+  it("follows the movie's own free count over the platform's, like Main Flow 2 (BR-03)", async () => {
+    // The platform frees 2 episodes, this movie only 1: episode 2 is paid here.
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 2, movie: { freeEpisodeCount: 1 } }));
+    await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
+
+    // This movie frees 5: episode 5 needs no account.
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 5, movie: { freeEpisodeCount: 5 } }));
+    await expect(service.verify('ep-1')).resolves.toMatchObject({ accessType: PlaybackAccessType.FREE_STARTER });
+  });
+
   it('sends a guest without free access back to Main Flow 2 (steps 3-4)', async () => {
     await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
     await expect(service.verify('ep-1')).rejects.toMatchObject({
@@ -94,7 +114,7 @@ describe('PlaybackAccessService.verify', () => {
   it('hands a running plan straight to playback (steps 5-7)', async () => {
     prisma.subscription.findFirst.mockResolvedValue({ plan: { code: 'MONTHLY' } });
     await expect(service.verify('ep-1', 'u-1')).resolves.toMatchObject({
-      accessType: PlaybackAccessType.PLAN,
+      accessType: PlaybackAccessType.SUBSCRIPTION,
       planCode: 'MONTHLY',
     });
   });
@@ -102,7 +122,7 @@ describe('PlaybackAccessService.verify', () => {
   it('honours a bought episode', async () => {
     prisma.episodeAccess.findFirst.mockResolvedValue({ source: 'EPISODE_PURCHASE' });
     await expect(service.verify('ep-1', 'u-1')).resolves.toMatchObject({
-      accessType: PlaybackAccessType.EPISODE_PURCHASE,
+      accessType: PlaybackAccessType.COIN_UNLOCK,
     });
   });
 
@@ -122,7 +142,7 @@ describe('PlaybackAccessService.verify', () => {
     const plan = { code: 'YEARLY', features: { maxDevices: 4, adFree: true } };
 
     await expect(service.verify('ep-1', 'u-1', plan)).resolves.toMatchObject({
-      accessType: PlaybackAccessType.PLAN,
+      accessType: PlaybackAccessType.SUBSCRIPTION,
       planCode: 'YEARLY',
     });
     // The snapshot answers access, so neither the plan nor an unlock is read again.
@@ -134,7 +154,7 @@ describe('PlaybackAccessService.verify', () => {
     prisma.episodeAccess.findFirst.mockResolvedValue({ source: 'EPISODE_PURCHASE' });
 
     await expect(service.verify('ep-1', 'u-1', null)).resolves.toMatchObject({
-      accessType: PlaybackAccessType.EPISODE_PURCHASE,
+      accessType: PlaybackAccessType.COIN_UNLOCK,
     });
     expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
   });
@@ -155,6 +175,7 @@ describe('PlaybackAccessService.verify', () => {
     expect(prisma.episode.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: {
+          movie: { select: { freeEpisodeCount: true } },
           approvedMediaAsset: {
             select: {
               id: true,
@@ -204,7 +225,7 @@ describe('PlaybackAccessService.stillEntitled', () => {
   it('keeps a plan session alive while the plan runs, with one read', async () => {
     prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-1' });
     await expect(
-      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.PLAN }),
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.SUBSCRIPTION }),
     ).resolves.toBe(true);
     expect(prisma.subscription.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -221,7 +242,7 @@ describe('PlaybackAccessService.stillEntitled', () => {
 
   it('ends a plan session once the plan lapsed and nothing else covers the episode', async () => {
     await expect(
-      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.PLAN }),
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.SUBSCRIPTION }),
     ).resolves.toBe(false);
     // Before calling access lost, the unlock is checked: verify() would still grant it.
     expect(prisma.episodeAccess.findFirst).toHaveBeenCalledWith(
@@ -232,21 +253,21 @@ describe('PlaybackAccessService.stillEntitled', () => {
   it('keeps a plan session whose lapsed plan is backed by an owned episode', async () => {
     prisma.episodeAccess.findFirst.mockResolvedValue({ id: 'acc-1' });
     await expect(
-      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.PLAN }),
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.SUBSCRIPTION }),
     ).resolves.toBe(true);
   });
 
   it('keeps a purchased session while the unlock stands, without reading plans', async () => {
     prisma.episodeAccess.findFirst.mockResolvedValue({ id: 'acc-1' });
     await expect(
-      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.EPISODE_PURCHASE }),
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.COIN_UNLOCK }),
     ).resolves.toBe(true);
     expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
   });
 
   it('ends a purchased session once the take-down revoked the unlock (REMOVAL + refund)', async () => {
     await expect(
-      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.EPISODE_PURCHASE }),
+      service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.COIN_UNLOCK }),
     ).resolves.toBe(false);
     expect(prisma.episodeAccess.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'u-1', episodeId: 'ep-1', revokedAt: null } }),

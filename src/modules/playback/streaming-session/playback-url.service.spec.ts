@@ -5,7 +5,7 @@ import type { AppConfig } from 'src/config/app-config';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { HLS_LADDER, type QualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
-import { DEFAULT_MAX_QUALITY, PlaybackUrlService } from './playback-url.service';
+import { DEFAULT_MAX_QUALITY, isHlsPlaylist, maxQualityOf, PlaybackUrlService } from './playback-url.service';
 
 const SECRET = 'test-secret';
 const SESSION_ID = 'sess-1';
@@ -42,13 +42,18 @@ const FMP4_VARIANT = [
 describe('PlaybackUrlService', () => {
   const prisma = {
     streamingSession: { findUnique: jest.fn() },
-    subscription: { findFirst: jest.fn() },
     mediaAsset: { findUnique: jest.fn() },
   };
   const storage = { read: jest.fn() };
   let service: PlaybackUrlService;
 
   const asset = { id: ASSET_ID, streamUrl: `https://cdn.example/public/hls/${ASSET_ID}/master.m3u8` };
+  const liveSession = (maxQuality: string | null = null) => ({
+    id: SESSION_ID,
+    status: StreamingSessionStatus.ACTIVE,
+    mediaAssetId: ASSET_ID,
+    maxQuality,
+  });
   const token = (overrides = {}) => ({
     sessionId: SESSION_ID,
     exp: 2000000000,
@@ -60,13 +65,7 @@ describe('PlaybackUrlService', () => {
     jest.clearAllMocks();
     // A fresh instance per test keeps the short playlist cache from leaking between cases.
     service = new PlaybackUrlService(prisma as unknown as PrismaService, storage as unknown as ObjectStorage, config);
-    prisma.streamingSession.findUnique.mockResolvedValue({
-      id: SESSION_ID,
-      status: StreamingSessionStatus.ACTIVE,
-      userId: 'u-1',
-      mediaAssetId: ASSET_ID,
-    });
-    prisma.subscription.findFirst.mockResolvedValue(null);
+    prisma.streamingSession.findUnique.mockResolvedValue(liveSession());
     prisma.mediaAsset.findUnique.mockResolvedValue({ id: ASSET_ID, streamUrl: asset.streamUrl, isSelfHosted: true });
     storage.read.mockImplementation((key: string) => Buffer.from(key.endsWith('master.m3u8') ? MASTER : VARIANT));
   });
@@ -82,7 +81,7 @@ describe('PlaybackUrlService', () => {
   });
 
   it('filters renditions above the plan ceiling but keeps unknown ones', async () => {
-    prisma.subscription.findFirst.mockResolvedValue({ plan: { features: { maxQuality: '360p' } } });
+    prisma.streamingSession.findUnique.mockResolvedValue(liveSession('360p'));
     const { text } = await service.masterPlaylist(SESSION_ID, token());
     expect(text).toContain('360p/index.m3u8');
     expect(text).not.toContain('720p/index.m3u8');
@@ -133,7 +132,7 @@ describe('PlaybackUrlService', () => {
     const added: QualityRung = { name: '480p', height: 480, bitrate: '1400k' };
     (HLS_LADDER as QualityRung[]).push(added);
     try {
-      prisma.subscription.findFirst.mockResolvedValue({ plan: { features: { maxQuality: '480p' } } });
+      prisma.streamingSession.findUnique.mockResolvedValue(liveSession('480p'));
 
       const text = await service.variantPlaylist(SESSION_ID, '480p', token());
 
@@ -149,8 +148,8 @@ describe('PlaybackUrlService', () => {
       Promise.resolve({
         id: args.where.id,
         status: StreamingSessionStatus.ACTIVE,
-        userId: null,
         mediaAssetId: ASSET_ID,
+        maxQuality: null,
       }),
     );
     const otherToken = {
@@ -170,7 +169,7 @@ describe('PlaybackUrlService', () => {
 
   it('keeps a separate cache entry per ceiling', async () => {
     const uncapped = await service.masterPlaylist(SESSION_ID, token());
-    prisma.subscription.findFirst.mockResolvedValue({ plan: { features: { maxQuality: '360p' } } });
+    prisma.streamingSession.findUnique.mockResolvedValue(liveSession('360p'));
     const capped = await service.masterPlaylist(SESSION_ID, token());
 
     expect(storage.read).toHaveBeenCalledTimes(2);
@@ -326,12 +325,33 @@ describe('PlaybackUrlService', () => {
     ).toBe('https://third.example/m.m3u8');
   });
 
+  it('hands a self-hosted MP4 out as is: there is no HLS playlist to sign', () => {
+    const mp4 = 'https://cdn.example/catalog/zero-hour/ep1.mp4';
+    expect(service.masterUrl(SESSION_ID, { id: ASSET_ID, streamUrl: mp4, isSelfHosted: true })).toBe(mp4);
+    expect(isHlsPlaylist('https://cdn.example/hls/a/master.m3u8?v=2')).toBe(true);
+    expect(isHlsPlaylist(mp4)).toBe(false);
+  });
+
   it('status is ACTIVE-gated, not heartbeat-gated', async () => {
     prisma.streamingSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
       status: StreamingSessionStatus.ACTIVE,
-      userId: null,
     });
     await expect(service.masterPlaylist(SESSION_ID, token())).resolves.toBeDefined();
+  });
+
+  it('reads the ceiling pinned on the session, never the subscription', async () => {
+    prisma.streamingSession.findUnique.mockResolvedValue(liveSession('360p'));
+    const { maxQuality } = await service.masterPlaylist(SESSION_ID, token());
+    expect(maxQuality).toBe('360p');
+    expect(prisma.streamingSession.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ select: { status: true, mediaAssetId: true, maxQuality: true } }),
+    );
+  });
+
+  it('maxQualityOf takes a known ladder label off plan features, else the default', () => {
+    expect(maxQualityOf({ maxQuality: '1080p' })).toBe('1080p');
+    expect(maxQualityOf({ maxQuality: '4k-unknown' })).toBe(DEFAULT_MAX_QUALITY);
+    expect(maxQualityOf(null)).toBe(DEFAULT_MAX_QUALITY);
   });
 });

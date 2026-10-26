@@ -1,22 +1,14 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { AdBreakStatus, AdStatus, StreamingSessionStatus, type Ad } from '@prisma/client';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { AdBreakStatus, AdStatus, type Ad } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { RunningPlanSnapshot } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import type { SessionCaller } from '../streaming-session/streaming-session.service';
-
-/** No cue in the first or last minute: intros and credits stay clean. */
-export const AD_EDGE_SECONDS = 60;
+import { assertLiveSessionOf, type SessionCaller } from '../streaming-session/session-owner';
+import { planCues } from './ad-schedule';
 
 /**
- * How far the reported playhead may sit from the cue and still count (P4-2). The window
- * absorbs keyframe granularity and the player's trigger delay, not a whole scrubbed gap.
+ * How early the reported playhead may sit before the cue and still count (P4-2): it absorbs
+ * keyframe granularity and the player's trigger delay.
  */
 export const AD_IMPRESSION_TOLERANCE_SECONDS = 30;
 
@@ -34,8 +26,8 @@ export interface AdScheduleItem {
 
 /**
  * Mid-roll cues (flow 3, steps 12–13, 16–17). Schedule and impression share one
- * SessionAdBreak row: SCHEDULED at session creation, PLAYED when the player reaches
- * the cue (the billable impression). completedView is a separate, player-confirmed
+ * SessionAdBreak row: PENDING at session creation, COMPLETED when the player reaches or
+ * seeks past the cue (the billable impression), SKIPPED when a later cue played instead. completedView is a separate, player-confirmed
  * signal that the ad played to the end — never inferred from the start call (P4-3).
  */
 @Injectable()
@@ -46,45 +38,47 @@ export class AdBreakService {
   ) {}
 
   /**
-   * Step 13: lay up to adMaxBreaksPerEpisode cues evenly across the episode,
-   * each holding a weighted draw among the currently valid ads. Ad-free plans
-   * and episodes too short for a clean window get no cue at all.
+   * Step 13: lays the session's mid-roll cues (BR-32, BR-51). The cues the Admin placed on the
+   * episode decide where and how many; an episode without any gets adMaxBreaksPerEpisode random
+   * cues. Each cue holds its pinned ad or a weighted draw among the currently valid ads.
    *
-   * ad-free comes from the plan snapshot create() already read; this
-   * service never queries subscriptions.
+   * ad-free comes from the plan snapshot create() already read; this service never queries
+   * subscriptions. Cross-session / per-viewer frequency caps are not tracked yet.
    */
   async scheduleFor(
     sessionId: string,
-    input: { adFree: boolean; durationSeconds: number | null },
+    input: { episodeId: string; adFree: boolean; durationSeconds: number | null },
   ): Promise<AdScheduleItem[]> {
-    if (input.adFree) return [];
-    const duration = input.durationSeconds;
-    if (!duration || duration <= AD_EDGE_SECONDS * 2) return [];
-    const settings = await this.settings.get();
-    const eligible = await this.prisma.ad.findMany({
-      where: {
-        status: AdStatus.ACTIVE,
-        OR: [{ validFrom: null }, { validFrom: { lte: new Date() } }],
-        AND: [{ OR: [{ validTo: null }, { validTo: { gt: new Date() } }] }],
-      },
+    if (input.adFree || !input.durationSeconds) return [];
+    const now = new Date();
+    const [settings, eligible, slots] = await Promise.all([
+      this.settings.get(),
+      this.prisma.ad.findMany({
+        where: {
+          status: AdStatus.ACTIVE,
+          OR: [{ validFrom: null }, { validFrom: { lte: now } }],
+          AND: [{ OR: [{ validTo: null }, { validTo: { gt: now } }] }],
+        },
+      }),
+      this.prisma.episodeAdSlot.findMany({
+        where: { episodeId: input.episodeId },
+        select: { positionSeconds: true, adId: true },
+      }),
+    ]);
+    const cues = planCues({
+      slots,
+      eligible,
+      durationSeconds: input.durationSeconds,
+      fallbackCount: settings.adMaxBreaksPerEpisode,
     });
-    if (!eligible.length || settings.adMaxBreaksPerEpisode <= 0) return [];
-    const count = Math.min(settings.adMaxBreaksPerEpisode, eligible.length);
-    const positions = spreadPositions(duration, count);
-    const picks = weightedOrder(eligible).slice(0, positions.length);
-    // P4-4: one cue per distinct ad. count is capped by eligible.length and weightedOrder
-    // draws without replacement, so an ad can never repeat inside the same episode; when
-    // there are fewer ads than the platform cap, the episode simply gets fewer cues.
-    // Cross-session / per-viewer frequency caps are tracked in docs/backlog-billing-ads.md.
-    const data = positions.map((positionSeconds, i) => ({
-      streamingSessionId: sessionId,
-      adId: picks[i].id,
-      positionSeconds,
-    }));
+    if (!cues.length) return [];
     // P4-1: one INSERT is atomic, so a mid-way failure can never leave half a schedule.
     // skipDuplicates makes a concurrent double-schedule reuse the cues already laid
     // instead of answering the whole POST /sessions with a unique-constraint 500.
-    await this.prisma.sessionAdBreak.createMany({ data, skipDuplicates: true });
+    await this.prisma.sessionAdBreak.createMany({
+      data: cues.map((cue) => ({ streamingSessionId: sessionId, ...cue })),
+      skipDuplicates: true,
+    });
     return this.scheduleOf(sessionId);
   }
 
@@ -101,52 +95,75 @@ export class AdBreakService {
   /**
    * Step 17: pause the episode content, play the cue, count the impression. Idempotent.
    *
-   * P4-2: an impression is money, so it only counts when the player reports a playhead
-   * inside AD_IMPRESSION_TOLERANCE_SECONDS of the cue. A player that calls `played` for
-   * every cue when the movie opens now gets AD_BREAK_NOT_REACHED instead of billing every
-   * advertiser. Product decision for a forward seek over a cue: the ad was never started,
-   * so it is neither shown nor billed and no impression exists. The row deliberately stays
-   * SCHEDULED (an untrusted out-of-window call is not proof of intent): if the viewer seeks
-   * back and genuinely reaches the cue, it can still play — and count — once.
+   * P4-2: an impression is money, so a call before the player reached the cue (minus a small
+   * tolerance) is refused with AD_BREAK_NOT_REACHED: a player that calls `played` for every cue
+   * when the movie opens bills nobody.
    *
-   * P4-3: starting an ad is not a completed view. `completedView` stays false here and is
-   * only set by markCompleted after the player confirms the ad actually finished; without
-   * that call advertiser completion numbers stay conservatively empty, never inflated.
+   * BR-32/33: a forward seek over a cue does not skip the ad. The heartbeat names the cue the
+   * playhead passed (dueAdBreakId) and the player plays it now, so a call past the cue counts.
+   * Seeking over several cues plays only the last one; the earlier cues still pending are closed
+   * as SKIPPED so a viewer never sits through a stack of ads, and none of them triggers again.
    *
-   * The playhead is still client-reported: this is a bar against buggy or casual callers,
-   * not cryptographic proof of playback; segment-level verification is the stronger follow-up.
+   * P4-3: starting an ad is not a completed view. `completedView` stays false here and is only
+   * set by markCompleted after the player confirms the ad actually finished.
+   *
+   * The playhead is still client-reported: this is a bar against buggy or casual callers, not
+   * cryptographic proof of playback; segment-level verification is the stronger follow-up.
    */
   async markPlayed(sessionId: string, breakId: string, caller: SessionCaller, input: { positionSeconds: number }) {
     const row = await this.ownedBreak(sessionId, breakId, caller);
-    if (row.status === AdBreakStatus.PLAYED) {
+    if (row.status !== AdBreakStatus.PENDING) {
       return adBreakView(row);
     }
-    const distance = Math.abs(input.positionSeconds - row.positionSeconds);
-    if (distance > AD_IMPRESSION_TOLERANCE_SECONDS) {
-      const early = input.positionSeconds < row.positionSeconds;
+    if (input.positionSeconds < row.positionSeconds - AD_IMPRESSION_TOLERANCE_SECONDS) {
       throw new ConflictException({
-        message: early
-          ? 'The player has not reached this ad break yet'
-          : 'The player moved past this ad break without playing it; no impression is counted',
+        message: 'The player has not reached this ad break yet',
         details: {
-          reason: early ? 'AD_BREAK_NOT_REACHED' : 'AD_BREAK_MISSED',
+          reason: 'AD_BREAK_NOT_REACHED',
           cuePositionSeconds: row.positionSeconds,
           positionSeconds: input.positionSeconds,
           toleranceSeconds: AD_IMPRESSION_TOLERANCE_SECONDS,
         },
       });
     }
-    const played = await this.prisma.sessionAdBreak.update({
-      where: { id: row.id },
-      // P4-3: the start call records the impression only; completion needs its own confirmation.
-      data: { status: AdBreakStatus.PLAYED, playedAt: new Date(), completedView: false },
-    });
+    const [played] = await this.prisma.$transaction([
+      this.prisma.sessionAdBreak.update({
+        where: { id: row.id },
+        // P4-3: the start call records the impression only; completion needs its own confirmation.
+        data: { status: AdBreakStatus.COMPLETED, playedAt: new Date(), completedView: false },
+      }),
+      this.prisma.sessionAdBreak.updateMany({
+        where: {
+          streamingSessionId: sessionId,
+          status: AdBreakStatus.PENDING,
+          positionSeconds: { lt: row.positionSeconds },
+        },
+        data: { status: AdBreakStatus.SKIPPED },
+      }),
+    ]);
     return adBreakView(played);
   }
 
   /**
+   * BR-33: the pending cue the playhead has passed, i.e. the ad the player must play now — the
+   * latest one when a seek jumped over several. null when no ad is due.
+   */
+  async dueBreakOf(sessionId: string, positionSeconds: number): Promise<string | null> {
+    const due = await this.prisma.sessionAdBreak.findFirst({
+      where: {
+        streamingSessionId: sessionId,
+        status: AdBreakStatus.PENDING,
+        positionSeconds: { lte: positionSeconds },
+      },
+      orderBy: { positionSeconds: 'desc' },
+      select: { id: true },
+    });
+    return due?.id ?? null;
+  }
+
+  /**
    * P4-3: the player reports that the ad played to the end. Completion is never inferred
-   * from the start call: the break must already be PLAYED, and at least the ad's own
+   * from the start call: the break must already be COMPLETED, and at least the ad's own
    * duration (minus a small clock tolerance) must have elapsed on the server clock. This
    * keeps advertiser completion numbers honest instead of claiming every impression
    * completed the moment it began.
@@ -157,7 +174,7 @@ export class AdBreakService {
    */
   async markCompleted(sessionId: string, breakId: string, caller: SessionCaller) {
     const row = await this.ownedBreak(sessionId, breakId, caller);
-    if (row.status !== AdBreakStatus.PLAYED || !row.playedAt) {
+    if (row.status !== AdBreakStatus.COMPLETED || !row.playedAt) {
       throw new ConflictException({
         message: 'The ad break has not started yet',
         details: { reason: 'AD_BREAK_NOT_PLAYED' },
@@ -198,21 +215,7 @@ export class AdBreakService {
         details: { reason: 'AD_BREAK_NOT_FOUND' },
       });
     }
-    const mine = row.session.userId
-      ? Boolean(caller.userId) && row.session.userId === caller.userId
-      : Boolean(caller.guestKey) && row.session.guestKey === caller.guestKey;
-    if (!mine) {
-      throw new ForbiddenException({
-        message: 'This session belongs to someone else',
-        details: { reason: 'SESSION_NOT_OWNER' },
-      });
-    }
-    if (row.session.status !== StreamingSessionStatus.ACTIVE) {
-      throw new ForbiddenException({
-        message: 'The streaming session is no longer active',
-        details: { reason: 'SESSION_NOT_ACTIVE' },
-      });
-    }
+    assertLiveSessionOf(row.session, caller);
     return row;
   }
 }
@@ -225,36 +228,6 @@ export function isAdFreePlan(runningPlan: Pick<RunningPlanSnapshot, 'features'> 
   const features = runningPlan?.features;
   if (!features || typeof features !== 'object' || Array.isArray(features)) return false;
   return (features as { adFree?: unknown }).adFree === true;
-}
-
-/** Evenly spaced cue points inside (edge, duration - edge); nudged apart on rounding collisions. */
-export function spreadPositions(durationSeconds: number, count: number): number[] {
-  if (!Number.isInteger(count) || count <= 0) {
-    throw new BadRequestException({
-      message: 'The break count must be a positive integer',
-      details: { reason: 'AD_BREAK_COUNT_INVALID' },
-    });
-  }
-  const used = new Set<number>();
-  return Array.from({ length: count }, (_, i) => {
-    let position = Math.round(AD_EDGE_SECONDS + ((durationSeconds - AD_EDGE_SECONDS * 2) * (i + 1)) / (count + 1));
-    while (used.has(position)) position += 1;
-    used.add(position);
-    return position;
-  });
-}
-
-/** Eligible ads shuffled by weight (heavier first on average), without replacement. */
-export function weightedOrder<T extends Pick<Ad, 'weight'>>(ads: T[]): T[] {
-  const remaining = [...ads];
-  const ordered: T[] = [];
-  while (remaining.length) {
-    const total = remaining.reduce((sum, ad) => sum + Math.max(ad.weight, 1), 0);
-    let draw = Math.random() * total;
-    const index = remaining.findIndex((ad) => (draw -= Math.max(ad.weight, 1)) < 0);
-    ordered.push(...remaining.splice(index === -1 ? remaining.length - 1 : index, 1));
-  }
-  return ordered;
 }
 
 function adBreakView(row: { id: string; status: AdBreakStatus; playedAt: Date | null; completedView: boolean }) {

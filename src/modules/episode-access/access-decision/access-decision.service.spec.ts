@@ -58,6 +58,10 @@ describe('AccessDecisionService.decide', () => {
     expect(prisma.episode.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'missing', OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }] },
+        include: {
+          approvedMediaAsset: { select: { ingestStatus: true, streamUrl: true } },
+          movie: { select: { freeEpisodeCount: true } },
+        },
       }),
     );
   });
@@ -94,9 +98,6 @@ describe('AccessDecisionService.decide', () => {
     prisma.episode.findFirst.mockResolvedValue(episode({ approvedMediaAsset: null }));
     await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
       availability: EPISODE_AVAILABILITY.MEDIA_NOT_READY,
-    expect(prisma.episode.findFirst).toHaveBeenCalledWith({
-      where: { id: 'missing', status: EpisodeStatus.PUBLISHED },
-      include: { movie: { select: { freeEpisodeCount: true } } },
     });
   });
 
