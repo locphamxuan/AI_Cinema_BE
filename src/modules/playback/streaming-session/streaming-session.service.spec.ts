@@ -11,7 +11,7 @@ describe('StreamingSessionService.create', () => {
     const view = await service.create({ episodeId: 'ep-1', userId: 'u-1' });
 
     expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1', runningPlan);
-    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx);
+    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx, 'dev-1');
     expect(prisma.streamingSession.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ userId: 'u-1', episodeId: 'ep-1', mediaAssetId: 'asset-1' }),
@@ -29,7 +29,7 @@ describe('StreamingSessionService.create', () => {
     const rawCall = tx.$executeRaw.mock.calls[0] as unknown[];
     expect(String((rawCall[0] as unknown[])[0])).toContain('pg_advisory_xact_lock');
     // The device count runs after the lock, on the transaction client.
-    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx);
+    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx, 'dev-1');
     const checkOrder = devices.check.mock.invocationCallOrder[0];
     const createOrder = prisma.streamingSession.create.mock.invocationCallOrder[0];
     expect(checkOrder).toBeLessThan(createOrder);
@@ -49,15 +49,37 @@ describe('StreamingSessionService.create', () => {
     expect(access.runningPlanOf).not.toHaveBeenCalled();
     expect(access.verify).toHaveBeenCalledWith('ep-1', undefined, null);
     expect(devices.check).not.toHaveBeenCalled();
+    expect(devices.register).not.toHaveBeenCalled();
     expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { episodeId: 'ep-1', adFree: false, durationSeconds: 600 });
     expect(view).toMatchObject({ sessionId: 'sess-1' });
+  });
+
+  it('registers the member device before the session transaction and pins it on the row (MF-4, BR-36)', async () => {
+    const device = { key: '0f9c8e2a-2f1b-4a53-9d4f-6f0b6a1d2c33', name: 'iPhone 15', platform: 'IOS' };
+    await service.create({ episodeId: 'ep-1', userId: 'u-1', device });
+
+    expect(devices.register).toHaveBeenCalledWith('u-1', device, runningPlan);
+    expect(devices.register.mock.invocationCallOrder[0]).toBeLessThan(prisma.$transaction.mock.invocationCallOrder[0]);
+    // A live session is only reused on the same device: another device opens its own stream.
+    expect(tx.streamingSession.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ userId: 'u-1', deviceId: 'dev-1' }) }),
+    );
+    expect(prisma.streamingSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ deviceId: 'dev-1' }) }),
+    );
+  });
+
+  it('opens nothing when the device limit refuses a new device', async () => {
+    devices.register.mockRejectedValue(new Error('DEVICE_LIMIT_REACHED'));
+    await expect(service.create({ episodeId: 'ep-1', userId: 'u-1' })).rejects.toThrow('DEVICE_LIMIT_REACHED');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('hands the same plan snapshot to access, devices and ads (P4-5)', async () => {
     await service.create({ episodeId: 'ep-1', userId: 'u-1' });
     expect(access.runningPlanOf).toHaveBeenCalledTimes(1);
     expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1', runningPlan);
-    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx);
+    expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx, 'dev-1');
     expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { episodeId: 'ep-1', adFree: false, durationSeconds: 600 });
     access.runningPlanOf.mockResolvedValue({ code: 'PREMIUM', features: { adFree: true } });
     await service.create({ episodeId: 'ep-1', userId: 'u-1' });
@@ -77,7 +99,7 @@ describe('StreamingSessionService.create', () => {
 
     // Access still sees "no plan"; only the limits come from the Free plan.
     expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1', null);
-    expect(devices.check).toHaveBeenCalledWith('u-1', freePlan, tx);
+    expect(devices.check).toHaveBeenCalledWith('u-1', freePlan, tx, 'dev-1');
     expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { episodeId: 'ep-1', adFree: false, durationSeconds: 600 });
   });
 
