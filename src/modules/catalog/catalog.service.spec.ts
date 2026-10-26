@@ -1,4 +1,6 @@
-import { episodeView } from './catalog.service';
+import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { CatalogService, episodeView } from './catalog.service';
 import { REVISION_NOTICE } from './episode-visibility';
 
 const base = {
@@ -50,5 +52,35 @@ describe('Catalog episode view', () => {
       qualities: [],
       aiLabel: null,
     });
+  });
+});
+
+describe('Catalog ranking', () => {
+  const movie = (id: string, views: number[]) => ({
+    id,
+    title: id,
+    genres: [],
+    episodes: views.map((count) => ({ _count: { views: count } })),
+  });
+  const prisma = { movie: { findMany: jest.fn() } };
+  const catalog = new CatalogService(prisma as unknown as PrismaService, {} as PlatformSettingService);
+
+  it('ranks listed movies by the plays of all their episodes, most first', async () => {
+    // findMany hands them newest first; a tie keeps that order.
+    prisma.movie.findMany.mockResolvedValue([movie('new', [1]), movie('hit', [40, 25]), movie('old', [0, 1])]);
+
+    const ranked = await catalog.ranking();
+
+    expect(ranked.map((m) => [m.id, m.viewCount])).toEqual([
+      ['hit', 65],
+      ['new', 1],
+      ['old', 1],
+    ]);
+    expect(prisma.movie.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { createdAt: 'desc' } }));
+  });
+
+  it('keeps only the top of the list', async () => {
+    prisma.movie.findMany.mockResolvedValue([movie('a', [3]), movie('b', [2]), movie('c', [1])]);
+    expect((await catalog.ranking(2)).map((m) => m.id)).toEqual(['a', 'b']);
   });
 });

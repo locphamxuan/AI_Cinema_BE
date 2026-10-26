@@ -117,7 +117,7 @@ describe('playback audit rows (hardening #12)', () => {
       freePlanOf: jest.fn().mockResolvedValue(null),
       stillEntitled: jest.fn(),
     };
-    const devices = { check: jest.fn() };
+    const devices = { register: jest.fn().mockResolvedValue('dev-1'), check: jest.fn() };
     const settings = {
       get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
     };

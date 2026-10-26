@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -29,8 +30,13 @@ type Method = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
 const DEFAULT_STATUS: Record<Method, number> = { get: 200, post: 201, patch: 200, put: 200, delete: 200 };
 
-/** A signed-in actor: every call goes to /api with its bearer token and expects `status`. */
+/**
+ * A signed-in actor: every call goes to /api with its bearer token and expects `status`. It plays
+ * from one device of its own, sent as X-Device-Id like the apps do (MF-4).
+ */
 export class Actor {
+  readonly deviceId = randomUUID();
+
   constructor(
     private readonly app: INestApplication<App>,
     private readonly token: string,
@@ -41,6 +47,7 @@ export class Actor {
     const res = await request(this.app.getHttpServer())
       [method](`/api${path}`)
       .set('Authorization', `Bearer ${this.token}`)
+      .set('X-Device-Id', this.deviceId)
       .send(body);
     return this.expect<T>(res, `${method.toUpperCase()} ${path}`, status);
   }

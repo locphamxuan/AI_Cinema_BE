@@ -22,6 +22,9 @@ const SUBTITLE_LABEL: Record<string, string> = {
 
 export const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
 
+/** How many movies the ranking tab shows. */
+export const RANKING_SIZE = 20;
+
 const EPISODE_DETAIL = {
   season: { select: { seasonNumber: true, title: true } },
   approvedMediaAsset: {
@@ -81,6 +84,22 @@ export class CatalogService {
     };
   }
 
+  /**
+   * The ranking tab: listed movies by plays of their episodes (the viewCount viewers see under a
+   * movie), most first. Ties keep the newer movie first.
+   */
+  async ranking(limit = RANKING_SIZE) {
+    const movies = await this.prisma.movie.findMany({
+      where: LISTED_MOVIE,
+      orderBy: { createdAt: 'desc' },
+      include: { ...GENRES, episodes: { select: { _count: { select: { views: true } } } } },
+    });
+    return movies
+      .map((movie) => ({ ...movieCard(movie), viewCount: movie.episodes.reduce((sum, e) => sum + e._count.views, 0) }))
+      .sort((a, b) => b.viewCount - a.viewCount)
+      .slice(0, limit);
+  }
+
   /** Seasons that have something to show, with how many episodes they show. */
   async seasons(movieId: string) {
     await this.assertListed(movieId);
@@ -132,7 +151,7 @@ export class CatalogService {
   }
 }
 
-function movieCard(movie: MovieRow) {
+export function movieCard(movie: MovieRow) {
   return {
     id: movie.id,
     title: movie.title,

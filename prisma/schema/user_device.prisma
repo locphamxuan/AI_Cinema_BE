@@ -1,0 +1,21 @@
+/// A device a Member registered to watch on (MF-4, BR-34). deviceKey is the UUID v4 the app keeps
+/// for its install and sends as X-Device-Id; the plan's maxRegisteredDevices caps how many rows
+/// one account may hold. Removing a device deletes the row and ends its live sessions.
+model UserDevice {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  deviceKey  String   @map("device_key") @db.VarChar(64)
+  /// What the app calls itself ("iPhone 15", "Chrome trên Windows"); shown on the device list.
+  name       String   @db.VarChar(120)
+  /// IOS / ANDROID / WEB as the client reports it.
+  platform   String   @db.VarChar(20)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  streamingSessions StreamingSession[]
+
+  @@unique([userId, deviceKey])
+  @@index([userId, lastSeenAt])
+  @@map("user_devices")
+}

@@ -48,6 +48,10 @@ describe('Playback viewing experience (e2e)', () => {
       signIn(app, 'member01@aicinema.com'),
       signIn(app, 'admin@aicinema.com'),
     ]);
+    // The e2e database outlives a run and each run plays from a new device: free the member's
+    // device slots the way a member would (MF-4), so the plan's device limit is not hit.
+    const { devices } = await member.get<{ devices: { id: string }[] }>('/devices');
+    for (const device of devices) await member.call('delete', `/devices/${device.id}`, undefined, 204);
     project = await projectInProduction(reviewer, creator, 3);
     // The release gate asks for both before an episode goes out (BR-19).
     await reviewer.patch(`/projects/${project.id}`, {
@@ -91,6 +95,42 @@ describe('Playback viewing experience (e2e)', () => {
 
   it('guest without access is sent back to Main Flow 2', async () => {
     await guest('post', '/playback/sessions', { episodeId: episodeId(2) }, 403);
+  });
+
+  it('member switches episodes mid-way on one device, sees it registered and frees a stream elsewhere (MF-4)', async () => {
+    const first = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(0) }, 201);
+    await member.patch(`/playback/sessions/${first.sessionId}/heartbeat`, { positionSeconds: 20, watchedSeconds: 10 });
+    // Leaving episode 1 half-way for episode 2 on the same device is not a second stream.
+    const second = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(1) }, 201);
+    const stale = await member.patch<ApiErrorBody>(
+      `/playback/sessions/${first.sessionId}/heartbeat`,
+      { positionSeconds: 25, watchedSeconds: 5 },
+      403,
+    );
+    expect(stale.error.details).toMatchObject({ reason: 'SESSION_NOT_ACTIVE' });
+
+    const devices = await member.get<{
+      limits: { maxRegisteredDevices: number; maxConcurrentStreams: number };
+      devices: { id: string; current: boolean }[];
+      activeSessions: { id: string; deviceId: string }[];
+    }>('/devices');
+    expect(devices.devices).toEqual([expect.objectContaining({ current: true })]);
+    expect(devices.activeSessions).toEqual([
+      expect.objectContaining({ id: second.sessionId, deviceId: devices.devices[0].id }),
+    ]);
+
+    await member.post(`/devices/sessions/${second.sessionId}/end`, {}, 204);
+    expect((await member.get<{ activeSessions: unknown[] }>('/devices')).activeSessions).toEqual([]);
+  });
+
+  it('member saves a movie to watch later and takes it off again', async () => {
+    await member.put(`/saved-movies/${project.id}`, {});
+    expect(await member.get<{ saved: boolean }>(`/saved-movies/${project.id}`)).toEqual({ saved: true });
+    const saved = await member.get<{ id: string }[]>('/saved-movies');
+    expect(saved.map((movie) => movie.id)).toContain(project.id);
+
+    await member.call('delete', `/saved-movies/${project.id}`);
+    expect(await member.get<{ saved: boolean }>(`/saved-movies/${project.id}`)).toEqual({ saved: false });
   });
 
   it('member resumes, completes and re-reads history; next points at the following episode', async () => {

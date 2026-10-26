@@ -169,6 +169,13 @@ describe('Daily check-in and the reward wheel (e2e)', () => {
       201,
     );
     await admin.patch(`/admin/membership-plans/${plan.id}`, { period: 'YEARLY' }, 400);
+    // A monthly cycle is one month long, and no plan streams on more devices than it registers.
+    await admin.patch(`/admin/membership-plans/${plan.id}`, { durationDays: 365 }, 400);
+    await admin.patch(
+      `/admin/membership-plans/${plan.id}`,
+      { features: { maxRegisteredDevices: 1, maxConcurrentStreams: 2 } },
+      400,
+    );
     await admin.patch(`/admin/membership-plans/${plan.id}`, { isActive: false });
   });
 });

@@ -39,6 +39,7 @@ model User {
   tokenRequestsMade       TokenRequest[]         @relation("TokenRequestRequestedBy")
   tokenRequestsResolved   TokenRequest[]         @relation("TokenRequestResolvedBy")
   movieLikes              MovieLike[]
+  savedMovies             SavedMovie[]
   episodeViews            EpisodeView[]
   tokenEntries            TokenLedgerEntry[]
   tokenBudget             ReviewerTokenEntry[]   @relation("ReviewerTokenBudget")
@@ -65,6 +66,7 @@ model User {
   rewardPrizesCreated     RewardPrize[]          @relation("RewardPrizeCreatedBy")
   payments                Payment[]
   streamingSessions       StreamingSession[]
+  devices                 UserDevice[]
   watchProgresses         WatchProgress[]
   episodeAdSlotsCreated   EpisodeAdSlot[]        @relation("EpisodeAdSlotCreatedBy")
 
