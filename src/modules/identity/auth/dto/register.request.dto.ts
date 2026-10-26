@@ -9,7 +9,7 @@ import { NormalizeEmail, Trim } from 'src/common/validation/trim';
  * never self-assigned: the Admin creates them.
  */
 export class RegisterRequestDto {
-  @ApiProperty({ example: 'member01@aicinema.com', description: 'Email of the new account.' })
+  @ApiProperty({ example: 'thanhvien@gmail.com', description: 'Email of the new account.' })
   @NormalizeEmail()
   @IsEmail()
   @MaxLength(255)

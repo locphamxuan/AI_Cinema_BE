@@ -14,7 +14,7 @@ export class UpdateUserRequestDto {
   @IsOptional()
   fullName?: string;
 
-  @ApiPropertyOptional({ example: 'creator09@aicinema.com', description: 'Must stay unique.' })
+  @ApiPropertyOptional({ example: 'creator02@gmail.com', description: 'Must stay unique.' })
   @NormalizeEmail()
   @IsEmail()
   @MaxLength(255)
