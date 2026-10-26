@@ -20,7 +20,7 @@ export interface TranscodedHls {
 
 /** Reads and transcodes delivered video files; FFmpeg in real use, a stand-in in tests (MEDIA_PIPELINE). */
 export abstract class MediaProcessor {
-  /** Duration, picture height and audio of a local video; rejects a file that holds no video. */
+  /** Duration, picture height and audio of a local video or an http(s) link; rejects one that holds no video. */
   abstract probe(inputPath: string): Promise<ProbedFile>;
 
   /** Encodes `inputPath` into an HLS master playlist under `outputDir`. */

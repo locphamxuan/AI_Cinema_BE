@@ -1,80 +1,65 @@
 import { AdStatus } from '@prisma/client';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { AppConfig } from 'src/config/app-config';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { MediaProcessor } from 'src/modules/production/media-ingest/pipeline/media-processor';
 import { AdCatalogService } from './ad-catalog.service';
+import { MAX_AD_DURATION_SECONDS } from './ad-limits';
 
 describe('AdCatalogService', () => {
   const prisma = { ad: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() } };
-  const service = new AdCatalogService(prisma as unknown as PrismaService);
+  const processor = { probe: jest.fn() };
+  const config = { media: { allowPrivateUrls: true } } as AppConfig;
+  const service = new AdCatalogService(
+    prisma as unknown as PrismaService,
+    processor as unknown as MediaProcessor,
+    config,
+  );
 
-  const dto = { title: 'Ad', mediaUrl: 'https://cdn.example/a.mp4', durationSeconds: 15 };
+  const dto = { title: 'Ad', mediaUrl: 'https://cdn.example/a.mp4' };
+  const row = { id: 'ad-1', ...dto, clickUrl: null, durationSeconds: 15, weight: 1, status: AdStatus.ACTIVE };
 
-  beforeEach(() => jest.clearAllMocks());
-
-  it('creates an active ad with default weight', async () => {
-    prisma.ad.create.mockResolvedValue({ id: 'ad-1', clickUrl: null, weight: 1, status: AdStatus.ACTIVE, ...dto });
-    await expect(service.create(dto)).resolves.toMatchObject({ id: 'ad-1', weight: 1, status: 'ACTIVE' });
-    expect(prisma.ad.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining(dto) }));
+  beforeEach(() => {
+    jest.clearAllMocks();
+    processor.probe.mockResolvedValue({ durationSeconds: 15, height: 720, hasAudio: true });
+    prisma.ad.create.mockImplementation(({ data }: { data: object }) => Promise.resolve({ ...row, ...data }));
+    prisma.ad.update.mockImplementation(({ data }: { data: object }) => Promise.resolve({ ...row, ...data }));
   });
 
-  it('pauses an ad and answers 404 for a missing one', async () => {
-    prisma.ad.findUnique.mockResolvedValue({ id: 'ad-1' });
-    prisma.ad.update.mockResolvedValue({ id: 'ad-1', status: AdStatus.PAUSED });
-    await expect(service.update('ad-1', { status: AdStatus.PAUSED })).resolves.toMatchObject({ status: 'PAUSED' });
-
-    prisma.ad.findUnique.mockResolvedValue(null);
-    await expect(service.update('missing', {})).rejects.toThrow(NotFoundException);
+  it('creates an active ad whose length is read from the video', async () => {
+    await expect(service.create(dto)).resolves.toMatchObject({ id: 'ad-1', durationSeconds: 15, weight: 1 });
+    expect(processor.probe).toHaveBeenCalledWith(dto.mediaUrl);
+    expect(prisma.ad.create).toHaveBeenCalledWith({ data: expect.objectContaining({ durationSeconds: 15 }) });
   });
 
-  it('rejects a validity window that can never match an ad (P4-6)', async () => {
-    const validFrom = new Date('2026-12-31T00:00:00.000Z');
-    const validTo = new Date('2026-10-01T00:00:00.000Z');
+  it('refuses a video it cannot read or one too long to be a mid-roll', async () => {
+    processor.probe.mockRejectedValueOnce(new Error('ffprobe exited with 1'));
+    await expect(service.create(dto)).rejects.toMatchObject({
+      response: expect.objectContaining({ details: { reason: 'AD_VIDEO_UNREADABLE' } }),
+    });
 
-    await expect(service.create({ ...dto, validFrom, validTo })).rejects.toMatchObject({
-      response: expect.objectContaining({
-        details: expect.objectContaining({ reason: 'AD_VALIDITY_WINDOW_INVALID' }),
-      }),
+    processor.probe.mockResolvedValueOnce({
+      durationSeconds: MAX_AD_DURATION_SECONDS + 1,
+      height: 720,
+      hasAudio: true,
     });
-    // The scheduler tests validFrom <= now < validTo, so an equal pair is empty as well.
-    await expect(service.create({ ...dto, validFrom, validTo: validFrom })).rejects.toMatchObject({
-      response: expect.objectContaining({
-        details: expect.objectContaining({ reason: 'AD_VALIDITY_WINDOW_INVALID' }),
-      }),
-    });
+    await expect(service.create(dto)).rejects.toThrow(BadRequestException);
     expect(prisma.ad.create).not.toHaveBeenCalled();
   });
 
-  it('keeps one-sided validity windows open', async () => {
-    prisma.ad.create.mockResolvedValue({ id: 'ad-1', clickUrl: null, weight: 1, status: AdStatus.ACTIVE, ...dto });
-    const validFrom = new Date('2026-10-01T00:00:00.000Z');
+  it('reads the length again only when the video changes', async () => {
+    prisma.ad.findUnique.mockResolvedValue(row);
+    await service.update('ad-1', { mediaUrl: dto.mediaUrl, status: AdStatus.PAUSED });
+    expect(processor.probe).not.toHaveBeenCalled();
 
-    await expect(service.create({ ...dto, validFrom })).resolves.toMatchObject({ id: 'ad-1' });
-    expect(prisma.ad.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ validFrom, validTo: null }),
-      }),
-    );
+    processor.probe.mockResolvedValueOnce({ durationSeconds: 42, height: 720, hasAudio: true });
+    await expect(service.update('ad-1', { mediaUrl: 'https://cdn.example/b.mp4' })).resolves.toMatchObject({
+      durationSeconds: 42,
+    });
   });
 
-  it('validates the merged window when a PATCH moves one end (P4-6)', async () => {
-    prisma.ad.findUnique.mockResolvedValue({
-      id: 'ad-1',
-      validFrom: new Date('2026-10-01T00:00:00.000Z'),
-      validTo: null,
-    });
-
-    await expect(service.update('ad-1', { validTo: new Date('2026-09-01T00:00:00.000Z') })).rejects.toMatchObject({
-      response: expect.objectContaining({
-        details: expect.objectContaining({ reason: 'AD_VALIDITY_WINDOW_INVALID' }),
-      }),
-    });
-    expect(prisma.ad.update).not.toHaveBeenCalled();
-
-    prisma.ad.update.mockResolvedValue({ id: 'ad-1', status: AdStatus.ACTIVE });
-    const validTo = new Date('2026-12-31T00:00:00.000Z');
-    await expect(service.update('ad-1', { validTo })).resolves.toMatchObject({ id: 'ad-1' });
-    expect(prisma.ad.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ validTo }) }),
-    );
+  it('answers 404 for a missing ad', async () => {
+    prisma.ad.findUnique.mockResolvedValue(null);
+    await expect(service.update('missing', {})).rejects.toThrow(NotFoundException);
   });
 });

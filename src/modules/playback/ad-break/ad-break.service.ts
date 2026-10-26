@@ -50,16 +50,9 @@ export class AdBreakService {
     input: { episodeId: string; adFree: boolean; durationSeconds: number | null },
   ): Promise<AdScheduleItem[]> {
     if (input.adFree || !input.durationSeconds) return [];
-    const now = new Date();
     const [settings, eligible, slots] = await Promise.all([
       this.settings.get(),
-      this.prisma.ad.findMany({
-        where: {
-          status: AdStatus.ACTIVE,
-          OR: [{ validFrom: null }, { validFrom: { lte: now } }],
-          AND: [{ OR: [{ validTo: null }, { validTo: { gt: now } }] }],
-        },
-      }),
+      this.prisma.ad.findMany({ where: { status: AdStatus.ACTIVE } }),
       this.prisma.episodeAdSlot.findMany({
         where: { episodeId: input.episodeId },
         select: { positionSeconds: true, adId: true },

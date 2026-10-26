@@ -14,7 +14,7 @@ export class AdViewDto {
   @ApiProperty({ example: null, nullable: true })
   clickUrl: string | null;
 
-  @ApiProperty({ example: 15 })
+  @ApiProperty({ example: 15, description: 'Read from the video when it is set; the viewer watches all of it' })
   durationSeconds: number;
 
   @ApiProperty({ example: 3 })
@@ -22,14 +22,4 @@ export class AdViewDto {
 
   @ApiProperty({ enum: AdStatus, example: 'ACTIVE' })
   status: AdStatus;
-
-  @ApiProperty({ example: null, nullable: true, description: 'The ad is drawn only from this moment; null = open' })
-  validFrom: Date | null;
-
-  @ApiProperty({
-    example: null,
-    nullable: true,
-    description: 'The ad is no longer drawn from this moment; null = open',
-  })
-  validTo: Date | null;
 }
