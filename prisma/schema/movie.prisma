@@ -51,6 +51,7 @@ model Movie {
   changeRequests ProjectChangeRequest[]
   tokenRequests  TokenRequest[]
   likes          MovieLike[]
+  savedBy        SavedMovie[]
   auditLogs      AuditLog[]
 
   @@index([status])

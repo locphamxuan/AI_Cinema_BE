@@ -27,12 +27,13 @@ enum StreamingEndReason {
 /// a guest session carries guestKey instead and always starts from position 0. mediaAssetId pins
 /// the reviewed version being played, the same way Publication pins its version. Either userId
 /// or guestKey is set, never both and never neither; enforced by the hand-written CHECK
-/// streaming_sessions_owner_check (migration 20261025130000), which prisma migrate diff does not see. deviceId is
-/// intentionally absent: Main Flow 4 adds the Device model and the FK later.
+/// streaming_sessions_owner_check (migration 20261025130000), which prisma migrate diff does not see. A member
+/// session carries the registered device it plays on (BR-36); a guest session has none.
 model StreamingSession {
   id                   String                 @id @default(uuid()) @db.Uuid
   userId               String?                @map("user_id") @db.Uuid
   guestKey             String?                @map("guest_key") @db.VarChar(255)
+  deviceId             String?                @map("device_id") @db.Uuid
   episodeId            String                 @map("episode_id") @db.Uuid
   mediaAssetId         String                 @map("media_asset_id") @db.Uuid
   /// The pinned media version's length, cached at creation: heartbeats clamp and complete
@@ -61,12 +62,14 @@ model StreamingSession {
   idempotencyKey       String?                @unique @map("idempotency_key") @db.VarChar(100)
 
   user       User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device     UserDevice?      @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   episode    Episode          @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   mediaAsset MediaAsset       @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   adBreaks   SessionAdBreak[]
 
   @@index([userId, status])
   @@index([guestKey])
+  @@index([deviceId])
   @@index([episodeId])
   @@index([status, lastHeartbeatAt])
   @@map("streaming_sessions")
