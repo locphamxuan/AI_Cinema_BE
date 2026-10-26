@@ -83,7 +83,7 @@ describe('Media ingest (e2e)', () => {
     await otherCreator.post(path, hlsLink(), 404);
     await reviewer.post(path, hlsLink(), 403);
     await creator.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, noCopyrightedMaterial: false } }, 400);
-    await creator.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, aiTools: [] } }, 400);
+    await creator.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, aiGeneratedParts: [] } }, 400);
     await creator.post(path, { ...hlsLink(), aiDisclosure: undefined }, 400);
     await creator.post(path, { ...hlsLink(), sourceUrl: 'file:///etc/passwd' }, 400);
   });
