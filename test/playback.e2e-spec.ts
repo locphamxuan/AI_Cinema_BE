@@ -134,13 +134,18 @@ describe('Playback viewing experience (e2e)', () => {
   });
 
   it('admin manages the ad catalog; token playlists stay disabled without a secret', async () => {
-    const created = await admin.post<{ id: string; status: string }>('/admin/ads', {
+    const created = await admin.post<{ id: string; status: string; durationSeconds: number }>('/admin/ads', {
       title: `Trà sữa e2e ${Date.now()}`,
       mediaUrl: 'https://cdn.aicinema.example/public/ads/e2e-15s.mp4',
-      durationSeconds: 15,
       weight: 2,
     });
-    expect(created.status).toBe('ACTIVE');
+    // The length is read from the video (the mocked probe answers 60 s); the Admin never types it.
+    expect(created).toMatchObject({ status: 'ACTIVE', durationSeconds: 60 });
+    await admin.post(
+      '/admin/ads',
+      { title: 'Có thời lượng', mediaUrl: 'https://cdn.aicinema.example/a.mp4', durationSeconds: 15 },
+      400,
+    );
     await admin.patch(`/admin/ads/${created.id}`, { status: 'PAUSED' }, 200);
 
     // An ad video uploaded from the computer comes back as a public link the ad is created with.
@@ -150,11 +155,7 @@ describe('Playback viewing experience (e2e)', () => {
       content: MP4,
     });
     expect(uploaded.mediaUrl).toMatch(/\/ads\/[0-9a-f-]{36}\.mp4$/);
-    await admin.post(
-      '/admin/ads',
-      { title: `Upload e2e ${Date.now()}`, mediaUrl: uploaded.mediaUrl, durationSeconds: 15 },
-      201,
-    );
+    await admin.post('/admin/ads', { title: `Upload e2e ${Date.now()}`, mediaUrl: uploaded.mediaUrl }, 201);
     await admin.upload('/admin/ads/media', { field: 'file', name: 'quang-cao.mov', content: MP4 }, {}, 400);
     await member.upload('/admin/ads/media', { field: 'file', name: 'quang-cao.mp4', content: MP4 }, {}, 403);
 
@@ -181,7 +182,6 @@ describe('Playback viewing experience (e2e)', () => {
     const ad = await admin.post<{ id: string }>('/admin/ads', {
       title: `Ghim e2e ${Date.now()}`,
       mediaUrl: 'https://cdn.aicinema.example/public/ads/pinned-15s.mp4',
-      durationSeconds: 15,
     });
     const slotsPath = `/admin/episodes/${episodeId(0)}/ad-slots`;
     // The mock episodes last 60s: a cue at the very end is refused.
