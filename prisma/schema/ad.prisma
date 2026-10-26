@@ -1,0 +1,37 @@
+enum AdStatus {
+  ACTIVE
+  PAUSED
+}
+
+/// BR-33: a cue triggers only while PENDING and turns COMPLETED once the ad started, so it never
+/// plays twice on progress updates or resume; SKIPPED when a later cue played instead (a seek).
+enum AdBreakStatus {
+  PENDING
+  COMPLETED
+  SKIPPED
+}
+
+/// Mid-roll ad catalog (BR-51). Schedule and impression share one SessionAdBreak row — there is
+/// no separate ad_impressions table: a break moves PENDING -> COMPLETED when the player reaches
+/// its cue, which counts the impression. The
+/// separate completedView flag records a player-confirmed full view, never the start alone.
+model Ad {
+  id              String    @id @default(uuid()) @db.Uuid
+  title           String    @db.VarChar(255)
+  mediaUrl        String    @map("media_url") @db.VarChar(1000)
+  clickUrl        String?   @map("click_url") @db.VarChar(1000)
+  durationSeconds Int       @map("duration_seconds")
+  /// Pick weight for step 13 weighted selection.
+  weight          Int       @default(1)
+  status          AdStatus  @default(ACTIVE)
+  validFrom       DateTime? @map("valid_from") @db.Timestamptz(6)
+  validTo         DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  breaks SessionAdBreak[]
+  slots  EpisodeAdSlot[]
+
+  @@index([status])
+  @@map("ads")
+}

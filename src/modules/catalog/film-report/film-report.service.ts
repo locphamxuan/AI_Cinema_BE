@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { AccessSource } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { GENRES, LISTED_MOVIE, VISIBLE_EPISODE } from '../catalog.service';
+import { GENRES, LISTED_MOVIE } from '../catalog.service';
+import { VISIBLE_EPISODE } from '../episode-visibility';
 
 interface EpisodeFigures {
   views: number;

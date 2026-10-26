@@ -8,7 +8,7 @@ interface Sheet {
   id: string;
   version: number;
   proposedLabelType: string;
-  aiDisclosure: { aiTools: string[] };
+  aiDisclosure: { aiGeneratedParts: string[] };
   isApprovedVersion: boolean;
   episode: { status: string };
   durationCheck: { targetSeconds: number; actualSeconds: number; warning: boolean };
@@ -53,7 +53,7 @@ describe('Content review, AI label and compliance (e2e)', () => {
     const sheet = await reviewer.get<Sheet>(`/media-assets/${v1.id}/review-sheet`);
 
     expect(sheet).toMatchObject({ version: 1, proposedLabelType: 'AI_GENERATED', isApprovedVersion: false });
-    expect(sheet.aiDisclosure.aiTools).toEqual(['Kling', 'ElevenLabs']);
+    expect(sheet.aiDisclosure.aiGeneratedParts).toEqual(['video', 'voice']);
     // The mocked pipeline reports 60 s against a 15-minute target.
     expect(sheet.durationCheck).toEqual({
       targetSeconds: 900,

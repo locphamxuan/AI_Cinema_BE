@@ -1,0 +1,209 @@
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { AccessSource, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
+import {
+  RUNNING_PLAN_SELECT,
+  runningPlanWhere,
+  type RunningPlanSnapshot,
+} from 'src/modules/episode-access/subscription/running-plan';
+import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+
+export interface VerifiedPlayback {
+  episodeId: string;
+  movieId: string;
+  mediaAssetId: string;
+  isSelfHosted: boolean;
+  streamUrl: string;
+  qualities: string[];
+  durationSeconds: number | null;
+  accessType: PlaybackAccessType;
+  planCode: string | null;
+  subtitles: { language: string; fileUrl: string; isDefault: boolean }[];
+  aiLabel: { type: string; text: string; displayLocation: string | null } | null;
+}
+
+/**
+ * Main Flow 3, steps 2-4: re-verifies that the caller may still play the episode
+ * before a streaming session is created. The check order mirrors the access
+ * decision of Main Flow 2 — Free Starter, zero price, running plan, bought
+ * episode — and never trusts what the client claims from `GET /access`.
+ */
+@Injectable()
+export class PlaybackAccessService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: PlatformSettingService,
+  ) {}
+
+  /**
+   * P4-5: the one plan read behind a POST /sessions. The caller takes this snapshot and
+   * hands the same object to verify(), the device check and ad scheduling, so a paid
+   * session checks the subscription once instead of once per consumer.
+   */
+  async runningPlanOf(userId: string): Promise<RunningPlanSnapshot | null> {
+    const subscription = await this.prisma.subscription.findFirst({
+      where: runningPlanWhere(userId),
+      orderBy: { currentPeriodEnd: 'desc' },
+      select: RUNNING_PLAN_SELECT,
+    });
+    return subscription?.plan ?? null;
+  }
+
+  /**
+   * BR-34: the plan whose limits apply to a member with no running plan — the Free plan every
+   * account starts on, as the Admin configured it. It has no subscription row, so it is read
+   * from membership_plans; null when the Admin has not set one up.
+   */
+  async freePlanOf(): Promise<RunningPlanSnapshot | null> {
+    return this.prisma.membershipPlan.findFirst({
+      where: { isFree: true, isActive: true },
+      orderBy: { sortOrder: 'asc' },
+      select: { code: true, features: true },
+    });
+  }
+
+  async verify(
+    episodeId: string,
+    userId?: string,
+    /**
+     * P4-5: the snapshot create() already read. `undefined` means "not supplied" (direct
+     * callers), so verify reads it itself; `null` means "this member has no running plan"
+     * and must not trigger a second read.
+     */
+    runningPlan?: RunningPlanSnapshot | null,
+  ): Promise<VerifiedPlayback> {
+    // The same visibility rule as the catalog and the Main Flow 2 decision (BR-56): an episode
+    // taken down to be fixed is found here and refused with its reason below, instead of the
+    // caller hearing 404 about an episode the viewer can see listed.
+    const episode = await this.prisma.episode.findFirst({
+      where: { id: episodeId, ...VISIBLE_EPISODE },
+      include: {
+        movie: { select: { freeEpisodeCount: true } },
+        approvedMediaAsset: {
+          // Hardening #14: only the columns the answer is built from. The rest of media_assets
+          // (ai_disclosure JSON, storage_key, failure_reason…) is studio data nothing downstream
+          // reads, and verify() runs on every session creation.
+          select: {
+            id: true,
+            isSelfHosted: true,
+            streamUrl: true,
+            qualities: true,
+            durationSeconds: true,
+            ingestStatus: true,
+            subtitles: { select: { language: true, fileUrl: true, isDefault: true } },
+            aiContentLabel: { select: { labelType: true, labelText: true, displayLocation: true } },
+          },
+        },
+      },
+    });
+    if (!episode) {
+      throw new NotFoundException({
+        message: 'Episode not found',
+        details: { reason: 'EPISODE_NOT_FOUND' },
+      });
+    }
+    if (episode.revisionStartedAt !== null) {
+      throw new ConflictException({
+        message: 'The episode is under maintenance and cannot be played',
+        details: { reason: 'EPISODE_UNDER_REVISION' },
+      });
+    }
+    const media = episode.approvedMediaAsset;
+    if (!media || media.ingestStatus !== MediaIngestStatus.READY || !media.streamUrl) {
+      throw new ConflictException({
+        message: 'The episode has no playable stream yet',
+        details: { reason: 'MEDIA_NOT_READY' },
+      });
+    }
+    const base = {
+      episodeId: episode.id,
+      movieId: episode.movieId,
+      mediaAssetId: media.id,
+      isSelfHosted: media.isSelfHosted,
+      streamUrl: media.streamUrl,
+      qualities: media.qualities,
+      durationSeconds: media.durationSeconds,
+      subtitles: media.subtitles.map((subtitle) => ({
+        language: subtitle.language,
+        fileUrl: subtitle.fileUrl,
+        isDefault: subtitle.isDefault,
+      })),
+      aiLabel: media.aiContentLabel
+        ? {
+            type: media.aiContentLabel.labelType,
+            text: media.aiContentLabel.labelText,
+            displayLocation: media.aiContentLabel.displayLocation,
+          }
+        : null,
+    };
+
+    const settings = await this.settings.get();
+    // A published episode always carries a price; rows predating the column fall back to the floor.
+    const coinPrice = episode.coinPrice ?? settings.episodeCoinPriceMin;
+    // BR-03: the movie's own free count when its Reviewer set one, else the platform's — the
+    // same rule Main Flow 2 granted with, so the two flows never disagree on a free episode.
+    const freeCount = episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount;
+    // Free rules need no account. A zero-priced episode is stored as FREE_STARTER:
+    // PlaybackAccessType has no FREE value and both cases mean "free for everyone".
+    if (episode.episodeNumber <= freeCount || coinPrice === 0) {
+      return { ...base, accessType: PlaybackAccessType.FREE_STARTER, planCode: null };
+    }
+    if (!userId) {
+      throw new ForbiddenException({
+        message: 'This episode requires a sign-in, a plan or an episode unlock',
+        details: { reason: 'PLAYBACK_ACCESS_REQUIRED' },
+      });
+    }
+
+    const [plan, episodeAccess] = await Promise.all([
+      runningPlan === undefined ? this.runningPlanOf(userId) : runningPlan,
+      runningPlan ? null : this.prisma.episodeAccess.findFirst({ where: { userId, episodeId, revokedAt: null } }),
+    ]);
+    if (plan) return { ...base, accessType: PlaybackAccessType.SUBSCRIPTION, planCode: plan.code };
+    if (episodeAccess) {
+      return {
+        ...base,
+        accessType:
+          episodeAccess.source === AccessSource.ADMIN_GRANT
+            ? PlaybackAccessType.ADMIN_GRANT
+            : PlaybackAccessType.COIN_UNLOCK,
+        planCode: null,
+      };
+    }
+    throw new ForbiddenException({
+      message: 'This episode requires a plan or an episode unlock',
+      details: { reason: 'PLAYBACK_ACCESS_REQUIRED' },
+    });
+  }
+
+  /**
+   * Hardening #11: the light re-check a heartbeat runs while the viewer is watching, because
+   * access can disappear between beats — an episode taken down for good revokes the unlock
+   * and refunds it (BR-52), and a plan can lapse mid-episode. The session row says which
+   * entitlement it was opened with, so one indexed read answers it; free sessions (all guest
+   * sessions among them) hold nothing that can be revoked.
+   */
+  async stillEntitled(session: {
+    userId: string | null;
+    episodeId: string;
+    accessType: PlaybackAccessType;
+  }): Promise<boolean> {
+    const { userId, episodeId, accessType } = session;
+    if (!userId || accessType === PlaybackAccessType.FREE_STARTER) return true;
+    if (accessType === PlaybackAccessType.SUBSCRIPTION) {
+      const plan = await this.prisma.subscription.findFirst({
+        where: runningPlanWhere(userId),
+        select: { id: true },
+      });
+      if (plan) return true;
+      // A lapsed plan does not end a session whose owner also holds an unlock: verify()
+      // would still grant it on a fresh open, so fall through before calling access lost.
+    }
+    const unlock = await this.prisma.episodeAccess.findFirst({
+      where: { userId, episodeId, revokedAt: null },
+      select: { id: true },
+    });
+    return Boolean(unlock);
+  }
+}

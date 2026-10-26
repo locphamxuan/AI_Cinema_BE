@@ -64,6 +64,9 @@ model User {
   rewardSpins             RewardSpin[]
   rewardPrizesCreated     RewardPrize[]          @relation("RewardPrizeCreatedBy")
   payments                Payment[]
+  streamingSessions       StreamingSession[]
+  watchProgresses         WatchProgress[]
+  episodeAdSlotsCreated   EpisodeAdSlot[]        @relation("EpisodeAdSlotCreatedBy")
 
   @@index([role])
   @@map("users")

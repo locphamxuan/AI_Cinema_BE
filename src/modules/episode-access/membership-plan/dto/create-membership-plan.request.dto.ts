@@ -43,7 +43,9 @@ export class CreateMembershipPlanRequestDto {
   @IsOptional()
   isFeatured?: boolean;
 
-  @ApiPropertyOptional({ example: { maxDevices: 2, adFree: true, maxQuality: '1080p' } })
+  @ApiPropertyOptional({
+    example: { maxRegisteredDevices: 4, maxConcurrentStreams: 2, adFree: true, maxQuality: '1080p' },
+  })
   @IsObject()
   @IsOptional()
   features?: Record<string, unknown>;

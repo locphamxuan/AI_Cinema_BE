@@ -57,6 +57,11 @@ export const CONTENT_EVENT = {
   REWARD_PRIZE_CREATED: 'CREATED',
   REWARD_PRIZE_UPDATED: 'UPDATED',
   REWARD_SPIN_USED: 'USED',
+  // MF-3 — playback sessions (hardening #12); kept off the movie timeline, see playback-events.ts
+  PLAYBACK_SESSION_STARTED: 'PLAYBACK_SESSION_STARTED',
+  PLAYBACK_SESSION_ENDED: 'PLAYBACK_SESSION_ENDED',
+  // MF-3 — the Admin places the mid-roll ads of an episode (BR-32)
+  EPISODE_AD_SLOTS_SET: 'EPISODE_AD_SLOTS_SET',
 } as const;
 
 export type ContentEvent = (typeof CONTENT_EVENT)[keyof typeof CONTENT_EVENT];
@@ -87,4 +92,6 @@ export type AuditEntity =
   | 'MembershipPlanPrice'
   | 'RewardRule'
   | 'RewardPrize'
-  | 'RewardSpin';
+  | 'RewardSpin'
+  // MF-3: viewer traffic stays off the movie timeline, so its row has no movie_id either.
+  | 'StreamingSession';
