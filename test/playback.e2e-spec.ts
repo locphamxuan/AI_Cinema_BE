@@ -5,7 +5,7 @@ import type { App } from 'supertest/types';
 import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
 import { REMOVED_NOTICE } from 'src/modules/catalog/episode-visibility';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode } from './support/media';
+import { compliantEpisode, MP4 } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface SessionView {
@@ -142,6 +142,21 @@ describe('Playback viewing experience (e2e)', () => {
     });
     expect(created.status).toBe('ACTIVE');
     await admin.patch(`/admin/ads/${created.id}`, { status: 'PAUSED' }, 200);
+
+    // An ad video uploaded from the computer comes back as a public link the ad is created with.
+    const uploaded = await admin.upload<{ mediaUrl: string }>('/admin/ads/media', {
+      field: 'file',
+      name: 'quang-cao.mp4',
+      content: MP4,
+    });
+    expect(uploaded.mediaUrl).toMatch(/\/ads\/[0-9a-f-]{36}\.mp4$/);
+    await admin.post(
+      '/admin/ads',
+      { title: `Upload e2e ${Date.now()}`, mediaUrl: uploaded.mediaUrl, durationSeconds: 15 },
+      201,
+    );
+    await admin.upload('/admin/ads/media', { field: 'file', name: 'quang-cao.mov', content: MP4 }, {}, 400);
+    await member.upload('/admin/ads/media', { field: 'file', name: 'quang-cao.mp4', content: MP4 }, {}, 403);
 
     const session = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(0) }, 201);
     const token = new URL(session.stream.masterUrl);

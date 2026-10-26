@@ -13,7 +13,8 @@ export class UpdateAdRequestDto {
 
   @ApiPropertyOptional({ example: 'https://cdn.aicinema.example/public/ads/gongcha-15s.mp4' })
   @IsOptional()
-  @IsUrl({ require_protocol: true })
+  // An uploaded video is served by the API itself with local storage (http://localhost:3001/media/public/ads/…).
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   @MaxLength(1000)
   mediaUrl?: string;
 
