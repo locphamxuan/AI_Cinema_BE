@@ -8,7 +8,7 @@ import { MediaIngestController } from './media-ingest.controller';
 import { MediaIngestService } from './media-ingest.service';
 import { MediaOutcomeService } from './pipeline/media-outcome.service';
 import { MediaPipelineService } from './pipeline/media-pipeline.service';
-import { FfmpegMediaProcessor, MediaProcessor, MockMediaProcessor } from './pipeline/media-processor';
+import { MediaProcessorModule } from './pipeline/media-processor.module';
 
 // Episode videos are far too large for memory: multer writes them to a temporary file.
 // Every module with a controller taking an episode upload (the studio portal too) imports this.
@@ -21,22 +21,9 @@ const EpisodeUploadMulter = MulterModule.registerAsync({
 });
 
 @Module({
-  imports: [EpisodeUploadMulter],
+  imports: [EpisodeUploadMulter, MediaProcessorModule],
   controllers: [MediaIngestController],
-  providers: [
-    MediaIngestService,
-    MediaPipelineService,
-    MediaOutcomeService,
-    HlsLinkCheckJob,
-    {
-      provide: MediaProcessor,
-      inject: [APP_CONFIG],
-      useFactory: ({ media }: AppConfig): MediaProcessor =>
-        media.pipeline === 'ffmpeg'
-          ? new FfmpegMediaProcessor(media.ffmpegPath, media.ffprobePath)
-          : new MockMediaProcessor(),
-    },
-  ],
+  providers: [MediaIngestService, MediaPipelineService, MediaOutcomeService, HlsLinkCheckJob],
   exports: [MediaIngestService],
 })
 export class MediaIngestModule {}
