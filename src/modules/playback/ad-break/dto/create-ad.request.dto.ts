@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsDate, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
-import { MAX_AD_DURATION_SECONDS, MAX_AD_WEIGHT } from '../ad-limits';
+import { IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
+import { MAX_AD_WEIGHT } from '../ad-limits';
 
 export class CreateAdRequestDto {
   @ApiProperty({ example: 'Trà sữa Gong Cha — mua 1 tặng 1' })
@@ -9,7 +8,10 @@ export class CreateAdRequestDto {
   @MaxLength(255)
   title: string;
 
-  @ApiProperty({ example: 'https://cdn.aicinema.example/public/ads/gongcha-15s.mp4' })
+  @ApiProperty({
+    example: 'https://cdn.aicinema.example/public/ads/gongcha-15s.mp4',
+    description: 'Direct link to the MP4; its length is read from the file',
+  })
   // An uploaded video is served by the API itself with local storage (http://localhost:3001/media/public/ads/…).
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   @MaxLength(1000)
@@ -21,12 +23,6 @@ export class CreateAdRequestDto {
   @MaxLength(1000)
   clickUrl?: string;
 
-  @ApiProperty({ example: 15, maximum: MAX_AD_DURATION_SECONDS })
-  @IsInt()
-  @Min(1)
-  @Max(MAX_AD_DURATION_SECONDS)
-  durationSeconds: number;
-
   @ApiPropertyOptional({
     example: 3,
     maximum: MAX_AD_WEIGHT,
@@ -37,16 +33,4 @@ export class CreateAdRequestDto {
   @Min(1)
   @Max(MAX_AD_WEIGHT)
   weight?: number;
-
-  @ApiPropertyOptional({ example: '2026-10-01T00:00:00.000Z' })
-  @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  validFrom?: Date;
-
-  @ApiPropertyOptional({ example: '2026-12-31T00:00:00.000Z' })
-  @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  validTo?: Date;
 }
