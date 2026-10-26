@@ -171,9 +171,7 @@ async function seedEpisode(
       fileSizeBytes: BigInt(source.size),
       ingestStatus: MediaIngestStatus.READY,
       aiDisclosure: {
-        aiTools: ['AI video generation'],
         aiGeneratedParts: ['video', 'audio'],
-        humanEdited: true,
         noRealPersonLikeness: true,
         noCopyrightedMaterial: true,
         source: { file: source.file },

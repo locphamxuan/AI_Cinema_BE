@@ -4,9 +4,7 @@ import type { Actor, Row } from './api';
 export const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(64)]);
 
 export const DISCLOSURE = {
-  aiTools: ['Kling', 'ElevenLabs'],
   aiGeneratedParts: ['video', 'voice'],
-  humanEdited: true,
   noRealPersonLikeness: true,
   noCopyrightedMaterial: true,
 };

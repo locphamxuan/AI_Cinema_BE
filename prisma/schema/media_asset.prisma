@@ -15,8 +15,7 @@ enum MediaIngestStatus {
 }
 
 /// One immutable version of an episode delivered by the studio (BR-14). ai_disclosure (BR-41):
-/// {"aiTools":["Kling"],"aiGeneratedParts":["video"],"humanEdited":true,
-///  "noRealPersonLikeness":true,"noCopyrightedMaterial":true}
+/// {"aiGeneratedParts":["video"],"noRealPersonLikeness":true,"noCopyrightedMaterial":true}
 model MediaAsset {
     id                String            @id @default(uuid()) @db.Uuid
     episodeId         String            @map("episode_id") @db.Uuid
