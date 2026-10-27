@@ -35,7 +35,7 @@ export function sessionHarness() {
     freePlanOf: jest.fn().mockResolvedValue(null),
     stillEntitled: jest.fn(),
   };
-  const devices = { check: jest.fn() };
+  const devices = { register: jest.fn(), check: jest.fn() };
   const settings = {
     get: jest.fn().mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 90, episodeCompletionPercent: 90 }),
   };
@@ -75,6 +75,7 @@ export function sessionHarness() {
     access.verify.mockResolvedValue(verified);
     access.runningPlanOf.mockResolvedValue(runningPlan);
     access.stillEntitled.mockResolvedValue(true);
+    devices.register.mockResolvedValue('dev-1');
     devices.check.mockResolvedValue(undefined);
     progress.progress.mockResolvedValue({ found: false, positionSeconds: 0, completed: false });
     ads.scheduleFor.mockResolvedValue([]);

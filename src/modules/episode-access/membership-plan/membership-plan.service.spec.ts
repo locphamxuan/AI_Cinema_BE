@@ -1,9 +1,15 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
 import { PlanPeriod } from '@prisma/client';
 import type { PrismaService, PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
-import { currentPrice, MembershipPlanService, PLAN_REASON, purchasablePlan } from './membership-plan.service';
+import {
+  assertPlanFeatures,
+  currentPrice,
+  MembershipPlanService,
+  PLAN_REASON,
+  purchasablePlan,
+} from './membership-plan.service';
 
 describe('purchasablePlan', () => {
   const tx = { membershipPlan: { findUnique: jest.fn() }, membershipPlanPrice: { findFirst: jest.fn() } };
@@ -166,6 +172,17 @@ describe('MembershipPlanService.setPrice', () => {
     expect(tx.membershipPlanPrice.create).not.toHaveBeenCalled();
   });
 
+  it('refuses a new price that would have started in the past', async () => {
+    const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    await expect(service.setPrice('p1', 1200, lastWeek, 'admin-1')).rejects.toMatchObject({
+      status: 400,
+      response: { details: { reason: PLAN_REASON.PRICE_IN_PAST } },
+    });
+    expect(tx.membershipPlanPrice.update).not.toHaveBeenCalled();
+    expect(tx.membershipPlanPrice.create).not.toHaveBeenCalled();
+  });
+
   it('refuses to price the free plan', async () => {
     tx.membershipPlan.findUniqueOrThrow.mockResolvedValue({
       ...plan,
@@ -228,5 +245,27 @@ describe('MembershipPlanService lists', () => {
   it('listAll keeps the hidden ones for the Admin screen', async () => {
     await service.listAll();
     expect(prisma.membershipPlan.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.anything() }));
+  });
+});
+
+describe('assertPlanFeatures (BR-34)', () => {
+  it('lets a plan stream on as many devices as it registers, or fewer', () => {
+    expect(() => assertPlanFeatures({ maxRegisteredDevices: 4, maxConcurrentStreams: 2 })).not.toThrow();
+    expect(() => assertPlanFeatures({ maxRegisteredDevices: 2, maxConcurrentStreams: 2 })).not.toThrow();
+    expect(() => assertPlanFeatures({ adFree: true })).not.toThrow();
+    expect(() => assertPlanFeatures(undefined)).not.toThrow();
+  });
+
+  it('refuses more streams than devices', () => {
+    let error: unknown;
+    try {
+      assertPlanFeatures({ maxRegisteredDevices: 1, maxConcurrentStreams: 2 });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      details: { reason: PLAN_REASON.STREAMS_OVER_DEVICES, maxRegisteredDevices: 1, maxConcurrentStreams: 2 },
+    });
   });
 });

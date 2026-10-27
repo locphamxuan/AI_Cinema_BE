@@ -4,7 +4,7 @@
 #   docker compose up -d --build     → API on http://localhost:3001/api (Swagger on /api/docs)
 #   docker compose down               → stop (data stays in the pg-data volume)
 #   docker compose down -v            → stop and wipe the database
-# Secrets come from .env (copy .env.example); DATABASE_URL and REDIS_URL there are ignored here.
+# Secrets come from .env (copy .env.example); DATABASE_URL, DIRECT_DATABASE_URL and REDIS_URL there are ignored here.
 # Fixed project name: the folder name (AI-_Cinema_BE) is not a valid image or volume prefix.
 name: ai-cinema
 services:
@@ -39,6 +39,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_cinema
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_cinema
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -47,6 +48,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_cinema
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_cinema
       REDIS_URL: redis://redis:6379
       PORT: 3001
     ports:

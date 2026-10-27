@@ -1,42 +1,18 @@
-import { RewardPrizeType, PolicyType, UserRole } from '@prisma/client';
+import { PolicyType, RewardPrizeType, UserRole } from '@prisma/client';
+import type { SeedAccount } from './seed-accounts';
 
-/** Development accounts; all of them sign in with SEED_USER_PASSWORD. */
-export const SEED_USERS: { email: string; fullName: string; role: UserRole; dateOfBirth?: Date }[] = [
-  ...[
-    'Nguyễn Minh Anh',
-    'Trần Quốc Bảo',
-    'Lê Hoàng Nam',
-    'Phạm Gia Huy',
-    'Võ Thành Đạt',
-    'Đặng Nhật Minh',
-    'Bùi Đức Anh',
-    'Ngô Tuấn Kiệt',
-  ].map((fullName, i) => ({
-    email: `creator0${i + 1}@aicinema.com`,
-    fullName,
-    role: UserRole.CONTENT_CREATOR,
-  })),
-  ...['Nguyễn Thu Hà', 'Trần Ngọc Linh', 'Lê Thanh Hương', 'Phạm Khánh Vy', 'Vũ Minh Trang', 'Đỗ Hoàng Long'].map(
-    (fullName, i) => ({ email: `reviewer0${i + 1}@aicinema.com`, fullName, role: UserRole.CONTENT_REVIEWER }),
-  ),
-  { email: 'staff01@aicinema.com', fullName: 'Nguyễn Văn Thành', role: UserRole.STAFF },
-  { email: 'admin@aicinema.com', fullName: 'AI Cinema Admin', role: UserRole.ADMIN },
+/** The platform's four accounts; a new one signs in with SEED_USER_PASSWORD until its owner changes it. */
+export const ADMIN_EMAIL = 'admin@gmail.com';
+export const SEED_ACCOUNTS: SeedAccount[] = [
+  { email: ADMIN_EMAIL, fullName: 'Quản trị viên AI Cinema', role: UserRole.ADMIN },
+  { email: 'reviewer@gmail.com', fullName: 'Reviewer AI Cinema', role: UserRole.CONTENT_REVIEWER },
+  { email: 'creator.aicinema@gmail.com', fullName: 'Creator AI Cinema', role: UserRole.CONTENT_CREATOR },
   {
-    email: 'member01@aicinema.com',
-    fullName: 'Nguyễn Hoàng Anh',
+    email: 'abc@gmail.com',
+    fullName: 'Thành viên AI Cinema',
     role: UserRole.MEMBER,
-    dateOfBirth: new Date('2002-08-15'),
+    dateOfBirth: new Date('2003-05-14'),
   },
-];
-
-/** Shared test accounts with a fixed password; the seed resets it on every run so testers can always sign in. */
-export const SEED_TEST_USERS: { email: string; fullName: string; role: UserRole; password: string }[] = [
-  { email: 'creator@gmail.com', fullName: 'Creator Test', role: UserRole.CONTENT_CREATOR, password: '12345678' },
-  { email: 'reviewer@gmail.com', fullName: 'Reviewer Test', role: UserRole.CONTENT_REVIEWER, password: '12345678' },
-  { email: 'admin@gmail.com', fullName: 'Admin Test', role: UserRole.ADMIN, password: '12345678' },
-  { email: 'creatorr@gmail.com', fullName: 'Creator Tester', role: UserRole.CONTENT_CREATOR, password: '123456' },
-  { email: 'reviewerr@gmail.com', fullName: 'Reviewer Tester', role: UserRole.CONTENT_REVIEWER, password: '123456' },
-  { email: 'adminn@gmail.com', fullName: 'Admin Tester', role: UserRole.ADMIN, password: '123456' },
 ];
 
 /** The legal texts AI labels and the compliance checks refer to (BR-40, BR-42). */

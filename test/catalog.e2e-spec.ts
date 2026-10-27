@@ -77,6 +77,13 @@ describe('Public catalog (e2e)', () => {
     await guest(`/movies/${unreleased.id}/episodes`, 404);
   });
 
+  it('ranks listed movies by plays, most first', async () => {
+    const ranked = await guest<(Card & { viewCount: number })[]>('/movies/ranking');
+    const counts = ranked.map((m) => m.viewCount);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+    expect(ranked.some((m) => m.id === unreleased.id)).toBe(false);
+  });
+
   it('searches and filters by genre', async () => {
     const [genreId] = (await guest<Card>(`/movies/${listed.id}`)).genres.map((g) => g.id);
     const byGenre = await guest<{ data: Card[] }>(`/movies?genreId=${genreId}&limit=100`);

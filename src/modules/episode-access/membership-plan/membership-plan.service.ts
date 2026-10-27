@@ -1,14 +1,31 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PlanPeriod, type MembershipPlan, type MembershipPlanPrice as PlanPrice, type Prisma } from '@prisma/client';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
+import type { PlanFeaturesDto } from './dto/plan-features.dto';
 
 export const PLAN_REASON = {
   NOT_ACTIVE: 'PLAN_NOT_ACTIVE',
   NOT_PRICED: 'PLAN_NOT_PRICED',
   UNSUPPORTED_PERIOD: 'UNSUPPORTED_PLAN_PERIOD',
+  STREAMS_OVER_DEVICES: 'PLAN_STREAMS_OVER_DEVICES',
+  PRICE_IN_PAST: 'PLAN_PRICE_IN_PAST',
 } as const;
+
+/** How far behind the server clock a "start now" price may land (form fill time, clock skew). */
+const PRICE_START_SLACK_MS = 5 * 60 * 1000;
+
+/** A plan cannot let more devices play at once than it lets register (BR-34). */
+export function assertPlanFeatures(features: PlanFeaturesDto | undefined): void {
+  const { maxRegisteredDevices, maxConcurrentStreams } = features ?? {};
+  if (maxRegisteredDevices && maxConcurrentStreams && maxConcurrentStreams > maxRegisteredDevices) {
+    throw new BadRequestException({
+      message: 'A plan cannot stream on more devices than it registers',
+      details: { reason: PLAN_REASON.STREAMS_OVER_DEVICES, maxRegisteredDevices, maxConcurrentStreams },
+    });
+  }
+}
 
 /** The plan screen reads the price in force: the newest row with no effectiveTo. */
 const PRICE_IN_FORCE: Prisma.MembershipPlan$pricesArgs = {
@@ -80,10 +97,11 @@ export class MembershipPlanService {
       isFree?: boolean;
       sortOrder?: number;
       isFeatured?: boolean;
-      features?: Record<string, unknown>;
+      features?: PlanFeaturesDto;
     },
     actorId: string,
   ) {
+    assertPlanFeatures(dto.features);
     return this.prisma.$transaction(async (tx) => {
       const plan = await tx.membershipPlan.create({
         data: {
@@ -122,10 +140,11 @@ export class MembershipPlanService {
       isActive?: boolean;
       sortOrder?: number;
       isFeatured?: boolean;
-      features?: Record<string, unknown>;
+      features?: PlanFeaturesDto;
     },
     actorId: string,
   ) {
+    assertPlanFeatures(dto.features);
     return this.prisma.$transaction(async (tx) => {
       const plan = await tx.membershipPlan.update({
         where: { id },
@@ -162,6 +181,14 @@ export class MembershipPlanService {
       const current = await currentPrice(tx, planId);
       if (current && current.priceCoins === priceCoins && current.effectiveFrom >= effectiveFrom) {
         return { price: current, plan: viewOf({ ...plan, prices: [current] }) };
+      }
+      // A retry of the same price answers above; a new price that started in the past would
+      // rewrite what renewals already charged.
+      if (effectiveFrom.getTime() < Date.now() - PRICE_START_SLACK_MS) {
+        throw new BadRequestException({
+          message: 'A new price cannot start in the past',
+          details: { reason: PLAN_REASON.PRICE_IN_PAST },
+        });
       }
       if (current) {
         await tx.membershipPlanPrice.update({

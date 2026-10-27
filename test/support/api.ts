@@ -1,15 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from 'src/app.module';
 import { configureApp } from 'src/app.setup';
+import { SEED_USER_PASSWORD } from '../../prisma/seed-accounts';
 
 /** The fields of an API response the suite reads. */
 export type Row = Record<string, unknown> & { id: string };
-
-/** Password of every seeded account (prisma/seed.ts). */
-export const SEED_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';
 
 export async function bootApp(): Promise<INestApplication<App>> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -29,8 +28,13 @@ type Method = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
 const DEFAULT_STATUS: Record<Method, number> = { get: 200, post: 201, patch: 200, put: 200, delete: 200 };
 
-/** A signed-in actor: every call goes to /api with its bearer token and expects `status`. */
+/**
+ * A signed-in actor: every call goes to /api with its bearer token and expects `status`. It plays
+ * from one device of its own, sent as X-Device-Id like the apps do (MF-4).
+ */
 export class Actor {
+  readonly deviceId = randomUUID();
+
   constructor(
     private readonly app: INestApplication<App>,
     private readonly token: string,
@@ -41,6 +45,7 @@ export class Actor {
     const res = await request(this.app.getHttpServer())
       [method](`/api${path}`)
       .set('Authorization', `Bearer ${this.token}`)
+      .set('X-Device-Id', this.deviceId)
       .send(body);
     return this.expect<T>(res, `${method.toUpperCase()} ${path}`, status);
   }
@@ -97,7 +102,7 @@ export class Actor {
   }
 }
 
-export async function signIn(app: INestApplication<App>, email: string, password = SEED_PASSWORD): Promise<Actor> {
+export async function signIn(app: INestApplication<App>, email: string, password = SEED_USER_PASSWORD): Promise<Actor> {
   const res = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password });
   if (res.status !== 200) throw new Error(`Login of ${email} failed with ${res.status}`);
   const body = res.body as { accessToken: string; user: { id: string } };

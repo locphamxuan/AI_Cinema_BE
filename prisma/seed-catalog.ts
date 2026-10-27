@@ -129,7 +129,13 @@ async function seedMovie(
       });
       const season = await tx.season.create({ data: { movieId: movie.id, seasonNumber: 1, title: 'Mùa 1' } });
       for (const episode of source.episodes) {
-        await seedEpisode(tx, { movieId: movie.id, seasonId: season.id, source, today, now }, episode, people, policies);
+        await seedEpisode(
+          tx,
+          { movieId: movie.id, seasonId: season.id, source, today, now },
+          episode,
+          people,
+          policies,
+        );
       }
       // A remote database (Neon) needs more than the 5 s default for a movie with many episodes.
     },
@@ -243,8 +249,8 @@ async function backfillSubtitles(movieId: string, source: CatalogMovie): Promise
 
 async function main() {
   const [reviewer, creator] = await Promise.all([
-    prisma.user.findUnique({ where: { email: 'reviewer01@aicinema.com' }, select: { id: true } }),
-    prisma.user.findUnique({ where: { email: 'creator01@aicinema.com' }, select: { id: true } }),
+    prisma.user.findUnique({ where: { email: 'reviewer@gmail.com' }, select: { id: true } }),
+    prisma.user.findUnique({ where: { email: 'creator.aicinema@gmail.com' }, select: { id: true } }),
   ]);
   if (!reviewer || !creator) throw new Error('Seed accounts missing: run `prisma db seed` first');
   const policies = await activePolicies();
@@ -263,7 +269,9 @@ async function main() {
     console.log(`+ ${source.title}`);
   }
   const episodes = catalog.reduce((n, m) => n + m.episodes.length, 0);
-  console.log(`Catalog: ${added} new movie(s); ${catalog.length} movies / ${episodes} episodes in AI_Film/CATALOG.json.`);
+  console.log(
+    `Catalog: ${added} new movie(s); ${catalog.length} movies / ${episodes} episodes in AI_Film/CATALOG.json.`,
+  );
 }
 
 main()
