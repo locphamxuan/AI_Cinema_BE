@@ -8,7 +8,7 @@ import { NormalizeEmail, Trim } from 'src/common/validation/trim';
 const STAFF_ROLES = [UserRole.CONTENT_CREATOR, UserRole.CONTENT_REVIEWER, UserRole.STAFF, UserRole.ADMIN];
 
 export class CreateStaffUserRequestDto {
-  @ApiProperty({ example: 'creator09@aicinema.com' })
+  @ApiProperty({ example: 'creator02@gmail.com' })
   @NormalizeEmail()
   @IsEmail()
   @MaxLength(255)

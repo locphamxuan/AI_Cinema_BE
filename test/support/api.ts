@@ -5,12 +5,10 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from 'src/app.module';
 import { configureApp } from 'src/app.setup';
+import { SEED_USER_PASSWORD } from '../../prisma/seed-accounts';
 
 /** The fields of an API response the suite reads. */
 export type Row = Record<string, unknown> & { id: string };
-
-/** Password of every seeded account (prisma/seed.ts). */
-export const SEED_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';
 
 export async function bootApp(): Promise<INestApplication<App>> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -104,7 +102,7 @@ export class Actor {
   }
 }
 
-export async function signIn(app: INestApplication<App>, email: string, password = SEED_PASSWORD): Promise<Actor> {
+export async function signIn(app: INestApplication<App>, email: string, password = SEED_USER_PASSWORD): Promise<Actor> {
   const res = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password });
   if (res.status !== 200) throw new Error(`Login of ${email} failed with ${res.status}`);
   const body = res.body as { accessToken: string; user: { id: string } };

@@ -10,6 +10,7 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PlanPeriod, Prisma, PrismaClient } from '@prisma/client';
+import { ADMIN_EMAIL } from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
@@ -60,7 +61,7 @@ const SEED_PLANS: SeedPlan[] = [
 ];
 
 async function main() {
-  const admin = await prisma.user.findUnique({ where: { email: 'admin@aicinema.com' }, select: { id: true } });
+  const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL }, select: { id: true } });
   if (!admin) throw new Error('Seed accounts missing: run `prisma db seed` first');
 
   let newPlans = 0;

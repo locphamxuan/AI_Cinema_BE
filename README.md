@@ -31,13 +31,15 @@ The database is published on `localhost:54320` (`postgres` / `postgres`, db `ai_
 npm ci                      # also generates the Prisma client (postinstall)
 cp .env.example .env        # set DATABASE_URL and JWT_SECRET
 npx prisma migrate deploy   # create or update the schema
-npx prisma db seed          # genres, permissions, legal policies, demo accounts
+npx prisma db seed          # genres, permissions, legal policies, the four platform accounts
 npm run start:local         # http://localhost:3001/api, Swagger on /api/docs
 ```
 
-The seed creates `creator01`..`08`, `reviewer01`..`06`, `staff01`, `admin` and `member01`
-`@aicinema.com`, all signing in with `SEED_USER_PASSWORD` (default `Aicinema@123`). Existing
-accounts keep their password. Public registration always creates a `MEMBER` (18+, BR-54).
+The seed creates the platform's four accounts only: `admin@gmail.com` (Admin), `reviewer@gmail.com`
+(Reviewer), `creator.aicinema@gmail.com` (Creator) and `abc@gmail.com` (Member). A new one signs in
+with `SEED_USER_PASSWORD` (default `Aicinema@123`); an existing account keeps its password. Public
+registration always creates a `MEMBER` (18+, BR-54). The e2e suites add their own extra accounts in
+their own database (`test/support/e2e-accounts.ts`).
 
 The baseline migration of 2026-10-01 expects an **empty** database: a database still holding the
 old self-production schema has to be reset once (`npx prisma migrate reset`, development only).
