@@ -9,7 +9,10 @@ import { E2E_DATABASE_URL } from './e2e-env';
  */
 export default function globalSetup() {
   const run = (command: string) =>
-    execSync(command, { stdio: 'inherit', env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL } });
+    execSync(command, {
+      stdio: 'inherit',
+      env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL, DIRECT_DATABASE_URL: E2E_DATABASE_URL },
+    });
 
   run('npx prisma migrate deploy');
   run('npx prisma db seed');

@@ -41,6 +41,9 @@ with `SEED_USER_PASSWORD` (default `Aicinema@123`); an existing account keeps it
 registration always creates a `MEMBER` (18+, BR-54). The e2e suites add their own extra accounts in
 their own database (`test/support/e2e-accounts.ts`).
 
+With a pooled `DATABASE_URL` (Neon's `-pooler` host), set `DIRECT_DATABASE_URL` to the direct host: the
+Prisma CLI uses it, since a pooler cannot hold the lock `migrate deploy` takes (error P1002).
+
 The baseline migration of 2026-10-01 expects an **empty** database: a database still holding the
 old self-production schema has to be reset once (`npx prisma migrate reset`, development only).
 

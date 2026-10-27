@@ -24,6 +24,8 @@ assertLocalDatabase(E2E_DATABASE_URL);
 assertLocalDatabase(E2E_REDIS_URL);
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = E2E_DATABASE_URL;
+// prisma.config.ts prefers it: a DIRECT_DATABASE_URL left in .env must never point the suite at a real database.
+process.env.DIRECT_DATABASE_URL = E2E_DATABASE_URL;
 process.env.JWT_SECRET ??= 'e2e-secret';
 // Jobs run inside the request and media is not really transcoded, so each step is done when it returns.
 process.env.REDIS_URL = '';
