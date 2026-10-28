@@ -134,12 +134,14 @@ export class EntitlementService {
     const paid = access.coinTransactionId
       ? await tx.coinTransaction.findUnique({
           where: { id: access.coinTransactionId },
-          select: { mainAmount: true, bonusAmount: true },
+          select: { mainAmount: true },
         })
       : null;
-    // A purchase writes negative amounts; without its entry the whole price goes back as main.
-    const mainAmount = paid ? -paid.mainAmount : access.paidCoins;
-    const bonusAmount = paid ? -paid.bonusAmount : 0;
+    // The linked entry is the first row of the debit: it holds the whole main part (negative) and
+    // the bonus left on the lot rows after it, so the bonus paid is the rest of the price.
+    // Without the entry the whole price goes back as main.
+    const mainAmount = paid ? 0 - paid.mainAmount : access.paidCoins;
+    const bonusAmount = access.paidCoins - mainAmount;
     const wallet = await this.wallets.walletOf(access.userId, tx);
     const movement = await this.coins.credit(tx, wallet.id, {
       entryType: CoinEntryType.REFUND,

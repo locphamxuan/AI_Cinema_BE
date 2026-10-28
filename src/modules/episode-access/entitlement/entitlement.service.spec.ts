@@ -81,7 +81,8 @@ describe('EntitlementService refunds', () => {
     jest.clearAllMocks();
     wallets.walletOf.mockResolvedValue({ id: 'w1' });
     coins.credit.mockResolvedValue({ transactionId: 'tx-r' });
-    tx.coinTransaction.findUnique.mockResolvedValue({ mainAmount: -10, bonusAmount: -15 });
+    // The first row of a debit: the main part only, the bonus part sits on the lot rows after it.
+    tx.coinTransaction.findUnique.mockResolvedValue({ mainAmount: -10 });
   });
 
   it('pays episode buyers back main and bonus as they paid, and revokes the rows (BR-52)', async () => {
@@ -112,6 +113,18 @@ describe('EntitlementService refunds', () => {
       tx,
     );
     expect(notifications.notify).toHaveBeenCalledWith(['u1'], expect.objectContaining({ link: '/wallet' }), tx);
+  });
+
+  it('pays back a purchase made only of bonus Coins as bonus Coins', async () => {
+    // Main balance was 0: the first row moved no main Coin, every Coin came from the lots.
+    tx.coinTransaction.findUnique.mockResolvedValue({ mainAmount: 0 });
+    tx.episodeAccess.findMany.mockResolvedValue([
+      { id: 'a4', userId: 'u1', paidCoins: 25, coinTransactionId: 'tx-4', episode: { movieId: 'm1' } },
+    ]);
+
+    await service.refundEpisodeRemoval(tx as never, 'ep-1', 'REMOVAL');
+
+    expect(coins.credit).toHaveBeenCalledWith(tx, 'w1', expect.objectContaining({ mainAmount: 0, bonusAmount: 25 }));
   });
 
   it('pays the whole price back as main Coins when the purchase entry is unknown', async () => {
