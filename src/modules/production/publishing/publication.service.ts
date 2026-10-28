@@ -25,6 +25,7 @@ import {
 } from 'src/modules/production/project-access/project-rules';
 import type { PublishEpisodeRequestDto, UnpublishRequestDto } from './dto/publishing.request.dto';
 import { EpisodeRevisionService } from './episode-revision.service';
+import { isRefusal, withdrawFailedRelease } from './failed-release';
 
 /** A project releases episodes while the studio delivers, while it is fixed, and once complete. */
 const RELEASING_PROJECT: MovieStatus[] = [...DELIVERY_PROJECT_STATUSES, MovieStatus.COMPLETED];
@@ -182,9 +183,23 @@ export class PublicationService {
         released += 1;
       } catch (error) {
         this.logger.error(`Scheduled release ${publication.id} failed: ${(error as Error).message}`);
+        // A refusal (business rule, database gate) would fail every later sweep the same way:
+        // the schedule is withdrawn and the Reviewer told, instead of retrying it forever.
+        // An outage is left due, so the next sweep tries again.
+        if (isRefusal(error)) await this.withdraw(publication, (error as Error).message);
       }
     }
     return released;
+  }
+
+  private async withdraw(publication: Publication, cause: string): Promise<void> {
+    try {
+      await this.prisma.$transaction((tx) =>
+        withdrawFailedRelease(tx, publication, cause, { auditLog: this.auditLog, notifications: this.notifications }),
+      );
+    } catch (error) {
+      this.logger.error(`Withdrawing scheduled release ${publication.id} failed: ${(error as Error).message}`);
+    }
   }
 
   /** What still blocks the release (BR-19, step 12); empty when it can go out. */
