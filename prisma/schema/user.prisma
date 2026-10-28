@@ -9,7 +9,8 @@ enum UserRole {
 model User {
   id              String    @id @default(uuid()) @db.Uuid
   email           String    @unique @db.VarChar(255)
-  passwordHash    String    @map("password_hash") @db.VarChar(255)
+  passwordHash    String?   @map("password_hash") @db.VarChar(255)
+  googleId        String?   @unique @map("google_id") @db.VarChar(255)
   fullName        String    @map("full_name") @db.VarChar(255)
   /// BR-54: required for members, who must be 18 or older; staff accounts may leave it empty.
   dateOfBirth     DateTime? @map("date_of_birth") @db.Date
@@ -23,52 +24,52 @@ model User {
   refreshTokens           RefreshToken[]
   auditLogs               AuditLog[]
   platformSettingsUpdated PlatformSetting[]
-  moviesReviewed          Movie[]                @relation("MovieReviewer")
-  moviesCreated           Movie[]                @relation("MovieCreator")
+  moviesReviewed          Movie[]                    @relation("MovieReviewer")
+  moviesCreated           Movie[]                    @relation("MovieCreator")
   assignmentsAsCreator    ProjectCreatorAssignment[] @relation("AssignmentCreator")
   assignmentsMade         ProjectCreatorAssignment[] @relation("AssignmentAssignedBy")
   assignmentsDelegated    ProjectCreatorAssignment[] @relation("AssignmentDelegatedFrom")
-  episodesAssigned        Episode[]              @relation("EpisodeAssignedCreator")
+  episodesAssigned        Episode[]                  @relation("EpisodeAssignedCreator")
   ideaFilesUploaded       MovieIdeaFile[]
   studioHandoffs          StudioHandoff[]
   studiosCreated          Studio[]
-  handoffMaterials        StudioHandoffMaterial[] @relation("HandoffMaterialUploadedBy")
-  milestoneChanges        StudioMilestoneEvent[]  @relation("MilestoneChangedBy")
-  changeRequestsMade      ProjectChangeRequest[] @relation("ChangeRequestRequestedBy")
-  changeRequestsResolved  ProjectChangeRequest[] @relation("ChangeRequestResolvedBy")
-  tokenRequestsMade       TokenRequest[]         @relation("TokenRequestRequestedBy")
-  tokenRequestsResolved   TokenRequest[]         @relation("TokenRequestResolvedBy")
+  handoffMaterials        StudioHandoffMaterial[]    @relation("HandoffMaterialUploadedBy")
+  milestoneChanges        StudioMilestoneEvent[]     @relation("MilestoneChangedBy")
+  changeRequestsMade      ProjectChangeRequest[]     @relation("ChangeRequestRequestedBy")
+  changeRequestsResolved  ProjectChangeRequest[]     @relation("ChangeRequestResolvedBy")
+  tokenRequestsMade       TokenRequest[]             @relation("TokenRequestRequestedBy")
+  tokenRequestsResolved   TokenRequest[]             @relation("TokenRequestResolvedBy")
   movieLikes              MovieLike[]
   savedMovies             SavedMovie[]
   episodeViews            EpisodeView[]
   tokenEntries            TokenLedgerEntry[]
-  tokenBudget             ReviewerTokenEntry[]   @relation("ReviewerTokenBudget")
-  tokenBudgetGranted      ReviewerTokenEntry[]   @relation("ReviewerTokenGrantedBy")
+  tokenBudget             ReviewerTokenEntry[]       @relation("ReviewerTokenBudget")
+  tokenBudgetGranted      ReviewerTokenEntry[]       @relation("ReviewerTokenGrantedBy")
   mediaSubmitted          MediaAsset[]
   contentReviews          ContentReview[]
   labelsApplied           AiContentLabel[]
   complianceChecked       ComplianceCheck[]
-  publicationsPublished   Publication[]          @relation("PublicationPublishedBy")
-  publicationsUnpublished Publication[]          @relation("PublicationUnpublishedBy")
-  priceAlertsSet          PriceAlert[]           @relation("PriceAlertSetBy")
-  priceAlertsHandled      PriceAlert[]           @relation("PriceAlertHandledBy")
+  publicationsPublished   Publication[]              @relation("PublicationPublishedBy")
+  publicationsUnpublished Publication[]              @relation("PublicationUnpublishedBy")
+  priceAlertsSet          PriceAlert[]               @relation("PriceAlertSetBy")
+  priceAlertsHandled      PriceAlert[]               @relation("PriceAlertHandledBy")
   notifications           Notification[]
   coinWallet              CoinWallet?
-  coinEntriesWritten      CoinTransaction[]      @relation("CoinTransactionCreatedBy")
+  coinEntriesWritten      CoinTransaction[]          @relation("CoinTransactionCreatedBy")
   coinTopUps              CoinTopUp[]
   dailyCheckIns           DailyCheckIn[]
-  membershipPlansCreated  MembershipPlan[]       @relation("MembershipPlanCreatedBy")
-  planPricesSet           MembershipPlanPrice[]  @relation("MembershipPlanPriceSetBy")
-  rewardRulesCreated      RewardRule[]           @relation("RewardRuleCreatedBy")
+  membershipPlansCreated  MembershipPlan[]           @relation("MembershipPlanCreatedBy")
+  planPricesSet           MembershipPlanPrice[]      @relation("MembershipPlanPriceSetBy")
+  rewardRulesCreated      RewardRule[]               @relation("RewardRuleCreatedBy")
   subscriptions           Subscription[]
   episodeAccesses         EpisodeAccess[]
   rewardSpins             RewardSpin[]
-  rewardPrizesCreated     RewardPrize[]          @relation("RewardPrizeCreatedBy")
+  rewardPrizesCreated     RewardPrize[]              @relation("RewardPrizeCreatedBy")
   payments                Payment[]
   streamingSessions       StreamingSession[]
   devices                 UserDevice[]
   watchProgresses         WatchProgress[]
-  episodeAdSlotsCreated   EpisodeAdSlot[]        @relation("EpisodeAdSlotCreatedBy")
+  episodeAdSlotsCreated   EpisodeAdSlot[]            @relation("EpisodeAdSlotCreatedBy")
 
   @@index([role])
   @@map("users")

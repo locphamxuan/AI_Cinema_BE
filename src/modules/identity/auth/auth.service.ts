@@ -7,16 +7,20 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { Inject } from '@nestjs/common';
+import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
 import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
 import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
+import { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
 import type { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
 import { SessionTokenService } from './session-token.service';
+import { GoogleTokenVerifier } from './google-token.verifier';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +29,8 @@ export class AuthService {
     private readonly tokens: SessionTokenService,
     private readonly accessControl: AccessControlService,
     private readonly wallets: WalletService,
+    private readonly google: GoogleTokenVerifier,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
@@ -56,12 +62,69 @@ export class AuthService {
       where: { email: normalizeEmail(dto.email) },
       select: { ...USER_PROFILE_SELECT, passwordHash: true },
     });
+    if (found && !found.passwordHash) {
+      throw new UnauthorizedException('This account uses Google sign-in; sign in with Google instead');
+    }
     // The hash is always compared so an unknown email takes as long as a wrong password.
     const passwordMatches = await verifyPassword(dto.password, found?.passwordHash);
     if (!found || !passwordMatches) throw new UnauthorizedException('Incorrect email or password');
     if (!found.isActive) throw new ForbiddenException('This account has been deactivated');
 
     const { passwordHash: _hash, ...user } = found;
+    return this.session(user);
+  }
+
+  async googleLogin(dto: GoogleLoginRequestDto): Promise<AuthSessionDto> {
+    const profile = await this.google.verify(dto.idToken);
+    const email = normalizeEmail(profile.email);
+
+    let user = await this.prisma.user.findUnique({
+      where: { googleId: profile.sub },
+      select: USER_PROFILE_SELECT,
+    });
+
+    if (!user) {
+      const existing = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true, googleId: true, emailVerifiedAt: true },
+      });
+
+      if (existing) {
+        if (!existing.googleId) {
+          await this.prisma.user.update({
+            where: { id: existing.id },
+            data: { googleId: profile.sub, emailVerifiedAt: existing.emailVerifiedAt ?? new Date() },
+          });
+        }
+        user = await this.prisma.user.findUniqueOrThrow({
+          where: { id: existing.id },
+          select: USER_PROFILE_SELECT,
+        });
+      } else {
+        let fullName = (profile.name ?? '').trim();
+        if (fullName.length < 2) fullName = email.split('@')[0];
+        if (fullName.length < 2) fullName = 'Google User';
+
+        user = await this.prisma.$transaction(async (tx) => {
+          const created = await tx.user.create({
+            data: {
+              email,
+              passwordHash: null,
+              fullName,
+              dateOfBirth: null,
+              role: UserRole.MEMBER,
+              googleId: profile.sub,
+              emailVerifiedAt: new Date(),
+            },
+            select: USER_PROFILE_SELECT,
+          });
+          await this.wallets.openForNewAccount(tx, created.id);
+          return created;
+        });
+      }
+    }
+
+    if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
     return this.session(user);
   }
 
@@ -101,7 +164,11 @@ export class AuthService {
       where: { id: userId },
       select: { ...USER_PROFILE_SELECT, passwordHash: true },
     });
-    if (!found || !(await verifyPassword(dto.currentPassword, found.passwordHash))) {
+    if (!found) throw new UnauthorizedException('The current password is incorrect');
+    if (!found.passwordHash) {
+      throw new BadRequestException('This account has no password; it uses Google sign-in');
+    }
+    if (!(await verifyPassword(dto.currentPassword, found.passwordHash))) {
       throw new UnauthorizedException('The current password is incorrect');
     }
     if (dto.currentPassword === dto.newPassword)
