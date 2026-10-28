@@ -25,7 +25,7 @@ export class CoinSpendService {
   /** Takes Coins out: main first, then the bonus lots that expire first. */
   async spend(tx: PrismaTx, walletId: string, request: SpendRequest, now = new Date()): Promise<CoinMovement> {
     const replayed = await this.replayed(request.idempotencyKey, tx);
-    if (replayed) return this.movementOf(replayed);
+    if (replayed) return spentMovementOf(replayed, request.amountCoins);
     if (request.amountCoins <= 0) throw new ConflictException({ message: 'A Coin payment must be more than 0' });
 
     const wallet = await this.locked(tx, walletId);
@@ -90,7 +90,15 @@ export class CoinSpendService {
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */
   async credit(tx: PrismaTx, walletId: string, request: CreditRequest, now = new Date()): Promise<CoinMovement> {
     const replayed = await this.replayed(request.idempotencyKey, tx);
-    if (replayed) return this.movementOf(replayed);
+    if (replayed) {
+      return {
+        transactionId: replayed.id,
+        mainCoins: replayed.mainAmount,
+        bonusCoins: replayed.bonusAmount,
+        mainBalance: replayed.mainBalanceAfter,
+        bonusBalance: replayed.bonusBalanceAfter,
+      };
+    }
     const mainAmount = request.mainAmount ?? 0;
     const bonusAmount = request.bonusAmount ?? 0;
     if (mainAmount === 0 && bonusAmount === 0) throw new ConflictException({ message: 'Nothing to credit' });
@@ -199,14 +207,25 @@ export class CoinSpendService {
   private replayed(idempotencyKey: string | undefined, tx: PrismaTx): Promise<CoinTransaction | null> {
     return idempotencyKey ? tx.coinTransaction.findUnique({ where: { idempotencyKey } }) : Promise.resolve(null);
   }
+}
 
-  private movementOf(entry: CoinTransaction): CoinMovement {
-    return {
-      transactionId: entry.id,
-      mainCoins: -entry.mainAmount,
-      bonusCoins: -entry.bonusAmount,
-      mainBalance: entry.mainBalanceAfter,
-      bonusBalance: entry.bonusBalanceAfter,
-    };
-  }
+/**
+ * Rebuilds a debit from its first ledger row. That row carries the whole main part and no bonus
+ * (the bonus left on the lot rows after it), so the bonus part is the rest of the price and the
+ * bonus balance ends that much lower than the first row shows.
+ */
+export function spentMovementOf(
+  first: Pick<CoinTransaction, 'id' | 'mainAmount' | 'mainBalanceAfter' | 'bonusBalanceAfter'>,
+  amountCoins: number,
+): CoinMovement {
+  // `0 -` rather than unary minus: a debit with no main part gives 0, not -0.
+  const mainCoins = 0 - first.mainAmount;
+  const bonusCoins = amountCoins - mainCoins;
+  return {
+    transactionId: first.id,
+    mainCoins,
+    bonusCoins,
+    mainBalance: first.mainBalanceAfter,
+    bonusBalance: first.bonusBalanceAfter - bonusCoins,
+  };
 }

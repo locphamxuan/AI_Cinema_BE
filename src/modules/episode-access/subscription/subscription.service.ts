@@ -26,10 +26,20 @@ export const SUB_REASON = {
   WINDOW_CLOSED: 'CANCELLATION_WINDOW_CLOSED',
   NOT_FOUND: 'SUBSCRIPTION_NOT_FOUND',
   ENDED: 'SUBSCRIPTION_ENDED',
+  NOT_ACTIVE: 'SUBSCRIPTION_NOT_ACTIVE',
 } as const;
 
 /** A subscription counts as open while it grants or may still grant access. */
 const OPEN: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE, SubscriptionStatus.PENDING];
+
+/** A paid plan whose renewal can still be switched on or off. */
+const RUNNING: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
+
+const notPending = (status: SubscriptionStatus) =>
+  new ConflictException({
+    message: 'Only a pending subscription can be activated',
+    details: { reason: SUB_REASON.NOT_PENDING, status },
+  });
 
 /** The last moment a cancellation is still accepted: the renewal date minus the window. */
 const windowEndOf = (renewalAt: Date, hours: number) => new Date(renewalAt.getTime() - hours * 3_600_000);
@@ -120,15 +130,17 @@ export class SubscriptionService {
    */
   async activate(userId: string, subscriptionId: string, idempotencyKey?: string) {
     const intent = await this.findMine(userId, subscriptionId);
-    if (intent.status !== SubscriptionStatus.PENDING) {
-      throw new ConflictException({
-        message: 'Only a pending subscription can be activated',
-        details: { reason: SUB_REASON.NOT_PENDING, status: intent.status },
-      });
-    }
+    if (intent.status !== SubscriptionStatus.PENDING) throw notPending(intent.status);
     const wallet = await this.wallets.walletOf(userId);
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
+      // A double tap reads PENDING twice above; the row lock lets only the first one pay.
+      await tx.$queryRaw`SELECT id FROM subscriptions WHERE id = ${intent.id}::uuid FOR UPDATE`;
+      const { status } = await tx.subscription.findUniqueOrThrow({
+        where: { id: intent.id },
+        select: { status: true },
+      });
+      if (status !== SubscriptionStatus.PENDING) throw notPending(status);
       const plan = await tx.membershipPlan.findUnique({ where: { id: intent.planId } });
       if (!plan) {
         throw new NotFoundException({ message: 'Plan not found', details: { reason: 'PLAN_NOT_FOUND' } });
@@ -246,6 +258,9 @@ export class SubscriptionService {
    */
   async cancelAutoRenew(userId: string, subscriptionId: string) {
     const subscription = await this.findMine(userId, subscriptionId);
+    assertRunning(subscription);
+    // Already stopped: answer the same state again, without a second notification.
+    if (!subscription.autoRenew) return autoRenewOf(subscription);
     const { subscriptionCancelWindowHours } = await this.settings.get();
     if (subscription.nextRenewalAt) {
       const cancelDeadline = windowEndOf(subscription.nextRenewalAt, subscriptionCancelWindowHours);
@@ -279,6 +294,13 @@ export class SubscriptionService {
   /** Changes the mind before the period ends: auto-renew runs again at the end of the period. */
   async resumeAutoRenew(userId: string, subscriptionId: string) {
     const subscription = await this.findMine(userId, subscriptionId);
+    assertRunning(subscription);
+    if (subscription.currentPeriodEnd.getTime() <= Date.now()) {
+      throw new ConflictException({
+        message: 'The paid period has ended; join the plan again instead',
+        details: { reason: SUB_REASON.ENDED, currentPeriodEnd: subscription.currentPeriodEnd },
+      });
+    }
     if (subscription.autoRenew) return autoRenewOf(subscription);
     const { subscriptionCancelWindowHours } = await this.settings.get();
     return this.prisma.$transaction(async (tx) =>
@@ -381,6 +403,16 @@ export class SubscriptionService {
         details: { reason: SUB_REASON.EXISTS },
       });
     }
+  }
+}
+
+/** Renewal settings belong to a paid plan; an unpaid intent or an ended plan has none to change. */
+function assertRunning(subscription: Subscription): void {
+  if (!RUNNING.includes(subscription.status)) {
+    throw new ConflictException({
+      message: 'Only a running plan has a renewal to change',
+      details: { reason: SUB_REASON.NOT_ACTIVE, status: subscription.status },
+    });
   }
 }
 

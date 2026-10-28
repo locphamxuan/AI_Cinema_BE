@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { Prisma, type EpisodeStatus } from '@prisma/client';
-import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { playbackAvailability } from 'src/modules/catalog/episode-visibility';
 import { HistoryItemDto } from 'src/modules/playback/watch-progress/dto/history-item.dto';
 import { ProgressViewDto } from 'src/modules/playback/watch-progress/dto/progress.view.dto';
@@ -76,6 +76,29 @@ export class WatchProgressService {
       if (!winner) throw error;
       await this.applyUpdate(winner, input);
     }
+  }
+
+  /**
+   * Saves where a stream stopped, inside the caller's transaction so it rolls back with it. One
+   * native upsert: a P2002 retry like `save` does would abort the surrounding transaction. A stop
+   * point never completes the episode, and leaves a completion already reached in place.
+   */
+  async saveStopPoint(
+    db: PrismaTx,
+    userId: string,
+    episodeId: string,
+    input: Omit<ProgressSaveInput, 'completed'>,
+  ): Promise<void> {
+    const position = {
+      positionSeconds: input.positionSeconds,
+      durationSeconds: input.durationSeconds,
+      lastWatchedAt: input.at,
+    };
+    await db.watchProgress.upsert({
+      where: { userId_episodeId: { userId, episodeId } },
+      create: { userId, episodeId, ...position, completed: false, completedAt: null },
+      update: position,
+    });
   }
 
   private async applyUpdate(

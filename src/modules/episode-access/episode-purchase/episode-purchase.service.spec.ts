@@ -9,6 +9,7 @@ import { EpisodePurchaseService } from './episode-purchase.service';
 
 describe('EpisodePurchaseService.purchase', () => {
   const tx = {
+    $queryRaw: jest.fn(),
     episodeAccess: { count: jest.fn(), create: jest.fn() },
     subscription: { count: jest.fn() },
   };
@@ -82,13 +83,27 @@ describe('EpisodePurchaseService.purchase', () => {
     );
   });
 
-  it('replays the same key instead of charging twice', async () => {
+  it('locks the wallet before checking ownership, so a keyless double tap pays once', async () => {
+    const order: string[] = [];
+    tx.$queryRaw.mockImplementation(() => order.push('lock'));
+    tx.episodeAccess.count.mockImplementation(() => {
+      order.push('owned?');
+      return 0;
+    });
+
+    await service.purchase('ep-1', user);
+
+    expect(order).toEqual(['lock', 'owned?']);
+  });
+
+  it('replays the same key instead of charging twice, with the main/bonus split it charged', async () => {
+    // The keyed row is the first of the debit: the main part, before the bonus lots were touched.
     prisma.coinTransaction.findUnique.mockResolvedValue({
       id: 'tx-1',
       mainAmount: -10,
-      bonusAmount: -15,
+      bonusAmount: 0,
       mainBalanceAfter: 0,
-      bonusBalanceAfter: 0,
+      bonusBalanceAfter: 15,
       episodeAccess: {
         userId: 'u1',
         episodeId: 'ep-1',
@@ -100,7 +115,14 @@ describe('EpisodePurchaseService.purchase', () => {
 
     const result = await service.purchase('ep-1', user, 'key-1');
 
-    expect(result).toMatchObject({ accessGranted: true, idempotent: true, paidCoins: 25 });
+    expect(result).toMatchObject({
+      accessGranted: true,
+      idempotent: true,
+      paidCoins: 25,
+      charged: { mainCoins: 10, bonusCoins: 15 },
+      mainBalance: 0,
+      bonusBalance: 0,
+    });
     expect(coins.spend).not.toHaveBeenCalled();
     expect(tx.episodeAccess.create).not.toHaveBeenCalled();
   });

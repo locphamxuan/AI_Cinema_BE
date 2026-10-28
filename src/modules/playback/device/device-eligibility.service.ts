@@ -113,11 +113,11 @@ export class DeviceEligibilityService extends DeviceEligibilityPort {
       client,
     );
     const at = new Date();
+    // On the same client as the stop: a new session refused by the limit rolls these back too.
     for (const s of playing) {
-      await this.progress.save(userId, s.episodeId, {
+      await this.progress.saveStopPoint(client, userId, s.episodeId, {
         positionSeconds: s.lastPositionSeconds,
         durationSeconds: s.durationSeconds,
-        completed: false,
         at,
       });
     }

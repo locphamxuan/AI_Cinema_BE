@@ -108,6 +108,20 @@ describe('WatchProgressService', () => {
     expect(prisma.watchProgress.update).not.toHaveBeenCalled();
   });
 
+  it('saves a stop point on the caller transaction in one upsert, never touching completion', async () => {
+    const tx = { watchProgress: { upsert: jest.fn() } };
+    const at = new Date('2026-10-28T10:00:00.000Z');
+
+    await service.saveStopPoint(tx as never, 'u-1', 'ep-1', { positionSeconds: 40, durationSeconds: 600, at });
+
+    expect(tx.watchProgress.upsert).toHaveBeenCalledWith({
+      where: { userId_episodeId: { userId: 'u-1', episodeId: 'ep-1' } },
+      create: expect.objectContaining({ userId: 'u-1', episodeId: 'ep-1', positionSeconds: 40, completed: false }),
+      update: { positionSeconds: 40, durationSeconds: 600, lastWatchedAt: at },
+    });
+    expect(prisma.watchProgress.create).not.toHaveBeenCalled();
+  });
+
   describe('history query (P3-5)', () => {
     it('selects only the columns the page reads', async () => {
       paginateMock.mockResolvedValueOnce({ data: [] } as never);

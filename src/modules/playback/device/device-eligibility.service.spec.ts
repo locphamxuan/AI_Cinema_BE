@@ -14,7 +14,7 @@ describe('DeviceEligibilityService.check (hardening #13, P4-5)', () => {
   };
   const settings = { get: jest.fn() };
   const audit = { recordMany: jest.fn() };
-  const progress = { save: jest.fn() };
+  const progress = { saveStopPoint: jest.fn() };
   const service = new DeviceEligibilityService(
     prisma as unknown as PrismaService,
     settings as unknown as PlatformSettingService,
@@ -149,10 +149,9 @@ describe('DeviceEligibilityService.check (hardening #13, P4-5)', () => {
       data: { status: StreamingSessionStatus.ENDED, endReason: StreamingEndReason.STOPPED, endedAt: expect.any(Date) },
     });
     expect(audit.recordMany).toHaveBeenCalledWith([expect.objectContaining({ entityId: 's-old' })], tx);
-    expect(progress.save).toHaveBeenCalledWith('u-1', 'ep-1', {
+    expect(progress.saveStopPoint).toHaveBeenCalledWith(tx, 'u-1', 'ep-1', {
       positionSeconds: 40,
       durationSeconds: 600,
-      completed: false,
       at: expect.any(Date),
     });
     expect(tx.streamingSession.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
