@@ -101,7 +101,12 @@ describe('CoinTopUpService.create', () => {
   });
 
   it('fails the attempt when the gateway gives no payment link', async () => {
-    tx.payment.findUniqueOrThrow.mockResolvedValue({ id: 'pay-1', coinTopUpId: 'topup-1' });
+    tx.payment.findUniqueOrThrow.mockResolvedValue({
+      id: 'pay-1',
+      status: PaymentStatus.PENDING,
+      coinTopUpId: 'topup-1',
+      amountVnd: 50000,
+    });
     deps.gateways.createPaymentUrl.mockRejectedValue(new Error('timeout'));
 
     await expect(service.create('u1', PaymentProvider.MOMO, 50000)).rejects.toThrow('timeout');

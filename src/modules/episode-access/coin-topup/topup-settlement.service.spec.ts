@@ -123,12 +123,18 @@ describe('CoinTopUpService.markPaymentFailed', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    tx.payment.findUniqueOrThrow.mockResolvedValue({ id: 'pay-1', coinTopUpId: 'topup-1' });
+    tx.payment.findUniqueOrThrow.mockResolvedValue({
+      id: 'pay-1',
+      status: PaymentStatus.PENDING,
+      coinTopUpId: 'topup-1',
+      amountVnd: 20_000,
+    });
   });
 
   it('fails the attempt and mirrors it onto the order', async () => {
     await service.markPaymentFailed('pay-1', 'declined', PaymentStatus.FAILED);
 
+    expect(tx.$queryRaw).toHaveBeenCalled();
     expect(tx.payment.update).toHaveBeenCalledWith({
       where: { id: 'pay-1' },
       data: { status: PaymentStatus.FAILED, failureReason: 'declined' },
@@ -137,5 +143,15 @@ describe('CoinTopUpService.markPaymentFailed', () => {
       where: { id: 'topup-1' },
       data: { status: TopUpStatus.FAILED, failureReason: 'declined' },
     });
+  });
+
+  it('never turns an attempt another delivery already settled back into FAILED', async () => {
+    tx.payment.findUniqueOrThrow.mockResolvedValue({ id: 'pay-1', status: PaymentStatus.PAID, coinTopUpId: 'topup-1' });
+
+    await service.markPaymentFailed('pay-1', 'late failure', PaymentStatus.FAILED);
+
+    expect(tx.payment.update).not.toHaveBeenCalled();
+    expect(tx.coinTopUp.update).not.toHaveBeenCalled();
+    expect(deps.notifications.notify).not.toHaveBeenCalled();
   });
 });

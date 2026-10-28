@@ -1,11 +1,19 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, CoinLotSource, CoinReferenceType, PaymentStatus, TopUpStatus } from '@prisma/client';
-import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { TOPUP_REASON } from './constants/topup-reason';
 import { ORDER_VIEW, orderView, PAYMENT_VIEW } from './utils/order-view';
+
+/**
+ * The webhook, the return URL and the reconcile sweep may report the same attempt at once. They
+ * queue on the payment row, so the later one reads what the first decided.
+ */
+function lockPayment(tx: PrismaTx, paymentId: string): Promise<unknown> {
+  return tx.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`;
+}
 
 /**
  * The money-moving side of top-ups: crediting the wallet once the gateway confirms,
@@ -32,6 +40,7 @@ export class TopUpSettlementService {
     paidAt?: Date;
   }) {
     const result = await this.prisma.$transaction(async (tx) => {
+      await lockPayment(tx, input.paymentId);
       const payment = await tx.payment.findUniqueOrThrow({
         where: { id: input.paymentId },
         select: PAYMENT_VIEW,
@@ -130,13 +139,20 @@ export class TopUpSettlementService {
     return result.order;
   }
 
-  /** The gateway reports the member gave up, or gave the wrong amount. The order mirrors it. */
+  /**
+   * The gateway reports the member gave up, or gave the wrong amount. The order mirrors it, unless
+   * another delivery settled or closed the attempt first: a late failure never overwrites PAID.
+   */
   async markPaymentFailed(paymentId: string, reason: string, status: Extract<PaymentStatus, 'FAILED' | 'CANCELLED'>) {
     return this.prisma.$transaction(async (tx) => {
+      await lockPayment(tx, paymentId);
       const payment = await tx.payment.findUniqueOrThrow({
         where: { id: paymentId },
-        select: { coinTopUpId: true, amountVnd: true, coinTopUp: { select: { userId: true } } },
+        select: { status: true, coinTopUpId: true, amountVnd: true, coinTopUp: { select: { userId: true } } },
       });
+      if (payment.status !== PaymentStatus.PENDING) {
+        return tx.payment.findUniqueOrThrow({ where: { id: paymentId } });
+      }
       const updated = await tx.payment.update({ where: { id: paymentId }, data: { status, failureReason: reason } });
       await tx.coinTopUp.update({
         where: { id: payment.coinTopUpId },
