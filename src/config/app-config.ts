@@ -103,7 +103,7 @@ export interface AppConfig {
     sessionRetentionDays: number;
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
-  google: { clientIds: string[]; clientSecret?: string };
+  google: { clientIds: string[] };
   /** The Studio Web reports the films it mails back; null leaves that channel closed. */
   studio: { webhookToken: string | null };
 }
@@ -298,7 +298,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
           ].filter((value): value is string => Boolean(value)),
         ),
       ],
-      clientSecret: read.optional('GOOGLE_CLIENT_SECRET'),
     },
   };
 
