@@ -3,7 +3,7 @@ import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { HLS_LADDER } from 'src/modules/production/media-ingest/hls/quality-ladder';
 
 /** Most devices one plan may allow, registered or playing at once. */
-export const MAX_PLAN_DEVICES = 10;
+const MAX_PLAN_DEVICES = 10;
 
 /**
  * What a plan allows (BR-34), kept in `membership_plans.features`. MF-4 reads the two limits,

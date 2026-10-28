@@ -4,7 +4,7 @@ import { IsDateString, IsOptional, IsString, Matches, MaxLength, MinLength, Vali
 import { PASSWORD_HINT, PASSWORD_RULE } from './password-rule';
 
 /** A phone number as people type it: digits, an optional leading +, spaces or dots; 8 to 15 digits. */
-export const PHONE_RULE = /^\+?[0-9][0-9 .]{6,18}[0-9]$/;
+const PHONE_RULE = /^\+?[0-9][0-9 .]{6,18}[0-9]$/;
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 

@@ -13,7 +13,7 @@ const PLATFORMS = new Set(['IOS', 'ANDROID', 'WEB']);
 const UNNAMED_DEVICE = 'Thiết bị chưa đặt tên';
 
 /** How the device list shows the platform: one of the known ones, else OTHER. */
-export function platformOf(raw: string | undefined): string {
+function platformOf(raw: string | undefined): string {
   const platform = raw?.trim().toUpperCase() ?? '';
   return PLATFORMS.has(platform) ? platform : 'OTHER';
 }
