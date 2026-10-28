@@ -7,6 +7,7 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { appConfig } from 'src/config/config.module';
 import { AuthService } from './auth.service';
 import { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
+import { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
 import { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token.request.dto';
@@ -38,6 +39,16 @@ export class AuthController {
   @ApiOkResponse({ type: AuthSessionDto })
   login(@Body() dto: LoginRequestDto) {
     return this.authService.login(dto);
+  }
+
+  @Public()
+  @Throttle(authRateLimit)
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sign in or sign up with a Google ID token' })
+  @ApiOkResponse({ type: AuthSessionDto })
+  google(@Body() dto: GoogleLoginRequestDto) {
+    return this.authService.googleLogin(dto);
   }
 
   @Public()

@@ -5,6 +5,7 @@ import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { AuthService } from './auth.service';
+import type { GoogleTokenVerifier } from './google-token.verifier';
 import type { SessionTokenService } from './session-token.service';
 
 const profile = {
@@ -33,6 +34,7 @@ describe('AuthService', () => {
     sessions as unknown as SessionTokenService,
     accessControl as unknown as AccessControlService,
     wallets as unknown as WalletService,
+    { verify: jest.fn() } as unknown as GoogleTokenVerifier,
   );
 
   beforeEach(() => {

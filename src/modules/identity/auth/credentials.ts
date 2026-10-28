@@ -11,7 +11,7 @@ export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
 }
 
-export function verifyPassword(password: string, hash: string | undefined): Promise<boolean> {
+export function verifyPassword(password: string, hash: string | null | undefined): Promise<boolean> {
   return bcrypt.compare(password, hash ?? DUMMY_HASH);
 }
 
