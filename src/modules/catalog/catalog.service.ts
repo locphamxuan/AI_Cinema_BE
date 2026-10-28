@@ -23,7 +23,7 @@ const SUBTITLE_LABEL: Record<string, string> = {
 export const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
 
 /** How many movies the ranking tab shows. */
-export const RANKING_SIZE = 20;
+const RANKING_SIZE = 20;
 
 const EPISODE_DETAIL = {
   season: { select: { seasonNumber: true, title: true } },

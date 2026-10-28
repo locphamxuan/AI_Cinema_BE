@@ -10,13 +10,13 @@ import { planCues } from './ad-schedule';
  * How early the reported playhead may sit before the cue and still count (P4-2): it absorbs
  * keyframe granularity and the player's trigger delay.
  */
-export const AD_IMPRESSION_TOLERANCE_SECONDS = 30;
+const AD_IMPRESSION_TOLERANCE_SECONDS = 30;
 
 /**
  * P4-3: a completion claim is accepted once the ad itself could have played. Two seconds
  * absorb player-timer and network jitter without letting an instant "finished" call through.
  */
-export const AD_COMPLETION_TOLERANCE_SECONDS = 2;
+const AD_COMPLETION_TOLERANCE_SECONDS = 2;
 
 export interface AdScheduleItem {
   breakId: string;

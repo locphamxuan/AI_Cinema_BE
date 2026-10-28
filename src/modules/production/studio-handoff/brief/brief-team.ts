@@ -10,7 +10,7 @@ export interface BriefTeamEpisode {
   assignedCreator: BriefPerson | null;
 }
 
-export interface EpisodeOwner {
+interface EpisodeOwner {
   episodeNumber: number;
   seasonNumber: number;
   owner: BriefPerson;

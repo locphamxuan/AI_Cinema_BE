@@ -23,5 +23,6 @@
     "noFallthroughCasesInSwitch": false,
     "strictPropertyInitialization": false,
     "types": ["node", "jest", "multer"]
-  }
+  },
+  "exclude": ["node_modules", "dist", "storage"]
 }

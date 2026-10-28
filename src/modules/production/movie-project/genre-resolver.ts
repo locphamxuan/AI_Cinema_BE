@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 
-export const MAX_GENRES_PER_MOVIE = 5;
+const MAX_GENRES_PER_MOVIE = 5;
 
 /**
  * The genre ids of a project from the ids and the names the Reviewer sent. A name the genres table does not

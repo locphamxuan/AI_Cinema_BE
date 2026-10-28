@@ -5,7 +5,7 @@ import type { NotificationService } from 'src/modules/platform/notification/noti
 import type { CoinMovement } from './coin-wallet.types';
 
 /** Below this many Coins in all, the member is told the wallet is running low. */
-export const LOW_BALANCE_COINS = 10;
+const LOW_BALANCE_COINS = 10;
 
 const SPENT_FOR: Partial<Record<CoinEntryType, string>> = {
   EPISODE_PURCHASE: 'mở khoá một tập phim',

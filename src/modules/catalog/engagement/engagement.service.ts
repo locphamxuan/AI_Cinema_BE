@@ -4,7 +4,7 @@ import { LISTED_MOVIE } from '../catalog.service';
 import { VISIBLE_EPISODE } from '../episode-visibility';
 
 /** A signed-in viewer's plays of one episode count once in this window. */
-export const VIEW_WINDOW_MS = 30 * 60 * 1000;
+const VIEW_WINDOW_MS = 30 * 60 * 1000;
 
 export interface MovieEngagement {
   likeCount: number;
