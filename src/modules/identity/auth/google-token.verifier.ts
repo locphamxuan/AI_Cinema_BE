@@ -2,51 +2,39 @@ import { HttpException, Inject, Injectable, UnauthorizedException, Unprocessable
 import { OAuth2Client } from 'google-auth-library';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 
+/** Why a Google sign-in needs another step; the client answers it and resends the same token. */
+export const GOOGLE_REASON = {
+  NEEDS_BIRTHDAY: 'GOOGLE_SIGNUP_NEEDS_BIRTHDAY',
+  NEEDS_PASSWORD: 'GOOGLE_LINK_NEEDS_PASSWORD',
+  ACCOUNT_MISMATCH: 'GOOGLE_ACCOUNT_MISMATCH',
+} as const;
+
 export interface GoogleProfile {
   sub: string;
   email: string;
   name?: string;
-  picture?: string;
 }
 
+/** Checks a Google ID token against the web, Android and iOS client IDs of the app. */
 @Injectable()
 export class GoogleTokenVerifier {
+  private readonly client = new OAuth2Client();
+
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
-  isConfigured(): boolean {
-    return this.config.google.clientIds.length > 0;
-  }
-
-  assertConfigured(): void {
-    if (!this.isConfigured()) {
+  async verify(idToken: string): Promise<GoogleProfile> {
+    if (!this.config.google.clientIds.length) {
       throw new UnprocessableEntityException({
         message: 'Google sign-in is not configured',
         details: { reason: 'PROVIDER_NOT_CONFIGURED', provider: 'google' },
       });
     }
-  }
-
-  async verify(idToken: string): Promise<GoogleProfile> {
-    this.assertConfigured();
-    const client = new OAuth2Client();
     try {
-      const ticket = await client.verifyIdToken({
-        idToken,
-        audience: this.config.google.clientIds,
-      });
+      const ticket = await this.client.verifyIdToken({ idToken, audience: this.config.google.clientIds });
       const payload = ticket.getPayload();
-      if (!payload?.sub || !payload.email) {
-        throw new UnauthorizedException('Invalid Google ID token');
-      }
-      if (!payload.email_verified) {
-        throw new UnauthorizedException('Google account email is not verified');
-      }
-      return {
-        sub: payload.sub,
-        email: payload.email,
-        name: payload.name,
-        picture: payload.picture,
-      };
+      if (!payload?.sub || !payload.email) throw new UnauthorizedException('Invalid Google ID token');
+      if (!payload.email_verified) throw new UnauthorizedException('Google account email is not verified');
+      return { sub: payload.sub, email: payload.email, name: payload.name };
     } catch (error) {
       if (error instanceof HttpException) throw error;
       throw new UnauthorizedException('Invalid Google ID token');

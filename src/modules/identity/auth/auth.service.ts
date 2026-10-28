@@ -4,23 +4,24 @@ import {
   ForbiddenException,
   Injectable,
   UnauthorizedException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
-import { Inject } from '@nestjs/common';
-import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
 import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
 import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
-import { GoogleLoginRequestDto } from './dto/google-login.request.dto';
+import type { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
 import type { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
+import { GOOGLE_REASON, GoogleTokenVerifier, type GoogleProfile } from './google-token.verifier';
 import { SessionTokenService } from './session-token.service';
-import { GoogleTokenVerifier } from './google-token.verifier';
+
+const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
 
 @Injectable()
 export class AuthService {
@@ -30,14 +31,11 @@ export class AuthService {
     private readonly accessControl: AccessControlService,
     private readonly wallets: WalletService,
     private readonly google: GoogleTokenVerifier,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
     const dateOfBirth = new Date(dto.dateOfBirth);
-    if (!isAdult(dateOfBirth)) {
-      throw new ForbiddenException('AI Cinema is only for viewers aged 18 or older');
-    }
+    if (!isAdult(dateOfBirth)) throw new ForbiddenException(ADULTS_ONLY);
     const email = normalizeEmail(dto.email);
     if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
       throw new ConflictException('An account with this email already exists');
@@ -74,56 +72,17 @@ export class AuthService {
     return this.session(user);
   }
 
+  /**
+   * Signs in with a Google ID token. The first sign-in either opens a member account, which needs
+   * a birthday like any other (BR-54), or links an existing account, which needs its password:
+   * no email is verified at registration, so whoever registered it may not own the inbox. Both
+   * are asked for with a 422 `reason`, and the client resends the same token with the answer.
+   */
   async googleLogin(dto: GoogleLoginRequestDto): Promise<AuthSessionDto> {
     const profile = await this.google.verify(dto.idToken);
-    const email = normalizeEmail(profile.email);
-
-    let user = await this.prisma.user.findUnique({
-      where: { googleId: profile.sub },
-      select: USER_PROFILE_SELECT,
-    });
-
-    if (!user) {
-      const existing = await this.prisma.user.findUnique({
-        where: { email },
-        select: { id: true, googleId: true, emailVerifiedAt: true },
-      });
-
-      if (existing) {
-        if (!existing.googleId) {
-          await this.prisma.user.update({
-            where: { id: existing.id },
-            data: { googleId: profile.sub, emailVerifiedAt: existing.emailVerifiedAt ?? new Date() },
-          });
-        }
-        user = await this.prisma.user.findUniqueOrThrow({
-          where: { id: existing.id },
-          select: USER_PROFILE_SELECT,
-        });
-      } else {
-        let fullName = (profile.name ?? '').trim();
-        if (fullName.length < 2) fullName = email.split('@')[0];
-        if (fullName.length < 2) fullName = 'Google User';
-
-        user = await this.prisma.$transaction(async (tx) => {
-          const created = await tx.user.create({
-            data: {
-              email,
-              passwordHash: null,
-              fullName,
-              dateOfBirth: null,
-              role: UserRole.MEMBER,
-              googleId: profile.sub,
-              emailVerifiedAt: new Date(),
-            },
-            select: USER_PROFILE_SELECT,
-          });
-          await this.wallets.openForNewAccount(tx, created.id);
-          return created;
-        });
-      }
-    }
-
+    const user =
+      (await this.prisma.user.findUnique({ where: { googleId: profile.sub }, select: USER_PROFILE_SELECT })) ??
+      (await this.linkOrOpen(profile, dto));
     if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
     return this.session(user);
   }
@@ -149,7 +108,7 @@ export class AuthService {
     if (dateOfBirth && dateOfBirth.getTime() > Date.now())
       throw new BadRequestException('Birthday cannot be in the future');
     if (dateOfBirth && caller.role === UserRole.MEMBER && !isAdult(dateOfBirth)) {
-      throw new ForbiddenException('AI Cinema is only for viewers aged 18 or older');
+      throw new ForbiddenException(ADULTS_ONLY);
     }
     const user = await this.prisma.user.update({
       where: { id: caller.id },
@@ -180,6 +139,68 @@ export class AuthService {
     });
     await this.tokens.revokeAll(userId);
     return this.session(user);
+  }
+
+  private async linkOrOpen(profile: GoogleProfile, dto: GoogleLoginRequestDto): Promise<UserProfile> {
+    const email = normalizeEmail(profile.email);
+    const existing = await this.prisma.user.findUnique({
+      where: { email },
+      select: { ...USER_PROFILE_SELECT, passwordHash: true, googleId: true },
+    });
+    if (!existing) return this.openGoogleMember(profile, email, dto.dateOfBirth);
+    const { passwordHash, googleId, ...user } = existing;
+    if (googleId) {
+      throw new ConflictException({
+        message: 'This email is linked to another Google account',
+        details: { reason: GOOGLE_REASON.ACCOUNT_MISMATCH },
+      });
+    }
+    if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
+    if (passwordHash) {
+      if (!dto.password) {
+        throw new UnprocessableEntityException({
+          message: 'Enter the password of this account to link it to Google',
+          details: { reason: GOOGLE_REASON.NEEDS_PASSWORD },
+        });
+      }
+      if (!(await verifyPassword(dto.password, passwordHash))) {
+        throw new UnauthorizedException('Incorrect email or password');
+      }
+    }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { googleId: profile.sub, emailVerifiedAt: new Date() },
+    });
+    return user;
+  }
+
+  private async openGoogleMember(profile: GoogleProfile, email: string, birthday?: string): Promise<UserProfile> {
+    if (!birthday) {
+      throw new UnprocessableEntityException({
+        message: 'Enter your date of birth to finish signing up',
+        details: { reason: GOOGLE_REASON.NEEDS_BIRTHDAY },
+      });
+    }
+    const dateOfBirth = new Date(birthday);
+    if (!isAdult(dateOfBirth)) throw new ForbiddenException(ADULTS_ONLY);
+    const name = profile.name?.trim() ?? '';
+    const fullName = name.length >= 2 ? name : email.split('@')[0].padEnd(2, '_');
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email,
+          passwordHash: null,
+          fullName,
+          dateOfBirth,
+          role: UserRole.MEMBER,
+          googleId: profile.sub,
+          emailVerifiedAt: new Date(),
+        },
+        select: USER_PROFILE_SELECT,
+      });
+      await this.wallets.openForNewAccount(tx, created.id);
+      return created;
+    });
   }
 
   private async session(user: UserProfile): Promise<AuthSessionDto> {
