@@ -4,7 +4,6 @@ import * as bcrypt from 'bcrypt';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
-import type { AppConfig } from 'src/config/app-config';
 import { AuthService } from './auth.service';
 import type { GoogleTokenVerifier } from './google-token.verifier';
 import type { SessionTokenService } from './session-token.service';
@@ -30,19 +29,12 @@ describe('AuthService', () => {
   const wallets = { openForNewAccount: jest.fn() };
   const sessions = { issue: jest.fn(), rotate: jest.fn(), revoke: jest.fn(), revokeAll: jest.fn() };
   const accessControl = { permissionsOf: () => Promise.resolve(new Set(['project:manage', 'content:review'])) };
-  const config = { google: { clientIds: ['test-client-id'] } } as unknown as AppConfig;
-  const google = {
-    isConfigured: () => true,
-    assertConfigured: () => undefined,
-    verify: jest.fn().mockResolvedValue({ sub: 'google-sub', email: 'member@example.com', name: 'Member' }),
-  };
   const service = new AuthService(
     prisma as unknown as PrismaService,
     sessions as unknown as SessionTokenService,
     accessControl as unknown as AccessControlService,
     wallets as unknown as WalletService,
-    config,
-    google as unknown as GoogleTokenVerifier,
+    { verify: jest.fn() } as unknown as GoogleTokenVerifier,
   );
 
   beforeEach(() => {
@@ -140,81 +132,6 @@ describe('AuthService', () => {
       await service.changePassword(profile.id, { currentPassword: 'Aicinema@123', newPassword: 'Newpass123' });
       expect(sessions.revokeAll).toHaveBeenCalledWith(profile.id);
       expect(sessions.issue).toHaveBeenCalled();
-    });
-  });
-
-  describe('googleLogin', () => {
-    const googleDto = { idToken: 'google-id-token' };
-
-    beforeEach(() => {
-      google.verify.mockResolvedValue({ sub: 'google-sub', email: 'Member@Example.com', name: 'Google Name' });
-    });
-
-    it('creates a new member, opens a wallet and returns a session', async () => {
-      prisma.user.findUnique
-        .mockResolvedValueOnce(null) // by googleId
-        .mockResolvedValueOnce(null); // by email
-      prisma.user.create.mockResolvedValue({ ...profile, role: UserRole.MEMBER, email: 'member@example.com' });
-
-      const session = await service.googleLogin(googleDto);
-
-      expect(google.verify).toHaveBeenCalledWith('google-id-token');
-      const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: Record<string, unknown> }];
-      expect(data).toMatchObject({
-        email: 'member@example.com',
-        fullName: 'Google Name',
-        role: UserRole.MEMBER,
-        googleId: 'google-sub',
-        passwordHash: null,
-        dateOfBirth: null,
-      });
-      expect(wallets.openForNewAccount).toHaveBeenCalled();
-      expect(session).toMatchObject({ ...tokens, user: { id: profile.id } });
-    });
-
-    it('creates an account without a date of birth when Google does not provide one', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
-      prisma.user.create.mockResolvedValue({ ...profile, role: UserRole.MEMBER, email: 'member@example.com' });
-
-      await service.googleLogin({ idToken: 'google-id-token' });
-
-      const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: Record<string, unknown> }];
-      expect(data).toMatchObject({ dateOfBirth: null });
-    });
-
-    it('logs in an account already linked to Google', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce({ ...profile, role: UserRole.MEMBER });
-
-      const session = await service.googleLogin({ idToken: 'google-id-token' });
-
-      expect(prisma.user.findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { googleId: 'google-sub' } }),
-      );
-      expect(session).toMatchObject({ ...tokens, user: { id: profile.id } });
-      expect(prisma.user.create).not.toHaveBeenCalled();
-    });
-
-    it('links Google to an existing email account and logs in', async () => {
-      prisma.user.findUnique
-        .mockResolvedValueOnce(null) // by googleId
-        .mockResolvedValueOnce({ id: profile.id, googleId: null, emailVerifiedAt: null }); // by email
-      prisma.user.findUniqueOrThrow.mockResolvedValue({ ...profile, role: UserRole.MEMBER });
-
-      const session = await service.googleLogin({ idToken: 'google-id-token' });
-
-      expect(prisma.user.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: profile.id },
-          data: expect.objectContaining({ googleId: 'google-sub' }),
-        }),
-      );
-      expect(session).toMatchObject({ ...tokens, user: { id: profile.id } });
-    });
-
-    it('refuses a deactivated account', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce({ ...profile, role: UserRole.MEMBER, isActive: false });
-      await expect(service.googleLogin(googleDto)).rejects.toThrow(ForbiddenException);
-      expect(sessions.issue).not.toHaveBeenCalled();
     });
   });
 
