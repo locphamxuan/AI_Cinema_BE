@@ -42,15 +42,10 @@ export class SubscriptionController {
 
   @Post()
   @RequirePermission(PERMISSION.SUBSCRIPTION_SELF_MANAGE)
-  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Sending it twice pays once' })
   @ApiOperation({ summary: 'Quote a plan into a PENDING intent; no Coin moves yet' })
   @ApiOkResponse({ type: SubscriptionIntentView })
-  subscribe(
-    @CurrentUser('id') userId: string,
-    @Body() dto: SubscribeRequestDto,
-    @Headers('idempotency-key') key?: string,
-  ) {
-    return this.subscriptions.subscribe(userId, dto.planId, key);
+  subscribe(@CurrentUser('id') userId: string, @Body() dto: SubscribeRequestDto) {
+    return this.subscriptions.subscribe(userId, dto.planId);
   }
 
   @Post(':id/activate')

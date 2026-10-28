@@ -66,10 +66,10 @@ export class SubscriptionService {
    * Step 10: quotes the first cycle into a PENDING intent without moving any Coin, so the UI can
    * show the price, the balances and the confirmation screen. A member who already has an open
    * plan (PENDING included) is told so with SUBSCRIPTION_EXISTS rather than opening a second one.
-   * The idempotency key is accepted for the contract but needs no ledger row here: replaying the
-   * intent is `GET /subscriptions/me`, paying for it is `activate`.
+   * No idempotency key is needed: no Coin moves here, replaying the intent is `GET /subscriptions/me`
+   * and paying for it is `activate`.
    */
-  async subscribe(userId: string, planId: string, _idempotencyKey?: string) {
+  async subscribe(userId: string, planId: string) {
     return this.prisma.$transaction(async (tx) => {
       const { plan, price } = await purchasablePlan(tx, planId);
       const now = new Date();
