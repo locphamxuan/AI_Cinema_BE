@@ -58,13 +58,14 @@ describe('CoinSpendService.spend', () => {
     });
   });
 
-  it('replays the same idempotency key instead of charging again', async () => {
+  it('replays the same idempotency key with the main/bonus split of the first charge', async () => {
+    // Only the first row carries the key: the main part, with the bonus balance still untouched.
     tx.coinTransaction.findUnique.mockResolvedValue({
       id: 'tx-1',
       mainAmount: -10,
-      bonusAmount: -15,
+      bonusAmount: 0,
       mainBalanceAfter: 0,
-      bonusBalanceAfter: 25,
+      bonusBalanceAfter: 40,
     });
 
     const movement = await service.spend(tx as unknown as PrismaTx, 'w1', {
@@ -166,6 +167,26 @@ describe('CoinSpendService.credit', () => {
     expect(tx.coinTransaction.createManyAndReturn).toHaveBeenCalledWith({
       data: [expect.objectContaining({ bonusAmount: 5, lotId: 'lot-9' })],
     });
+  });
+
+  it('replays a credit with the amounts it added, not their negation', async () => {
+    tx.coinTransaction.findUnique.mockResolvedValue({
+      id: 'tx-8',
+      mainAmount: 50,
+      bonusAmount: 0,
+      mainBalanceAfter: 70,
+      bonusBalanceAfter: 5,
+    });
+
+    const movement = await service.credit(tx as unknown as PrismaTx, 'w1', {
+      entryType: CoinEntryType.TOP_UP,
+      mainAmount: 50,
+      lotSource: CoinLotSource.TOP_UP_PROMO,
+      idempotencyKey: 'topup:1',
+    });
+
+    expect(movement).toEqual({ transactionId: 'tx-8', mainCoins: 50, bonusCoins: 0, mainBalance: 70, bonusBalance: 5 });
+    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
   });
 
   it('refuses to credit nothing', async () => {

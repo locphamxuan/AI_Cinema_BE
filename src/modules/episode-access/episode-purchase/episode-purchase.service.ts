@@ -5,12 +5,11 @@ import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.s
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { CoinSpendService } from '../coin-wallet/coin-spend.service';
+import { CoinSpendService, spentMovementOf } from '../coin-wallet/coin-spend.service';
+import { lockWallet } from '../coin-wallet/lot-usage';
 import { WalletService } from '../coin-wallet/wallet.service';
 import { runningPlanWhere } from '../subscription/running-plan';
 import type { PurchaseResultDto } from './dto/purchase-result.dto';
-
-/** A plan that already grants the episode makes buying it pointless. */
 
 /**
  * Step 17 of the flow: unlock one episode with Coins. The Coins leave through the shared spend
@@ -58,6 +57,9 @@ export class EpisodePurchaseService {
     const wallet = await this.wallets.walletOf(user.id);
     const { coinRateVnd } = await this.settings.get();
     return this.prisma.$transaction(async (tx) => {
+      // Every Coin payment of this member takes the wallet lock, so a double tap without an
+      // Idempotency-Key waits here and then finds the episode the first tap just bought.
+      await lockWallet(tx, wallet.id);
       await this.assertNotOwned(tx, episode.id, user.id);
       const movement = await this.coins.spend(tx, wallet.id, {
         entryType: CoinEntryType.EPISODE_PURCHASE,
@@ -131,12 +133,13 @@ export class EpisodePurchaseService {
     });
     const access = entry?.episodeAccess;
     if (!access || access.userId !== userId || access.episodeId !== episodeId) return null;
+    const movement = spentMovementOf(entry, access.paidCoins);
     return {
       episodeId,
       paidCoins: access.paidCoins,
-      charged: { mainCoins: -entry.mainAmount, bonusCoins: -entry.bonusAmount },
-      mainBalance: entry.mainBalanceAfter,
-      bonusBalance: entry.bonusBalanceAfter,
+      charged: { mainCoins: movement.mainCoins, bonusCoins: movement.bonusCoins },
+      mainBalance: movement.mainBalance,
+      bonusBalance: movement.bonusBalance,
       access: { source: access.source, grantedAt: access.grantedAt },
       accessGranted: true,
       idempotent: true,
