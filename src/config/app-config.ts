@@ -106,6 +106,17 @@ export interface AppConfig {
   google: { clientIds: string[] };
   /** The Studio Web reports the films it mails back; null leaves that channel closed. */
   studio: { webhookToken: string | null };
+  support: {
+    aiMode: 'live' | 'mock' | 'disabled';
+    aiChatModel: string;
+    aiEmbeddingModel: string;
+    aiEmbeddingDimensions: number;
+    ragTopK: number;
+    ragMinScore: number;
+    autoCloseHours: number;
+    dailyMessageLimit: number;
+    messageMaxChars: number;
+  };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -139,6 +150,17 @@ class EnvReader {
     const value = Number(raw);
     if (!Number.isInteger(value) || value < min) {
       this.errors.push(`${key} must be an integer >= ${min} (got "${raw}")`);
+      return fallback;
+    }
+    return value;
+  }
+
+  float(key: string, fallback: number, min = -Infinity): number {
+    const raw = this.optional(key);
+    if (raw === undefined) return fallback;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < min) {
+      this.errors.push(`${key} must be a finite number >= ${min} (got "${raw}")`);
       return fallback;
     }
     return value;
@@ -288,6 +310,17 @@ export function loadConfig(env: Env = process.env): AppConfig {
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
     studio: { webhookToken: read.optional('STUDIO_WEBHOOK_TOKEN') ?? null },
+    support: {
+      aiMode: read.oneOf('AI_MODE', ['live', 'mock', 'disabled'] as const, 'live'),
+      aiChatModel: read.string('AI_CHAT_MODEL', 'gpt-4o-mini'),
+      aiEmbeddingModel: read.string('AI_EMBEDDING_MODEL', 'text-embedding-3-small'),
+      aiEmbeddingDimensions: read.int('AI_EMBEDDING_DIMENSIONS', 1536, 1),
+      ragTopK: read.int('AI_RAG_TOP_K', 6, 1),
+      ragMinScore: read.float('AI_RAG_MIN_SCORE', 0.35, 0),
+      autoCloseHours: read.int('SUPPORT_AUTO_CLOSE_HOURS', 24, 1),
+      dailyMessageLimit: read.int('SUPPORT_DAILY_MESSAGE_LIMIT', 200, 1),
+      messageMaxChars: read.int('SUPPORT_MESSAGE_MAX_CHARS', 4000, 1),
+    },
     google: {
       clientIds: [
         ...new Set(

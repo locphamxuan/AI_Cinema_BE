@@ -23,6 +23,11 @@ services:
       interval: 2s
       timeout: 3s
       retries: 20
+    # Enable pgvector extension
+    command: >
+      postgres
+      -c "shared_preload_libraries=pgvector"
+      -c "track_counts=off"
 
   redis:
     image: redis:7-alpine
