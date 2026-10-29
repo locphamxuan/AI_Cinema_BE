@@ -4,7 +4,7 @@ import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { AuthService } from './auth.service';
-import { GOOGLE_REASON, type GoogleTokenVerifier } from './google-token.verifier';
+import type { GoogleTokenVerifier } from './google-token.verifier';
 import type { SessionTokenService } from './session-token.service';
 
 const member = {
@@ -57,44 +57,35 @@ describe('AuthService.googleLogin', () => {
     expect(user.create).not.toHaveBeenCalled();
   });
 
-  it('asks for a birthday before opening a new member account (BR-54)', async () => {
-    lookups(null);
-
-    await expect(service.googleLogin({ idToken })).rejects.toMatchObject({
-      status: 422,
-      response: { details: { reason: GOOGLE_REASON.NEEDS_BIRTHDAY } },
-    });
-    expect(user.create).not.toHaveBeenCalled();
-  });
-
-  it('turns away anyone under 18', async () => {
-    lookups(null);
-    const birthday = new Date(Date.now() - 17 * 365 * 86_400_000).toISOString().slice(0, 10);
-
-    await expect(service.googleLogin({ idToken, dateOfBirth: birthday })).rejects.toThrow(ForbiddenException);
-    expect(user.create).not.toHaveBeenCalled();
-  });
-
-  it('opens a member account with a wallet once the birthday is given', async () => {
+  it('opens a member account with a wallet at once, under the Google name and without a birthday', async () => {
     lookups(null);
     user.create.mockResolvedValue(member);
 
-    const session = await service.googleLogin({ idToken, dateOfBirth: '2000-01-01' });
+    const session = await service.googleLogin({ idToken });
 
-    expect(user.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          email: 'member@example.com',
-          fullName: 'Google Name',
-          role: UserRole.MEMBER,
-          googleId: 'google-sub',
-          passwordHash: null,
-          dateOfBirth: new Date('2000-01-01'),
-        }),
-      }),
-    );
+    const [[{ data }]] = user.create.mock.calls as [[{ data: Record<string, unknown> }]];
+    expect(data).toMatchObject({
+      email: 'member@example.com',
+      fullName: 'Google Name',
+      role: UserRole.MEMBER,
+      googleId: 'google-sub',
+      passwordHash: null,
+    });
+    expect(data).not.toHaveProperty('dateOfBirth');
     expect(wallets.openForNewAccount).toHaveBeenCalledWith(tx, member.id);
     expect(session).toMatchObject({ user: { id: member.id } });
+  });
+
+  it('falls back to the mailbox name when Google gives no usable name', async () => {
+    lookups(null);
+    google.verify.mockResolvedValue({ sub: 'google-sub', email: 'member@example.com', name: ' ' });
+    user.create.mockResolvedValue(member);
+
+    await service.googleLogin({ idToken });
+
+    expect(user.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ fullName: 'member' }) }),
+    );
   });
 
   it('links Google to an existing account without asking for its password', async () => {

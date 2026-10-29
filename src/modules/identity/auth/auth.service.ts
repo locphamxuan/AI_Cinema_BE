@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Injectable,
   UnauthorizedException,
-  UnprocessableEntityException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -82,7 +81,7 @@ export class AuthService {
     const profile = await this.google.verify(dto.idToken);
     const user =
       (await this.prisma.user.findUnique({ where: { googleId: profile.sub }, select: USER_PROFILE_SELECT })) ??
-      (await this.linkOrOpen(profile, dto));
+      (await this.linkOrOpen(profile));
     if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
     return this.session(user);
   }
@@ -141,13 +140,13 @@ export class AuthService {
     return this.session(user);
   }
 
-  private async linkOrOpen(profile: GoogleProfile, dto: GoogleLoginRequestDto): Promise<UserProfile> {
+  private async linkOrOpen(profile: GoogleProfile): Promise<UserProfile> {
     const email = normalizeEmail(profile.email);
     const existing = await this.prisma.user.findUnique({
       where: { email },
       select: { ...USER_PROFILE_SELECT, googleId: true },
     });
-    if (!existing) return this.openGoogleMember(profile, email, dto.dateOfBirth);
+    if (!existing) return this.openGoogleMember(profile, email);
     const { googleId, ...user } = existing;
     if (googleId) {
       throw new ConflictException({
@@ -164,15 +163,8 @@ export class AuthService {
     return user;
   }
 
-  private async openGoogleMember(profile: GoogleProfile, email: string, birthday?: string): Promise<UserProfile> {
-    if (!birthday) {
-      throw new UnprocessableEntityException({
-        message: 'Enter your date of birth to finish signing up',
-        details: { reason: GOOGLE_REASON.NEEDS_BIRTHDAY },
-      });
-    }
-    const dateOfBirth = new Date(birthday);
-    if (!isAdult(dateOfBirth)) throw new ForbiddenException(ADULTS_ONLY);
+  /** One tap: the member account opens at once under the Google name; the birthday can be added on the profile later. */
+  private async openGoogleMember(profile: GoogleProfile, email: string): Promise<UserProfile> {
     const name = profile.name?.trim() ?? '';
     const fullName = name.length >= 2 ? name : email.split('@')[0].padEnd(2, '_');
     return this.prisma.$transaction(async (tx) => {
@@ -181,7 +173,6 @@ export class AuthService {
           email,
           passwordHash: null,
           fullName,
-          dateOfBirth,
           role: UserRole.MEMBER,
           googleId: profile.sub,
           emailVerifiedAt: new Date(),
