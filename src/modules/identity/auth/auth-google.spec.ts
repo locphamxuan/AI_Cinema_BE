@@ -4,7 +4,7 @@ import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { AuthService } from './auth.service';
-import type { GoogleTokenVerifier } from './google-token.verifier';
+import { GOOGLE_REASON, type GoogleTokenVerifier } from './google-token.verifier';
 import type { SessionTokenService } from './session-token.service';
 
 const member = {
@@ -104,6 +104,24 @@ describe('AuthService.googleLogin', () => {
     lookups(null, { ...member, googleId: 'other-sub' });
 
     await expect(service.googleLogin({ idToken })).rejects.toThrow(ConflictException);
+  });
+
+  it('turns away a staff account already linked to Google', async () => {
+    lookups({ ...member, role: UserRole.CONTENT_REVIEWER });
+
+    await expect(service.googleLogin({ idToken })).rejects.toMatchObject({
+      status: 403,
+      response: { details: { reason: GOOGLE_REASON.STAFF_ACCOUNT } },
+    });
+    expect(sessions.issue).not.toHaveBeenCalled();
+  });
+
+  it('never links Google to a staff account with the same email', async () => {
+    lookups(null, { ...member, role: UserRole.ADMIN, googleId: null });
+
+    await expect(service.googleLogin({ idToken })).rejects.toThrow(ForbiddenException);
+    expect(user.update).not.toHaveBeenCalled();
+    expect(user.create).not.toHaveBeenCalled();
   });
 
   it('refuses a deactivated linked account', async () => {

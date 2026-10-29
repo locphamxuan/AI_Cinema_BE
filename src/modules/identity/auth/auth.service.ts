@@ -22,6 +22,17 @@ import { SessionTokenService } from './session-token.service';
 
 const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
 
+/** Only an active member may use Google; a staff account keeps its password sign-in. */
+function assertGoogleMember(user: Pick<UserProfile, 'role' | 'isActive'>): void {
+  if (user.role !== UserRole.MEMBER) {
+    throw new ForbiddenException({
+      message: 'Google sign-in is for member accounts; sign in with your password',
+      details: { reason: GOOGLE_REASON.STAFF_ACCOUNT },
+    });
+  }
+  if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -72,17 +83,16 @@ export class AuthService {
   }
 
   /**
-   * Signs in with a Google ID token. The first sign-in either opens a member account, which needs
-   * a birthday like any other (BR-54), or links an existing account, which needs its password:
-   * no email is verified at registration, so whoever registered it may not own the inbox. Both
-   * are asked for with a 422 `reason`, and the client resends the same token with the answer.
+   * Google sign-in is for members only, in one tap: a linked member signs in, a member account with
+   * that verified email is linked, and a new email opens a member account under the Google name.
+   * Staff accounts (Admin, Reviewer, Creator, Staff) sign in with their password and are never linked.
    */
   async googleLogin(dto: GoogleLoginRequestDto): Promise<AuthSessionDto> {
     const profile = await this.google.verify(dto.idToken);
     const user =
       (await this.prisma.user.findUnique({ where: { googleId: profile.sub }, select: USER_PROFILE_SELECT })) ??
       (await this.linkOrOpen(profile));
-    if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
+    assertGoogleMember(user);
     return this.session(user);
   }
 
@@ -154,7 +164,7 @@ export class AuthService {
         details: { reason: GOOGLE_REASON.ACCOUNT_MISMATCH },
       });
     }
-    if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
+    assertGoogleMember(user);
     // Google already proved the mailbox (email_verified), so the account it names is linked as is.
     await this.prisma.user.update({
       where: { id: user.id },

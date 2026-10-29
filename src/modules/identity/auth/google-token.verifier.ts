@@ -5,6 +5,7 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 /** Why a Google sign-in is refused, for the client to explain. */
 export const GOOGLE_REASON = {
   ACCOUNT_MISMATCH: 'GOOGLE_ACCOUNT_MISMATCH',
+  STAFF_ACCOUNT: 'GOOGLE_STAFF_ACCOUNT',
 } as const;
 
 export interface GoogleProfile {
