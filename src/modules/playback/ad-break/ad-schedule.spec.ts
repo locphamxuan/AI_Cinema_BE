@@ -34,6 +34,20 @@ describe('weightedOrder', () => {
     expect(firsts).toContain(100);
     expect(weightedOrder(weighted)).toHaveLength(3);
   });
+
+  it('puts an ad first in proportion to its weight', () => {
+    const ads = [
+      { id: 'heavy', weight: 100 },
+      { id: 'light', weight: 10 },
+    ];
+    // Evenly spread draws stand for a fair random source, so the count is exact rather than flaky.
+    const draws = 1100;
+    const firsts = Array.from({ length: draws }, (_, i) => weightedOrder(ads, () => (i + 0.5) / draws)[0].id);
+    const heavy = firsts.filter((id) => id === 'heavy').length;
+
+    expect(heavy).toBe(1000);
+    expect(heavy / (draws - heavy)).toBe(10);
+  });
 });
 
 describe('planCues', () => {
