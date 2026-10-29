@@ -4,7 +4,7 @@ Video không nằm trong git mà nằm trên R2. Có phim mới thì chỉ cần
 rồi `npm run film:catalog`, commit `MANIFEST.json`, file này và `CATALOG.json` (không cần tải phim cũ về).
 Chỉ khi cần xem/sửa video trên máy mới chạy `npm run film:pull`.
 
-Tổng: 55 video.
+Tổng: 76 video.
 
 | File | MB |
 | :--- | ---: |
@@ -28,9 +28,30 @@ Tổng: 55 video.
 | AI_Film_v2/Giả tưởng - Phiêu lưu/The Chronicles of Bone/The Chronicles of Bone.ep4.mp4 | 85 |
 | AI_Film_v2/Giả tưởng - Phiêu lưu/The Chronicles of Bone/The Chronicles of Bone.ep5.mp4 | 122 |
 | AI_Film_v2/Giật gân - Bí ẩn - Học đường/Trò chơi ma sói/Tội phạm- Trò chơi ma sói.mp4 | 6 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Quỷ chúa thức tỉnh/(Lồng tiếng)Quỷ Chúa Thức Tỉnh Tập 1 [701784384_Episode-1].mp4 | 20 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Quỷ chúa thức tỉnh/(Lồng tiếng)Quỷ Chúa Thức Tỉnh Tập 2 [701784385_Episode-2].mp4 | 10 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Quỷ chúa thức tỉnh/(Lồng tiếng)Quỷ Chúa Thức Tỉnh Tập 3 [701784386_Episode-3].mp4 | 11 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Quỷ chúa thức tỉnh/(Lồng tiếng)Quỷ Chúa Thức Tỉnh Tập 4 [701784387_Episode-4].mp4 | 12 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Quỷ chúa thức tỉnh/(Lồng tiếng)Quỷ Chúa Thức Tỉnh Tập 5 [701784388_Episode-5].mp4 | 6 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Quỷ chúa thức tỉnh/(Lồng tiếng)Quỷ Chúa Thức Tỉnh Tập 6 [701784389_Episode-6].mp4 | 11 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Vua sói từng bị ruồng bỏ/Vua Sói Từng Bị Ruồng Bỏ Tập 1 [701700958_Episode-1].mp4 | 21 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Vua sói từng bị ruồng bỏ/Vua Sói Từng Bị Ruồng Bỏ Tập 2 [701700959_Episode-2].mp4 | 21 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Vua sói từng bị ruồng bỏ/Vua Sói Từng Bị Ruồng Bỏ Tập 3 [701700960_Episode-3].mp4 | 12 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Vua sói từng bị ruồng bỏ/Vua Sói Từng Bị Ruồng Bỏ Tập 4 [701700961_Episode-4].mp4 | 6 |
+| AI_Film_v2/Hành động - Giả tưởng - Tình cảm/Vua sói từng bị ruồng bỏ/Vua Sói Từng Bị Ruồng Bỏ Tập 5 [701700962_Episode-5].mp4 | 12 |
+| AI_Film_v2/Hành động - Sinh tồn/Nhà tù tử thần/Nhà tù tử thần ep1.mp4 | 22 |
+| AI_Film_v2/Hành động - Sinh tồn/Nhà tù tử thần/Nhà Tù Tử Thần_ Chinh Phục Nữ Cai Ngục Tập 2 [701803204_Episode-2].mp4 | 8 |
+| AI_Film_v2/Hành động - Sinh tồn/Nhà tù tử thần/Nhà Tù Tử Thần_ Chinh Phục Nữ Cai Ngục Tập 3 [701803205_Episode-3].mp4 | 9 |
+| AI_Film_v2/Hành động - Sinh tồn/Nhà tù tử thần/Nhà Tù Tử Thần_ Chinh Phục Nữ Cai Ngục Tập 4 [701803206_Episode-4].mp4 | 12 |
+| AI_Film_v2/Hành động - Sinh tồn/Nhà tù tử thần/Nhà Tù Tử Thần_ Chinh Phục Nữ Cai Ngục Tập 5 [701803207_Episode-5].mp4 | 9 |
 | AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành đọng- Võ thuật- Void Core-ep2.mp4 | 74 |
 | AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành đọng- Võ thuật- Void Core-ep3.mp4 | 61 |
 | AI_Film_v2/Hành động - Võ thuật - Khoa học viễn tưởng/Void Core/Hành động-Võ thuật- Void Core-ep1.mp4 | 12 |
+| AI_Film_v2/Hành động - Võ thuật/Tay đấm cừ khôi/Tay Đấu Cừ Khôi Tập 1 [701693953_Episode-1].mp4 | 14 |
+| AI_Film_v2/Hành động - Võ thuật/Tay đấm cừ khôi/Tay Đấu Cừ Khôi Tập 2 [701693954_Episode-2].mp4 | 13 |
+| AI_Film_v2/Hành động - Võ thuật/Tay đấm cừ khôi/Tay Đấu Cừ Khôi Tập 3 [701693955_Episode-3].mp4 | 15 |
+| AI_Film_v2/Hành động - Võ thuật/Tay đấm cừ khôi/Tay Đấu Cừ Khôi Tập 5 [701693957_Episode-5].mp4 | 8 |
+| AI_Film_v2/Hành động - Võ thuật/Tay đấm cừ khôi/Tay Đấu Cừ Khôi Tập 6 [701693958_Episode-6].mp4 | 7 |
 | AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep1.mp4 | 65 |
 | AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep2.mp4 | 8 |
 | AI_Film_v2/Học đường - Lãng mạn - Chính kịch/Im lặng thất hứa/Học đường- Im lặng thất hứa.ep3.mp4 | 7 |
