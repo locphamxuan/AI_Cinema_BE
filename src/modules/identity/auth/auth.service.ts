@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Injectable,
   UnauthorizedException,
-  UnprocessableEntityException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -22,6 +21,17 @@ import { GOOGLE_REASON, GoogleTokenVerifier, type GoogleProfile } from './google
 import { SessionTokenService } from './session-token.service';
 
 const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
+
+/** Only an active member may use Google; a staff account keeps its password sign-in. */
+function assertGoogleMember(user: Pick<UserProfile, 'role' | 'isActive'>): void {
+  if (user.role !== UserRole.MEMBER) {
+    throw new ForbiddenException({
+      message: 'Google sign-in is for member accounts; sign in with your password',
+      details: { reason: GOOGLE_REASON.STAFF_ACCOUNT },
+    });
+  }
+  if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
+}
 
 @Injectable()
 export class AuthService {
@@ -73,17 +83,16 @@ export class AuthService {
   }
 
   /**
-   * Signs in with a Google ID token. The first sign-in either opens a member account, which needs
-   * a birthday like any other (BR-54), or links an existing account, which needs its password:
-   * no email is verified at registration, so whoever registered it may not own the inbox. Both
-   * are asked for with a 422 `reason`, and the client resends the same token with the answer.
+   * Google sign-in is for members only, in one tap: a linked member signs in, a member account with
+   * that verified email is linked, and a new email opens a member account under the Google name.
+   * Staff accounts (Admin, Reviewer, Creator, Staff) sign in with their password and are never linked.
    */
   async googleLogin(dto: GoogleLoginRequestDto): Promise<AuthSessionDto> {
     const profile = await this.google.verify(dto.idToken);
     const user =
       (await this.prisma.user.findUnique({ where: { googleId: profile.sub }, select: USER_PROFILE_SELECT })) ??
-      (await this.linkOrOpen(profile, dto));
-    if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
+      (await this.linkOrOpen(profile));
+    assertGoogleMember(user);
     return this.session(user);
   }
 
@@ -141,13 +150,13 @@ export class AuthService {
     return this.session(user);
   }
 
-  private async linkOrOpen(profile: GoogleProfile, dto: GoogleLoginRequestDto): Promise<UserProfile> {
+  private async linkOrOpen(profile: GoogleProfile): Promise<UserProfile> {
     const email = normalizeEmail(profile.email);
     const existing = await this.prisma.user.findUnique({
       where: { email },
       select: { ...USER_PROFILE_SELECT, googleId: true },
     });
-    if (!existing) return this.openGoogleMember(profile, email, dto.dateOfBirth);
+    if (!existing) return this.openGoogleMember(profile, email);
     const { googleId, ...user } = existing;
     if (googleId) {
       throw new ConflictException({
@@ -155,7 +164,7 @@ export class AuthService {
         details: { reason: GOOGLE_REASON.ACCOUNT_MISMATCH },
       });
     }
-    if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
+    assertGoogleMember(user);
     // Google already proved the mailbox (email_verified), so the account it names is linked as is.
     await this.prisma.user.update({
       where: { id: user.id },
@@ -164,15 +173,8 @@ export class AuthService {
     return user;
   }
 
-  private async openGoogleMember(profile: GoogleProfile, email: string, birthday?: string): Promise<UserProfile> {
-    if (!birthday) {
-      throw new UnprocessableEntityException({
-        message: 'Enter your date of birth to finish signing up',
-        details: { reason: GOOGLE_REASON.NEEDS_BIRTHDAY },
-      });
-    }
-    const dateOfBirth = new Date(birthday);
-    if (!isAdult(dateOfBirth)) throw new ForbiddenException(ADULTS_ONLY);
+  /** One tap: the member account opens at once under the Google name; the birthday can be added on the profile later. */
+  private async openGoogleMember(profile: GoogleProfile, email: string): Promise<UserProfile> {
     const name = profile.name?.trim() ?? '';
     const fullName = name.length >= 2 ? name : email.split('@')[0].padEnd(2, '_');
     return this.prisma.$transaction(async (tx) => {
@@ -181,7 +183,6 @@ export class AuthService {
           email,
           passwordHash: null,
           fullName,
-          dateOfBirth,
           role: UserRole.MEMBER,
           googleId: profile.sub,
           emailVerifiedAt: new Date(),

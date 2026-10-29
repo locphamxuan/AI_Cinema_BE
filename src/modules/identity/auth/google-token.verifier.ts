@@ -2,10 +2,10 @@ import { HttpException, Inject, Injectable, UnauthorizedException, Unprocessable
 import { OAuth2Client } from 'google-auth-library';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 
-/** Why a Google sign-in needs another step; the client answers it and resends the same token. */
+/** Why a Google sign-in is refused, for the client to explain. */
 export const GOOGLE_REASON = {
-  NEEDS_BIRTHDAY: 'GOOGLE_SIGNUP_NEEDS_BIRTHDAY',
   ACCOUNT_MISMATCH: 'GOOGLE_ACCOUNT_MISMATCH',
+  STAFF_ACCOUNT: 'GOOGLE_STAFF_ACCOUNT',
 } as const;
 
 export interface GoogleProfile {
