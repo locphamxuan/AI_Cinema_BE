@@ -15,12 +15,4 @@ export class GoogleLoginRequestDto {
   @IsOptional()
   @IsDateString({ strict: true })
   dateOfBirth?: string;
-
-  @ApiPropertyOptional({
-    description: 'Asked for (GOOGLE_LINK_NEEDS_PASSWORD) when the email already has a password account to link.',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(72)
-  password?: string;
 }
