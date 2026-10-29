@@ -1,0 +1,47 @@
+enum ProjectStatus {
+  DRAFT
+  ASSIGNED
+  IN_PRODUCTION
+  COMPLETED
+  /// BR-56: a completed project with episodes taken down to be fixed
+  UNDER_REVISION
+  CANCELLED
+}
+
+/// The production side of one movie (§4.1.1, §4.1.2): who orders it, from which studio, how far it
+/// got. Its catalog face is the `movies` row sharing its id. The production fee is not stored here:
+/// it is the sum of token_ledger (BR-46).
+model MovieProject {
+  /// The id of its catalog movie (1:1).
+  id              String        @id @db.Uuid
+  ideaDescription String        @map("idea_description") @db.Text
+  status          ProjectStatus @default(DRAFT)
+  reviewerId      String        @map("reviewer_id") @db.Uuid
+  creatorId       String?       @map("creator_id") @db.Uuid
+  /// The one studio of the project (BR-59); it has no account (BR-15).
+  studioId        String?       @map("studio_id") @db.Uuid
+  cancelReason    String?       @map("cancel_reason") @db.Text
+  handedOffAt     DateTime?     @map("handed_off_at") @db.Timestamptz(6)
+  completedAt     DateTime?     @map("completed_at") @db.Timestamptz(6)
+  cancelledAt     DateTime?     @map("cancelled_at") @db.Timestamptz(6)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  movie              Movie                      @relation(fields: [id], references: [id], onDelete: Cascade)
+  reviewer           User                       @relation("ProjectReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+  creator            User?                      @relation("ProjectCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  studio             Studio?                    @relation(fields: [studioId], references: [id], onDelete: Restrict)
+  creatorAssignments ProjectCreatorAssignment[]
+  ideaFiles          MovieIdeaFile[]
+  studioHandoffs     StudioHandoff[]
+  tokenEntries       TokenLedgerEntry[]
+  changeRequests     ProjectChangeRequest[]
+  tokenRequests      TokenRequest[]
+  auditLogs          AuditLog[]
+
+  @@index([status])
+  @@index([reviewerId])
+  @@index([creatorId])
+  @@index([studioId])
+  @@map("movie_projects")
+}

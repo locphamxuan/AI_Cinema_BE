@@ -24,8 +24,8 @@ model User {
   refreshTokens           RefreshToken[]
   auditLogs               AuditLog[]
   platformSettingsUpdated PlatformSetting[]
-  moviesReviewed          Movie[]                    @relation("MovieReviewer")
-  moviesCreated           Movie[]                    @relation("MovieCreator")
+  projectsReviewed        MovieProject[]             @relation("ProjectReviewer")
+  projectsCreated         MovieProject[]             @relation("ProjectCreator")
   assignmentsAsCreator    ProjectCreatorAssignment[] @relation("AssignmentCreator")
   assignmentsMade         ProjectCreatorAssignment[] @relation("AssignmentAssignedBy")
   assignmentsDelegated    ProjectCreatorAssignment[] @relation("AssignmentDelegatedFrom")

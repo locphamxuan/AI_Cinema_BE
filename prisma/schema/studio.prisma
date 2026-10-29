@@ -13,7 +13,7 @@ model Studio {
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   createdBy User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  movies    Movie[]
+  projects  MovieProject[]
   handoffs  StudioHandoff[]
 
   @@map("studios")
