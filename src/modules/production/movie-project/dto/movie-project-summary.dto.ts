@@ -21,6 +21,12 @@ export class MovieProjectSummaryDto {
   @ApiPropertyOptional()
   creatorId: string | null;
 
+  @ApiProperty({ example: { episodes: 12 } })
+  _count: { episodes: number };
+
+  @ApiProperty({ description: 'Change requests still waiting for the Admin (§4.1.8).' })
+  openChangeRequests: number;
+
   @ApiProperty()
   updatedAt: Date;
 

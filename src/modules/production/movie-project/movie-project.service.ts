@@ -60,12 +60,13 @@ const PROJECT_DETAIL = {
   ...OPEN_CHANGE_REQUESTS,
 } satisfies Prisma.MovieProjectInclude;
 
-/** A row of the project list: its catalog face, people and studio. */
+/** A row of the project list: its catalog face, people, studio and open change requests. */
 const LIST_ROW = {
   movie: { include: { _count: { select: { episodes: true } } } },
   reviewer: PERSON,
   creator: PERSON,
   studio: true,
+  ...OPEN_CHANGE_REQUESTS,
 } satisfies Prisma.MovieProjectInclude;
 type ListRow = Prisma.MovieProjectGetPayload<{ include: typeof LIST_ROW }>;
 
@@ -164,7 +165,7 @@ export class MovieProjectService {
     return this.detail(projectId, user);
   }
 
-  /** One row per project, its catalog fields alongside. */
+  /** One row per project, its catalog fields alongside, with the open change requests (§4.1.8). */
   async list(query: PaginateQuery, user: AuthenticatedUser) {
     const readable = await this.access.readableWhere(user);
     // The title lives on the catalog movie, out of reach of the paginator's own search.
@@ -181,10 +182,11 @@ export class MovieProjectService {
     const lastActivity = await this.lastActivity(page.data.map((project) => project.id));
     return {
       ...page,
-      data: (page.data as ListRow[]).map(({ movie: { _count, ...movie }, ...project }) => ({
+      data: (page.data as ListRow[]).map(({ movie: { _count: movieCount, ...movie }, _count, ...project }) => ({
         ...movie,
         ...project,
-        _count,
+        _count: { episodes: movieCount.episodes },
+        openChangeRequests: _count.changeRequests,
         lastActivityAt: lastActivity.get(project.id) ?? project.updatedAt,
       })),
     };
