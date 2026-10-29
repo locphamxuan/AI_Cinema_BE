@@ -19,7 +19,7 @@ const ACTIVITY_LIMIT = 200;
 /** MF-2 seen from the Reviewer: Coin viewers paid to unlock episodes of the Reviewer's movies, and refunds. */
 export async function coinActivity(prisma: PrismaService, reviewerId: string) {
   const accesses = await prisma.episodeAccess.findMany({
-    where: { source: AccessSource.EPISODE_PURCHASE, episode: { movie: { reviewerId } } },
+    where: { source: AccessSource.EPISODE_PURCHASE, episode: { movie: { project: { reviewerId } } } },
     orderBy: { grantedAt: 'desc' },
     select: {
       id: true,

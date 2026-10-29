@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MovieStatus } from '@prisma/client';
+import { ProjectStatus } from '@prisma/client';
 
 /** One row of the project list. */
 export class MovieProjectSummaryDto {
@@ -9,8 +9,8 @@ export class MovieProjectSummaryDto {
   @ApiProperty({ example: 'Căn Hộ Số 13' })
   title: string;
 
-  @ApiProperty({ enum: MovieStatus })
-  status: MovieStatus;
+  @ApiProperty({ enum: ProjectStatus })
+  status: ProjectStatus;
 
   @ApiPropertyOptional({ example: { id: '8c1b2f3e-…', name: 'Studio Ánh Trăng' }, nullable: true })
   studio: { id: string; name: string } | null;

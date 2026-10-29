@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { MovieStatus, TokenEntryType, UserRole } from '@prisma/client';
+import { ProjectStatus, TokenEntryType, UserRole } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
@@ -23,7 +23,7 @@ describe('ProductionFeeService.addEntry', () => {
     tokenLedgerEntry: { findMany: jest.fn().mockResolvedValue([]) },
     season: { findMany: jest.fn().mockResolvedValue([]) },
   };
-  const access = { movie: jest.fn() };
+  const access = { project: jest.fn() };
   const settings = { get: jest.fn().mockResolvedValue({ tokenRateVnd: 1000 }) };
   const auditLog = { record: jest.fn() };
   const budgets = { assertCanSpend: jest.fn(), notifyAllocation: jest.fn() };
@@ -35,8 +35,8 @@ describe('ProductionFeeService.addEntry', () => {
     budgets as unknown as ReviewerTokenService,
   );
 
-  const withState = (status: MovieStatus, total: number) => {
-    access.movie.mockResolvedValue({ id: 'm1', status });
+  const withState = (status: ProjectStatus, total: number) => {
+    access.project.mockResolvedValue({ id: 'm1', status });
     tx.tokenLedgerEntry.aggregate.mockResolvedValue({ _sum: { amountTokens: BigInt(total) } });
   };
   const withSeason = (cost: bigint, episodes: number, allocated = 0) => {
@@ -48,7 +48,7 @@ describe('ProductionFeeService.addEntry', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('allocates a season as episode price × episodes at the current Token rate and logs it', async () => {
-    withState(MovieStatus.DRAFT, 0);
+    withState(ProjectStatus.DRAFT, 0);
     withSeason(5000n, 4);
     await service.addEntry('m1', initial, reviewer);
 
@@ -65,14 +65,14 @@ describe('ProductionFeeService.addEntry', () => {
   });
 
   it('ignores the amount a client sends for a season allocation', async () => {
-    withState(MovieStatus.DRAFT, 0);
+    withState(ProjectStatus.DRAFT, 0);
     withSeason(100n, 3);
     await service.addEntry('m1', { ...initial, amountTokens: 1 }, reviewer);
     expect(tx.tokenLedgerEntry.create).toHaveBeenCalledWith({ data: expect.objectContaining({ amountTokens: 300n }) });
   });
 
   it('allocates each season once, only while the project is open, and needs the season and its price', async () => {
-    withState(MovieStatus.DRAFT, 100);
+    withState(ProjectStatus.DRAFT, 100);
     withSeason(5000n, 4, 1);
     await expect(service.addEntry('m1', initial, reviewer)).rejects.toThrow(ConflictException);
 
@@ -82,27 +82,27 @@ describe('ProductionFeeService.addEntry', () => {
     await expect(service.addEntry('m1', initial, reviewer)).rejects.toThrow('no episode');
     await expect(service.addEntry('m1', { entryType: 'INITIAL' }, reviewer)).rejects.toThrow(BadRequestException);
 
-    withState(MovieStatus.COMPLETED, 0);
+    withState(ProjectStatus.COMPLETED, 0);
     withSeason(5000n, 4);
     await expect(service.addEntry('m1', initial, reviewer)).rejects.toThrow(ConflictException);
     expect(tx.tokenLedgerEntry.create).not.toHaveBeenCalled();
   });
 
   it('refuses a season of another project', async () => {
-    withState(MovieStatus.DRAFT, 0);
+    withState(ProjectStatus.DRAFT, 0);
     tx.season.findFirst.mockResolvedValue(null);
     await expect(service.addEntry('m1', initial, reviewer)).rejects.toThrow('does not belong');
   });
 
   it('needs a reason for top-ups and corrections (BR-46)', async () => {
-    withState(MovieStatus.IN_PRODUCTION, 100);
+    withState(ProjectStatus.IN_PRODUCTION, 100);
     await expect(service.addEntry('m1', { entryType: 'TOP_UP', amountTokens: 10 }, reviewer)).rejects.toThrow(
       BadRequestException,
     );
   });
 
   it('ties a top-up to its season', async () => {
-    withState(MovieStatus.IN_PRODUCTION, 100);
+    withState(ProjectStatus.IN_PRODUCTION, 100);
     withSeason(5000n, 4, 1);
     await service.addEntry(
       'm1',
@@ -115,7 +115,7 @@ describe('ProductionFeeService.addEntry', () => {
   });
 
   it('never lets a correction bring the fee to zero or below', async () => {
-    withState(MovieStatus.IN_PRODUCTION, 100);
+    withState(ProjectStatus.IN_PRODUCTION, 100);
     const correction = (amountTokens: number) =>
       service.addEntry('m1', { entryType: 'CORRECTION', amountTokens, reason: 'typo' }, reviewer);
     await expect(correction(-100)).rejects.toThrow(BadRequestException);
@@ -124,7 +124,7 @@ describe('ProductionFeeService.addEntry', () => {
   });
 
   it('refuses any change once the project is closed', async () => {
-    withState(MovieStatus.COMPLETED, 100);
+    withState(ProjectStatus.COMPLETED, 100);
     await expect(
       service.addEntry('m1', { entryType: 'TOP_UP', amountTokens: 10, reason: 'late invoice' }, reviewer),
     ).rejects.toThrow(ConflictException);

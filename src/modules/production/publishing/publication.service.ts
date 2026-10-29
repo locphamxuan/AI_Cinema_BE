@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import {
   ComplianceResult,
   EpisodeStatus,
-  MovieStatus,
+  ProjectStatus,
   type Episode,
   type Movie,
   type Publication,
@@ -26,9 +26,10 @@ import {
 import type { PublishEpisodeRequestDto, UnpublishRequestDto } from './dto/publishing.request.dto';
 import { EpisodeRevisionService } from './episode-revision.service';
 import { isRefusal, withdrawFailedRelease } from './failed-release';
+import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 /** A project releases episodes while the studio delivers, while it is fixed, and once complete. */
-const RELEASING_PROJECT: MovieStatus[] = [...DELIVERY_PROJECT_STATUSES, MovieStatus.COMPLETED];
+const RELEASING_PROJECT: ProjectStatus[] = [...DELIVERY_PROJECT_STATUSES, ProjectStatus.COMPLETED];
 
 /** Releasable: checked and never released, taken down earlier, or already scheduled (reschedule). */
 const RELEASABLE: EpisodeStatus[] = [
@@ -63,7 +64,7 @@ export class PublicationService {
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'reviewer');
-    assertProjectStatus(episode.movie.status, RELEASING_PROJECT, 'publish');
+    assertProjectStatus(episode.project.status, RELEASING_PROJECT, 'publish');
     assertEpisodeStatus(episode.status, RELEASABLE, 'publish');
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
     if (scheduledAt && scheduledAt <= new Date()) {
@@ -88,7 +89,7 @@ export class PublicationService {
             action: CONTENT_EVENT.EPISODE_SCHEDULED,
             entityType: 'Publication',
             entityId: publication.id,
-            movieId: episode.movieId,
+            projectId: episode.movieId,
             actorId: user.id,
             payload: { episodeId, scheduledAt: scheduledAt.toISOString(), rescheduled: Boolean(pending) },
           },
@@ -147,7 +148,7 @@ export class PublicationService {
           action: CONTENT_EVENT.EPISODE_UNPUBLISHED,
           entityType: 'Publication',
           entityId: publicationId,
-          movieId: episode.movieId,
+          projectId: episode.movieId,
           actorId: user.id,
           payload: { episodeId: episode.id, mode, reason: dto.reason, note: dto.note.trim(), cancelledSchedule: !live },
         },
@@ -229,12 +230,11 @@ export class PublicationService {
       data: { publishedAt: now },
     });
     if (count === 0) throw new ConflictException('The release changed meanwhile; reload it');
-    const episode = await tx.episode.findUniqueOrThrow({
-      where: { id: publication.episodeId },
-      include: { movie: true },
-    });
+    const episode = liftProject(
+      await tx.episode.findUniqueOrThrow({ where: { id: publication.episodeId }, include: WITH_PROJECT }),
+    );
     // A scheduled release of a project cancelled meanwhile never goes out (BR-39).
-    assertProjectStatus(episode.movie.status, RELEASING_PROJECT, 'publish');
+    assertProjectStatus(episode.project.status, RELEASING_PROJECT, 'publish');
     await this.moveEpisode(tx, episode, EpisodeStatus.PUBLISHED);
     if (episode.revisionStartedAt) {
       // The fixed version is out: no longer shown as under maintenance (BR-56).
@@ -245,7 +245,7 @@ export class PublicationService {
         action: CONTENT_EVENT.EPISODE_PUBLISHED,
         entityType: 'Publication',
         entityId: publication.id,
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         actorId,
         payload: {
           episodeId: episode.id,
@@ -257,12 +257,12 @@ export class PublicationService {
       tx,
     );
     await this.notifications.notify(
-      [episode.movie.reviewerId, episode.movie.creatorId],
+      [episode.project.reviewerId, episode.project.creatorId],
       {
         type: NOTIFICATION_TYPE.EPISODE_PUBLISHED,
         title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã phát hành`,
         link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-        payload: { movieId: episode.movieId, episodeId: episode.id, publicationId: publication.id },
+        payload: { projectId: episode.movieId, episodeId: episode.id, publicationId: publication.id },
       },
       tx,
     );

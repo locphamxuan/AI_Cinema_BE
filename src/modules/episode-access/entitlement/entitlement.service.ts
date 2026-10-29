@@ -111,7 +111,7 @@ export class EntitlementService {
         action: CONTENT_EVENT.EPISODE_ACCESS_REVOKED,
         entityType: 'EpisodeAccess',
         entityId: access.id,
-        movieId: access.episode.movieId,
+        projectId: access.episode.movieId,
         actorId: null,
         payload: { episodeId, reason, refundedCoins: access.paidCoins, transactionId: movement },
       },

@@ -84,7 +84,7 @@ export class EpisodePurchaseService {
           action: CONTENT_EVENT.EPISODE_ACCESS_GRANTED,
           entityType: 'EpisodeAccess',
           entityId: access.id,
-          movieId: episode.movieId,
+          projectId: episode.movieId,
           actorId: user.id,
           payload: {
             episodeId: episode.id,

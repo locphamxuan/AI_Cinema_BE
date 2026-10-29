@@ -7,6 +7,7 @@ import { NotificationService } from 'src/modules/platform/notification/notificat
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { AddReviewerTokenEntryRequestDto } from './dto/reviewer-token.request.dto';
 import { coinActivity, feeCategory } from './token-history';
+import type { TitledProject } from 'src/modules/production/project-access/project-access.service';
 
 const HISTORY_LIMIT = 200;
 
@@ -63,7 +64,7 @@ export class ReviewerTokenService {
   /** Every active Admin learns that a Reviewer put budget into (or took it out of) a project. */
   async notifyAllocation(
     tx: PrismaTx,
-    entry: { reviewer: AuthenticatedUser; movie: { id: string; title: string }; type: TokenEntryType; amount: number },
+    entry: { reviewer: AuthenticatedUser; project: TitledProject; type: TokenEntryType; amount: number },
   ): Promise<void> {
     const admins = await tx.user.findMany({ where: { role: UserRole.ADMIN, isActive: true }, select: { id: true } });
     const reviewer = await tx.user.findUniqueOrThrow({ where: { id: entry.reviewer.id }, select: { fullName: true } });
@@ -72,10 +73,15 @@ export class ReviewerTokenService {
       admins.map((a) => a.id),
       {
         type: NOTIFICATION_TYPE.TOKEN_ALLOCATED,
-        title: `${reviewer.fullName} cấp ${entry.amount} Token cho phim "${entry.movie.title}"`,
+        title: `${reviewer.fullName} cấp ${entry.amount} Token cho phim "${entry.project.movie.title}"`,
         body: `${FEE_ENTRY_LABEL[entry.type]}. ${reviewer.fullName} còn ${balanceTokens} Token.`,
-        link: `/projects/${entry.movie.id}/fee`,
-        payload: { movieId: entry.movie.id, reviewerId: entry.reviewer.id, amountTokens: entry.amount, balanceTokens },
+        link: `/projects/${entry.project.id}/fee`,
+        payload: {
+          projectId: entry.project.id,
+          reviewerId: entry.reviewer.id,
+          amountTokens: entry.amount,
+          balanceTokens,
+        },
       },
       tx,
     );
@@ -97,7 +103,7 @@ export class ReviewerTokenService {
         orderBy: { createdAt: 'desc' },
         take: HISTORY_LIMIT,
         include: {
-          movie: { select: { id: true, title: true } },
+          project: { select: { id: true, movie: { select: { title: true } } } },
           season: { select: { id: true, seasonNumber: true, title: true } },
         },
       }),
@@ -128,7 +134,7 @@ export class ReviewerTokenService {
         reason: e.reason,
         createdAt: e.createdAt,
         by: null,
-        movie: e.movie,
+        movie: { id: e.project.id, title: e.project.movie.title },
         feeEntryType: e.entryType,
       })),
     ]

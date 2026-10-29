@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MovieStatus, Prisma, TokenEntryType, TokenRequestStatus, UserRole } from '@prisma/client';
+import { ProjectStatus, Prisma, TokenEntryType, TokenRequestStatus, UserRole } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -17,9 +17,10 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { CREATOR_REQUEST_REASON_PREFIX } from 'src/modules/production/reviewer-token/token-history';
 import type { CreateTokenRequestDto, TokenRequestListQueryDto } from './dto/token-request.request.dto';
+import { PROJECT_REF } from 'src/modules/production/project-access/project-relations';
 
 const DETAIL = {
-  movie: { select: { id: true, title: true } },
+  project: PROJECT_REF,
   season: { select: { id: true, seasonNumber: true, title: true } },
   requestedBy: { select: { id: true, fullName: true, email: true } },
   resolvedBy: { select: { id: true, fullName: true } },
@@ -39,20 +40,20 @@ export class TokenRequestService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  async create(movieId: string, dto: CreateTokenRequestDto, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'lead');
-    assertProjectStatus(movie.status, [...OPEN_PROJECT_STATUSES, MovieStatus.UNDER_REVISION], 'ask for more Token');
-    const season = await this.prisma.season.findFirst({ where: { id: dto.seasonId, movieId } });
+  async create(projectId: string, dto: CreateTokenRequestDto, user: AuthenticatedUser) {
+    const project = await this.access.project(projectId, user, 'lead');
+    assertProjectStatus(project.status, [...OPEN_PROJECT_STATUSES, ProjectStatus.UNDER_REVISION], 'ask for more Token');
+    const season = await this.prisma.season.findFirst({ where: { id: dto.seasonId, movieId: projectId } });
     if (!season) throw new BadRequestException('The season does not belong to this project');
     const open = await this.prisma.tokenRequest.count({
-      where: { movieId, seasonId: season.id, requestedById: user.id, status: TokenRequestStatus.OPEN },
+      where: { projectId, seasonId: season.id, requestedById: user.id, status: TokenRequestStatus.OPEN },
     });
     if (open) throw new ConflictException('You already have an open request for this season; wait for the answer');
 
     return this.prisma.$transaction(async (tx) => {
       const request = await tx.tokenRequest.create({
         data: {
-          movieId,
+          projectId,
           seasonId: season.id,
           requestedById: user.id,
           requestedTokens: BigInt(dto.requestedTokens),
@@ -62,13 +63,13 @@ export class TokenRequestService {
       });
       // The Reviewer answers; the Admin follows every request.
       await this.notifications.notify(
-        [movie.reviewerId, ...(await this.notifications.adminIds(tx))],
+        [project.reviewerId, ...(await this.notifications.adminIds(tx))],
         {
           type: NOTIFICATION_TYPE.TOKEN_REQUESTED,
-          title: `${request.requestedBy.fullName} xin thêm ${dto.requestedTokens} Token cho phim "${movie.title}"`,
+          title: `${request.requestedBy.fullName} xin thêm ${dto.requestedTokens} Token cho phim "${project.movie.title}"`,
           body: dto.reason,
-          link: `/projects/${movieId}/studio`,
-          payload: { movieId, tokenRequestId: request.id, seasonId: season.id, requestedTokens: dto.requestedTokens },
+          link: `/projects/${projectId}/studio`,
+          payload: { projectId, tokenRequestId: request.id, seasonId: season.id, requestedTokens: dto.requestedTokens },
         },
         tx,
       );
@@ -77,7 +78,7 @@ export class TokenRequestService {
           action: CONTENT_EVENT.TOKEN_REQUESTED,
           entityType: 'TokenRequest',
           entityId: request.id,
-          movieId,
+          projectId,
           actorId: user.id,
           payload: { seasonId: season.id, requestedTokens: dto.requestedTokens },
         },
@@ -88,13 +89,13 @@ export class TokenRequestService {
   }
 
   /** Requests the caller is part of: the Reviewer sees those on their projects, a Creator their own. */
-  async list(query: TokenRequestListQueryDto, user: AuthenticatedUser, movieId?: string) {
-    if (movieId) await this.access.movie(movieId, user, 'read');
+  async list(query: TokenRequestListQueryDto, user: AuthenticatedUser, projectId?: string) {
+    if (projectId) await this.access.project(projectId, user, 'read');
     const followers: UserRole[] = [UserRole.CONTENT_REVIEWER, UserRole.CONTENT_CREATOR, UserRole.ADMIN];
     if (!followers.includes(user.role))
       throw new ForbiddenException('Token requests are for Reviewers, Creators and the Admin');
     const where: Prisma.TokenRequestWhereInput = {
-      ...(movieId ? { movieId } : {}),
+      ...(projectId ? { projectId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(user.role === UserRole.CONTENT_REVIEWER
         ? { movie: { reviewerId: user.id } }
@@ -136,7 +137,7 @@ export class TokenRequestService {
     if (count === 0) throw new ConflictException('This request was already answered');
     try {
       await this.fees.addEntry(
-        request.movieId,
+        request.projectId,
         {
           entryType: TokenEntryType.TOP_UP,
           seasonId: request.seasonId,
@@ -175,13 +176,13 @@ export class TokenRequestService {
   private async ownedOpen(requestId: string, user: AuthenticatedUser) {
     const request = await this.prisma.tokenRequest.findUnique({ where: { id: requestId }, include: DETAIL });
     if (!request) throw new NotFoundException('Token request not found');
-    await this.access.movie(request.movieId, user, 'reviewer');
+    await this.access.project(request.projectId, user, 'reviewer');
     if (request.status !== TokenRequestStatus.OPEN) throw new ConflictException('This request was already answered');
     return request;
   }
 
   private async answered(
-    request: { id: string; movieId: string; movie: { title: string }; requestedById: string },
+    request: { id: string; projectId: string; project: { movie: { title: string } }; requestedById: string },
     approved: boolean,
     body: string,
     user: AuthenticatedUser,
@@ -189,17 +190,17 @@ export class TokenRequestService {
     await this.notifications.notify([request.requestedById, ...(await this.notifications.adminIds())], {
       type: approved ? NOTIFICATION_TYPE.TOKEN_REQUEST_APPROVED : NOTIFICATION_TYPE.TOKEN_REQUEST_REJECTED,
       title: approved
-        ? `Yêu cầu thêm Token cho phim "${request.movie.title}" được chấp nhận`
-        : `Yêu cầu thêm Token cho phim "${request.movie.title}" bị từ chối`,
+        ? `Yêu cầu thêm Token cho phim "${request.project.movie.title}" được chấp nhận`
+        : `Yêu cầu thêm Token cho phim "${request.project.movie.title}" bị từ chối`,
       body,
-      link: `/projects/${request.movieId}/studio`,
-      payload: { movieId: request.movieId, tokenRequestId: request.id },
+      link: `/projects/${request.projectId}/studio`,
+      payload: { projectId: request.projectId, tokenRequestId: request.id },
     });
     await this.auditLog.record({
       action: approved ? CONTENT_EVENT.TOKEN_REQUEST_APPROVED : CONTENT_EVENT.TOKEN_REQUEST_REJECTED,
       entityType: 'TokenRequest',
       entityId: request.id,
-      movieId: request.movieId,
+      projectId: request.projectId,
       actorId: user.id,
     });
   }

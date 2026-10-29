@@ -7,7 +7,7 @@ import {
   NotFoundException,
   StreamableFile,
 } from '@nestjs/common';
-import { ChangeRequestStatus, ChangeRequestType, MovieStatus, UserRole, type Prisma } from '@prisma/client';
+import { ChangeRequestStatus, ChangeRequestType, ProjectStatus, UserRole, type Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -20,6 +20,7 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import { assertProjectStatus } from 'src/modules/production/project-access/project-rules';
 import { ReviewerTokenService } from 'src/modules/production/reviewer-token/reviewer-token.service';
 import type { ProposeChangeRequestDto, ResolveChangeRequestDto } from './dto/change-request.request.dto';
+import { PROJECT_REF } from 'src/modules/production/project-access/project-relations';
 
 const PERSON = { select: { id: true, fullName: true } } as const;
 
@@ -27,12 +28,12 @@ const PERSON = { select: { id: true, fullName: true } } as const;
 export const CHANGE_PROOF_MAX_BYTES = 10 * 1024 * 1024;
 const PROOF_KINDS = [FILE_KINDS.pdf, FILE_KINDS.docx, FILE_KINDS.txt, FILE_KINDS.png, FILE_KINDS.jpeg, FILE_KINDS.webp];
 
-const LIVE_PROJECT: MovieStatus[] = [
-  MovieStatus.DRAFT,
-  MovieStatus.ASSIGNED,
-  MovieStatus.IN_PRODUCTION,
-  MovieStatus.COMPLETED,
-  MovieStatus.UNDER_REVISION,
+const LIVE_PROJECT: ProjectStatus[] = [
+  ProjectStatus.DRAFT,
+  ProjectStatus.ASSIGNED,
+  ProjectStatus.IN_PRODUCTION,
+  ProjectStatus.COMPLETED,
+  ProjectStatus.UNDER_REVISION,
 ];
 
 const DETAIL = {
@@ -59,26 +60,26 @@ export class ChangeRequestService {
   ) {}
 
   async propose(
-    movieId: string,
+    projectId: string,
     dto: ProposeChangeRequestDto,
     proof: Express.Multer.File | undefined,
     user: AuthenticatedUser,
   ) {
-    const movie = await this.access.movie(movieId, user, 'read');
-    if (movie.reviewerId !== user.id && !(await this.access.isOnTeam(movie, user.id))) {
+    const project = await this.access.project(projectId, user, 'read');
+    if (project.reviewerId !== user.id && !(await this.access.isOnTeam(project, user.id))) {
       throw new ForbiddenException('Only the Reviewer or a Creator of this project can send a change request');
     }
-    assertProjectStatus(movie.status, LIVE_PROJECT, 'send a change request');
+    assertProjectStatus(project.status, LIVE_PROJECT, 'send a change request');
     const requestType = dto.requestType ?? ChangeRequestType.PROJECT_UPDATE;
     this.assertTokens(requestType, dto.requestedTokens, proof);
-    await this.assertScope(movieId, dto);
-    const attachment = proof ? await this.storeProof(movieId, proof) : null;
+    await this.assertScope(projectId, dto);
+    const attachment = proof ? await this.storeProof(projectId, proof) : null;
 
     return this.prisma
       .$transaction(async (tx) => {
         const request = await tx.projectChangeRequest.create({
           data: {
-            movieId,
+            projectId,
             seasonId: dto.seasonId,
             episodeId: dto.episodeId,
             requestedById: user.id,
@@ -94,15 +95,15 @@ export class ChangeRequestService {
           where: { role: UserRole.ADMIN, isActive: true },
           select: { id: true },
         });
-        const watchers = [...admins.map((a) => a.id), movie.reviewerId].filter((id) => id !== user.id);
+        const watchers = [...admins.map((a) => a.id), project.reviewerId].filter((id) => id !== user.id);
         await this.notifications.notify(
           watchers,
           {
             type: NOTIFICATION_TYPE.CHANGE_REQUESTED,
-            title: `Đề xuất mới cho phim "${movie.title}"`,
+            title: `Đề xuất mới cho phim "${project.movie.title}"`,
             body: dto.content,
-            link: `/projects/${movieId}/change-requests`,
-            payload: { movieId, changeRequestId: request.id, requestType },
+            link: `/projects/${projectId}/change-requests`,
+            payload: { projectId, changeRequestId: request.id, requestType },
           },
           tx,
         );
@@ -111,7 +112,7 @@ export class ChangeRequestService {
             action: CONTENT_EVENT.PROJECT_CHANGE_REQUESTED,
             entityType: 'ProjectChangeRequest',
             entityId: request.id,
-            movieId,
+            projectId,
             actorId: user.id,
             payload: { requestType, requestedTokens: dto.requestedTokens ?? null },
           },
@@ -125,10 +126,10 @@ export class ChangeRequestService {
       });
   }
 
-  async list(movieId: string, user: AuthenticatedUser) {
-    await this.access.movie(movieId, user, 'read');
+  async list(projectId: string, user: AuthenticatedUser) {
+    await this.access.project(projectId, user, 'read');
     return this.prisma.projectChangeRequest.findMany({
-      where: { movieId },
+      where: { projectId },
       orderBy: { createdAt: 'desc' },
       include: DETAIL,
     });
@@ -140,14 +141,14 @@ export class ChangeRequestService {
       where: { status },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       take: 200,
-      include: { ...DETAIL, movie: { select: { id: true, title: true, reviewerId: true } } },
+      include: { ...DETAIL, project: PROJECT_REF },
     });
   }
 
   async proof(changeRequestId: string, user: AuthenticatedUser): Promise<StreamableFile> {
     const request = await this.prisma.projectChangeRequest.findUnique({ where: { id: changeRequestId } });
     if (!request?.attachmentKey) throw new NotFoundException('Proof not found');
-    await this.access.movie(request.movieId, user, 'read');
+    await this.access.project(request.projectId, user, 'read');
     return new StreamableFile(await this.storage.stream(request.attachmentKey, 'private'), {
       type: request.attachmentMimeType ?? 'application/octet-stream',
       disposition: `attachment; filename*=UTF-8''${encodeURIComponent(request.attachmentName ?? 'proof')}`,
@@ -157,7 +158,7 @@ export class ChangeRequestService {
   async resolve(changeRequestId: string, approve: boolean, dto: ResolveChangeRequestDto, admin: AuthenticatedUser) {
     const request = await this.prisma.projectChangeRequest.findUnique({
       where: { id: changeRequestId },
-      include: { movie: { select: { id: true, title: true, reviewerId: true } } },
+      include: { project: PROJECT_REF },
     });
     if (!request) throw new NotFoundException('Change request not found');
     const response = dto.response?.trim() || null;
@@ -175,17 +176,17 @@ export class ChangeRequestService {
       });
       if (count === 0) throw new ConflictException('This change request was already answered');
       if (approve && request.requestType === ChangeRequestType.BUDGET_SUPPLEMENT && request.requestedTokens) {
-        const reason = `Duyệt đề xuất bổ sung ngân sách cho phim "${request.movie.title}"`;
-        await this.budgets.grantWithin(tx, request.movie.reviewerId, Number(request.requestedTokens), reason, admin);
+        const reason = `Duyệt đề xuất bổ sung ngân sách cho phim "${request.project.movie.title}"`;
+        await this.budgets.grantWithin(tx, request.project.reviewerId, Number(request.requestedTokens), reason, admin);
       }
       await this.notifications.notify(
-        [...new Set([request.requestedById, request.movie.reviewerId])],
+        [...new Set([request.requestedById, request.project.reviewerId])],
         {
           type: NOTIFICATION_TYPE.CHANGE_RESOLVED,
-          title: `Đề xuất cho phim "${request.movie.title}" đã được ${approve ? 'chấp nhận' : 'từ chối'}`,
+          title: `Đề xuất cho phim "${request.project.movie.title}" đã được ${approve ? 'chấp nhận' : 'từ chối'}`,
           body: response ?? undefined,
-          link: `/projects/${request.movieId}/change-requests`,
-          payload: { movieId: request.movieId, changeRequestId },
+          link: `/projects/${request.projectId}/change-requests`,
+          payload: { projectId: request.projectId, changeRequestId },
         },
         tx,
       );
@@ -194,7 +195,7 @@ export class ChangeRequestService {
           action: approve ? CONTENT_EVENT.PROJECT_CHANGE_APPROVED : CONTENT_EVENT.PROJECT_CHANGE_REJECTED,
           entityType: 'ProjectChangeRequest',
           entityId: changeRequestId,
-          movieId: request.movieId,
+          projectId: request.projectId,
           actorId: admin.id,
           payload: { response },
         },
@@ -213,20 +214,20 @@ export class ChangeRequestService {
     }
   }
 
-  private async assertScope(movieId: string, dto: ProposeChangeRequestDto) {
-    if (dto.seasonId && !(await this.prisma.season.count({ where: { id: dto.seasonId, movieId } }))) {
+  private async assertScope(projectId: string, dto: ProposeChangeRequestDto) {
+    if (dto.seasonId && !(await this.prisma.season.count({ where: { id: dto.seasonId, movieId: projectId } }))) {
       throw new BadRequestException('The season does not belong to this project');
     }
-    if (dto.episodeId && !(await this.prisma.episode.count({ where: { id: dto.episodeId, movieId } }))) {
+    if (dto.episodeId && !(await this.prisma.episode.count({ where: { id: dto.episodeId, movieId: projectId } }))) {
       throw new BadRequestException('The episode does not belong to this project');
     }
   }
 
-  private async storeProof(movieId: string, file: Express.Multer.File) {
+  private async storeProof(projectId: string, file: Express.Multer.File) {
     if (!file.size) throw new BadRequestException('The proof file is empty');
     const attachmentName = safeFileName(file.originalname);
     const kind = detectKind(attachmentName, file.buffer.subarray(0, 16), PROOF_KINDS);
-    const attachmentKey = `movies/${movieId}/change-requests/${randomUUID()}${kind.extensions[0]}`;
+    const attachmentKey = `movies/${projectId}/change-requests/${randomUUID()}${kind.extensions[0]}`;
     await this.storage.putBuffer(attachmentKey, file.buffer, kind.mimeType, 'private');
     return { attachmentName, attachmentKey, attachmentMimeType: kind.mimeType };
   }

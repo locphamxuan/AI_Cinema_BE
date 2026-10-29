@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { MovieStatus, TokenEntryType, TokenRequestStatus } from '@prisma/client';
+import { ProjectStatus, TokenEntryType, TokenRequestStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
@@ -11,13 +11,13 @@ const REVIEWER = { id: 'reviewer', role: 'CONTENT_REVIEWER' } as const;
 const CREATOR = { id: 'creator', role: 'CONTENT_CREATOR' } as const;
 const OPEN_REQUEST = {
   id: 'req',
-  movieId: 'movie',
+  projectId: 'movie',
   seasonId: 'season',
   requestedById: CREATOR.id,
   requestedTokens: 4000n,
   reason: 'Studio tu choi',
   status: TokenRequestStatus.OPEN,
-  movie: { title: 'Phim' },
+  project: { movie: { title: 'Phim' } },
   requestedBy: { fullName: 'Creator' },
 };
 
@@ -36,7 +36,7 @@ describe('TokenRequestService', () => {
     ...db,
     $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)),
   };
-  const access = { movie: jest.fn() };
+  const access = { project: jest.fn() };
   const fees = { addEntry: jest.fn() };
   const notifications = { notify: jest.fn(), adminIds: jest.fn().mockResolvedValue(['admin']) };
   const auditLog = { record: jest.fn() };
@@ -54,11 +54,11 @@ describe('TokenRequestService', () => {
   });
 
   it('lets a Creator ask once per season and tells the Reviewer and the Admin', async () => {
-    access.movie.mockResolvedValue({
+    access.project.mockResolvedValue({
       id: 'movie',
-      title: 'Phim',
+      movie: { title: 'Phim' },
       reviewerId: REVIEWER.id,
-      status: MovieStatus.IN_PRODUCTION,
+      status: ProjectStatus.IN_PRODUCTION,
     });
     prisma.season.findFirst.mockResolvedValue({ id: 'season' });
     tokenRequest.count.mockResolvedValue(0);

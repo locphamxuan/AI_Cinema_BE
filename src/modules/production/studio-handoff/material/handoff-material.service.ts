@@ -43,7 +43,7 @@ export class HandoffMaterialService {
   ) {}
 
   /** Validates and stores every file; the caller records them with the hand-off and calls discard() if that fails. */
-  async store(movieId: string, uploads: MaterialUploads): Promise<StoredMaterial[]> {
+  async store(projectId: string, uploads: MaterialUploads): Promise<StoredMaterial[]> {
     const files = [
       ...(uploads.scripts ?? []).map((file) => ({ file, kind: HandoffMaterialKind.SCRIPT })),
       ...(uploads.references ?? []).map((file) => ({ file, kind: HandoffMaterialKind.REFERENCE })),
@@ -54,7 +54,7 @@ export class HandoffMaterialService {
         const fileName = safeFileName(file.originalname);
         if (!file.size) throw new BadRequestException(`${fileName} is empty`);
         const detected = detectKind(fileName, file.buffer.subarray(0, 16), MATERIAL_KINDS);
-        const storageKey = `movies/${movieId}/materials/${randomUUID()}${fileName.slice(fileName.lastIndexOf('.')).toLowerCase()}`;
+        const storageKey = `movies/${projectId}/materials/${randomUUID()}${fileName.slice(fileName.lastIndexOf('.')).toLowerCase()}`;
         await this.storage.putBuffer(storageKey, file.buffer, detected.mimeType, 'private');
         stored.push({ kind, fileName, storageKey, mimeType: detected.mimeType, sizeBytes: BigInt(file.size) });
       }
@@ -71,10 +71,10 @@ export class HandoffMaterialService {
     );
   }
 
-  async download(movieId: string, handoffId: string, materialId: string, user: AuthenticatedUser) {
-    await this.access.movie(movieId, user, 'read');
+  async download(projectId: string, handoffId: string, materialId: string, user: AuthenticatedUser) {
+    await this.access.project(projectId, user, 'read');
     const material = await this.prisma.studioHandoffMaterial.findFirst({
-      where: { id: materialId, handoffId, handoff: { movieId } },
+      where: { id: materialId, handoffId, handoff: { projectId } },
     });
     if (!material) throw new NotFoundException('Material not found');
     return new StreamableFile(await this.storage.stream(material.storageKey, 'private'), {

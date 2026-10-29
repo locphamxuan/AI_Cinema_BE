@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConflictException } from '@nestjs/common';
-import { EpisodeStatus, MovieStatus } from '@prisma/client';
+import { EpisodeStatus, ProjectStatus } from '@prisma/client';
 import type { AppConfig } from 'src/config/app-config';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { JobQueue } from 'src/infrastructure/queue/job-queue.service';
@@ -25,7 +25,7 @@ describe('MediaIngestService.submitUpload', () => {
     const access = {
       episode: jest.fn().mockResolvedValue({
         status: EpisodeStatus.AWAITING_MEDIA,
-        movie: { status: MovieStatus.IN_PRODUCTION },
+        project: { status: ProjectStatus.IN_PRODUCTION },
       }),
     };
     const prisma = { $transaction: jest.fn().mockRejectedValue(new ConflictException('The episode changed')) };

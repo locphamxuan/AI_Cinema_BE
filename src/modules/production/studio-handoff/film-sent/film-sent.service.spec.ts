@@ -34,9 +34,9 @@ function setup(handoff: unknown, owners: (string | null)[] = [null, null]) {
 describe('FilmSentService', () => {
   const handoff = {
     id: 'h1',
-    movieId: 'm1',
+    projectId: 'm1',
     createdById: 'c2',
-    movie: { id: 'm1', title: 'Hành Trình', creatorId: 'c1', reviewerId: 'r1' },
+    project: { id: 'm1', creatorId: 'c1', reviewerId: 'r1', movie: { title: 'Hành Trình' } },
   };
 
   it('remembers the film on the hand-off and tells the sending Creator, the main Creator and the Reviewer', async () => {
@@ -49,7 +49,7 @@ describe('FilmSentService', () => {
       where: { id: 'h1' },
       data: expect.objectContaining({ filmSentNote: expect.stringContaining('v2') }),
     });
-    expect(auditLog.record).toHaveBeenCalledWith(expect.objectContaining({ actorId: null, movieId: 'm1' }), tx);
+    expect(auditLog.record).toHaveBeenCalledWith(expect.objectContaining({ actorId: null, projectId: 'm1' }), tx);
     expect(notifications.notify).toHaveBeenCalledWith(
       ['c2', 'c1', 'r1'],
       expect.objectContaining({ type: NOTIFICATION_TYPE.STUDIO_FILM_SENT, link: '/projects/m1/studio' }),
@@ -105,7 +105,7 @@ describe('FilmSentService', () => {
     expect(tx.studioHandoff.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          OR: [{ createdBy: { email } }, { movie: { creator: { email } } }],
+          OR: [{ createdBy: { email } }, { project: { creator: { email } } }],
         }),
       }),
     );

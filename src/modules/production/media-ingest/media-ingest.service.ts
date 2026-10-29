@@ -146,7 +146,7 @@ export class MediaIngestService {
     if (asset.ingestStatus !== MediaIngestStatus.FAILED) {
       throw new ConflictException('Only a failed delivery can be processed again');
     }
-    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'process media');
+    assertProjectStatus(asset.episode.project.status, DELIVERY_PROJECT_STATUSES, 'process media');
     assertEpisodeStatus(asset.episode.status, SUBMITTABLE, 'process media');
 
     await this.prisma.$transaction(async (tx) => {
@@ -167,7 +167,7 @@ export class MediaIngestService {
 
   private async assertCanSubmit(episodeId: string, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'creator');
-    assertProjectStatus(episode.movie.status, DELIVERY_PROJECT_STATUSES, 'deliver media');
+    assertProjectStatus(episode.project.status, DELIVERY_PROJECT_STATUSES, 'deliver media');
     if (episode.status === EpisodeStatus.PROCESSING) {
       throw new ConflictException('The previous delivery of this episode is still being processed');
     }
@@ -193,21 +193,22 @@ export class MediaIngestService {
             select: {
               movieId: true,
               episodeNumber: true,
-              movie: { select: { title: true, reviewerId: true, creatorId: true } },
+              movie: { select: { title: true, project: { select: { reviewerId: true, creatorId: true } } } },
             },
           },
         },
       });
       // A Creator other than the lead passes their episode up: the lead follows it along with the Reviewer.
-      const lead = asset.episode.movie.creatorId;
+      const { movie } = asset.episode;
+      const lead = movie.project?.creatorId;
       await this.notifications.notify(
-        [asset.episode.movie.reviewerId, ...(lead && lead !== user.id ? [lead] : [])],
+        [movie.project?.reviewerId, ...(lead && lead !== user.id ? [lead] : [])],
         {
           type: NOTIFICATION_TYPE.MEDIA_SUBMITTED,
-          title: `Creator vừa nộp tập ${asset.episode.episodeNumber} của phim "${asset.episode.movie.title}"`,
+          title: `Creator vừa nộp tập ${asset.episode.episodeNumber} của phim "${movie.title}"`,
           body: `Bản ${asset.version}, đang được xử lý.`,
           link: `/projects/${asset.episode.movieId}/episodes/${episodeId}`,
-          payload: { movieId: asset.episode.movieId, episodeId, mediaAssetId: asset.id },
+          payload: { projectId: asset.episode.movieId, episodeId, mediaAssetId: asset.id },
         },
         tx,
       );
@@ -216,7 +217,7 @@ export class MediaIngestService {
           action: CONTENT_EVENT.MEDIA_SUBMITTED,
           entityType: 'MediaAsset',
           entityId: asset.id,
-          movieId: asset.episode.movieId,
+          projectId: asset.episode.movieId,
           actorId: user.id,
           payload: { episodeId, version: asset.version, sourceMethod: asset.sourceMethod, studioHandoffId },
         },
@@ -234,7 +235,7 @@ export class MediaIngestService {
     });
     const handoff = await tx.studioHandoff.findFirst({
       where: {
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED },
         OR: [{ seasonId: null }, { seasonId: episode.seasonId }],
       },

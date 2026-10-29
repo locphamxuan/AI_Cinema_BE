@@ -18,14 +18,14 @@ export class StudioService {
     return this.prisma.studio.findMany({
       where: active === undefined ? {} : { isActive: active },
       orderBy: { name: 'asc' },
-      include: { _count: { select: { movies: true, handoffs: true } } },
+      include: { _count: { select: { projects: true, handoffs: true } } },
     });
   }
 
   async detail(studioId: string) {
     const studio = await this.prisma.studio.findUnique({
       where: { id: studioId },
-      include: { _count: { select: { movies: true, handoffs: true } } },
+      include: { _count: { select: { projects: true, handoffs: true } } },
     });
     if (!studio) throw new NotFoundException('Studio not found');
     return studio;
@@ -51,7 +51,7 @@ export class StudioService {
   /** Only a studio never used can go; one that took a project is deactivated instead (BR-59). */
   async remove(studioId: string, user: AuthenticatedUser): Promise<void> {
     const studio = await this.detail(studioId);
-    if (studio._count.movies || studio._count.handoffs) {
+    if (studio._count.projects || studio._count.handoffs) {
       throw new ConflictException('The studio took a project; deactivate it instead of deleting it');
     }
     await this.prisma.$transaction(async (tx) => {
@@ -111,7 +111,7 @@ export class StudioService {
         action,
         entityType: 'Studio',
         entityId: studio.id,
-        movieId: null,
+        projectId: null,
         actorId: user.id,
         payload: { name: studio.name, email: studio.email, ...extra },
       },

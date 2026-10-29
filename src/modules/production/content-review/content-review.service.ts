@@ -6,6 +6,7 @@ import {
   type Episode,
   type MediaAsset,
   type Movie,
+  type MovieProject,
 } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -31,7 +32,8 @@ export const REVIEWED_STATUSES: EpisodeStatus[] = [
 /** BR-31: an actual length this far from the target is flagged on the review sheet. */
 const DURATION_WARNING_RATIO = 0.2;
 
-export type ReviewedAsset = MediaAsset & { episode: Episode & { movie: Movie } };
+/** A delivered version with its episode, the episode's catalog movie and its project. */
+export type ReviewedAsset = MediaAsset & { episode: Episode & { movie: Movie; project: MovieProject } };
 
 /** MF-1 steps 8–9: the Reviewer approves a delivered version or asks the studio for changes (BR-16, BR-18). */
 @Injectable()
@@ -45,7 +47,7 @@ export class ContentReviewService {
 
   async review(mediaAssetId: string, dto: ReviewMediaRequestDto, user: AuthenticatedUser) {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
-    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'review media');
+    assertProjectStatus(asset.episode.project.status, DELIVERY_PROJECT_STATUSES, 'review media');
 
     if (dto.decision === ContentReviewDecision.CHANGES_REQUESTED) {
       this.assertUnderReview(asset, [EpisodeStatus.IN_REVIEW, ...REVIEWED_STATUSES]);
@@ -83,20 +85,20 @@ export class ContentReviewService {
         action: CONTENT_EVENT.CONTENT_CHANGES_REQUESTED,
         entityType: 'ContentReview',
         entityId: review.id,
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         actorId: reviewerId,
         payload: { episodeId: episode.id, mediaAssetId: asset.id, version: asset.version, comments },
       },
       tx,
     );
     await this.notifications.notify(
-      [episode.movie.creatorId],
+      [episode.project.creatorId],
       {
         type: NOTIFICATION_TYPE.CONTENT_CHANGES_REQUESTED,
         title: `Yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
         body: `Chuyển góp ý cho Studio, chuyển mốc về "Đang thực hiện" và tải lên bản mới: ${comments}`,
         link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-        payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
+        payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },
       tx,
     );
@@ -108,7 +110,9 @@ export class ContentReviewService {
     const asset = await this.prisma.mediaAsset.findUniqueOrThrow({
       where: { id: mediaAssetId },
       include: {
-        episode: { include: { movie: { select: { id: true, title: true, status: true } } } },
+        episode: {
+          include: { movie: { select: { id: true, title: true, project: { select: { status: true } } } } },
+        },
         submittedBy: { select: { id: true, fullName: true } },
         studioHandoff: { select: { id: true, studio: { select: { id: true, name: true } } } },
         contentReviews: {
@@ -131,7 +135,7 @@ export class ContentReviewService {
         title: episode.title,
         status: episode.status,
         targetDurationSeconds: episode.targetDurationSeconds,
-        movie: episode.movie,
+        movie: { id: episode.movie.id, title: episode.movie.title, status: episode.movie.project?.status },
       },
       isApprovedVersion: episode.approvedMediaAssetId === asset.id,
       durationCheck: durationCheck(episode.targetDurationSeconds, asset.durationSeconds),
@@ -164,20 +168,20 @@ export class ContentReviewService {
         action: CONTENT_EVENT.CONTENT_APPROVED,
         entityType: 'ContentReview',
         entityId: review.id,
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         actorId: reviewerId,
         payload: { episodeId: episode.id, mediaAssetId: asset.id, version: asset.version },
       },
       tx,
     );
     await this.notifications.notify(
-      [episode.movie.creatorId],
+      [episode.project.creatorId],
       {
         type: NOTIFICATION_TYPE.CONTENT_APPROVED,
         title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã được duyệt`,
         body: `Bản ${asset.version} chuyển sang gắn nhãn AI và kiểm tra tuân thủ.`,
         link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-        payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
+        payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },
       tx,
     );

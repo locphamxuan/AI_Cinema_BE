@@ -28,7 +28,7 @@ export function sessionStarted(session: StartedSession): AuditEntry {
     action: CONTENT_EVENT.PLAYBACK_SESSION_STARTED,
     entityType: 'StreamingSession',
     entityId: session.id,
-    movieId: null,
+    projectId: null,
     actorId: session.userId,
     ...(session.userId ? {} : { actorType: 'GUEST' as const }),
     payload: {
@@ -57,7 +57,7 @@ export function sessionEnded(
     action: CONTENT_EVENT.PLAYBACK_SESSION_ENDED,
     entityType: 'StreamingSession',
     entityId: session.id,
-    movieId: null,
+    projectId: null,
     actorId: system ? null : session.userId,
     ...(system || session.userId ? {} : { actorType: 'GUEST' as const }),
     payload: {

@@ -68,6 +68,7 @@ export type ContentEvent = (typeof CONTENT_EVENT)[keyof typeof CONTENT_EVENT];
 
 /** The entities an event can be about. */
 export type AuditEntity =
+  | 'MovieProject'
   | 'Movie'
   | 'Episode'
   | 'Season'
@@ -83,7 +84,7 @@ export type AuditEntity =
   | 'PriceAlert'
   | 'ProjectChangeRequest'
   | 'TokenRequest'
-  // MF-2: these live outside a movie, so their audit row has no movie_id.
+  // MF-2: these live outside a movie, so their audit row has no project_id.
   | 'CoinWallet'
   | 'CoinTransaction'
   | 'EpisodeAccess'

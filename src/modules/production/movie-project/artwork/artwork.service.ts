@@ -31,21 +31,25 @@ export class ArtworkService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  async uploadPoster(movieId: string, file: Express.Multer.File | undefined, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, EDITABLE_PROJECT_STATUSES, 'change the poster');
-    const posterUrl = await this.store(`movies/${movieId}/artwork`, file);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.movie.update({ where: { id: movieId }, data: { posterUrl } });
-      await this.record(tx, movieId, movieId, user.id, 'poster');
+  async uploadPoster(projectId: string, file: Express.Multer.File | undefined, user: AuthenticatedUser) {
+    const project = await this.access.project(projectId, user, 'reviewer');
+    assertProjectStatus(project.status, EDITABLE_PROJECT_STATUSES, 'change the poster');
+    const previous = await this.prisma.movie.findUniqueOrThrow({
+      where: { id: projectId },
+      select: { posterUrl: true },
     });
-    await this.dropOld(movie.posterUrl);
+    const posterUrl = await this.store(`movies/${projectId}/artwork`, file);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.movie.update({ where: { id: projectId }, data: { posterUrl } });
+      await this.record(tx, projectId, projectId, user.id, 'poster');
+    });
+    await this.dropOld(previous.posterUrl);
     return { posterUrl };
   }
 
   async uploadThumbnail(episodeId: string, file: Express.Multer.File | undefined, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'reviewer');
-    assertProjectStatus(episode.movie.status, EDITABLE_PROJECT_STATUSES, 'change the thumbnail');
+    assertProjectStatus(episode.project.status, EDITABLE_PROJECT_STATUSES, 'change the thumbnail');
     const thumbnailUrl = await this.store(`movies/${episode.movieId}/artwork`, file);
     await this.prisma.$transaction(async (tx) => {
       await tx.episode.update({ where: { id: episodeId }, data: { thumbnailUrl } });
@@ -71,13 +75,13 @@ export class ArtworkService {
     await this.storage.remove(url.slice(prefix.length), 'public').catch(() => undefined);
   }
 
-  private record(tx: PrismaTx, movieId: string, entityId: string, actorId: string, kind: 'poster' | 'thumbnail') {
+  private record(tx: PrismaTx, projectId: string, entityId: string, actorId: string, kind: 'poster' | 'thumbnail') {
     return this.auditLog.record(
       {
         action: CONTENT_EVENT.PROJECT_UPDATED,
         entityType: kind === 'poster' ? 'Movie' : 'Episode',
         entityId,
-        movieId,
+        projectId,
         actorId,
         payload: { fields: [kind] },
       },

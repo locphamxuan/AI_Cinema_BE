@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { EpisodeStatus, MovieStatus, UnpublishReason, UserRole } from '@prisma/client';
+import { EpisodeStatus, ProjectStatus, UnpublishReason, UserRole } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -15,7 +15,7 @@ import {
 } from 'src/modules/production/project-access/project-rules';
 import { ProjectTeamService } from './team/project-team.service';
 
-const projectLink = (movieId: string) => `/projects/${movieId}`;
+const projectLink = (projectId: string) => `/projects/${projectId}`;
 
 /** Status changes of a movie project (§4.1.2). */
 @Injectable()
@@ -30,9 +30,9 @@ export class ProjectLifecycleService {
   ) {}
 
   /** Step 2: assign the Creator once the project is complete and funded (BR-12); also reassigns later. */
-  async assignCreator(movieId: string, creatorId: string, user: AuthenticatedUser): Promise<void> {
-    const movie = await this.access.movie(movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'assign a Content Creator');
+  async assignCreator(projectId: string, creatorId: string, user: AuthenticatedUser): Promise<void> {
+    const project = await this.access.project(projectId, user, 'reviewer');
+    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'assign a Content Creator');
     const creator = await this.prisma.user.findUnique({
       where: { id: creatorId },
       select: { role: true, isActive: true },
@@ -40,46 +40,47 @@ export class ProjectLifecycleService {
     if (creator?.role !== UserRole.CONTENT_CREATOR || !creator.isActive) {
       throw new BadRequestException('Pick an active Content Creator account');
     }
-    if (!(await this.fees.isFunded(movieId))) {
+    if (!(await this.fees.isFunded(projectId))) {
       throw new ConflictException('Allocate the production fee of every season before assigning a Creator (BR-12)');
     }
-    if (!(await this.prisma.episode.count({ where: { movieId } }))) {
+    if (!(await this.prisma.episode.count({ where: { movieId: projectId } }))) {
       throw new ConflictException('The project needs at least one episode');
     }
-    if (await this.prisma.episode.count({ where: { movieId, deliveryDeadline: null } })) {
+    if (await this.prisma.episode.count({ where: { movieId: projectId, deliveryDeadline: null } })) {
       throw new ConflictException('Set a delivery deadline for every episode before assigning a Creator');
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.movie.updateMany({
-        where: { id: movieId, status: { in: OPEN_PROJECT_STATUSES } },
+      const { count } = await tx.movieProject.updateMany({
+        where: { id: projectId, status: { in: OPEN_PROJECT_STATUSES } },
         data: {
           creatorId,
-          status: movie.status === MovieStatus.DRAFT ? MovieStatus.ASSIGNED : movie.status,
+          status: project.status === ProjectStatus.DRAFT ? ProjectStatus.ASSIGNED : project.status,
         },
       });
       if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
       // The lead takes a seat; the previous lead's seat ends and their episodes go back to the team.
-      if (movie.creatorId && movie.creatorId !== creatorId) await this.team.release(tx, movieId, movie.creatorId);
-      await this.team.seat(tx, movie, creatorId, { assignedById: user.id });
+      if (project.creatorId && project.creatorId !== creatorId)
+        await this.team.release(tx, projectId, project.creatorId);
+      await this.team.seat(tx, project, creatorId, { assignedById: user.id });
       await this.notifications.notify(
         [creatorId],
         {
           type: NOTIFICATION_TYPE.PROJECT_ASSIGNED,
-          title: `Bạn được giao dự án phim "${movie.title}"`,
-          link: projectLink(movieId),
-          payload: { movieId },
+          title: `Bạn được giao dự án phim "${project.movie.title}"`,
+          link: projectLink(projectId),
+          payload: { projectId },
         },
         tx,
       );
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.PROJECT_ASSIGNED,
-          entityType: 'Movie',
-          entityId: movieId,
-          movieId,
+          entityType: 'MovieProject',
+          entityId: projectId,
+          projectId,
           actorId: user.id,
-          payload: { creatorId, previousCreatorId: movie.creatorId },
+          payload: { creatorId, previousCreatorId: project.creatorId },
         },
         tx,
       );
@@ -90,37 +91,37 @@ export class ProjectLifecycleService {
    * BR-39: cancel while no episode was ever published; the Token spent stays a cost. Releases
    * still scheduled are withdrawn with it, so the scheduler never puts them out.
    */
-  async cancel(movieId: string, reason: string, user: AuthenticatedUser): Promise<void> {
-    const movie = await this.access.movie(movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'cancel the project');
+  async cancel(projectId: string, reason: string, user: AuthenticatedUser): Promise<void> {
+    const project = await this.access.project(projectId, user, 'reviewer');
+    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'cancel the project');
     const published = await this.prisma.publication.count({
-      where: { episode: { movieId }, publishedAt: { not: null } },
+      where: { episode: { movieId: projectId }, publishedAt: { not: null } },
     });
     if (published) throw new ConflictException('An episode of this project was already published (BR-39)');
 
     await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.movie.updateMany({
-        where: { id: movieId, status: { in: OPEN_PROJECT_STATUSES } },
-        data: { status: MovieStatus.CANCELLED, cancelReason: reason.trim(), cancelledAt: new Date() },
+      const { count } = await tx.movieProject.updateMany({
+        where: { id: projectId, status: { in: OPEN_PROJECT_STATUSES } },
+        data: { status: ProjectStatus.CANCELLED, cancelReason: reason.trim(), cancelledAt: new Date() },
       });
       if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
-      const withdrawn = await this.withdrawScheduledReleases(tx, movieId, reason, user.id);
+      const withdrawn = await this.withdrawScheduledReleases(tx, projectId, reason, user.id);
       await this.notifications.notify(
-        [movie.creatorId],
+        [project.creatorId],
         {
           type: NOTIFICATION_TYPE.PROJECT_CANCELLED,
-          title: `Dự án phim "${movie.title}" đã bị huỷ`,
+          title: `Dự án phim "${project.movie.title}" đã bị huỷ`,
           body: reason,
-          link: projectLink(movieId),
+          link: projectLink(projectId),
         },
         tx,
       );
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.PROJECT_CANCELLED,
-          entityType: 'Movie',
-          entityId: movieId,
-          movieId,
+          entityType: 'MovieProject',
+          entityId: projectId,
+          projectId,
           actorId: user.id,
           payload: { reason, withdrawnReleases: withdrawn },
         },
@@ -130,9 +131,9 @@ export class ProjectLifecycleService {
   }
 
   /** Withdraws the scheduled releases of a cancelled project; returns how many there were. */
-  private async withdrawScheduledReleases(tx: PrismaTx, movieId: string, reason: string, actorId: string) {
+  private async withdrawScheduledReleases(tx: PrismaTx, projectId: string, reason: string, actorId: string) {
     const { count } = await tx.publication.updateMany({
-      where: { episode: { movieId }, publishedAt: null, unpublishedAt: null },
+      where: { episode: { movieId: projectId }, publishedAt: null, unpublishedAt: null },
       data: {
         unpublishedAt: new Date(),
         unpublishReason: UnpublishReason.MANUAL,
@@ -141,7 +142,7 @@ export class ProjectLifecycleService {
       },
     });
     await tx.episode.updateMany({
-      where: { movieId, status: EpisodeStatus.SCHEDULED },
+      where: { movieId: projectId, status: EpisodeStatus.SCHEDULED },
       data: { status: EpisodeStatus.COMPLIANCE_PASSED },
     });
     return count;
@@ -152,18 +153,24 @@ export class ProjectLifecycleService {
    * episodes taken down to be fixed are back (BR-56). An episode taken down for good does not
    * hold the project open.
    */
-  async completeIfAllPublished(movieId: string, tx: PrismaTx): Promise<boolean> {
+  async completeIfAllPublished(projectId: string, tx: PrismaTx): Promise<boolean> {
     const pending = await tx.episode.count({
-      where: { movieId, status: { notIn: [EpisodeStatus.PUBLISHED, EpisodeStatus.UNPUBLISHED] } },
+      where: { movieId: projectId, status: { notIn: [EpisodeStatus.PUBLISHED, EpisodeStatus.UNPUBLISHED] } },
     });
     if (pending) return false;
-    const { count } = await tx.movie.updateMany({
-      where: { id: movieId, status: { in: DELIVERY_PROJECT_STATUSES } },
-      data: { status: MovieStatus.COMPLETED, completedAt: new Date() },
+    const { count } = await tx.movieProject.updateMany({
+      where: { id: projectId, status: { in: DELIVERY_PROJECT_STATUSES } },
+      data: { status: ProjectStatus.COMPLETED, completedAt: new Date() },
     });
     if (count) {
       await this.auditLog.record(
-        { action: CONTENT_EVENT.PROJECT_COMPLETED, entityType: 'Movie', entityId: movieId, movieId, actorId: null },
+        {
+          action: CONTENT_EVENT.PROJECT_COMPLETED,
+          entityType: 'MovieProject',
+          entityId: projectId,
+          projectId,
+          actorId: null,
+        },
         tx,
       );
     }

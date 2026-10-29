@@ -43,7 +43,7 @@ export class RewardPrizeAdminService {
           action: CONTENT_EVENT.REWARD_PRIZE_CREATED,
           entityType: 'RewardPrize',
           entityId: prize.id,
-          movieId: null,
+          projectId: null,
           actorId,
           payload: {
             code: prize.code,
@@ -81,7 +81,7 @@ export class RewardPrizeAdminService {
           action: CONTENT_EVENT.REWARD_PRIZE_UPDATED,
           entityType: 'RewardPrize',
           entityId: prize.id,
-          movieId: null,
+          projectId: null,
           actorId,
           payload: { ...dto },
         },

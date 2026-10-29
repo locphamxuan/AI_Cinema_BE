@@ -6,6 +6,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import type { FilmSentRequestDto } from './film-sent.request.dto';
+import { PROJECT_REF } from 'src/modules/production/project-access/project-relations';
 
 const SEASON_SCOPE = /^Mùa\s+(\d+)$/iu;
 
@@ -39,23 +40,23 @@ export class FilmSentService {
         where: {
           milestoneStatus: { in: OPEN },
           studio: { email: { equals: dto.studioEmail, mode: 'insensitive' } },
-          movie: { title: dto.movieTitle },
+          project: { movie: { title: dto.movieTitle } },
           // The brief names the Creator who sent it; older briefs named the project's main Creator.
           OR: [
             { createdBy: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } },
-            { movie: { creator: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } } },
+            { project: { creator: { email: { equals: dto.creatorEmail, mode: 'insensitive' } } } },
           ],
           ...this.scopeFilter(dto.scope),
         },
         orderBy: { createdAt: 'desc' },
-        include: { movie: { select: { id: true, title: true, creatorId: true, reviewerId: true } } },
+        include: { project: PROJECT_REF },
       });
       if (!handoff) throw new NotFoundException('No open hand-off matches this film');
 
-      const { movie } = handoff;
+      const { project } = handoff;
       // The episodes of the scope in the order the brief lists them, so a position in the mail is one episode.
       const scope = await tx.episode.findMany({
-        where: { movieId: movie.id, ...(handoff.seasonId ? { seasonId: handoff.seasonId } : {}) },
+        where: { movieId: project.id, ...(handoff.seasonId ? { seasonId: handoff.seasonId } : {}) },
         orderBy: { episodeNumber: 'asc' },
         select: { id: true, assignedCreatorId: true },
       });
@@ -70,7 +71,7 @@ export class FilmSentService {
           action: CONTENT_EVENT.STUDIO_FILM_SENT,
           entityType: 'StudioHandoff',
           entityId: handoff.id,
-          movieId: handoff.movieId,
+          projectId: handoff.projectId,
           actorId: null,
           payload: { version: dto.version, episodeCount: dto.episodes.length, scope: dto.scope },
         },
@@ -79,18 +80,18 @@ export class FilmSentService {
       // The Creators given episodes of the scope were CC'd on the brief ("Đồng gửi") and get the film too.
       const recipients = [
         handoff.createdById,
-        movie.creatorId,
-        movie.reviewerId,
+        project.creatorId,
+        project.reviewerId,
         ...scope.map((episode) => episode.assignedCreatorId),
       ];
       await this.notifications.notify(
         [...new Set(recipients.filter((id): id is string => !!id))],
         {
           type: NOTIFICATION_TYPE.STUDIO_FILM_SENT,
-          title: `Studio đã gửi phim "${movie.title}" (${dto.scope})`,
+          title: `Studio đã gửi phim "${project.movie.title}" (${dto.scope})`,
           body: `${note} Creator xem link từng tập ở tab Studio và upload Submission để Reviewer kiểm tra.`,
-          link: `/projects/${movie.id}/studio`,
-          payload: { movieId: movie.id, handoffId: handoff.id, version: dto.version },
+          link: `/projects/${project.id}/studio`,
+          payload: { projectId: project.id, handoffId: handoff.id, version: dto.version },
         },
         tx,
       );

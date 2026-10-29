@@ -18,17 +18,17 @@ const IMAGE_BODY = { schema: { type: 'object', properties: { file: { type: 'stri
 export class ArtworkController {
   constructor(private readonly artwork: ArtworkService) {}
 
-  @Post('projects/:movieId/poster')
+  @Post('projects/:projectId/poster')
   @UseInterceptors(IMAGE)
   @ApiConsumes('multipart/form-data')
   @ApiBody(IMAGE_BODY)
   @ApiOperation({ summary: 'Upload the poster of the project (PNG, JPEG, WebP, GIF, BMP, AVIF; ≤ 20 MB)' })
   poster(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.artwork.uploadPoster(movieId, file, user);
+    return this.artwork.uploadPoster(projectId, file, user);
   }
 
   @Post('episodes/:episodeId/thumbnail')

@@ -134,7 +134,7 @@ export class SubscriptionRenewalService {
           action: CONTENT_EVENT.SUBSCRIPTION_RENEWED,
           entityType: 'Subscription',
           entityId: subscription.id,
-          movieId: null,
+          projectId: null,
           actorId: null,
           payload: { cycleNumber, priceCoins: price.priceCoins, periodEnd },
         },
@@ -168,7 +168,7 @@ export class SubscriptionRenewalService {
           action: CONTENT_EVENT.SUBSCRIPTION_EXPIRED,
           entityType: 'Subscription',
           entityId: subscription.id,
-          movieId: null,
+          projectId: null,
           actorId: null,
           payload: {
             endReason: SubscriptionEndReason.NOT_RENEWED,
@@ -218,7 +218,7 @@ export class SubscriptionRenewalService {
           action: CONTENT_EVENT.SUBSCRIPTION_EXPIRED,
           entityType: 'Subscription',
           entityId: subscription.id,
-          movieId: null,
+          projectId: null,
           actorId: null,
           payload: {
             endReason: SubscriptionEndReason.PAYMENT_FAILED,

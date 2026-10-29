@@ -58,13 +58,13 @@ export class BriefService {
 
   /** `seasonId` limits the brief to one season; null briefs every episode of the project. */
   async prepare(
-    movieId: string,
+    projectId: string,
     studio: BriefStudio,
     seasonId: string | null,
     materials: StoredMaterial[],
     context: BriefContext,
   ): Promise<PreparedBrief> {
-    const productionFeeTokens = await this.fees.spendableTokens(movieId, seasonId, context.pendingLostTokens);
+    const productionFeeTokens = await this.fees.spendableTokens(projectId, seasonId, context.pendingLostTokens);
     if (productionFeeTokens <= 0) {
       throw new ConflictException(
         'No production fee is left for this scope: earlier studios used it up. Ask the Reviewer for more Token first',
@@ -74,26 +74,31 @@ export class BriefService {
       where: { id: context.senderId },
       select: { fullName: true, email: true },
     });
-    const movie = await this.prisma.movie.findUniqueOrThrow({
-      where: { id: movieId },
+    const project = await this.prisma.movieProject.findUniqueOrThrow({
+      where: { id: projectId },
       include: {
-        genres: { include: { genre: { select: { name: true } } } },
-        creator: PERSON,
-        episodes: {
-          where: seasonId ? { seasonId } : {},
-          orderBy: { episodeNumber: 'asc' },
-          include: { season: { select: { seasonNumber: true } }, assignedCreator: PERSON },
+        movie: {
+          include: {
+            genres: { include: { genre: { select: { name: true } } } },
+            episodes: {
+              where: seasonId ? { seasonId } : {},
+              orderBy: { episodeNumber: 'asc' },
+              include: { season: { select: { seasonNumber: true } }, assignedCreator: PERSON },
+            },
+          },
         },
+        creator: PERSON,
         ideaFiles: { where: { purpose: 'IDEA' }, orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
       },
     });
-    const latestIdeaFiles = movie.ideaFiles.filter(
+    const { movie } = project;
+    const latestIdeaFiles = project.ideaFiles.filter(
       (file, i, all) => all.findIndex((other) => other.fileName === file.fileName) === i,
     );
     const { tokenRateVnd } = await this.settings.get();
     const team = briefTeam(
       movie.episodes.map((episode) => ({ ...episode, seasonNumber: episode.season.seasonNumber })),
-      movie.creator,
+      project.creator,
       context.senderId,
     );
 
@@ -105,7 +110,7 @@ export class BriefService {
       creatorName: sender.fullName,
       creatorEmail: sender.email,
       coSenders: team.coSenders.map(personLine),
-      ideaDescription: movie.ideaDescription,
+      ideaDescription: project.ideaDescription,
       genres: movie.genres.map(({ genre }) => genre.name),
       productionFeeTokens,
       tokenRateVnd,
@@ -115,13 +120,13 @@ export class BriefService {
         title: episode.title,
         targetDurationSeconds: episode.targetDurationSeconds,
         dueDate: episode.deliveryDeadline,
-        owner: (episode.assignedCreator ?? movie.creator)?.fullName ?? null,
+        owner: (episode.assignedCreator ?? project.creator)?.fullName ?? null,
       })),
       ideaFiles: [...latestIdeaFiles.map((file) => file.fileName), ...materials.map((file) => file.fileName)],
       issuedAt: new Date(),
     };
 
-    const briefKey = `movies/${movieId}/briefs/${randomUUID()}.pdf`;
+    const briefKey = `movies/${projectId}/briefs/${randomUUID()}.pdf`;
     await this.storage.putBuffer(briefKey, await renderBriefPdf(content, this.fontPath), 'application/pdf', 'private');
 
     return {
@@ -142,7 +147,7 @@ export class BriefService {
         ...briefTeamLines(team),
       ].join('\n'),
       attachments: [
-        { key: briefKey, fileName: `brief-${movieId}.pdf`, contentType: 'application/pdf' },
+        { key: briefKey, fileName: `brief-${projectId}.pdf`, contentType: 'application/pdf' },
         ...latestIdeaFiles.map((file) => ({
           key: file.storageKey,
           fileName: file.fileName,

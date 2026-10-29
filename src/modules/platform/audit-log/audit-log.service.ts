@@ -8,7 +8,7 @@ export interface AuditEntry {
   entityType: AuditEntity;
   entityId: string;
   /** null for MF-2 events: a wallet, a plan or a Coin ledger row is not part of a movie project. */
-  movieId: string | null;
+  projectId: string | null;
   /** null for events the system raises on its own (queue worker, scheduler) or a studio raises. */
   actorId: string | null;
   /** 'STUDIO' for a studio on its portal link, 'GUEST' for an unauthenticated viewer: neither has an account. */
@@ -24,7 +24,7 @@ function auditRow(entry: AuditEntry) {
     action: entry.action,
     entityType: entry.entityType,
     entityId: entry.entityId,
-    movieId: entry.movieId,
+    projectId: entry.projectId,
     actorType: entry.actorType ?? (entry.actorId ? 'USER' : 'SYSTEM'),
     actorId: entry.actorId,
     payload: entry.payload as Prisma.InputJsonValue | undefined,
@@ -49,10 +49,10 @@ export class AuditLogService {
     await (tx ?? this.prisma).auditLog.createMany({ data: entries.map(auditRow) });
   }
 
-  /** A movie's events, newest first, with whoever triggered each one. */
-  findForMovie(movieId: string, limit = DEFAULT_LIMIT) {
+  /** A project's events, newest first, with whoever triggered each one. */
+  findForProject(projectId: string, limit = DEFAULT_LIMIT) {
     return this.prisma.auditLog.findMany({
-      where: { movieId },
+      where: { projectId },
       orderBy: { createdAt: 'desc' },
       take: limit,
       include: { actor: { select: { id: true, fullName: true, role: true } } },

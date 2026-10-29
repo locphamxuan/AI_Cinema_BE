@@ -27,43 +27,43 @@ export class ProjectTeamController {
     return this.team.directory();
   }
 
-  @Get('projects/:movieId/creators')
+  @Get('projects/:projectId/creators')
   @ApiOperation({ summary: 'Creators of the project with their episodes, who added them and who delegated' })
-  list(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.team.list(movieId, user);
+  list(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.team.list(projectId, user);
   }
 
-  @Post('projects/:movieId/creators')
+  @Post('projects/:projectId/creators')
   @RequirePermission(PERMISSION.PROJECT_MANAGE)
   @ApiOperation({ summary: 'Add a Content Creator next to the lead Creator (Reviewer)' })
   add(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: AddCreatorRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.team.addCreator(movieId, dto, user);
+    return this.team.addCreator(projectId, dto, user);
   }
 
-  @Delete('projects/:movieId/creators/:creatorId')
+  @Delete('projects/:projectId/creators/:creatorId')
   @RequirePermission(PERMISSION.PROJECT_MANAGE)
   @ApiOperation({ summary: 'Take a Creator off the project; their episodes go back to the team (Reviewer)' })
   remove(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Param('creatorId', ID) creatorId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.team.removeCreator(movieId, creatorId, user);
+    return this.team.removeCreator(projectId, creatorId, user);
   }
 
-  @Post('projects/:movieId/delegations')
+  @Post('projects/:projectId/delegations')
   @RequirePermission(PERMISSION.MEDIA_INGEST)
   @ApiOperation({ summary: 'Creator 1 delegates episodes to Creator 2' })
   delegate(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: DelegateEpisodesRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.team.delegate(movieId, dto, user);
+    return this.team.delegate(projectId, dto, user);
   }
 
   @Put('episodes/:episodeId/assignee')

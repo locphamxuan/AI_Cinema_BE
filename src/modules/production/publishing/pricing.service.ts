@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { MovieStatus, PriceAlertStatus } from '@prisma/client';
+import { ProjectStatus, PriceAlertStatus } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -10,6 +10,7 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 const UNRESOLVED: PriceAlertStatus[] = [PriceAlertStatus.OPEN, PriceAlertStatus.CHANGE_REQUESTED];
 
@@ -30,8 +31,8 @@ export class PricingService {
   async setPrice(episodeId: string, coinPrice: number, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'reviewer');
     assertProjectStatus(
-      episode.movie.status,
-      [...OPEN_PROJECT_STATUSES, MovieStatus.COMPLETED, MovieStatus.UNDER_REVISION],
+      episode.project.status,
+      [...OPEN_PROJECT_STATUSES, ProjectStatus.COMPLETED, ProjectStatus.UNDER_REVISION],
       'price an episode',
     );
     const { episodeCoinPriceMin: rangeMin, episodeCoinPriceMax: rangeMax } = await this.settings.get();
@@ -49,7 +50,7 @@ export class PricingService {
           action: CONTENT_EVENT.EPISODE_PRICED,
           entityType: 'Episode',
           entityId: episodeId,
-          movieId: episode.movieId,
+          projectId: episode.movieId,
           actorId: user.id,
           payload: { previousPrice: episode.coinPrice, coinPrice, rangeMin, rangeMax },
         },
@@ -87,7 +88,7 @@ export class PricingService {
   async requestChange(alertId: string, note: string, admin: AuthenticatedUser) {
     const alert = await this.findAlert(alertId);
     if (alert.status !== PriceAlertStatus.OPEN) throw new ConflictException(`The alert is already ${alert.status}`);
-    const { movie } = alert.episode;
+    const { movie, project } = alert.episode;
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.priceAlert.updateMany({
         where: { id: alertId, status: PriceAlertStatus.OPEN },
@@ -100,13 +101,13 @@ export class PricingService {
       });
       if (count === 0) throw new ConflictException('The alert changed meanwhile; reload it');
       await this.notifications.notify(
-        [movie.reviewerId],
+        [project.reviewerId],
         {
           type: NOTIFICATION_TYPE.PRICE_CHANGE_REQUEST,
           title: `Admin đề nghị xem lại giá tập ${alert.episode.episodeNumber} của phim "${movie.title}"`,
           body: note.trim(),
           link: `/projects/${movie.id}/episodes/${alert.episodeId}`,
-          payload: { movieId: movie.id, episodeId: alert.episodeId, priceAlertId: alertId },
+          payload: { projectId: movie.id, episodeId: alert.episodeId, priceAlertId: alertId },
         },
         tx,
       );
@@ -141,7 +142,7 @@ export class PricingService {
         action: CONTENT_EVENT.PRICE_OUT_OF_RANGE,
         entityType: 'PriceAlert',
         entityId: alert.id,
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         actorId: reviewerId,
         payload: { episodeId: episode.id, coinPrice: episode.coinPrice, rangeMin, rangeMax },
       },
@@ -154,7 +155,7 @@ export class PricingService {
         title: `Giá tập ${episode.episodeNumber} của phim "${episode.movie.title}" nằm ngoài khoảng cho phép`,
         body: `${episode.coinPrice} Coin, khoảng cho phép ${rangeMin}–${rangeMax} Coin.`,
         link: `/admin/price-alerts`,
-        payload: { movieId: episode.movieId, episodeId: episode.id, priceAlertId: alert.id },
+        payload: { projectId: episode.movieId, episodeId: episode.id, priceAlertId: alert.id },
       },
       tx,
     );
@@ -164,9 +165,9 @@ export class PricingService {
   private async findAlert(alertId: string) {
     const alert = await this.prisma.priceAlert.findUnique({
       where: { id: alertId },
-      include: { episode: { include: { movie: true } } },
+      include: { episode: { include: WITH_PROJECT } },
     });
     if (!alert) throw new NotFoundException('Price alert not found');
-    return alert;
+    return { ...alert, episode: liftProject(alert.episode) };
   }
 }

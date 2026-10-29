@@ -5,6 +5,7 @@ import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.s
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
+import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 /**
  * A failure the same release would hit again: an HTTP refusal from a rule, or the database
@@ -40,29 +41,28 @@ export async function withdrawFailedRelease(
     where: { id: publication.episodeId, status: EpisodeStatus.SCHEDULED },
     data: { status: EpisodeStatus.COMPLIANCE_PASSED },
   });
-  const episode = await tx.episode.findUniqueOrThrow({
-    where: { id: publication.episodeId },
-    include: { movie: true },
-  });
+  const episode = liftProject(
+    await tx.episode.findUniqueOrThrow({ where: { id: publication.episodeId }, include: WITH_PROJECT }),
+  );
   await deps.auditLog.record(
     {
       action: CONTENT_EVENT.EPISODE_UNPUBLISHED,
       entityType: 'Publication',
       entityId: publication.id,
-      movieId: episode.movieId,
+      projectId: episode.movieId,
       actorId: null,
       payload: { episodeId: episode.id, mode: null, cancelledSchedule: true, failure: cause },
     },
     tx,
   );
   await deps.notifications.notify(
-    [episode.movie.reviewerId],
+    [episode.project.reviewerId],
     {
       type: NOTIFICATION_TYPE.EPISODE_RELEASE_FAILED,
       title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" chưa phát hành được`,
       body: `Lịch phát hành đã bị huỷ: ${cause}. Kiểm tra lại rồi đặt lịch mới.`,
       link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-      payload: { movieId: episode.movieId, episodeId: episode.id, publicationId: publication.id },
+      payload: { projectId: episode.movieId, episodeId: episode.id, publicationId: publication.id },
     },
     tx,
   );

@@ -16,7 +16,7 @@ export const AUTO_DELIVERED_NOTE = 'Tự chuyển sang "Studio đã giao" khi Su
 export async function deliverOnSubmission(
   tx: PrismaTx,
   auditLog: AuditLogService,
-  submission: { handoffId: string; mediaAssetId: string; movieId: string; submittedById: string },
+  submission: { handoffId: string; mediaAssetId: string; projectId: string; submittedById: string },
 ): Promise<Milestone | null> {
   const handoff = await tx.studioHandoff.findUnique({
     where: { id: submission.handoffId },
@@ -49,7 +49,7 @@ export async function deliverOnSubmission(
       action: CONTENT_EVENT.STUDIO_MILESTONE_UPDATED,
       entityType: 'StudioHandoff',
       entityId: submission.handoffId,
-      movieId: submission.movieId,
+      projectId: submission.projectId,
       actorId: submission.submittedById,
       payload: { from, to: Milestone.DELIVERED, mediaAssetId: submission.mediaAssetId, auto: true },
     },

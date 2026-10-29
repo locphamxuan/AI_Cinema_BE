@@ -51,7 +51,7 @@ describe('playback audit rows (hardening #12)', () => {
         action: 'PLAYBACK_SESSION_STARTED',
         entityType: 'StreamingSession',
         entityId: 'sess-1',
-        movieId: null,
+        projectId: null,
         actorId: 'u-1',
         payload: { episodeId: 'ep-1', accessType: 'SUBSCRIPTION', userId: 'u-1', ipAddress: '203.0.113.7' },
       });
@@ -72,7 +72,7 @@ describe('playback audit rows (hardening #12)', () => {
         action: 'PLAYBACK_SESSION_ENDED',
         entityType: 'StreamingSession',
         entityId: 'sess-1',
-        movieId: null,
+        projectId: null,
         actorId: 'u-1',
         payload: {
           episodeId: 'ep-1',

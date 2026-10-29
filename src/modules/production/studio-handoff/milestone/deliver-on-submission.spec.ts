@@ -3,7 +3,7 @@ import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { AUTO_DELIVERED_NOTE, deliverOnSubmission } from './deliver-on-submission';
 
-const SUBMISSION = { handoffId: 'handoff', mediaAssetId: 'asset', movieId: 'movie', submittedById: 'creator' };
+const SUBMISSION = { handoffId: 'handoff', mediaAssetId: 'asset', projectId: 'movie', submittedById: 'creator' };
 
 function setup(milestoneStatus: Milestone | null, updated = 1) {
   const tx = {
