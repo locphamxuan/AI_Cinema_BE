@@ -236,7 +236,13 @@ describe('Movie projects (e2e)', () => {
     const body = { content: 'Tập 2 nên ngắn lại 15 phút.', reason: 'Khán giả thích tập ngắn.' };
     const plain = await reviewer.post<Row & { status: string }>(path, body);
     expect(plain.status).toBe('OPEN');
-    expect((await reviewer.get<Project>(`/projects/${projectId}`)).openChangeRequests).toBe(1);
+    const detail = await reviewer.get<Project & { title: string }>(`/projects/${projectId}`);
+    expect(detail.openChangeRequests).toBe(1);
+    // The list searches the catalog title and counts what still waits for the Admin.
+    const listed = await reviewer.get<{ data: (Row & { openChangeRequests: number })[] }>(
+      `/projects?search=${encodeURIComponent(detail.title)}`,
+    );
+    expect(listed.data.find((p) => p.id === projectId)).toMatchObject({ openChangeRequests: 1 });
     await otherReviewer.post(path, body, 404);
 
     await creator.upload(path, [], { ...body, requestType: 'BUDGET_SUPPLEMENT' }, 400);

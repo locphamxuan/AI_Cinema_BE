@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MovieStatus, type Prisma } from '@prisma/client';
+import { ProjectStatus, type Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
@@ -7,7 +7,7 @@ import { EPISODE_AVAILABILITY, REVISION_NOTICE, VISIBLE_EPISODE } from './episod
 
 /** A movie is listed once one of its episodes is out (MF-1 step 14), never once cancelled. */
 export const LISTED_MOVIE: Prisma.MovieWhereInput = {
-  status: { not: MovieStatus.CANCELLED },
+  project: { status: { not: ProjectStatus.CANCELLED } },
   episodes: { some: VISIBLE_EPISODE },
 };
 

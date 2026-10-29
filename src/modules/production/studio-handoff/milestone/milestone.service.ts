@@ -10,6 +10,7 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import type { UpdateMilestoneRequestDto } from '../dto/studio-handoff.request.dto';
 import { assertMilestoneInput, assertMilestoneMove } from './milestone-rules';
+import type { TitledProject } from 'src/modules/production/project-access/project-access.service';
 
 /** BR-58: the Creator follows the studio's progress outside the platform and records every change. */
 @Injectable()
@@ -21,10 +22,10 @@ export class MilestoneService {
     private readonly notifications: NotificationService,
   ) {}
 
-  async update(movieId: string, handoffId: string, dto: UpdateMilestoneRequestDto, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'lead');
-    assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'change the studio milestone');
-    const handoff = await this.prisma.studioHandoff.findFirst({ where: { id: handoffId, movieId } });
+  async update(projectId: string, handoffId: string, dto: UpdateMilestoneRequestDto, user: AuthenticatedUser) {
+    const project = await this.access.project(projectId, user, 'lead');
+    assertProjectStatus(project.status, DELIVERY_PROJECT_STATUSES, 'change the studio milestone');
+    const handoff = await this.prisma.studioHandoff.findFirst({ where: { id: handoffId, projectId } });
     if (!handoff) throw new NotFoundException('Hand-off not found');
 
     const to = dto.status;
@@ -59,13 +60,13 @@ export class MilestoneService {
           action: CONTENT_EVENT.STUDIO_MILESTONE_UPDATED,
           entityType: 'StudioHandoff',
           entityId: handoffId,
-          movieId,
+          projectId,
           actorId: user.id,
           payload: { from: handoff.milestoneStatus, to, mediaAssetId: dto.mediaAssetId ?? null },
         },
         tx,
       );
-      await this.tellReviewer(tx, movie, to, note);
+      await this.tellReviewer(tx, project, to, note);
     });
     return this.prisma.studioHandoff.findUniqueOrThrow({
       where: { id: handoffId },
@@ -77,47 +78,43 @@ export class MilestoneService {
   private async assertSubmission(
     tx: PrismaTx,
     mediaAssetId: string,
-    handoff: { movieId: string; seasonId: string | null },
+    handoff: { projectId: string; seasonId: string | null },
   ) {
     const asset = await tx.mediaAsset.findUnique({
       where: { id: mediaAssetId },
       select: { episode: { select: { movieId: true, seasonId: true } } },
     });
     const covered =
-      asset?.episode.movieId === handoff.movieId && (!handoff.seasonId || asset.episode.seasonId === handoff.seasonId);
+      asset?.episode.movieId === handoff.projectId &&
+      (!handoff.seasonId || asset.episode.seasonId === handoff.seasonId);
     if (!covered) throw new BadRequestException('The Submission is not an upload for an episode of this hand-off');
   }
 
-  private async tellReviewer(
-    tx: PrismaTx,
-    movie: { id: string; title: string; reviewerId: string },
-    to: Milestone,
-    note?: string,
-  ) {
+  private async tellReviewer(tx: PrismaTx, project: TitledProject, to: Milestone, note?: string) {
     const accepted = to === Milestone.STUDIO_ACCEPTED;
     if (!accepted && to !== Milestone.STUDIO_DECLINED) {
       await this.notifications.notify(
-        [movie.reviewerId],
+        [project.reviewerId],
         {
           type: NOTIFICATION_TYPE.STUDIO_MILESTONE_CHANGED,
-          title: `Mốc Studio của phim "${movie.title}" chuyển sang ${to}`,
+          title: `Mốc Studio của phim "${project.movie.title}" chuyển sang ${to}`,
           body: note,
-          link: `/projects/${movie.id}/studio`,
-          payload: { movieId: movie.id, status: to },
+          link: `/projects/${project.id}/studio`,
+          payload: { projectId: project.id, status: to },
         },
         tx,
       );
       return;
     }
     await this.notifications.notify(
-      [movie.reviewerId],
+      [project.reviewerId],
       {
         type: accepted ? NOTIFICATION_TYPE.STUDIO_ACCEPTED : NOTIFICATION_TYPE.STUDIO_DECLINED,
         title: accepted
-          ? `Studio đã nhận phim "${movie.title}"`
-          : `Studio từ chối phim "${movie.title}"${note ? `: ${note}` : ''}`,
-        link: `/projects/${movie.id}/studio`,
-        payload: { movieId: movie.id },
+          ? `Studio đã nhận phim "${project.movie.title}"`
+          : `Studio từ chối phim "${project.movie.title}"${note ? `: ${note}` : ''}`,
+        link: `/projects/${project.id}/studio`,
+        payload: { projectId: project.id },
       },
       tx,
     );

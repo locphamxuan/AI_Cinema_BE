@@ -21,7 +21,7 @@ enum HandoffMaterialKind {
 /// project), when and with which materials.
 model StudioHandoff {
     id                  String                @id @default(uuid()) @db.Uuid
-    movieId             String                @map("movie_id") @db.Uuid
+    projectId             String                @map("project_id") @db.Uuid
     studioId            String                @map("studio_id") @db.Uuid
     seasonId            String?               @map("season_id") @db.Uuid
     /// Production fee printed in the brief when it was sent.
@@ -46,7 +46,7 @@ model StudioHandoff {
     createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt           DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-    movie           Movie                   @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    project           MovieProject                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
     studio          Studio                  @relation(fields: [studioId], references: [id], onDelete: Restrict)
     /// Plain key: Prisma cannot make (season_id, movie_id) optional; the service checks the season's movie.
     season          Season?                 @relation(fields: [seasonId], references: [id], onDelete: Restrict)
@@ -57,7 +57,7 @@ model StudioHandoff {
     deliveries      MediaAsset[]
     filmLinks       StudioFilmLink[]
 
-    @@index([movieId, createdAt])
+    @@index([projectId, createdAt])
     @@index([studioId])
     @@index([seasonId])
     @@map("studio_handoffs")

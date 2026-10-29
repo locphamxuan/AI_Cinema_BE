@@ -5,7 +5,6 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 /** Why a Google sign-in needs another step; the client answers it and resends the same token. */
 export const GOOGLE_REASON = {
   NEEDS_BIRTHDAY: 'GOOGLE_SIGNUP_NEEDS_BIRTHDAY',
-  NEEDS_PASSWORD: 'GOOGLE_LINK_NEEDS_PASSWORD',
   ACCOUNT_MISMATCH: 'GOOGLE_ACCOUNT_MISMATCH',
 } as const;
 

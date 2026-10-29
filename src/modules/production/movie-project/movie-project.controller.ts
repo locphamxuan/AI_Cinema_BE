@@ -41,45 +41,49 @@ export class MovieProjectController {
     return this.projects.list(query, user);
   }
 
-  @Get(':movieId')
-  detail(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.projects.detail(movieId, user);
+  @Get(':projectId')
+  detail(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.detail(projectId, user);
   }
 
-  @Patch(':movieId')
+  @Patch(':projectId')
   @RequirePermission(PERMISSION.PROJECT_MANAGE)
   @ApiOperation({ summary: 'Edit the project and its catalog metadata (synopsis, age rating)' })
   update(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: UpdateMovieProjectRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.projects.update(movieId, dto, user);
+    return this.projects.update(projectId, dto, user);
   }
 
-  @Post(':movieId/assign')
+  @Post(':projectId/assign')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission(PERMISSION.PROJECT_MANAGE)
   @ApiOperation({ summary: 'Assign (or reassign) the Content Creator; needs a production fee (step 2, BR-12)' })
   assign(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: AssignCreatorRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.lifecycle.assignCreator(movieId, dto.creatorId, user);
+    return this.lifecycle.assignCreator(projectId, dto.creatorId, user);
   }
 
-  @Post(':movieId/cancel')
+  @Post(':projectId/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission(PERMISSION.PROJECT_MANAGE)
   @ApiOperation({ summary: 'Cancel a project none of whose episodes was published (BR-39)' })
-  cancel(@Param('movieId', ID) movieId: string, @Body() dto: ReasonRequestDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.lifecycle.cancel(movieId, dto.reason, user);
+  cancel(
+    @Param('projectId', ID) projectId: string,
+    @Body() dto: ReasonRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.lifecycle.cancel(projectId, dto.reason, user);
   }
 
-  @Get(':movieId/events')
+  @Get(':projectId/events')
   @ApiOperation({ summary: 'Content events of the project (§4.1.6), newest first' })
-  events(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.projects.events(movieId, user);
+  events(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.events(projectId, user);
   }
 }

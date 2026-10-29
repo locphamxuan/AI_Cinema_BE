@@ -7,6 +7,7 @@ import { NotificationService } from 'src/modules/platform/notification/notificat
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { deliverOnSubmission } from 'src/modules/production/studio-handoff/milestone/deliver-on-submission';
+import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 /** Ingest states a delivery no longer leaves. */
 export const DONE: MediaIngestStatus[] = [
@@ -61,37 +62,39 @@ export class MediaOutcomeService {
         where: { id: asset.episodeId, status: EpisodeStatus.PROCESSING },
         data: { status: EpisodeStatus.IN_REVIEW },
       });
-      const episode = await tx.episode.findUniqueOrThrow({ where: { id: asset.episodeId }, include: { movie: true } });
+      const episode = liftProject(
+        await tx.episode.findUniqueOrThrow({ where: { id: asset.episodeId }, include: WITH_PROJECT }),
+      );
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.MEDIA_READY,
           entityType: 'MediaAsset',
           entityId: asset.id,
-          movieId: episode.movieId,
+          projectId: episode.movieId,
           actorId: null,
           payload: { episodeId: episode.id, version: asset.version, durationSeconds: result.durationSeconds },
         },
         tx,
       );
       // Nothing to review on a project cancelled meanwhile.
-      if (!moved.count || !DELIVERY_PROJECT_STATUSES.includes(episode.movie.status)) return;
+      if (!moved.count || !DELIVERY_PROJECT_STATUSES.includes(episode.project.status)) return;
       // Only a playable Submission proves the studio delivered; a failed upload leaves the milestone as it was.
       if (asset.studioHandoffId) {
         await deliverOnSubmission(tx, this.auditLog, {
           handoffId: asset.studioHandoffId,
           mediaAssetId: asset.id,
-          movieId: episode.movieId,
+          projectId: episode.movieId,
           submittedById: asset.submittedById,
         });
       }
       await this.notifications.notify(
-        [episode.movie.reviewerId, episode.movie.creatorId],
+        [episode.project.reviewerId, episode.project.creatorId],
         {
           type: NOTIFICATION_TYPE.MEDIA_READY,
           title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" sẵn sàng để duyệt`,
           body: `Bản ${asset.version}, dài ${formatDuration(result.durationSeconds)}.`,
           link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-          payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
+          payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
         },
         tx,
       );
@@ -103,7 +106,7 @@ export class MediaOutcomeService {
     await this.prisma.$transaction(async (tx) => {
       const asset = await tx.mediaAsset.findUnique({
         where: { id: mediaAssetId },
-        include: { episode: { include: { movie: true } } },
+        include: { episode: { include: WITH_PROJECT } },
       });
       if (!asset || DONE.includes(asset.ingestStatus)) return;
       await tx.mediaAsset.update({
@@ -119,27 +122,27 @@ export class MediaOutcomeService {
               data: { status: await this.statusWithoutPending(tx, asset.episodeId) },
             })
           : { count: 0 };
-      const { movie } = asset.episode;
+      const { movie, project } = liftProject(asset.episode);
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.MEDIA_FAILED,
           entityType: 'MediaAsset',
           entityId: asset.id,
-          movieId: movie.id,
+          projectId: movie.id,
           actorId: null,
           payload: { episodeId: asset.episodeId, version: asset.version, reason },
         },
         tx,
       );
-      if (!moved.count || !DELIVERY_PROJECT_STATUSES.includes(movie.status)) return;
+      if (!moved.count || !DELIVERY_PROJECT_STATUSES.includes(project.status)) return;
       await this.notifications.notify(
-        [movie.creatorId],
+        [project.creatorId],
         {
           type: NOTIFICATION_TYPE.MEDIA_FAILED,
           title: `Không xử lý được tập ${asset.episode.episodeNumber} của phim "${movie.title}"`,
           body: `${reason} Hãy giao lại tập hoặc xử lý lại khi nguồn đã được sửa.`,
           link: `/projects/${movie.id}/episodes/${asset.episodeId}`,
-          payload: { movieId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
+          payload: { projectId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
         },
         tx,
       );

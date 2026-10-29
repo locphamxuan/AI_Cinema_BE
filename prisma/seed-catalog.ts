@@ -16,7 +16,7 @@ import {
   LabelType,
   MediaIngestStatus,
   MediaSourceMethod,
-  MovieStatus,
+  ProjectStatus,
   PolicyType,
   PrismaClient,
 } from '@prisma/client';
@@ -113,18 +113,22 @@ async function seedMovie(
         data: {
           title: source.title,
           synopsis: source.synopsis,
-          ideaDescription: `${SOURCE_NOTE}\n${source.episodes.map((e) => e.file).join('\n')}`,
           defaultLanguage: source.language,
           releaseYear: source.releaseYear,
-          status: MovieStatus.COMPLETED,
           posterUrl: source.posterUrl,
           bannerUrl: source.posterUrl,
-          reviewerId: people.reviewerId,
-          creatorId: people.creatorId,
-          studioId: studio.id,
-          handedOffAt: now,
-          completedAt: now,
           genres: { create: genres.map((genreId) => ({ genreId })) },
+          project: {
+            create: {
+              ideaDescription: `${SOURCE_NOTE}\n${source.episodes.map((e) => e.file).join('\n')}`,
+              status: ProjectStatus.COMPLETED,
+              reviewerId: people.reviewerId,
+              creatorId: people.creatorId,
+              studioId: studio.id,
+              handedOffAt: now,
+              completedAt: now,
+            },
+          },
         },
       });
       const season = await tx.season.create({ data: { movieId: movie.id, seasonNumber: 1, title: 'Mùa 1' } });

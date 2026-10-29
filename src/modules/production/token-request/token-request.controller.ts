@@ -21,24 +21,24 @@ const ID = new ParseUUIDPipe({ version: '4' });
 export class TokenRequestController {
   constructor(private readonly requests: TokenRequestService) {}
 
-  @Post('projects/:movieId/token-requests')
+  @Post('projects/:projectId/token-requests')
   @RequirePermission(PERMISSION.PROJECT_SUGGEST)
   @ApiOperation({ summary: 'Creator: ask the Reviewer for more Token for a season' })
   create(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: CreateTokenRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.requests.create(movieId, dto, user);
+    return this.requests.create(projectId, dto, user);
   }
 
-  @Get('projects/:movieId/token-requests')
+  @Get('projects/:projectId/token-requests')
   listForProject(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Query() query: TokenRequestListQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.requests.list(query, user, movieId);
+    return this.requests.list(query, user, projectId);
   }
 
   @Get('token-requests')

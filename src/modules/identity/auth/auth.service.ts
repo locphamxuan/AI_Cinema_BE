@@ -145,10 +145,10 @@ export class AuthService {
     const email = normalizeEmail(profile.email);
     const existing = await this.prisma.user.findUnique({
       where: { email },
-      select: { ...USER_PROFILE_SELECT, passwordHash: true, googleId: true },
+      select: { ...USER_PROFILE_SELECT, googleId: true },
     });
     if (!existing) return this.openGoogleMember(profile, email, dto.dateOfBirth);
-    const { passwordHash, googleId, ...user } = existing;
+    const { googleId, ...user } = existing;
     if (googleId) {
       throw new ConflictException({
         message: 'This email is linked to another Google account',
@@ -156,17 +156,7 @@ export class AuthService {
       });
     }
     if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
-    if (passwordHash) {
-      if (!dto.password) {
-        throw new UnprocessableEntityException({
-          message: 'Enter the password of this account to link it to Google',
-          details: { reason: GOOGLE_REASON.NEEDS_PASSWORD },
-        });
-      }
-      if (!(await verifyPassword(dto.password, passwordHash))) {
-        throw new UnauthorizedException('Incorrect email or password');
-      }
-    }
+    // Google already proved the mailbox (email_verified), so the account it names is linked as is.
     await this.prisma.user.update({
       where: { id: user.id },
       data: { googleId: profile.sub, emailVerifiedAt: new Date() },

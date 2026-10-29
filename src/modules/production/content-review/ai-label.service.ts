@@ -26,7 +26,7 @@ export class AiLabelService {
 
   async apply(mediaAssetId: string, dto: ApplyAiLabelRequestDto, user: AuthenticatedUser) {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
-    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'label media');
+    assertProjectStatus(asset.episode.project.status, DELIVERY_PROJECT_STATUSES, 'label media');
     this.reviews.assertUnderReview(asset, REVIEWED_STATUSES);
 
     await this.prisma.$transaction(async (tx) => {
@@ -60,7 +60,7 @@ export class AiLabelService {
           action: CONTENT_EVENT.AI_LABEL_APPLIED,
           entityType: 'AiContentLabel',
           entityId: saved.id,
-          movieId: asset.episode.movieId,
+          projectId: asset.episode.movieId,
           actorId: user.id,
           payload: {
             episodeId: asset.episodeId,

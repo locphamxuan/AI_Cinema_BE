@@ -44,9 +44,9 @@ describe('withdrawFailedRelease', () => {
     tx.publication.updateMany.mockResolvedValue({ count: 1 });
     tx.episode.findUniqueOrThrow.mockResolvedValue({
       id: 'ep-1',
-      movieId: 'm1',
+      projectId: 'm1',
       episodeNumber: 3,
-      movie: { reviewerId: 'rev-1', title: 'Phim' },
+      movie: { id: 'm-1', title: 'Phim', project: { reviewerId: 'rev-1' } },
     });
   });
 

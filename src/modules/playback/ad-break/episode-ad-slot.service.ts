@@ -73,7 +73,7 @@ export class EpisodeAdSlotService {
           action: CONTENT_EVENT.EPISODE_AD_SLOTS_SET,
           entityType: 'Episode',
           entityId: episodeId,
-          movieId: null,
+          projectId: null,
           actorId,
           payload: {
             slots: dto.slots.map((slot) => ({ positionSeconds: slot.positionSeconds, adId: slot.adId ?? null })),

@@ -38,6 +38,7 @@ export class FilmReportService {
       orderBy: { title: 'asc' },
       include: {
         ...GENRES,
+        project: { select: { status: true } },
         _count: { select: { likes: true } },
         episodes: {
           where: VISIBLE_EPISODE,
@@ -54,7 +55,7 @@ export class FilmReportService {
         id: movie.id,
         title: movie.title,
         posterUrl: movie.posterUrl,
-        status: movie.status,
+        status: movie.project?.status,
         releaseYear: movie.releaseYear,
         ageRating: movie.ageRating,
         genres: movie.genres.map(({ genre }) => genre),

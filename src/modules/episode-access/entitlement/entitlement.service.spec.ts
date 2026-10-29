@@ -108,7 +108,7 @@ describe('EntitlementService refunds', () => {
       expect.objectContaining({
         action: CONTENT_EVENT.EPISODE_ACCESS_REVOKED,
         entityType: 'EpisodeAccess',
-        movieId: 'm1',
+        projectId: 'm1',
       }),
       tx,
     );

@@ -59,29 +59,29 @@ export class IdeaFileService {
   ) {}
 
   async upload(
-    movieId: string,
+    projectId: string,
     file: Express.Multer.File | undefined,
     user: AuthenticatedUser,
     purpose: IdeaFilePurpose = 'IDEA',
   ) {
     if (!file?.buffer.length) throw new BadRequestException('Attach a file in the "file" field');
-    const movie = await this.access.movie(movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'add idea files');
+    const project = await this.access.project(projectId, user, 'reviewer');
+    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'add idea files');
     const fileName = safeFileName(file.originalname);
     if (fileName.toLowerCase().endsWith('.txt') && !isUtf8Text(file.buffer)) {
       throw new BadRequestException('TXT idea files must contain valid UTF-8 plain text');
     }
     const kind = detectKind(fileName, file.buffer.subarray(0, 16), IDEA_FILE_KINDS);
 
-    const storageKey = `movies/${movieId}/ideas/${randomUUID()}${fileName.slice(fileName.lastIndexOf('.')).toLowerCase()}`;
+    const storageKey = `movies/${projectId}/ideas/${randomUUID()}${fileName.slice(fileName.lastIndexOf('.')).toLowerCase()}`;
     await this.storage.putBuffer(storageKey, file.buffer, kind.mimeType, 'private');
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM movies WHERE id = ${movieId}::uuid FOR UPDATE`;
-      const last = await tx.movieIdeaFile.aggregate({ where: { movieId, fileName }, _max: { version: true } });
+      await tx.$queryRaw`SELECT id FROM movie_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      const last = await tx.movieIdeaFile.aggregate({ where: { projectId, fileName }, _max: { version: true } });
       const created = await tx.movieIdeaFile.create({
         data: {
-          movieId,
+          projectId,
           fileName,
           purpose,
           version: (last._max.version ?? 0) + 1,
@@ -96,7 +96,7 @@ export class IdeaFileService {
           action: CONTENT_EVENT.IDEA_FILE_UPLOADED,
           entityType: 'MovieIdeaFile',
           entityId: created.id,
-          movieId,
+          projectId,
           actorId: user.id,
           payload: { fileName, purpose, version: created.version },
         },
@@ -106,27 +106,27 @@ export class IdeaFileService {
     });
   }
 
-  async list(movieId: string, user: AuthenticatedUser) {
-    await this.access.movie(movieId, user, 'read');
+  async list(projectId: string, user: AuthenticatedUser) {
+    await this.access.project(projectId, user, 'read');
     return this.prisma.movieIdeaFile.findMany({
-      where: { movieId },
+      where: { projectId },
       orderBy: [{ fileName: 'asc' }, { version: 'desc' }],
     });
   }
 
   /** The Reviewer takes a file version off an open project; the stored object goes with it. */
-  async remove(movieId: string, fileId: string, user: AuthenticatedUser): Promise<void> {
-    const movie = await this.access.movie(movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'remove idea files');
-    const file = await this.prisma.movieIdeaFile.findFirst({ where: { id: fileId, movieId } });
+  async remove(projectId: string, fileId: string, user: AuthenticatedUser): Promise<void> {
+    const project = await this.access.project(projectId, user, 'reviewer');
+    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'remove idea files');
+    const file = await this.prisma.movieIdeaFile.findFirst({ where: { id: fileId, projectId } });
     if (!file) throw new NotFoundException('Idea file not found');
     await this.prisma.movieIdeaFile.delete({ where: { id: file.id } });
     await this.storage.remove(file.storageKey, 'private').catch(() => undefined);
   }
 
-  async download(movieId: string, fileId: string, user: AuthenticatedUser): Promise<StreamableFile> {
-    await this.access.movie(movieId, user, 'read');
-    const file = await this.prisma.movieIdeaFile.findFirst({ where: { id: fileId, movieId } });
+  async download(projectId: string, fileId: string, user: AuthenticatedUser): Promise<StreamableFile> {
+    await this.access.project(projectId, user, 'read');
+    const file = await this.prisma.movieIdeaFile.findFirst({ where: { id: fileId, projectId } });
     if (!file) throw new NotFoundException('Idea file not found');
     return new StreamableFile(await this.storage.stream(file.storageKey, 'private'), {
       type: file.mimeType,

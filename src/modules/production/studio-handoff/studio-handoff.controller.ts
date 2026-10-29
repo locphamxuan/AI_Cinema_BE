@@ -36,7 +36,7 @@ const MATERIAL_FIELDS = FileFieldsInterceptor(
 
 @ApiTags('studio-handoff')
 @ApiBearerAuth()
-@Controller('projects/:movieId')
+@Controller('projects/:projectId')
 export class StudioHandoffController {
   constructor(
     private readonly handoffs: StudioHandoffService,
@@ -53,12 +53,12 @@ export class StudioHandoffController {
       'Hand the project or one season to a studio: brief PDF, scripts and references by email; IN_PRODUCTION (steps 3–4)',
   })
   handOff(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: HandOffRequestDto,
     @UploadedFiles() files: MaterialUploads,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.handoffs.handOff(movieId, dto, files ?? {}, user);
+    return this.handoffs.handOff(projectId, dto, files ?? {}, user);
   }
 
   @Post('studio-change')
@@ -67,50 +67,50 @@ export class StudioHandoffController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Move the project or a season to another studio, with the reason; a new brief is sent' })
   changeStudio(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: ChangeStudioRequestDto,
     @UploadedFiles() files: MaterialUploads,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.handoffs.changeStudio(movieId, dto, files ?? {}, user);
+    return this.handoffs.changeStudio(projectId, dto, files ?? {}, user);
   }
 
   @Get('handoffs')
   @ApiOperation({ summary: 'Studio timeline: every hand-off with its materials and milestone events, newest first' })
-  history(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.handoffs.history(movieId, user);
+  history(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.handoffs.history(projectId, user);
   }
 
   @Patch('handoffs/:handoffId/milestone')
   @RequirePermission(PERMISSION.STUDIO_HANDOFF)
   @ApiOperation({ summary: 'Move the studio milestone; DELIVERED needs the uploaded Submission (BR-58)' })
   updateMilestone(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Param('handoffId', ID) handoffId: string,
     @Body() dto: UpdateMilestoneRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.milestones.update(movieId, handoffId, dto, user);
+    return this.milestones.update(projectId, handoffId, dto, user);
   }
 
   @Get('handoffs/:handoffId/brief')
   @ApiOperation({ summary: 'Download the brief PDF sent with a hand-off' })
   brief(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Param('handoffId', ID) handoffId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.handoffs.briefFile(movieId, handoffId, user);
+    return this.handoffs.briefFile(projectId, handoffId, user);
   }
 
   @Get('handoffs/:handoffId/materials/:materialId/content')
   @ApiOperation({ summary: 'Download a script or reference file sent with a hand-off' })
   material(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Param('handoffId', ID) handoffId: string,
     @Param('materialId', ID) materialId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.materials.download(movieId, handoffId, materialId, user);
+    return this.materials.download(projectId, handoffId, materialId, user);
   }
 }

@@ -30,23 +30,23 @@ export class ProjectStructureService {
     private readonly access: ProjectAccessService,
   ) {}
 
-  async addSeason(movieId: string, dto: NewSeasonDto, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'add a season');
+  async addSeason(projectId: string, dto: NewSeasonDto, user: AuthenticatedUser) {
+    const project = await this.access.project(projectId, user, 'reviewer');
+    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'add a season');
     const window = seasonWindow(dto);
     return this.prisma.$transaction(async (tx) => {
-      await this.lockMovie(tx, movieId);
-      const last = await tx.season.aggregate({ where: { movieId }, _max: { seasonNumber: true } });
+      await this.lockMovie(tx, projectId);
+      const last = await tx.season.aggregate({ where: { movieId: projectId }, _max: { seasonNumber: true } });
       const season = await tx.season.create({
         data: {
-          movieId,
+          movieId: projectId,
           seasonNumber: (last._max.seasonNumber ?? 0) + 1,
           title: dto.title,
           episodeProductionCost: BigInt(dto.episodeProductionCost),
           ...window,
         },
       });
-      await this.createEpisodes(tx, movieId, season.id, dto.episodes, window, initialEpisodeStatus(movie.status));
+      await this.createEpisodes(tx, projectId, season.id, dto.episodes, window, initialEpisodeStatus(project.status));
       return tx.season.findUniqueOrThrow({
         where: { id: season.id },
         include: { episodes: { orderBy: { episodeNumber: 'asc' } } },
@@ -61,8 +61,8 @@ export class ProjectStructureService {
       include: { episodes: { select: { episodeNumber: true, expectedReleaseDate: true } } },
     });
     if (!season) throw new NotFoundException('Season not found');
-    const movie = await this.access.movie(season.movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'edit a season');
+    const project = await this.access.project(season.movieId, user, 'reviewer');
+    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'edit a season');
 
     const window: ReleaseWindow = {
       releaseStartDate: changedDay(dto.releaseStartDate, season.releaseStartDate),
@@ -91,17 +91,17 @@ export class ProjectStructureService {
   async addEpisode(seasonId: string, dto: NewEpisodeDto, user: AuthenticatedUser) {
     const season = await this.prisma.season.findUnique({ where: { id: seasonId } });
     if (!season) throw new NotFoundException('Season not found');
-    const movie = await this.access.movie(season.movieId, user, 'reviewer');
-    assertProjectStatus(movie.status, OPEN_PROJECT_STATUSES, 'add an episode');
+    const project = await this.access.project(season.movieId, user, 'reviewer');
+    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'add an episode');
     return this.prisma.$transaction(async (tx) => {
-      await this.lockMovie(tx, movie.id);
+      await this.lockMovie(tx, project.id);
       const [episode] = await this.createEpisodes(
         tx,
-        movie.id,
+        project.id,
         seasonId,
         [dto],
         season,
-        initialEpisodeStatus(movie.status),
+        initialEpisodeStatus(project.status),
       );
       return episode;
     });
@@ -109,7 +109,7 @@ export class ProjectStructureService {
 
   async updateEpisode(episodeId: string, dto: UpdateEpisodeRequestDto, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'reviewer');
-    assertProjectStatus(episode.movie.status, OPEN_PROJECT_STATUSES, 'edit an episode');
+    assertProjectStatus(episode.project.status, OPEN_PROJECT_STATUSES, 'edit an episode');
     if (dto.targetDurationSeconds !== undefined) {
       assertEpisodeStatus(episode.status, EPISODE_STATUSES_BEFORE_APPROVAL, 'change the target duration');
     }
@@ -141,19 +141,19 @@ export class ProjectStructureService {
   }
 
   /** Episode numbers are unique per movie, so concurrent additions are serialised on the movie row. */
-  private async lockMovie(tx: PrismaTx, movieId: string) {
-    await tx.$queryRaw`SELECT id FROM movies WHERE id = ${movieId}::uuid FOR UPDATE`;
+  private async lockMovie(tx: PrismaTx, projectId: string) {
+    await tx.$queryRaw`SELECT id FROM movie_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
   }
 
   private async createEpisodes(
     tx: PrismaTx,
-    movieId: string,
+    projectId: string,
     seasonId: string,
     episodes: NewEpisodeDto[],
     window: ReleaseWindow,
     status: ReturnType<typeof initialEpisodeStatus>,
   ) {
-    const last = await tx.episode.aggregate({ where: { movieId }, _max: { episodeNumber: true } });
+    const last = await tx.episode.aggregate({ where: { movieId: projectId }, _max: { episodeNumber: true } });
     let episodeNumber = (last._max.episodeNumber ?? 0) + 1;
     const created: Episode[] = [];
     for (const episode of episodes) {
@@ -161,7 +161,7 @@ export class ProjectStructureService {
       created.push(
         await tx.episode.create({
           data: {
-            movieId,
+            movieId: projectId,
             seasonId,
             episodeNumber: episodeNumber++,
             title: episode.title.trim(),

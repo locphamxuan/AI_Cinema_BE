@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, StreamableFile } from '@nestjs/common';
-import { EpisodeStatus, MovieStatus, StudioMilestoneStatus, type Movie, type Studio } from '@prisma/client';
+import { EpisodeStatus, ProjectStatus, StudioMilestoneStatus, type Studio } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { businessDay } from 'src/common/time/business-day';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -9,7 +9,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { EMAIL_TEMPLATE, EmailOutboxService } from 'src/modules/platform/email/email-outbox.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
-import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
+import { ProjectAccessService, type TitledProject } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { StudioService } from 'src/modules/production/studio/studio.service';
 import { type BriefContext, BriefService, type PreparedBrief } from './brief/brief.service';
@@ -62,24 +62,27 @@ export class StudioHandoffService {
     private readonly notifications: NotificationService,
   ) {}
 
-  async handOff(movieId: string, dto: HandOffRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'lead');
-    assertProjectStatus(movie.status, [MovieStatus.ASSIGNED, MovieStatus.IN_PRODUCTION], 'hand the project off');
-    const studio = await this.studios.resolve(dto, movie.studioId, user);
-    if (movie.studioId && movie.studioId !== studio.id) {
+  async handOff(projectId: string, dto: HandOffRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
+    const project = await this.access.project(projectId, user, 'lead');
+    assertProjectStatus(project.status, [ProjectStatus.ASSIGNED, ProjectStatus.IN_PRODUCTION], 'hand the project off');
+    const studio = await this.studios.resolve(dto, project.studioId, user);
+    if (project.studioId && project.studioId !== studio.id) {
       throw new ConflictException('The project already has a studio; change the studio instead');
     }
-    const seasonId = await this.scopeSeason(movieId, dto.seasonId);
-    const episodes = await this.episodesToHandOff(movieId, seasonId);
+    const seasonId = await this.scopeSeason(projectId, dto.seasonId);
+    const episodes = await this.episodesToHandOff(projectId, seasonId);
 
-    const plan = await this.plan(movieId, studio, seasonId, uploads, null, { senderId: user.id, pendingLostTokens: 0 });
-    return this.send(movie, plan, user, async (tx) => {
-      const { count } = await tx.movie.updateMany({
-        where: { id: movieId, status: { in: [MovieStatus.ASSIGNED, MovieStatus.IN_PRODUCTION] } },
+    const plan = await this.plan(projectId, studio, seasonId, uploads, null, {
+      senderId: user.id,
+      pendingLostTokens: 0,
+    });
+    return this.send(project, plan, user, async (tx) => {
+      const { count } = await tx.movieProject.updateMany({
+        where: { id: projectId, status: { in: [ProjectStatus.ASSIGNED, ProjectStatus.IN_PRODUCTION] } },
         data: {
           studioId: studio.id,
-          status: MovieStatus.IN_PRODUCTION,
-          ...(movie.handedOffAt ? {} : { handedOffAt: new Date() }),
+          status: ProjectStatus.IN_PRODUCTION,
+          ...(project.handedOffAt ? {} : { handedOffAt: new Date() }),
         },
       });
       if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
@@ -93,25 +96,30 @@ export class StudioHandoffService {
     });
   }
 
-  async changeStudio(movieId: string, dto: ChangeStudioRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'lead');
-    assertProjectStatus(movie.status, DELIVERY_PROJECT_STATUSES, 'change the studio');
+  async changeStudio(
+    projectId: string,
+    dto: ChangeStudioRequestDto,
+    uploads: MaterialUploads,
+    user: AuthenticatedUser,
+  ) {
+    const project = await this.access.project(projectId, user, 'lead');
+    assertProjectStatus(project.status, DELIVERY_PROJECT_STATUSES, 'change the studio');
     const studio = await this.studios.resolve(dto, null, user);
-    const seasonId = await this.scopeSeason(movieId, dto.seasonId);
+    const seasonId = await this.scopeSeason(projectId, dto.seasonId);
     const replaced = await this.prisma.studioHandoff.findMany({
-      where: { movieId, seasonId, milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },
+      where: { projectId, seasonId, milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },
       include: { emailMessage: { select: { status: true } } },
     });
     if (!replaced.length) throw new ConflictException('There is no hand-off for that scope to replace');
 
     const lost = replaced.map((handoff) => ({ id: handoff.id, tokens: lostOnReplace(handoff) }));
     const lostTokens = lost.reduce((sum, { tokens }) => sum + tokens, 0n);
-    const plan = await this.plan(movieId, studio, seasonId, uploads, dto.reason.trim(), {
+    const plan = await this.plan(projectId, studio, seasonId, uploads, dto.reason.trim(), {
       senderId: user.id,
       pendingLostTokens: Number(lostTokens),
     });
     plan.lostTokens = Number(lostTokens);
-    return this.send(movie, plan, user, async (tx) => {
+    return this.send(project, plan, user, async (tx) => {
       for (const { id, tokens } of lost) {
         await tx.studioHandoff.update({
           where: { id },
@@ -127,45 +135,48 @@ export class StudioHandoffService {
           changedById: user.id,
         })),
       });
-      await tx.movie.update({ where: { id: movieId }, data: { studioId: studio.id } });
+      await tx.movieProject.update({ where: { id: projectId }, data: { studioId: studio.id } });
     });
   }
 
   /** Hand-offs, newest first, with materials and the full milestone timeline (BR-58, BR-59). */
-  async history(movieId: string, user: AuthenticatedUser) {
-    await this.access.movie(movieId, user, 'read');
+  async history(projectId: string, user: AuthenticatedUser) {
+    await this.access.project(projectId, user, 'read');
     return this.prisma.studioHandoff.findMany({
-      where: { movieId },
+      where: { projectId },
       orderBy: { createdAt: 'desc' },
       include: HISTORY_INCLUDE,
     });
   }
 
-  async briefFile(movieId: string, handoffId: string, user: AuthenticatedUser): Promise<StreamableFile> {
-    await this.access.movie(movieId, user, 'read');
-    const handoff = await this.prisma.studioHandoff.findFirst({ where: { id: handoffId, movieId } });
+  async briefFile(projectId: string, handoffId: string, user: AuthenticatedUser): Promise<StreamableFile> {
+    await this.access.project(projectId, user, 'read');
+    const handoff = await this.prisma.studioHandoff.findFirst({ where: { id: handoffId, projectId } });
     if (!handoff?.briefFileKey) throw new NotFoundException('Brief not found');
     return new StreamableFile(await this.storage.stream(handoff.briefFileKey, 'private'), {
       type: 'application/pdf',
-      disposition: `attachment; filename="brief-${movieId}.pdf"`,
+      disposition: `attachment; filename="brief-${projectId}.pdf"`,
     });
   }
 
   /** The season a hand-off covers; null = the whole project. */
-  private async scopeSeason(movieId: string, seasonId?: string): Promise<string | null> {
+  private async scopeSeason(projectId: string, seasonId?: string): Promise<string | null> {
     if (!seasonId) return null;
-    const season = await this.prisma.season.findFirst({ where: { id: seasonId, movieId }, select: { id: true } });
+    const season = await this.prisma.season.findFirst({
+      where: { id: seasonId, movieId: projectId },
+      select: { id: true },
+    });
     if (!season) throw new NotFoundException('Season not found in this project');
     return season.id;
   }
 
   /** Episodes of the scope the studio does not owe yet; their deadline must not be past (BR-38). */
   private async episodesToHandOff(
-    movieId: string,
+    projectId: string,
     seasonId: string | null,
   ): Promise<{ id: string; deliveryDeadline: Date }[]> {
     const episodes = await this.prisma.episode.findMany({
-      where: { movieId, dueDate: null, ...(seasonId ? { seasonId } : {}) },
+      where: { movieId: projectId, dueDate: null, ...(seasonId ? { seasonId } : {}) },
       orderBy: { episodeNumber: 'asc' },
       select: { id: true, episodeNumber: true, deliveryDeadline: true },
     });
@@ -181,16 +192,16 @@ export class StudioHandoffService {
   }
 
   private async plan(
-    movieId: string,
+    projectId: string,
     studio: Studio,
     seasonId: string | null,
     uploads: MaterialUploads,
     changeReason: string | null,
     context: BriefContext,
   ): Promise<HandoffPlan> {
-    const materials = await this.materials.store(movieId, uploads);
+    const materials = await this.materials.store(projectId, uploads);
     try {
-      const brief = await this.briefs.prepare(movieId, studio, seasonId, materials, context);
+      const brief = await this.briefs.prepare(projectId, studio, seasonId, materials, context);
       return { studio, seasonId, materials, brief, changeReason, lostTokens: 0 };
     } catch (error) {
       await this.materials.discard(materials);
@@ -200,7 +211,7 @@ export class StudioHandoffService {
 
   /** Runs `change` and records the hand-off with its email in one transaction, then queues the email. */
   private async send(
-    movie: Movie,
+    project: TitledProject,
     plan: HandoffPlan,
     user: AuthenticatedUser,
     change: (tx: PrismaTx) => Promise<void>,
@@ -209,17 +220,17 @@ export class StudioHandoffService {
     try {
       emailId = await this.prisma.$transaction(async (tx) => {
         await change(tx);
-        return this.recordHandoff(tx, movie, plan, user);
+        return this.recordHandoff(tx, project, plan, user);
       });
     } catch (error) {
       await this.materials.discard(plan.materials);
       throw error;
     }
     await this.emails.dispatch(emailId);
-    return this.history(movie.id, user);
+    return this.history(project.id, user);
   }
 
-  private async recordHandoff(tx: PrismaTx, movie: Movie, plan: HandoffPlan, user: AuthenticatedUser) {
+  private async recordHandoff(tx: PrismaTx, project: TitledProject, plan: HandoffPlan, user: AuthenticatedUser) {
     const { studio, seasonId, brief, materials, changeReason, lostTokens } = plan;
     const emailId = await this.emails.create(tx, {
       to: studio.email,
@@ -228,13 +239,13 @@ export class StudioHandoffService {
       text: brief.text,
       attachments: brief.attachments,
       notifyOnFailureId: user.id,
-      link: `/projects/${movie.id}/studio`,
+      link: `/projects/${project.id}/studio`,
       fromName: brief.creatorName || undefined,
       replyTo: brief.creatorEmail || undefined,
     });
     const handoff = await tx.studioHandoff.create({
       data: {
-        movieId: movie.id,
+        projectId: project.id,
         studioId: studio.id,
         seasonId,
         productionFeeTokens: BigInt(brief.productionFeeTokens),
@@ -255,26 +266,26 @@ export class StudioHandoffService {
         action: changeReason ? CONTENT_EVENT.STUDIO_CHANGED : CONTENT_EVENT.STUDIO_HANDOFF_SENT,
         entityType: 'StudioHandoff',
         entityId: handoff.id,
-        movieId: movie.id,
+        projectId: project.id,
         actorId: user.id,
         payload: { studio: studio.name, seasonId, materials: materials.length, reason: changeReason, lostTokens },
       },
       tx,
     );
     // The Reviewer follows the project without asking the Creator what was sent where.
-    if (movie.reviewerId !== user.id) {
+    if (project.reviewerId !== user.id) {
       await this.notifications.notify(
-        [movie.reviewerId],
+        [project.reviewerId],
         {
           type: NOTIFICATION_TYPE.STUDIO_HANDOFF_SENT,
           title: changeReason
-            ? `Creator đổi Studio của phim "${movie.title}" sang ${studio.name}`
-            : `Creator đã gửi bàn giao phim "${movie.title}" cho Studio ${studio.name}`,
+            ? `Creator đổi Studio của phim "${project.movie.title}" sang ${studio.name}`
+            : `Creator đã gửi bàn giao phim "${project.movie.title}" cho Studio ${studio.name}`,
           body: changeReason
             ? `Lý do: ${changeReason}. Token mất do đổi Studio: ${lostTokens}. Brief mới ghi ${brief.productionFeeTokens} Token.`
             : undefined,
-          link: `/projects/${movie.id}/studio`,
-          payload: { movieId: movie.id, handoffId: handoff.id, studioId: studio.id, seasonId },
+          link: `/projects/${project.id}/studio`,
+          payload: { projectId: project.id, handoffId: handoff.id, studioId: studio.id, seasonId },
         },
         tx,
       );

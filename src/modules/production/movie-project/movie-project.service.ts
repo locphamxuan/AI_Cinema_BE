@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { ChangeRequestStatus, MovieStatus, Prisma } from '@prisma/client';
+import { ChangeRequestStatus, ProjectStatus, Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -17,26 +17,34 @@ import { StudioService } from 'src/modules/production/studio/studio.service';
 
 const PERSON = { select: { id: true, fullName: true, email: true } } as const;
 
+const OPEN_CHANGE_REQUESTS = {
+  _count: { select: { changeRequests: { where: { status: ChangeRequestStatus.OPEN } } } },
+} satisfies Prisma.MovieProjectInclude;
+
 const PROJECT_DETAIL = {
-  genres: { include: { genre: true } },
-  reviewer: PERSON,
-  creator: PERSON,
-  seasons: {
-    orderBy: { seasonNumber: 'asc' },
+  movie: {
     include: {
-      episodes: {
-        orderBy: { episodeNumber: 'asc' },
+      genres: { include: { genre: true } },
+      seasons: {
+        orderBy: { seasonNumber: 'asc' },
         include: {
-          assignedCreator: PERSON,
-          mediaAssets: {
-            orderBy: { version: 'desc' },
-            take: 1,
-            select: { id: true, version: true, ingestStatus: true, durationSeconds: true },
+          episodes: {
+            orderBy: { episodeNumber: 'asc' },
+            include: {
+              assignedCreator: PERSON,
+              mediaAssets: {
+                orderBy: { version: 'desc' },
+                take: 1,
+                select: { id: true, version: true, ingestStatus: true, durationSeconds: true },
+              },
+            },
           },
         },
       },
     },
   },
+  reviewer: PERSON,
+  creator: PERSON,
   ideaFiles: { orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
   creatorAssignments: {
     where: { isActive: true },
@@ -49,8 +57,38 @@ const PROJECT_DETAIL = {
     // The email status tells whether a studio change would cost the old studio's fee (BR-59).
     include: { createdBy: PERSON, studio: true, emailMessage: { select: { status: true } } },
   },
-  _count: { select: { changeRequests: { where: { status: ChangeRequestStatus.OPEN } } } },
-} satisfies Prisma.MovieInclude;
+  ...OPEN_CHANGE_REQUESTS,
+} satisfies Prisma.MovieProjectInclude;
+
+/** A row of the project list: its catalog face, people, studio and open change requests. */
+const LIST_ROW = {
+  movie: { include: { _count: { select: { episodes: true } } } },
+  reviewer: PERSON,
+  creator: PERSON,
+  studio: true,
+  ...OPEN_CHANGE_REQUESTS,
+} satisfies Prisma.MovieProjectInclude;
+type ListRow = Prisma.MovieProjectGetPayload<{ include: typeof LIST_ROW }>;
+
+/** Fields of an update that the catalog shows; the others belong to the project row. */
+const MOVIE_FIELDS: ReadonlySet<string> = new Set([
+  'title',
+  'synopsis',
+  'defaultLanguage',
+  'ageRating',
+  'releaseYear',
+  'freeEpisodeCount',
+]);
+
+function splitUpdate(fields: Omit<UpdateMovieProjectRequestDto, 'genreIds' | 'genreNames'>) {
+  const entries = Object.entries(fields);
+  return {
+    movie: Object.fromEntries(entries.filter(([key]) => MOVIE_FIELDS.has(key))) as Prisma.MovieUpdateInput,
+    project: Object.fromEntries(
+      entries.filter(([key]) => !MOVIE_FIELDS.has(key)),
+    ) as Prisma.MovieProjectUncheckedUpdateInput,
+  };
+}
 
 @Injectable()
 export class MovieProjectService {
@@ -73,19 +111,19 @@ export class MovieProjectService {
         episodes: season.episodes.map((episode) => ({ episode, ...newEpisodeSchedule(episode, window) })),
       };
     });
-    const movieId = await this.prisma.$transaction(async (tx) => {
+    const projectId = await this.prisma.$transaction(async (tx) => {
       const genreIds = await resolveGenreIds(tx, dto.genreIds, dto.genreNames);
       const movie = await tx.movie.create({
         data: {
           title: dto.title.trim(),
-          ideaDescription: dto.ideaDescription.trim(),
           synopsis: dto.synopsis?.trim() || undefined,
           releaseYear: dto.releaseYear,
           ageRating: dto.ageRating,
           defaultLanguage: dto.defaultLanguage,
-          studioId: dto.studioId,
-          reviewerId: user.id,
           genres: { create: genreIds.map((genreId) => ({ genreId })) },
+          project: {
+            create: { ideaDescription: dto.ideaDescription.trim(), studioId: dto.studioId, reviewerId: user.id },
+          },
         },
       });
       let episodeNumber = 1;
@@ -115,98 +153,117 @@ export class MovieProjectService {
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.PROJECT_CREATED,
-          entityType: 'Movie',
+          entityType: 'MovieProject',
           entityId: movie.id,
-          movieId: movie.id,
+          projectId: movie.id,
           actorId: user.id,
         },
         tx,
       );
       return movie.id;
     });
-    return this.detail(movieId, user);
+    return this.detail(projectId, user);
   }
 
+  /** One row per project, its catalog fields alongside, with the open change requests (§4.1.8). */
   async list(query: PaginateQuery, user: AuthenticatedUser) {
-    const page = await paginate(query, this.prisma.movie, {
-      where: await this.access.readableWhere(user),
-      relations: { reviewer: PERSON, creator: PERSON, studio: true, _count: { select: { episodes: true } } },
-      sortableColumns: ['title', 'status', 'createdAt', 'updatedAt'],
+    const readable = await this.access.readableWhere(user);
+    // The title lives on the catalog movie, out of reach of the paginator's own search.
+    const titled: Prisma.MovieProjectWhereInput = query.search
+      ? { movie: { title: { contains: query.search, mode: 'insensitive' } } }
+      : {};
+    const page = await paginate(query, this.prisma.movieProject, {
+      where: { AND: [readable, titled] },
+      relations: LIST_ROW,
+      sortableColumns: ['status', 'createdAt', 'updatedAt'],
       defaultSortBy: [['updatedAt', 'DESC']],
-      searchableColumns: ['title'],
       filterableColumns: { status: ['$eq', '$in'], creatorId: ['$eq'] },
     });
-    const lastActivity = await this.lastActivity(page.data.map((movie) => movie.id));
+    const lastActivity = await this.lastActivity(page.data.map((project) => project.id));
     return {
       ...page,
-      data: page.data.map((movie) => ({
+      data: (page.data as ListRow[]).map(({ movie: { _count: movieCount, ...movie }, _count, ...project }) => ({
         ...movie,
-        lastActivityAt: lastActivity.get(movie.id) ?? movie.updatedAt,
+        ...project,
+        _count: { episodes: movieCount.episodes },
+        openChangeRequests: _count.changeRequests,
+        lastActivityAt: lastActivity.get(project.id) ?? project.updatedAt,
       })),
     };
   }
 
-  /** The newest content event of each project: "Cập nhật lần cuối" counts every change, not only the movie row. */
-  private async lastActivity(movieIds: string[]): Promise<Map<string, Date>> {
+  /** The newest content event of each project: "Cập nhật lần cuối" counts every change, not only the project row. */
+  private async lastActivity(projectIds: string[]): Promise<Map<string, Date>> {
     const latest = await this.prisma.auditLog.groupBy({
-      by: ['movieId'],
-      where: { movieId: { in: movieIds } },
+      by: ['projectId'],
+      where: { projectId: { in: projectIds } },
       _max: { createdAt: true },
     });
     return new Map(
-      latest.flatMap(({ movieId, _max }) => (movieId && _max.createdAt ? [[movieId, _max.createdAt]] : [])),
+      latest.flatMap(({ projectId, _max }) => (projectId && _max.createdAt ? [[projectId, _max.createdAt]] : [])),
     );
   }
 
-  async detail(movieId: string, user: AuthenticatedUser) {
-    await this.access.movie(movieId, user, 'read');
-    const movie = await this.prisma.movie.findUniqueOrThrow({ where: { id: movieId }, include: PROJECT_DETAIL });
-    const { _count, genres, ...rest } = movie;
+  /** The project with its catalog fields flattened in, as the production screens read it. */
+  async detail(projectId: string, user: AuthenticatedUser) {
+    await this.access.project(projectId, user, 'read');
+    const project = await this.prisma.movieProject.findUniqueOrThrow({
+      where: { id: projectId },
+      include: PROJECT_DETAIL,
+    });
+    const {
+      _count,
+      movie: { genres, ...movie },
+      ...rest
+    } = project;
     return {
+      ...movie,
       ...rest,
       genres: genres.map(({ genre }) => genre),
-      productionFeeTokens: await this.fees.totalTokens(movieId),
-      seasonFees: await this.fees.seasonFees(movieId),
+      productionFeeTokens: await this.fees.totalTokens(projectId),
+      seasonFees: await this.fees.seasonFees(projectId),
       openChangeRequests: _count.changeRequests,
       revision: revisionSummary(movie.seasons),
     };
   }
 
-  async update(movieId: string, dto: UpdateMovieProjectRequestDto, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'reviewer');
+  async update(projectId: string, dto: UpdateMovieProjectRequestDto, user: AuthenticatedUser) {
+    const project = await this.access.project(projectId, user, 'reviewer');
     assertProjectStatus(
-      movie.status,
-      [...OPEN_PROJECT_STATUSES, MovieStatus.COMPLETED, MovieStatus.UNDER_REVISION],
+      project.status,
+      [...OPEN_PROJECT_STATUSES, ProjectStatus.COMPLETED, ProjectStatus.UNDER_REVISION],
       'edit the project',
     );
-    if (dto.studioId && dto.studioId !== movie.studioId) {
-      if (movie.handedOffAt) throw new ConflictException('The project was handed off; change the studio there');
+    if (dto.studioId && dto.studioId !== project.studioId) {
+      if (project.handedOffAt) throw new ConflictException('The project was handed off; change the studio there');
       await this.studios.assertUsable(dto.studioId);
     }
 
     const { genreIds, genreNames, ...fields } = dto;
+    const changes = splitUpdate(fields);
     await this.prisma.$transaction(async (tx) => {
-      await tx.movie.update({ where: { id: movieId }, data: fields });
+      await tx.movieProject.update({ where: { id: projectId }, data: changes.project });
+      await tx.movie.update({ where: { id: projectId }, data: changes.movie });
       if (genreIds || genreNames)
-        await this.replaceGenres(tx, movieId, await resolveGenreIds(tx, genreIds, genreNames));
+        await this.replaceGenres(tx, projectId, await resolveGenreIds(tx, genreIds, genreNames));
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.PROJECT_UPDATED,
-          entityType: 'Movie',
-          entityId: movieId,
-          movieId,
+          entityType: 'MovieProject',
+          entityId: projectId,
+          projectId,
           actorId: user.id,
           payload: { fields: Object.keys(dto) },
         },
         tx,
       );
     });
-    return this.detail(movieId, user);
+    return this.detail(projectId, user);
   }
 
-  async events(movieId: string, user: AuthenticatedUser) {
-    await this.access.movie(movieId, user, 'read');
-    return this.auditLog.findForMovie(movieId);
+  async events(projectId: string, user: AuthenticatedUser) {
+    await this.access.project(projectId, user, 'read');
+    return this.auditLog.findForProject(projectId);
   }
 
   private async replaceGenres(tx: PrismaTx, movieId: string, genreIds: string[]) {

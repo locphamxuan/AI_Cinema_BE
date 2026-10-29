@@ -1,6 +1,5 @@
-import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
@@ -19,7 +18,6 @@ const member = {
   createdAt: new Date(),
   updatedAt: new Date(),
 };
-const passwordHash = bcrypt.hashSync('Aicinema@123', 4);
 const tokens = { accessToken: 'access', refreshToken: 'refresh', accessTokenExpiresIn: 900 };
 const idToken = 'google-id-token';
 
@@ -99,38 +97,20 @@ describe('AuthService.googleLogin', () => {
     expect(session).toMatchObject({ user: { id: member.id } });
   });
 
-  it('asks for the password before linking Google to a password account', async () => {
-    lookups(null, { ...member, passwordHash, googleId: null });
+  it('links Google to an existing account without asking for its password', async () => {
+    lookups(null, { ...member, googleId: null });
 
-    await expect(service.googleLogin({ idToken })).rejects.toMatchObject({
-      status: 422,
-      response: { details: { reason: GOOGLE_REASON.NEEDS_PASSWORD } },
-    });
-    expect(user.update).not.toHaveBeenCalled();
-  });
-
-  it('refuses to link with a wrong password', async () => {
-    lookups(null, { ...member, passwordHash, googleId: null });
-
-    await expect(service.googleLogin({ idToken, password: 'Wrong@123' })).rejects.toThrow(UnauthorizedException);
-    expect(user.update).not.toHaveBeenCalled();
-  });
-
-  it('links Google once the password is right and signs in', async () => {
-    lookups(null, { ...member, passwordHash, googleId: null });
-
-    const session = await service.googleLogin({ idToken, password: 'Aicinema@123' });
+    const session = await service.googleLogin({ idToken });
 
     expect(user.update).toHaveBeenCalledWith({
       where: { id: member.id },
       data: { googleId: 'google-sub', emailVerifiedAt: expect.any(Date) },
     });
-    expect(session.user).not.toHaveProperty('passwordHash');
     expect(session.user).not.toHaveProperty('googleId');
   });
 
   it('refuses an email already linked to another Google account', async () => {
-    lookups(null, { ...member, passwordHash: null, googleId: 'other-sub' });
+    lookups(null, { ...member, googleId: 'other-sub' });
 
     await expect(service.googleLogin({ idToken })).rejects.toThrow(ConflictException);
   });
@@ -143,9 +123,9 @@ describe('AuthService.googleLogin', () => {
   });
 
   it('does not link a deactivated account', async () => {
-    lookups(null, { ...member, isActive: false, passwordHash, googleId: null });
+    lookups(null, { ...member, isActive: false, googleId: null });
 
-    await expect(service.googleLogin({ idToken, password: 'Aicinema@123' })).rejects.toThrow(ForbiddenException);
+    await expect(service.googleLogin({ idToken })).rejects.toThrow(ForbiddenException);
     expect(user.update).not.toHaveBeenCalled();
     expect(sessions.issue).not.toHaveBeenCalled();
   });

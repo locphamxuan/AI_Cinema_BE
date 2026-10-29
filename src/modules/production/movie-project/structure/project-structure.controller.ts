@@ -17,10 +17,14 @@ const ID = new ParseUUIDPipe({ version: '4' });
 export class ProjectStructureController {
   constructor(private readonly structure: ProjectStructureService) {}
 
-  @Post('projects/:movieId/seasons')
+  @Post('projects/:projectId/seasons')
   @ApiOperation({ summary: 'Add a season with its episodes (numbering continues across the movie)' })
-  addSeason(@Param('movieId', ID) movieId: string, @Body() dto: NewSeasonDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.structure.addSeason(movieId, dto, user);
+  addSeason(
+    @Param('projectId', ID) projectId: string,
+    @Body() dto: NewSeasonDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.structure.addSeason(projectId, dto, user);
   }
 
   @Patch('seasons/:seasonId')

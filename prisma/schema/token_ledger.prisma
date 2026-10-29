@@ -9,7 +9,7 @@ enum TokenEntryType {
 /// priced per season: INITIAL is its baseline (price × episodes), TOP_UP the "+… Token thêm".
 model TokenLedgerEntry {
   id           String         @id @default(uuid()) @db.Uuid
-  movieId      String         @map("movie_id") @db.Uuid
+  projectId      String         @map("project_id") @db.Uuid
   seasonId     String?        @map("season_id") @db.Uuid
   entryType    TokenEntryType @map("entry_type")
   /// Negative only for CORRECTION.
@@ -20,11 +20,11 @@ model TokenLedgerEntry {
   createdById  String         @map("created_by_id") @db.Uuid
   createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  movie     Movie   @relation(fields: [movieId], references: [id], onDelete: Restrict)
+  project     MovieProject   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   season    Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
   createdBy User    @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
-  @@index([movieId, createdAt])
+  @@index([projectId, createdAt])
   @@index([seasonId])
   @@map("token_ledger")
 }

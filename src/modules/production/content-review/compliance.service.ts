@@ -82,7 +82,7 @@ export class ComplianceService {
 
   async run(mediaAssetId: string, dto: RunComplianceRequestDto, user: AuthenticatedUser) {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
-    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'check compliance');
+    assertProjectStatus(asset.episode.project.status, DELIVERY_PROJECT_STATUSES, 'check compliance');
     this.reviews.assertUnderReview(asset, [EpisodeStatus.LABELED]);
 
     await this.prisma.$transaction(async (tx) => {
@@ -96,7 +96,7 @@ export class ComplianceService {
           action: failed.length ? CONTENT_EVENT.COMPLIANCE_FAILED : CONTENT_EVENT.COMPLIANCE_PASSED,
           entityType: 'MediaAsset',
           entityId: asset.id,
-          movieId: asset.episode.movieId,
+          projectId: asset.episode.movieId,
           actorId: user.id,
           payload: {
             episodeId: asset.episodeId,

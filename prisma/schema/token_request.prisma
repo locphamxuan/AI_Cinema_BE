@@ -8,7 +8,7 @@ enum TokenRequestStatus {
 /// did not accept the amount offered. Approving puts a TOP_UP entry on the season in the token ledger.
 model TokenRequest {
     id               String             @id @default(uuid()) @db.Uuid
-    movieId          String             @map("movie_id") @db.Uuid
+    projectId          String             @map("project_id") @db.Uuid
     seasonId         String             @map("season_id") @db.Uuid
     requestedById    String             @map("requested_by_id") @db.Uuid
     requestedTokens  BigInt             @map("requested_tokens")
@@ -23,12 +23,12 @@ model TokenRequest {
     resolvedAt       DateTime?          @map("resolved_at") @db.Timestamptz(6)
     createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-    movie       Movie  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    project       MovieProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
     season      Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
     requestedBy User   @relation("TokenRequestRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
     resolvedBy  User?  @relation("TokenRequestResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
 
-    @@index([movieId, status])
+    @@index([projectId, status])
     @@index([requestedById, createdAt])
     @@map("token_requests")
 }

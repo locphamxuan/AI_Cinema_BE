@@ -32,7 +32,7 @@ export class RewardRuleAdminService {
           action: CONTENT_EVENT.REWARD_RULE_CREATED,
           entityType: 'RewardRule',
           entityId: rule.id,
-          movieId: null,
+          projectId: null,
           actorId,
           payload: {
             code: rule.code,
@@ -62,7 +62,7 @@ export class RewardRuleAdminService {
           action: CONTENT_EVENT.REWARD_RULE_UPDATED,
           entityType: 'RewardRule',
           entityId: rule.id,
-          movieId: null,
+          projectId: null,
           actorId,
           payload: {
             code: rule.code,

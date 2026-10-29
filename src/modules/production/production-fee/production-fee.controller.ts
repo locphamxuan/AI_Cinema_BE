@@ -9,24 +9,24 @@ import { ProductionFeeService } from './production-fee.service';
 
 @ApiTags('production-fee')
 @ApiBearerAuth()
-@Controller('projects/:movieId/fee')
+@Controller('projects/:projectId/fee')
 export class ProductionFeeController {
   constructor(private readonly fees: ProductionFeeService) {}
 
   @Get()
   @ApiOperation({ summary: 'Production fee of the project: total and every ledger entry' })
-  ledger(@Param('movieId', ParseUUIDPipe) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.fees.ledger(movieId, user);
+  ledger(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.fees.ledger(projectId, user);
   }
 
   @Post('entries')
   @RequirePermission(PERMISSION.PROJECT_FEE_ALLOCATE)
   @ApiOperation({ summary: 'Allocate (INITIAL), top up or correct the production fee (BR-46)' })
   addEntry(
-    @Param('movieId', ParseUUIDPipe) movieId: string,
+    @Param('projectId', ParseUUIDPipe) projectId: string,
     @Body() dto: AddFeeEntryRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.fees.addEntry(movieId, dto, user);
+    return this.fees.addEntry(projectId, dto, user);
   }
 }

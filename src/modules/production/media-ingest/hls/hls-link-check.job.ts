@@ -40,7 +40,11 @@ export class HlsLinkCheckJob implements OnModuleInit {
         approvedInEpisode: { isNot: null },
       },
       include: {
-        episode: { include: { movie: { select: { id: true, title: true, reviewerId: true, creatorId: true } } } },
+        episode: {
+          include: {
+            movie: { select: { id: true, title: true, project: { select: { reviewerId: true, creatorId: true } } } },
+          },
+        },
       },
     });
 
@@ -60,12 +64,12 @@ export class HlsLinkCheckJob implements OnModuleInit {
         });
         if (reported) continue;
         const { movie } = asset.episode;
-        await this.notifications.notify([movie.creatorId, movie.reviewerId], {
+        await this.notifications.notify([movie.project?.creatorId, movie.project?.reviewerId], {
           type: NOTIFICATION_TYPE.HLS_LINK_DEAD,
           title: `Link video tập ${asset.episode.episodeNumber} của phim "${movie.title}" không còn hoạt động`,
           body: `${(error as Error).message}. Hãy nhờ studio sửa link hoặc giao lại tập.`,
           link: `/projects/${movie.id}/episodes/${asset.episodeId}`,
-          payload: { movieId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
+          payload: { projectId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
         });
       }
     }

@@ -2,7 +2,7 @@
 /// their share to another one: the new row points back at the delegator.
 model ProjectCreatorAssignment {
     id              String    @id @default(uuid()) @db.Uuid
-    movieId         String    @map("movie_id") @db.Uuid
+    projectId         String    @map("project_id") @db.Uuid
     creatorId       String    @map("creator_id") @db.Uuid
     assignedById    String    @map("assigned_by_id") @db.Uuid
     /// Set when the Creator took over from another Creator.
@@ -12,12 +12,12 @@ model ProjectCreatorAssignment {
     assignedAt      DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
     unassignedAt    DateTime? @map("unassigned_at") @db.Timestamptz(6)
 
-    movie         Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    project         MovieProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
     creator       User  @relation("AssignmentCreator", fields: [creatorId], references: [id], onDelete: Restrict)
     assignedBy    User  @relation("AssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
     delegatedFrom User? @relation("AssignmentDelegatedFrom", fields: [delegatedFromId], references: [id], onDelete: SetNull)
 
-    @@index([movieId, isActive])
+    @@index([projectId, isActive])
     @@index([creatorId])
     @@map("project_creator_assignments")
 }

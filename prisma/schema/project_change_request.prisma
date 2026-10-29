@@ -16,7 +16,7 @@ enum ChangeRequestStatus {
 /// both NULL = the whole project.
 model ProjectChangeRequest {
     id                 String              @id @default(uuid()) @db.Uuid
-    movieId            String              @map("movie_id") @db.Uuid
+    projectId            String              @map("project_id") @db.Uuid
     seasonId           String?             @map("season_id") @db.Uuid
     episodeId          String?             @map("episode_id") @db.Uuid
     requestedById      String              @map("requested_by_id") @db.Uuid
@@ -35,13 +35,13 @@ model ProjectChangeRequest {
     resolvedAt         DateTime?           @map("resolved_at") @db.Timestamptz(6)
     createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
-    movie       Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    project       MovieProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
     season      Season?  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
     episode     Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
     requestedBy User     @relation("ChangeRequestRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
     resolvedBy  User?    @relation("ChangeRequestResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
 
-    @@index([movieId, status])
+    @@index([projectId, status])
     @@index([status, createdAt])
     @@map("project_change_requests")
 }

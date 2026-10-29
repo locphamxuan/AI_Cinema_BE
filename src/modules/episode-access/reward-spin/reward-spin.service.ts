@@ -200,7 +200,7 @@ export class RewardSpinService {
         action: CONTENT_EVENT.REWARD_SPIN_USED,
         entityType: 'RewardSpin',
         entityId: spin.id,
-        movieId: null,
+        projectId: null,
         actorId: userId,
         payload: {
           prizeId: prize.id,

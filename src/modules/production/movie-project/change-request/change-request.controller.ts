@@ -31,24 +31,24 @@ const ID = new ParseUUIDPipe({ version: '4' });
 export class ChangeRequestController {
   constructor(private readonly changeRequests: ChangeRequestService) {}
 
-  @Post('projects/:movieId/change-requests')
+  @Post('projects/:projectId/change-requests')
   @RequirePermission(PERMISSION.PROJECT_SUGGEST)
   @UseInterceptors(FileInterceptor('proof', { limits: { fileSize: CHANGE_PROOF_MAX_BYTES, files: 1 } }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { proof: { type: 'string', format: 'binary' } } } })
   @ApiOperation({ summary: 'Ask the Admin to change a project, with the reason and the proof (≤ 10 MB)' })
   propose(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: ProposeChangeRequestDto,
     @UploadedFile() proof: Express.Multer.File | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.changeRequests.propose(movieId, dto, proof, user);
+    return this.changeRequests.propose(projectId, dto, proof, user);
   }
 
-  @Get('projects/:movieId/change-requests')
-  list(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.changeRequests.list(movieId, user);
+  @Get('projects/:projectId/change-requests')
+  list(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.changeRequests.list(projectId, user);
   }
 
   @Get('change-requests')
