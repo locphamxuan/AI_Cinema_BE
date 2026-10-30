@@ -20,7 +20,7 @@ const trimmed = ({ value }: { value: unknown }) => (typeof value === 'string' ? 
 const lowered = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
 
 /** One episode of the mail: where it sits in the order and the link the Creator downloads it from. */
-export class FilmSentEpisodeDto {
+class FilmSentEpisodeDto {
   @ApiProperty({ example: 1, description: '1-based position in the order, as the brief lists the episodes.' })
   @IsInt()
   @Min(1)

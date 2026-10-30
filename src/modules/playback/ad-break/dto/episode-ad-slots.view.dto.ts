@@ -8,7 +8,7 @@ class EpisodeAdSlotAdDto {
   title: string;
 }
 
-export class EpisodeAdSlotViewDto {
+class EpisodeAdSlotViewDto {
   @ApiProperty({ example: 's1...' })
   id: string;
 
