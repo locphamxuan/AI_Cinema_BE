@@ -172,3 +172,7 @@ training-data/**/*.png
 training-data/**/*.jpg
 training-data/**/*.jpeg
 training-data/**/*.webp
+
+# VPS deploy secrets
+deploy/be.env
+deploy/.env

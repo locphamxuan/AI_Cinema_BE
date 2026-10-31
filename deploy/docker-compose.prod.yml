@@ -1,0 +1,54 @@
+# Production stack on one VPS. Layout on the server:
+#   /opt/ai-cinema/AI-_Cinema_BE   (this repo; run compose from its deploy/ folder)
+#   /opt/ai-cinema/AI_Cinema_FE
+# Postgres stays on Neon (DATABASE_URL in be.env). Nginx on the host terminates HTTPS and
+# proxies ai-cinema.vn -> web:3000 and api.ai-cinema.vn -> api:3001, both bound to 127.0.0.1.
+name: ai-cinema
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      retries: 5
+
+  migrate:
+    build: { context: .., target: migrate }
+    env_file: be.env
+
+  api:
+    build: { context: .., target: runtime }
+    restart: unless-stopped
+    env_file: be.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: 3001
+    ports:
+      - '127.0.0.1:3001:3001'
+    volumes:
+      # STORAGE_DRIVER=local keeps uploads and HLS renditions here; they survive rebuilds.
+      - media-storage:/app/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    build:
+      context: ../../AI_Cinema_FE
+      args:
+        BACKEND_URL: http://api:3001
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      - api
+
+volumes:
+  redis-data:
+  media-storage:
