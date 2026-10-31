@@ -77,7 +77,7 @@ export class FilmSentService {
         },
         tx,
       );
-      // The Creators given episodes of the scope were CC'd on the brief ("Đồng gửi") and get the film too.
+      // The studio mails the lead only (BR-67); the Creators given episodes of the scope learn of it here.
       const recipients = [
         handoff.createdById,
         project.creatorId,

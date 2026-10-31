@@ -8,9 +8,6 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
 import type { StoredMaterial } from '../material/handoff-material.service';
 import { briefFont, type BriefContent, renderBriefPdf } from './brief-pdf';
-import { briefTeam, briefTeamLines, personLine } from './brief-team';
-
-const PERSON = { select: { id: true, fullName: true, email: true } } as const;
 
 export interface BriefStudio {
   name: string;
@@ -37,8 +34,10 @@ export interface PreparedBrief {
 }
 
 /**
- * Builds the brief a studio receives (BR-13): the PDF is generated from the project as it is now, stored
- * privately, and sent with the latest version of every idea file and the material of the hand-off.
+ * Builds the brief a studio receives (BR-13, BR-67): the lead Creator is its only contact. Co-Creators support
+ * the lead inside AI Cinema, so the brief names none of them and the studio mails the film to the lead alone.
+ * The PDF is generated from the project as it is now, stored privately, and sent with the latest version of
+ * every idea file and the material of the hand-off.
  */
 @Injectable()
 export class BriefService {
@@ -83,11 +82,10 @@ export class BriefService {
             episodes: {
               where: seasonId ? { seasonId } : {},
               orderBy: { episodeNumber: 'asc' },
-              include: { season: { select: { seasonNumber: true } }, assignedCreator: PERSON },
+              include: { season: { select: { seasonNumber: true } } },
             },
           },
         },
-        creator: PERSON,
         ideaFiles: { where: { purpose: 'IDEA' }, orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
       },
     });
@@ -96,11 +94,6 @@ export class BriefService {
       (file, i, all) => all.findIndex((other) => other.fileName === file.fileName) === i,
     );
     const { tokenRateVnd } = await this.settings.get();
-    const team = briefTeam(
-      movie.episodes.map((episode) => ({ ...episode, seasonNumber: episode.season.seasonNumber })),
-      project.creator,
-      context.senderId,
-    );
 
     const content: BriefContent = {
       movieTitle: movie.title,
@@ -109,7 +102,6 @@ export class BriefService {
       studioContact: studio.contactName,
       creatorName: sender.fullName,
       creatorEmail: sender.email,
-      coSenders: team.coSenders.map(personLine),
       ideaDescription: project.ideaDescription,
       genres: movie.genres.map(({ genre }) => genre.name),
       productionFeeTokens,
@@ -120,7 +112,6 @@ export class BriefService {
         title: episode.title,
         targetDurationSeconds: episode.targetDurationSeconds,
         dueDate: episode.deliveryDeadline,
-        owner: (episode.assignedCreator ?? project.creator)?.fullName ?? null,
       })),
       ideaFiles: [...latestIdeaFiles.map((file) => file.fileName), ...materials.map((file) => file.fileName)],
       issuedAt: new Date(),
@@ -144,7 +135,6 @@ export class BriefService {
         'Khi hoàn tất, vui lòng gửi phim đã soạn sẵn qua email cho đầu mối bên dưới.',
         '',
         `Đầu mối: ${content.creatorName} - ${content.creatorEmail}`,
-        ...briefTeamLines(team),
       ].join('\n'),
       attachments: [
         { key: briefKey, fileName: `brief-${projectId}.pdf`, contentType: 'application/pdf' },
