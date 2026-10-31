@@ -19,19 +19,14 @@ describe('Auth (e2e)', () => {
     await app.close();
   });
 
-  it('signs up an adult member and refuses a minor (BR-54)', async () => {
+  it('signs up a member without asking for a birthday (BR-54)', async () => {
     const res = await api()
       .post('/api/auth/register')
-      .send({ email, password, fullName: 'Nguyễn Minh Anh', dateOfBirth: '2001-02-03' })
+      .send({ email, password, fullName: 'Nguyễn Minh Anh' })
       .expect(201);
     const session = res.body as AuthSessionDto;
     expect(session.user).toMatchObject({ email, role: 'MEMBER' });
     expect(session.user).not.toHaveProperty('passwordHash');
-
-    await api()
-      .post('/api/auth/register')
-      .send({ email: `minor-${randomUUID()}@example.com`, password, fullName: 'Em', dateOfBirth: '2015-01-01' })
-      .expect(403);
   });
 
   it('rejects a weak password', async () => {
@@ -41,7 +36,6 @@ describe('Auth (e2e)', () => {
         email: `weak-${randomUUID()}@example.com`,
         password: 'password',
         fullName: 'Weak',
-        dateOfBirth: '2000-01-01',
       })
       .expect(400);
   });

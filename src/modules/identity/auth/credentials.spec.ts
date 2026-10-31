@@ -1,12 +1,6 @@
-import { hashRefreshToken, isAdult, newRefreshToken, normalizeEmail, verifyPassword } from './credentials';
+import { hashRefreshToken, newRefreshToken, normalizeEmail, verifyPassword } from './credentials';
 
 describe('credentials', () => {
-  it('counts the 18th birthday itself as adult', () => {
-    const today = new Date('2026-10-01T00:00:00Z');
-    expect(isAdult(new Date('2008-10-01'), today)).toBe(true);
-    expect(isAdult(new Date('2008-10-02'), today)).toBe(false);
-  });
-
   it('issues long random refresh tokens and stores only a stable hash', () => {
     const token = newRefreshToken();
     expect(token).toMatch(/^[\w-]{43}$/);

@@ -12,7 +12,7 @@ export async function registerMember(app: INestApplication<App>): Promise<Actor>
   const password = 'Member@123';
   await request(app.getHttpServer())
     .post('/api/auth/register')
-    .send({ email, password, fullName: 'Thành viên e2e', dateOfBirth: '2000-01-01' })
+    .send({ email, password, fullName: 'Thành viên e2e' })
     .expect(201);
   return signIn(app, email, password);
 }
