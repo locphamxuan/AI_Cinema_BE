@@ -91,6 +91,21 @@ export class ContentReviewService {
       },
       tx,
     );
+    // BR-67: the Creator holding the episode answers for it, the lead passes the fix on to the studio.
+    const holder = episode.assignedCreatorId !== episode.project.creatorId ? episode.assignedCreatorId : null;
+    if (holder) {
+      await this.notifications.notify(
+        [holder],
+        {
+          type: NOTIFICATION_TYPE.CONTENT_CHANGES_REQUESTED,
+          title: `Yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
+          body: `Xem góp ý, ghi lại phần Studio cần sửa ở mục Trao đổi của tập để Creator chính báo Studio: ${comments}`,
+          link: `/projects/${episode.movieId}/episodes/${episode.id}`,
+          payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
+        },
+        tx,
+      );
+    }
     await this.notifications.notify(
       [episode.project.creatorId],
       {
