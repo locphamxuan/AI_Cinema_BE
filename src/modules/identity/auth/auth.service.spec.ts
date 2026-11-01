@@ -79,9 +79,9 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
-    const dto = { email: 'Member@Example.com', password: 'Secret123', fullName: ' Anh ', dateOfBirth: '2000-01-01' };
+    const dto = { email: 'Member@Example.com', password: 'Secret123', fullName: ' Anh ' };
 
-    it('creates an adult member with a hashed password', async () => {
+    it('creates a member with a hashed password and no birthday (BR-54)', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
       prisma.user.create.mockResolvedValue({ ...profile, role: UserRole.MEMBER });
 
@@ -89,14 +89,9 @@ describe('AuthService', () => {
 
       const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: Record<string, unknown> }];
       expect(data).toMatchObject({ email: 'member@example.com', fullName: 'Anh', role: UserRole.MEMBER });
+      expect(data).not.toHaveProperty('dateOfBirth');
       expect(await bcrypt.compare('Secret123', data.passwordHash as string)).toBe(true);
       expect(wallets.openForNewAccount).toHaveBeenCalledWith(tx, profile.id);
-    });
-
-    it('turns away anyone under 18 (BR-54)', async () => {
-      const youngster = { ...dto, dateOfBirth: `${new Date().getUTCFullYear() - 17}-01-01` };
-      await expect(service.register(youngster)).rejects.toThrow(ForbiddenException);
-      expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
     it('rejects an email that already has an account', async () => {

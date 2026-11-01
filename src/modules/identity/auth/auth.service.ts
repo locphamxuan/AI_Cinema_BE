@@ -11,7 +11,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
-import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
+import { hashPassword, normalizeEmail, verifyPassword } from './credentials';
 import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
 import type { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
@@ -19,8 +19,6 @@ import type { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dt
 import { RegisterRequestDto } from './dto/register.request.dto';
 import { GOOGLE_REASON, GoogleTokenVerifier, type GoogleProfile } from './google-token.verifier';
 import { SessionTokenService } from './session-token.service';
-
-const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
 
 /** Only an active member may use Google; a staff account keeps its password sign-in. */
 function assertGoogleMember(user: Pick<UserProfile, 'role' | 'isActive'>): void {
@@ -44,8 +42,6 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
-    const dateOfBirth = new Date(dto.dateOfBirth);
-    if (!isAdult(dateOfBirth)) throw new ForbiddenException(ADULTS_ONLY);
     const email = normalizeEmail(dto.email);
     if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
       throw new ConflictException('An account with this email already exists');
@@ -56,7 +52,7 @@ export class AuthService {
     // always has a wallet, so no purchase screen ever has to open one on the spot.
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
-        data: { email, passwordHash, fullName: dto.fullName.trim(), dateOfBirth, role: UserRole.MEMBER },
+        data: { email, passwordHash, fullName: dto.fullName.trim(), role: UserRole.MEMBER },
         select: USER_PROFILE_SELECT,
       });
       await this.wallets.openForNewAccount(tx, created.id);
@@ -116,9 +112,6 @@ export class AuthService {
     const dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined;
     if (dateOfBirth && dateOfBirth.getTime() > Date.now())
       throw new BadRequestException('Birthday cannot be in the future');
-    if (dateOfBirth && caller.role === UserRole.MEMBER && !isAdult(dateOfBirth)) {
-      throw new ForbiddenException(ADULTS_ONLY);
-    }
     const user = await this.prisma.user.update({
       where: { id: caller.id },
       data: { fullName: dto.fullName, phoneNumber: dto.phoneNumber, dateOfBirth },
