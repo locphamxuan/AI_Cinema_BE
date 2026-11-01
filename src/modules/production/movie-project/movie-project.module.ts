@@ -6,6 +6,8 @@ import { ArtworkController } from './artwork/artwork.controller';
 import { ArtworkService } from './artwork/artwork.service';
 import { ChangeRequestController } from './change-request/change-request.controller';
 import { ChangeRequestService } from './change-request/change-request.service';
+import { EpisodeNoteController } from './episode-note/episode-note.controller';
+import { EpisodeNoteService } from './episode-note/episode-note.service';
 import { IdeaFileController } from './idea-file/idea-file.controller';
 import { IdeaFileService } from './idea-file/idea-file.service';
 import { MovieProjectController } from './movie-project.controller';
@@ -25,6 +27,7 @@ import { ProjectTeamService } from './team/project-team.service';
     ArtworkController,
     IdeaFileController,
     ChangeRequestController,
+    EpisodeNoteController,
   ],
   providers: [
     MovieProjectService,
@@ -34,6 +37,7 @@ import { ProjectTeamService } from './team/project-team.service';
     ArtworkService,
     IdeaFileService,
     ChangeRequestService,
+    EpisodeNoteService,
   ],
   exports: [ProjectLifecycleService],
 })

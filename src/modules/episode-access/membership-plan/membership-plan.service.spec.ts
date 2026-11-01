@@ -129,6 +129,8 @@ describe('MembershipPlanService.setPrice', () => {
     features: null,
   };
   const current = { id: 'price-1', priceCoins: 900, effectiveFrom: new Date('2026-09-01T00:00:00.000Z') };
+  // A start that stays in the future whenever the suite runs.
+  const nextMonth = () => new Date(Date.now() + 30 * 24 * 3600 * 1000);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -142,7 +144,7 @@ describe('MembershipPlanService.setPrice', () => {
   });
 
   it('closes the price in force and opens the new one, keeping history', async () => {
-    const effectiveFrom = new Date('2026-11-01T00:00:00.000Z');
+    const effectiveFrom = nextMonth();
     const result = await service.setPrice('p1', 950, effectiveFrom, 'admin-1');
 
     expect(tx.membershipPlanPrice.update).toHaveBeenCalledWith({
@@ -202,7 +204,7 @@ describe('MembershipPlanService.setPrice', () => {
   it('opens the first price when the plan never had one', async () => {
     tx.membershipPlanPrice.findFirst.mockResolvedValue(null);
 
-    await service.setPrice('p1', 900, new Date('2026-11-01T00:00:00.000Z'), 'admin-1');
+    await service.setPrice('p1', 900, nextMonth(), 'admin-1');
 
     expect(tx.membershipPlanPrice.update).not.toHaveBeenCalled();
     expect(tx.membershipPlanPrice.create).toHaveBeenCalled();
