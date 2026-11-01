@@ -3,7 +3,7 @@ import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
 import { MAX_AD_SLOTS_PER_EPISODE } from '../ad-limits';
 
-export class EpisodeAdSlotInputDto {
+class EpisodeAdSlotInputDto {
   @ApiProperty({ example: 420, description: 'Second of the episode where the ad is inserted' })
   @IsInt()
   @Min(1)

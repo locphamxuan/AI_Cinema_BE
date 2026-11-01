@@ -25,14 +25,6 @@ export class SubscriptionController {
     return this.subscriptions.mine(userId);
   }
 
-  @Get('mine')
-  @RequirePermission(PERMISSION.SUBSCRIPTION_SELF_MANAGE)
-  @ApiOperation({ summary: 'Alias of me; kept for older clients', deprecated: true })
-  @ApiOkResponse({ type: SubscriptionView })
-  mine(@CurrentUser('id') userId: string) {
-    return this.subscriptions.mine(userId);
-  }
-
   @Get(':id/cycles')
   @RequirePermission(PERMISSION.SUBSCRIPTION_SELF_MANAGE)
   @ApiOperation({ summary: 'Billed cycles of one of my subscriptions, oldest first' })
