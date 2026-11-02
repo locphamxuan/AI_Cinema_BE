@@ -41,7 +41,7 @@ export class CoinTopUpService {
 
   /**
    * Creates the order with its first payment attempt and hands back where to send the member.
-   * `clientIp` ends up in the VNPay order; MoMo does not need it.
+   * `clientIp` ends up in the VNPay order.
    */
   async create(userId: string, provider: PaymentProvider, amountVnd: number, clientIp?: string) {
     const { coinTopUpMinVnd, coinTopUpMaxVnd, coinRateVnd } = await this.settings.get();
@@ -73,11 +73,10 @@ export class CoinTopUpService {
     // outage must never hold database locks. A failed link fails the attempt outright.
     let redirectUrl: string;
     try {
-      redirectUrl = await this.gateways.createPaymentUrl({
+      redirectUrl = this.gateways.createPaymentUrl({
         provider,
         providerTxnId,
         amountVnd,
-        topUpId: created.topUp.id,
         clientIp,
         expiresAt,
       });

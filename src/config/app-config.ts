@@ -8,7 +8,8 @@ export interface AppConfig {
   port: number;
   corsOrigins: string[];
   /** Web app origin, for links sent by email (the studio portal). */
-  webAppUrl: string;
+  /** Where the payment return trip sends the member: the mobile app's top-up screen. */
+  appReturnUrl: string;
   swaggerEnabled: boolean;
   trustProxy: boolean;
   databaseUrl: string;
@@ -62,16 +63,6 @@ export interface AppConfig {
    * time, so local development boots without any gateway account.
    */
   payments: {
-    momo: {
-      partnerCode?: string;
-      accessKey?: string;
-      secretKey?: string;
-      createUrl: string;
-      statusUrl: string;
-      redirectUrl?: string;
-      ipnUrl?: string;
-      requestType: string;
-    };
     vnpay: {
       tmnCode?: string;
       hashSecret?: string;
@@ -223,16 +214,6 @@ function storageConfig(read: EnvReader, port: number): AppConfig['storage'] {
 
 function paymentConfig(read: EnvReader): AppConfig['payments'] {
   return {
-    momo: {
-      partnerCode: read.optional('MOMO_PARTNER_CODE'),
-      accessKey: read.optional('MOMO_ACCESS_KEY'),
-      secretKey: read.optional('MOMO_SECRET_KEY'),
-      createUrl: read.string('MOMO_CREATE_URL', 'https://test-payment.momo.vn/v2/gateway/api/create'),
-      statusUrl: read.string('MOMO_STATUS_URL', 'https://test-payment.momo.vn/v2/gateway/api/transaction-status'),
-      redirectUrl: read.optional('MOMO_REDIRECT_URL'),
-      ipnUrl: read.optional('MOMO_IPN_URL'),
-      requestType: read.string('MOMO_REQUEST_TYPE', 'payWithMethod'),
-    },
     vnpay: {
       tmnCode: read.optional('VNPAY_TMN_CODE'),
       hashSecret: read.optional('VNPAY_HASH_SECRET'),
@@ -259,7 +240,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
-    webAppUrl: read.string('WEB_APP_URL', 'http://localhost:3000').replace(/\/+$/, ''),
+    appReturnUrl: read.string('APP_RETURN_URL', 'aicinema://top-ups'),
     swaggerEnabled: read.bool('SWAGGER_ENABLED', !isProduction),
     trustProxy: read.bool('TRUST_PROXY', false),
     databaseUrl: read.string('DATABASE_URL'),

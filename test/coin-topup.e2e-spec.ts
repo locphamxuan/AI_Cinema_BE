@@ -3,7 +3,6 @@ import type { AddressInfo } from 'node:net';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { hmacSha256Hex } from 'src/modules/episode-access/coin-topup/gateways/momo-signing';
 import { signVnpayParams } from 'src/modules/episode-access/coin-topup/gateways/vnpay-signing';
 import { PaymentReconcileSweep } from 'src/modules/episode-access/coin-topup/payment-reconcile.sweep';
 import { TopUpExpirySweep } from 'src/modules/episode-access/coin-topup/top-up-expiry.sweep';
@@ -25,18 +24,11 @@ interface Wallet {
 }
 
 const VNPAY_SECRET = 'e2e-vnpay-hash-secret';
-const MOMO = { partnerCode: 'MOMOE2E', accessKey: 'e2e-access', secretKey: 'e2e-momo-secret' };
 
 /**
- * A stand-in for both gateways' server APIs: MoMo's create-order and status calls, and
- * VNPay's querydr. Each test sets what the next call answers.
+ * A stand-in for VNPay's querydr server API. Each test sets what the next call answers.
  */
 class FakeGateway {
-  momoCreate: { status: number; body: object } = {
-    status: 200,
-    body: { resultCode: 0, payUrl: 'https://momo.test/pay' },
-  };
-  momoStatus: object = { resultCode: 1000 };
   vnpayQuery: object = { vnp_ResponseCode: '91' };
   private server?: Server;
 
@@ -48,8 +40,6 @@ class FakeGateway {
           res.writeHead(status, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(body));
         };
-        if (req.url === '/momo/create') return reply(this.momoCreate.status, this.momoCreate.body);
-        if (req.url === '/momo/status') return reply(200, this.momoStatus);
         if (req.url === '/vnpay/query') return reply(200, this.vnpayQuery);
         reply(404, {});
       });
@@ -79,41 +69,7 @@ function vnpayIpn(txnRef: string, amountVnd: number, responseCode = '00', secret
   return { ...params, vnp_SecureHash: signVnpayParams(params, secret) };
 }
 
-/** A MoMo IPN body for an order, signed with the partner secret. */
-function momoIpn(order: Order, resultCode = 0, amount = order.amountVnd) {
-  const body = {
-    partnerCode: MOMO.partnerCode,
-    orderId: order.providerTxnId,
-    requestId: order.providerTxnId,
-    amount,
-    orderInfo: 'Nap Coin',
-    orderType: 'momo_wallet',
-    transId: Date.now() * 1000 + Math.floor(Math.random() * 1000),
-    resultCode,
-    message: resultCode === 0 ? 'Successful.' : 'Transaction denied by user.',
-    payType: 'qr',
-    responseTime: Date.now(),
-    extraData: Buffer.from(JSON.stringify({ topUpId: order.topUpId })).toString('base64'),
-  };
-  const raw = [
-    `accessKey=${MOMO.accessKey}`,
-    `amount=${body.amount}`,
-    `extraData=${body.extraData}`,
-    `message=${body.message}`,
-    `orderId=${body.orderId}`,
-    `orderInfo=${body.orderInfo}`,
-    `orderType=${body.orderType}`,
-    `partnerCode=${body.partnerCode}`,
-    `payType=${body.payType}`,
-    `requestId=${body.requestId}`,
-    `responseTime=${body.responseTime}`,
-    `resultCode=${body.resultCode}`,
-    `transId=${body.transId}`,
-  ].join('&');
-  return { ...body, signature: hmacSha256Hex(MOMO.secretKey, raw) };
-}
-
-describe('Coin top-up through VNPay and MoMo (e2e)', () => {
+describe('Coin top-up through VNPay (e2e)', () => {
   let app: INestApplication<App>;
   let member: Actor;
   let other: Actor;
@@ -134,13 +90,6 @@ describe('Coin top-up through VNPay and MoMo (e2e)', () => {
       VNPAY_RETURN_URL: 'http://localhost:3001/api/payments/vnpay/return',
       VNPAY_IPN_URL: 'http://localhost:3001/api/payments/vnpay/callback',
       VNPAY_API_URL: `${base}/vnpay/query`,
-      MOMO_PARTNER_CODE: MOMO.partnerCode,
-      MOMO_ACCESS_KEY: MOMO.accessKey,
-      MOMO_SECRET_KEY: MOMO.secretKey,
-      MOMO_CREATE_URL: `${base}/momo/create`,
-      MOMO_STATUS_URL: `${base}/momo/status`,
-      MOMO_REDIRECT_URL: 'http://localhost:3001/api/payments/momo/return',
-      MOMO_IPN_URL: 'http://localhost:3001/api/payments/momo/callback',
     });
     app = await bootApp();
     member = await registerMember(app);
@@ -160,6 +109,7 @@ describe('Coin top-up through VNPay and MoMo (e2e)', () => {
     await order('VNPAY', 5000, 422);
     await order('VNPAY', 5_000_000, 422);
     await order('PAYPAL', 50_000, 400);
+    await order('MOMO', 50_000, 400);
 
     const created = await order('VNPAY', 50_000);
     expect(created).toMatchObject({ provider: 'VNPAY', amountVnd: 50_000, coinsGranted: 50, status: 'PENDING' });
@@ -190,7 +140,7 @@ describe('Coin top-up through VNPay and MoMo (e2e)', () => {
     // The member's browser comes back through the return URL: it only forwards, never settles.
     const back = await http().get('/api/payments/vnpay/return').query({ vnp_TxnRef: created.providerTxnId });
     expect(back.status).toBe(302);
-    expect(back.headers.location).toContain(`/wallet/top-ups/${created.topUpId}?status=PAID&provider=VNPAY`);
+    expect(back.headers.location).toBe(`aicinema://top-ups?topUpId=${created.topUpId}&status=PAID&provider=VNPAY`);
     const lost = await http().get('/api/payments/vnpay/return').query({ vnp_TxnRef: 'VNPAY-UNKNOWN' });
     expect(lost.headers.location).toContain('status=FAILED');
     expect((await http().get('/api/payments/vnpay/return')).headers.location).toContain('status=FAILED');
@@ -230,43 +180,6 @@ describe('Coin top-up through VNPay and MoMo (e2e)', () => {
     expect(settled.body).toMatchObject({ topUpId: created.topUpId, status: 'PAID' });
   });
 
-  it('pays through MoMo: the create call, the signed IPN, its replay and the return trip', async () => {
-    const before = await wallet();
-    const created = await order('MOMO', 20_000);
-    expect(created).toMatchObject({ provider: 'MOMO', redirectUrl: 'https://momo.test/pay', status: 'PENDING' });
-
-    const forged = { ...momoIpn(created), signature: 'a'.repeat(64) };
-    await http().post('/api/payments/momo/callback').send(forged).expect(400);
-
-    const paid = momoIpn(created);
-    const first = await http().post('/api/payments/momo/callback').send(paid).expect(201);
-    expect(first.body).toMatchObject({ topUpId: created.topUpId, status: 'PAID' });
-    const replay = await http().post('/api/payments/momo/callback').send(paid).expect(201);
-    expect(replay.body).toMatchObject({ topUpId: created.topUpId, status: 'PAID' });
-    expect((await wallet()).mainBalance).toBe(before.mainBalance + 20);
-
-    const back = await http().get('/api/payments/momo/return').query({ topUpId: created.topUpId });
-    expect(back.status).toBe(302);
-    expect(back.headers.location).toContain(`/wallet/top-ups/${created.topUpId}?status=PAID&provider=MOMO`);
-    await http().get('/api/payments/momo/return').query({ topUpId: 'not-a-uuid' }).expect(400);
-    await http().get('/api/payments/paypal/return').expect(404);
-
-    const cancelled = await order('MOMO', 20_000);
-    await http().post('/api/payments/momo/callback').send(momoIpn(cancelled, 1006)).expect(201);
-    expect(await member.get<Order>(`/wallet/top-ups/${cancelled.topUpId}`)).toMatchObject({ status: 'FAILED' });
-  });
-
-  it('fails the order outright when MoMo refuses or cannot be reached', async () => {
-    gateway.momoCreate = { status: 200, body: { resultCode: 22, message: 'Amount out of range' } };
-    await order('MOMO', 20_000, 502);
-    gateway.momoCreate = { status: 503, body: {} };
-    await order('MOMO', 20_000, 502);
-    gateway.momoCreate = { status: 200, body: { resultCode: 0, payUrl: 'https://momo.test/pay' } };
-
-    const mine = await member.get<{ data: Order[] }>('/wallet/top-ups?limit=50');
-    expect(mine.data.filter((o) => o.provider === 'MOMO' && o.status === 'FAILED').length).toBeGreaterThanOrEqual(3);
-  });
-
   it('keeps each member to their own orders', async () => {
     const created = await order('VNPAY', 10_000);
     await other.get(`/wallet/top-ups/${created.topUpId}`, 404);
@@ -276,7 +189,6 @@ describe('Coin top-up through VNPay and MoMo (e2e)', () => {
 
   it('settles a silent attempt the gateway confirms, and expires what nobody paid', async () => {
     const vnpay = await order('VNPAY', 40_000);
-    const momo = await order('MOMO', 40_000);
     const before = await wallet();
     const later = new Date(Date.now() + 20 * 60_000);
     const reconcile = app.get(PaymentReconcileSweep);
@@ -292,15 +204,12 @@ describe('Coin top-up through VNPay and MoMo (e2e)', () => {
       vnp_Amount: '4000000',
       vnp_PayDate: '20261009120000',
     };
-    gateway.momoStatus = { resultCode: 0, transId: 99001, amount: 40_000, responseTime: Date.now() };
     const outcome = await reconcile.reconcileDue(later);
-    expect(outcome.settled).toBeGreaterThanOrEqual(2);
+    expect(outcome.settled).toBeGreaterThanOrEqual(1);
     expect(await member.get<Order>(`/wallet/top-ups/${vnpay.topUpId}`)).toMatchObject({ status: 'PAID' });
-    expect(await member.get<Order>(`/wallet/top-ups/${momo.topUpId}`)).toMatchObject({ status: 'PAID' });
-    expect((await wallet()).mainBalance).toBe(before.mainBalance + 80);
+    expect((await wallet()).mainBalance).toBe(before.mainBalance + 40);
 
     gateway.vnpayQuery = { vnp_ResponseCode: '91' };
-    gateway.momoStatus = { resultCode: 1000 };
     const stale = await order('VNPAY', 10_000);
     expect(await app.get(TopUpExpirySweep).expireDue(new Date(Date.now() + 60 * 60_000))).toBeGreaterThanOrEqual(1);
     expect(await member.get<Order>(`/wallet/top-ups/${stale.topUpId}`)).toMatchObject({ status: 'EXPIRED' });

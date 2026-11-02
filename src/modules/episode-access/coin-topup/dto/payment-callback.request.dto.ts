@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
- * Documented shape of a gateway webhook delivery. VNPay (`vnp_*`) and MoMo IPN fields are
+ * Documented shape of a gateway webhook delivery. VNPay (`vnp_*`) fields are
  * accepted too and normalised to this shape; the raw payload is always kept for reconciliation.
  */
 export class PaymentCallbackRequestDto {

@@ -21,7 +21,7 @@ describe('CoinTopUpService.create', () => {
     jest.clearAllMocks();
     deps.settings.get.mockResolvedValue(SETTINGS_VALUE);
     deps.wallets.walletOf.mockResolvedValue({ id: 'w1' });
-    deps.gateways.createPaymentUrl.mockResolvedValue('https://sandbox.vnpayment.vn/pay?order=VNPAY-ABC');
+    deps.gateways.createPaymentUrl.mockReturnValue('https://sandbox.vnpayment.vn/pay?order=VNPAY-ABC');
     tx.coinTopUp.create.mockImplementation(echoWith({ id: 'topup-1', status: TopUpStatus.PENDING }));
     tx.payment.create.mockImplementation(echoWith({ id: 'pay-1', status: PaymentStatus.PENDING }));
     prisma.payment.update.mockImplementation(
@@ -68,30 +68,6 @@ describe('CoinTopUpService.create', () => {
     });
   });
 
-  it('points MoMo orders at the MoMo sandbox', async () => {
-    deps.gateways.createPaymentUrl.mockResolvedValue('https://test-payment.momo.vn/pay/abc');
-    prisma.payment.update.mockImplementation(
-      echoWith({
-        id: 'pay-1',
-        provider: PaymentProvider.MOMO,
-        providerTxnId: 'MOMO-XYZ',
-        status: PaymentStatus.PENDING,
-      }),
-    );
-
-    const order = await service.create('u1', PaymentProvider.MOMO, 50000);
-
-    expect(deps.gateways.createPaymentUrl).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: PaymentProvider.MOMO, amountVnd: 50000, topUpId: 'topup-1' }),
-    );
-    expect(order.redirectUrl).toContain('test-payment.momo.vn');
-    expect(prisma.payment.update).toHaveBeenCalledWith({
-      where: { id: 'pay-1' },
-      data: { redirectUrl: 'https://test-payment.momo.vn/pay/abc' },
-      select: expect.anything(),
-    });
-  });
-
   it('forwards the client IP so VNPay can fingerprint the order', async () => {
     await service.create('u1', PaymentProvider.VNPAY, 50000, '203.0.113.7');
 
@@ -107,9 +83,11 @@ describe('CoinTopUpService.create', () => {
       coinTopUpId: 'topup-1',
       amountVnd: 50000,
     });
-    deps.gateways.createPaymentUrl.mockRejectedValue(new Error('timeout'));
+    deps.gateways.createPaymentUrl.mockImplementation(() => {
+      throw new Error('timeout');
+    });
 
-    await expect(service.create('u1', PaymentProvider.MOMO, 50000)).rejects.toThrow('timeout');
+    await expect(service.create('u1', PaymentProvider.VNPAY, 50000)).rejects.toThrow('timeout');
     expect(tx.payment.update).toHaveBeenCalledWith({
       where: { id: 'pay-1' },
       data: expect.objectContaining({ status: PaymentStatus.FAILED }),

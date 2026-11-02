@@ -1,5 +1,6 @@
 enum PaymentProvider {
   VNPAY
+  /// Retired gateway: no new order uses it; the value stays so old rows remain readable.
   MOMO
 }
 
