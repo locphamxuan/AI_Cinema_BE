@@ -31,14 +31,13 @@ export class PaymentGatewayService {
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
-  isConfigured(provider: PaymentProvider): boolean {
-    if (provider !== PaymentProvider.VNPAY) return false;
+  isConfigured(): boolean {
     const vnpay = this.config.payments.vnpay;
     return Boolean(vnpay.tmnCode && vnpay.hashSecret);
   }
 
   assertConfigured(provider: PaymentProvider): void {
-    if (!this.isConfigured(provider)) {
+    if (!this.isConfigured()) {
       throw new UnprocessableEntityException({
         message: `The ${provider} gateway is not configured`,
         details: { reason: TOPUP_REASON.PROVIDER_NOT_CONFIGURED, provider },
@@ -63,8 +62,7 @@ export class PaymentGatewayService {
    * Yes/no on a webhook delivery: a real HMAC check; anything unsigned is refused before
    * it can touch the ledger.
    */
-  verifyCallbackSignature(provider: PaymentProvider, raw: Record<string, unknown>): boolean {
-    if (provider !== PaymentProvider.VNPAY) return false;
+  verifyCallbackSignature(_provider: PaymentProvider, raw: Record<string, unknown>): boolean {
     const { hashSecret } = this.config.payments.vnpay;
     if (!hashSecret) return false;
     return verifyVnpaySignature(raw, hashSecret);
@@ -79,7 +77,6 @@ export class PaymentGatewayService {
     providerTxnId: string;
     referenceDate?: Date;
   }): Promise<ReconcileOutcome> {
-    if (input.provider !== PaymentProvider.VNPAY) return { outcome: 'UNKNOWN' };
     return this.queryVnpayTransaction(input.providerTxnId, input.referenceDate ?? new Date());
   }
 
