@@ -24,7 +24,9 @@
     "!src/**/*.spec.ts",
     "!src/**/dto/**",
     "!src/**/*.module.ts",
-    "!src/main.ts"
+    "!src/main.ts",
+    "!src/modules/support/**",
+    "!src/infrastructure/ai/**"
   ],
   "coverageDirectory": "<rootDir>/coverage-e2e",
   "coverageReporters": [
