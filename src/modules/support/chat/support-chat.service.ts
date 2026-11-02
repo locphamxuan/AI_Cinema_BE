@@ -67,7 +67,7 @@ export class SupportChatService {
         action: CONTENT_EVENT.SUPPORT_CONVERSATION_CREATED,
         entityType: 'SupportConversation',
         entityId: conversation.id,
-        movieId: null,
+        projectId: null,
         actorId: memberId,
       });
     }

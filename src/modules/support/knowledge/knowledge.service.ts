@@ -136,7 +136,7 @@ export class KnowledgeService {
       action: CONTENT_EVENT.SUPPORT_KNOWLEDGE_CREATED,
       entityType: 'SupportKnowledgeArticle',
       entityId: article.id,
-      movieId: null,
+      projectId: null,
       actorId,
       payload: { slug: article.slug, locale: article.locale, status: article.status },
     });
@@ -192,7 +192,7 @@ export class KnowledgeService {
       action: CONTENT_EVENT.SUPPORT_KNOWLEDGE_UPDATED,
       entityType: 'SupportKnowledgeArticle',
       entityId: article.id,
-      movieId: null,
+      projectId: null,
       actorId,
       payload: { slug: article.slug, version: article.version, reindex: needsReindex },
     });
@@ -227,7 +227,7 @@ export class KnowledgeService {
       action: CONTENT_EVENT.SUPPORT_KNOWLEDGE_ARCHIVED,
       entityType: 'SupportKnowledgeArticle',
       entityId: article.id,
-      movieId: null,
+      projectId: null,
       actorId,
       payload: { slug: article.slug },
     });

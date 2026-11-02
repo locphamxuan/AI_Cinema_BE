@@ -87,7 +87,7 @@ export class KnowledgeIndexJob implements OnModuleInit {
         action: CONTENT_EVENT.SUPPORT_KNOWLEDGE_INDEXED,
         entityType: 'SupportKnowledgeArticle',
         entityId: articleId,
-        movieId: null,
+        projectId: null,
         actorId: null,
         payload: { chunkCount: chunks.length, model: this.embeddings.model },
       });
