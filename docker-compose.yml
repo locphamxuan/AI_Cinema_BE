@@ -1,6 +1,4 @@
-# Local stack: Postgres + Redis (media and scheduling queue) + migrations/seed + API.
-# Local stack: Postgres + Redis (AI job queue) + migrations/seed + API.
-# Local stack: Postgres + migrations/seed + API.
+# Local stack: Postgres (pgvector) + Redis (AI job queue) + migrations/seed + API.
 #   docker compose up -d --build     → API on http://localhost:3001/api (Swagger on /api/docs)
 #   docker compose down               → stop (data stays in the pg-data volume)
 #   docker compose down -v            → stop and wipe the database
@@ -9,7 +7,7 @@
 name: ai-cinema
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -23,11 +21,6 @@ services:
       interval: 2s
       timeout: 3s
       retries: 20
-    # Enable pgvector extension
-    command: >
-      postgres
-      -c "shared_preload_libraries=pgvector"
-      -c "track_counts=off"
 
   redis:
     image: redis:7-alpine

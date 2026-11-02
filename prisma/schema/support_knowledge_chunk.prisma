@@ -1,0 +1,22 @@
+/// One embedded slice of an article. The vector column is pgvector's `vector(768)` for
+/// Gemini text-embedding-004; AI_EMBEDDING_DIMENSIONS must stay 768 until the migration is
+/// rewritten. Prisma cannot read or write Unsupported columns, so the index job writes the
+/// embedding with $executeRaw and retrieval searches with $queryRaw (`<=>` cosine distance).
+model SupportKnowledgeChunk {
+  id                    String                      @id @default(uuid()) @db.Uuid
+  articleId             String                      @map("article_id") @db.Uuid
+  chunkIndex            Int                         @map("chunk_index")
+  heading               String                      @default("") @db.VarChar(500)
+  content               String                      @db.Text
+  tokenCount            Int                         @map("token_count")
+  embedding             Unsupported("vector(768)")?
+  embeddingModel        String                      @map("embedding_model") @db.VarChar(100)
+  embeddingModelVersion String?                     @map("embedding_model_version") @db.VarChar(50)
+  contentHash           String                      @map("content_hash") @db.VarChar(64)
+
+  article SupportKnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, chunkIndex])
+  @@index([embeddingModel])
+  @@map("support_knowledge_chunks")
+}
