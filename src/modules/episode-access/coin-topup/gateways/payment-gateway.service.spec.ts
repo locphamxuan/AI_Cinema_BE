@@ -19,9 +19,8 @@ const serviceWith = (vnpay: Record<string, unknown> = {}) => new PaymentGatewayS
 
 describe('PaymentGatewayService configuration', () => {
   it('knows which providers can actually run', () => {
-    expect(serviceWith().isConfigured(PaymentProvider.VNPAY)).toBe(true);
-    expect(serviceWith({ tmnCode: undefined }).isConfigured(PaymentProvider.VNPAY)).toBe(false);
-    expect(serviceWith().isConfigured(PaymentProvider.MOMO)).toBe(false);
+    expect(serviceWith().isConfigured()).toBe(true);
+    expect(serviceWith({ tmnCode: undefined }).isConfigured()).toBe(false);
   });
 
   it('refuses to use a provider with no credentials', () => {
@@ -110,14 +109,6 @@ describe('PaymentGatewayService.verifyCallbackSignature', () => {
 
 describe('PaymentGatewayService.reconcilePayment', () => {
   afterEach(() => jest.restoreAllMocks());
-
-  it('leaves a retired gateway alone without touching the network', async () => {
-    const post = jest.spyOn(globalThis, 'fetch');
-    await expect(
-      serviceWith().reconcilePayment({ provider: PaymentProvider.MOMO, providerTxnId: 'M-1' }),
-    ).resolves.toEqual({ outcome: 'UNKNOWN' });
-    expect(post).not.toHaveBeenCalled();
-  });
 
   it('asks VNPay itself about a silent attempt (querydr)', async () => {
     const post = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
