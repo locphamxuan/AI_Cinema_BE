@@ -182,7 +182,7 @@ Nếu bạn bị dừng phiên liên tục dù chỉ xem trên một thiết b�
 Bạn có thể đăng ký bằng email hoặc đăng nhập bằng Google. Mỗi email chỉ dùng cho một tài khoản AI Cinema. Thành viên phải từ 18 tuổi trở lên.
 
 ## Đăng nhập bằng Google
-Nếu bạn đã tạo tài khoản bằng email, hãy đăng nhập bằng email đó. Đăng nhập Google bằng một email khác sẽ tạo tài khoản riêng và không tự liên kết với tài khoản cũ.
+Nếu bạn đã tạo tài khoản bằng email, hãy đăng nhập bằng email đó. Google chỉ dùng để đăng ký tài khoản mới; email đã có tài khoản mật khẩu không đăng nhập bằng Google được.
 
 ## Quên mật khẩu
 Chức năng đặt lại mật khẩu bằng mã OTP gửi qua Gmail sẽ có trong bản cập nhật sau. Hiện tại, hãy liên hệ nhân viên hỗ trợ kèm email đã đăng ký. Nhân viên hỗ trợ không bao giờ hỏi mật khẩu, OTP hay số thẻ của bạn.

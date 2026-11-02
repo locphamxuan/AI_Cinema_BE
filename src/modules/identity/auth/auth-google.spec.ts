@@ -57,7 +57,7 @@ describe('AuthService.googleLogin', () => {
     expect(user.create).not.toHaveBeenCalled();
   });
 
-  it('opens a member account with a wallet at once, under the Google name and without a birthday', async () => {
+  it('opens a member account with a wallet at once, under the Google name', async () => {
     lookups(null);
     user.create.mockResolvedValue(member);
 
@@ -88,16 +88,16 @@ describe('AuthService.googleLogin', () => {
     );
   });
 
-  it('links Google to an existing account without asking for its password', async () => {
+  it('sends an email that already has a password account back to its password', async () => {
     lookups(null, { ...member, googleId: null });
 
-    const session = await service.googleLogin({ idToken });
-
-    expect(user.update).toHaveBeenCalledWith({
-      where: { id: member.id },
-      data: { googleId: 'google-sub', emailVerifiedAt: expect.any(Date) },
+    await expect(service.googleLogin({ idToken })).rejects.toMatchObject({
+      status: 409,
+      response: { details: { reason: GOOGLE_REASON.EMAIL_REGISTERED } },
     });
-    expect(session.user).not.toHaveProperty('googleId');
+    expect(user.update).not.toHaveBeenCalled();
+    expect(user.create).not.toHaveBeenCalled();
+    expect(sessions.issue).not.toHaveBeenCalled();
   });
 
   it('refuses an email already linked to another Google account', async () => {

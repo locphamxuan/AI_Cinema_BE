@@ -87,7 +87,7 @@ export class AuthService {
     const profile = await this.google.verify(dto.idToken);
     const user =
       (await this.prisma.user.findUnique({ where: { googleId: profile.sub }, select: USER_PROFILE_SELECT })) ??
-      (await this.linkOrOpen(profile));
+      (await this.openForGuest(profile));
     assertGoogleMember(user);
     return this.session(user);
   }
@@ -143,7 +143,8 @@ export class AuthService {
     return this.session(user);
   }
 
-  private async linkOrOpen(profile: GoogleProfile): Promise<UserProfile> {
+  /** Google is how a guest signs up: an email that already has an account signs in with its password instead. */
+  private async openForGuest(profile: GoogleProfile): Promise<UserProfile> {
     const email = normalizeEmail(profile.email);
     const existing = await this.prisma.user.findUnique({
       where: { email },
@@ -158,15 +159,13 @@ export class AuthService {
       });
     }
     assertGoogleMember(user);
-    // Google already proved the mailbox (email_verified), so the account it names is linked as is.
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { googleId: profile.sub, emailVerifiedAt: new Date() },
+    throw new ConflictException({
+      message: 'This email already has an account; sign in with your password',
+      details: { reason: GOOGLE_REASON.EMAIL_REGISTERED },
     });
-    return user;
   }
 
-  /** One tap: the member account opens at once under the Google name; the birthday can be added on the profile later. */
+  /** One tap: the member account opens at once under the Google name. */
   private async openGoogleMember(profile: GoogleProfile, email: string): Promise<UserProfile> {
     const name = profile.name?.trim() ?? '';
     const fullName = name.length >= 2 ? name : email.split('@')[0].padEnd(2, '_');
