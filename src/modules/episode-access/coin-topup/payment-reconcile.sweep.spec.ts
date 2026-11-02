@@ -25,8 +25,8 @@ describe('PaymentReconcileSweep.reconcileDue', () => {
   const attempt = {
     id: 'pay-1',
     coinTopUpId: 'topup-1',
-    provider: PaymentProvider.MOMO,
-    providerTxnId: 'MOMO-ABC',
+    provider: PaymentProvider.VNPAY,
+    providerTxnId: 'VNPAY-ABC',
     amountVnd: 50000,
   };
 

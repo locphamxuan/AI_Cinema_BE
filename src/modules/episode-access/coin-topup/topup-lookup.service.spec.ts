@@ -10,7 +10,7 @@ describe('CoinTopUpService.findForReturn', () => {
   const service = createService(prisma, deps);
 
   const order = { id: '11111111-1111-4111-8111-111111111111', status: TopUpStatus.PAID };
-  const payment = { id: 'pay-1', provider: PaymentProvider.MOMO, status: PaymentStatus.PAID };
+  const payment = { id: 'pay-1', provider: PaymentProvider.VNPAY, status: PaymentStatus.PAID };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -21,26 +21,28 @@ describe('CoinTopUpService.findForReturn', () => {
   });
 
   it('finds the order by either reference', async () => {
-    await expect(service.findForReturn(PaymentProvider.MOMO, { topUpId: order.id })).resolves.toMatchObject({
+    await expect(service.findForReturn(PaymentProvider.VNPAY, { topUpId: order.id })).resolves.toMatchObject({
       topUpId: order.id,
     });
-    await expect(service.findForReturn(PaymentProvider.MOMO, { providerTxnId: 'MOMO-X' })).resolves.toMatchObject({
+    await expect(service.findForReturn(PaymentProvider.VNPAY, { providerTxnId: 'VNPAY-X' })).resolves.toMatchObject({
       topUpId: order.id,
     });
   });
 
   it('refuses a malformed id instead of failing at the database', async () => {
-    await expect(service.findForReturn(PaymentProvider.MOMO, { topUpId: 'not-a-uuid' })).rejects.toMatchObject({
+    await expect(service.findForReturn(PaymentProvider.VNPAY, { topUpId: 'not-a-uuid' })).rejects.toMatchObject({
       response: { details: { reason: TOPUP_REASON.INVALID_CALLBACK } },
     });
   });
 
   it('needs at least one reference', async () => {
-    await expect(service.findForReturn(PaymentProvider.MOMO, {})).rejects.toThrow(BadRequestException);
+    await expect(service.findForReturn(PaymentProvider.VNPAY, {})).rejects.toThrow(BadRequestException);
   });
 
   it('answers 404 when the order belongs to nobody', async () => {
     prisma.coinTopUp.findUnique.mockResolvedValue(null);
-    await expect(service.findForReturn(PaymentProvider.MOMO, { topUpId: order.id })).rejects.toThrow(NotFoundException);
+    await expect(service.findForReturn(PaymentProvider.VNPAY, { topUpId: order.id })).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

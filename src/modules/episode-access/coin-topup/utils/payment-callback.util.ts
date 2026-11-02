@@ -1,8 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { decodeTopUpExtraData } from '../gateways/momo-signing';
 import { TOPUP_REASON } from '../constants/topup-reason';
 
-/** A gateway delivery normalised from VNPay, MoMo or the documented JSON shape. */
+/** A gateway delivery normalised from VNPay or the documented JSON shape. */
 export interface GatewayCallback {
   eventId: string;
   topUpId?: string;
@@ -17,10 +16,6 @@ export interface GatewayCallback {
 const textOf = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() ? value.trim() : undefined;
 
-/** A gateway reference: MoMo sends `transId` as a JSON number, the others as text. */
-const refOf = (value: unknown): string | undefined =>
-  typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : textOf(value);
-
 /** Guards Prisma `Uuid` filters: a malformed id must answer 404/400, never a 500. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: string): boolean => UUID_RE.test(value);
@@ -32,7 +27,7 @@ const intOf = (value: unknown): number | undefined => {
 };
 
 /**
- * Reads the documented JSON shape as well as the VNPay (`vnp_*`) and MoMo IPN fields into one
+ * Reads the documented JSON shape as well as the VNPay (`vnp_*`) fields into one
  * callback. A missing signature is refused outright; the HMAC check against the gateway secret
  * is the adapter's job when the real SDK lands, the signature and the raw payload are kept for it.
  */
@@ -44,12 +39,7 @@ export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback
     textOf(body.vnp_TxnRef) && textOf(body.vnp_ResponseCode)
       ? `${textOf(body.vnp_TxnRef)}:${textOf(body.vnp_ResponseCode)}`
       : undefined;
-  const eventId =
-    textOf(body.eventId) ??
-    textOf(body.vnp_TransactionNo) ??
-    vnpFallback ??
-    refOf(body.transId) ??
-    textOf(body.transactionId);
+  const eventId = textOf(body.eventId) ?? textOf(body.vnp_TransactionNo) ?? vnpFallback ?? textOf(body.transactionId);
   const signature = textOf(body.signature) ?? textOf(body.vnp_SecureHash) ?? textOf(body.mac);
   if (!signature) {
     throw new BadRequestException({
@@ -57,7 +47,7 @@ export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback
       details: { reason: TOPUP_REASON.MISSING_SIGNATURE },
     });
   }
-  // VNPay sends the amount times 100; the documented shape and MoMo send it as-is.
+  // VNPay sends the amount times 100; the documented shape sends it as-is.
   const vnpAmount = intOf(body.vnp_Amount);
   const amountVnd =
     intOf(body.amountVnd) ?? (vnpAmount !== undefined ? Math.floor(vnpAmount / 100) : undefined) ?? intOf(body.amount);
@@ -71,10 +61,7 @@ export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback
         : 'failed'
       : undefined;
   const status: GatewayCallback['status'] | undefined =
-    rawStatus === 'success' || rawStatus === 'failed' || rawStatus === 'cancelled'
-      ? rawStatus
-      : (vnpStatus ??
-        (body.resultCode !== undefined ? (Number(body.resultCode) === 0 ? 'success' : 'failed') : undefined));
+    rawStatus === 'success' || rawStatus === 'failed' || rawStatus === 'cancelled' ? rawStatus : vnpStatus;
   if (!eventId || amountVnd === undefined || status === undefined) {
     throw new BadRequestException({
       message: 'The callback is missing its event id, amount or status',
@@ -84,11 +71,11 @@ export function normalizeCallback(raw: Record<string, unknown>): GatewayCallback
   const paidAt = textOf(body.paidAt) ? new Date(textOf(body.paidAt) as string) : undefined;
   return {
     eventId,
-    topUpId: textOf(body.topUpId) ?? decodeTopUpExtraData(textOf(body.extraData)),
-    providerTxnId: textOf(body.providerTxnId) ?? textOf(body.vnp_TxnRef) ?? textOf(body.orderId),
+    topUpId: textOf(body.topUpId),
+    providerTxnId: textOf(body.providerTxnId) ?? textOf(body.vnp_TxnRef),
     amountVnd,
     status,
-    providerPaymentId: textOf(body.providerPaymentId) ?? textOf(body.vnp_TransactionNo) ?? refOf(body.transId),
+    providerPaymentId: textOf(body.providerPaymentId) ?? textOf(body.vnp_TransactionNo),
     signature,
     paidAt: paidAt && !Number.isNaN(paidAt.getTime()) ? paidAt : undefined,
   };
