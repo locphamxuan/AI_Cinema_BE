@@ -127,7 +127,7 @@ describe('CoinTopUpService.handleCallback', () => {
     };
 
     gateways.verifyCallbackSignature.mockReturnValue(false);
-    const error = await catchError(service.handleCallback(PaymentProvider.MOMO, { ...delivery }));
+    const error = await catchError(service.handleCallback(PaymentProvider.VNPAY, { ...delivery }));
 
     expect(error).toBeInstanceOf(BadRequestException);
 
@@ -137,24 +137,11 @@ describe('CoinTopUpService.handleCallback', () => {
 
     expect(error.getResponse()).toMatchObject({ details: { reason: TOPUP_REASON.INVALID_SIGNATURE } });
     expect(prisma.paymentCallback.upsert).toHaveBeenCalledWith({
-      where: { provider_eventId: { provider: PaymentProvider.MOMO, eventId: 'evt-1' } },
+      where: { provider_eventId: { provider: PaymentProvider.VNPAY, eventId: 'evt-1' } },
       update: expect.objectContaining({ errorMessage: 'Invalid gateway signature' }),
-      create: expect.objectContaining({ provider: PaymentProvider.MOMO, eventId: 'evt-1' }),
+      create: expect.objectContaining({ provider: PaymentProvider.VNPAY, eventId: 'evt-1' }),
     });
     expect(deps.coins.credit).not.toHaveBeenCalled();
-  });
-
-  it('recovers the order id from MoMo extraData when topUpId is missing', async () => {
-    const { topUpId: _dropped, ...withoutId } = delivery;
-    const extraData = Buffer.from(JSON.stringify({ topUpId })).toString('base64');
-
-    const settled = await service.handleCallback(PaymentProvider.MOMO, {
-      ...withoutId,
-      providerTxnId: 'VNPAY-ABC',
-      extraData,
-    });
-
-    expect(settled).toMatchObject({ topUpId, status: TopUpStatus.PAID });
   });
 
   it('reads VNPay IPN fields, down to the amount times 100', async () => {

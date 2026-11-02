@@ -8,12 +8,8 @@ describe('providerOf', () => {
     expect(providerOf(value)).toBe(PaymentProvider.VNPAY);
   });
 
-  it.each([['MOMO'], ['momo']])('accepts %s as MoMo', (value) => {
-    expect(providerOf(value)).toBe(PaymentProvider.MOMO);
-  });
-
   it('answers 404 with PROVIDER_NOT_FOUND for anything else', () => {
-    for (const value of ['ZALOPAY', '', 'vnp']) {
+    for (const value of ['ZALOPAY', 'MOMO', '', 'vnp']) {
       expect(() => providerOf(value)).toThrow(NotFoundException);
 
       try {

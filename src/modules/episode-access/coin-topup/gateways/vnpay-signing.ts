@@ -1,5 +1,9 @@
-import { createHmac } from 'node:crypto';
-import { secureCompare } from './momo-signing';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+function secureCompare(expectedHex: string, actual: string | undefined): boolean {
+  if (!actual || expectedHex.length !== actual.length) return false;
+  return timingSafeEqual(Buffer.from(expectedHex, 'utf8'), Buffer.from(actual, 'utf8'));
+}
 
 /** VNPay response codes for the IPN answer (`RspCode`). */
 export const VNPAY_RSP = {
