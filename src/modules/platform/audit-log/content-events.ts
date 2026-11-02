@@ -63,6 +63,18 @@ export const CONTENT_EVENT = {
   PLAYBACK_SESSION_ENDED: 'PLAYBACK_SESSION_ENDED',
   // MF-3 — the Admin places the mid-roll ads of an episode (BR-32)
   EPISODE_AD_SLOTS_SET: 'EPISODE_AD_SLOTS_SET',
+  // AI Customer Support (plan §3.5)
+  SUPPORT_CONVERSATION_CREATED: 'SUPPORT_CONVERSATION_CREATED',
+  SUPPORT_CASE_ESCALATED: 'SUPPORT_CASE_ESCALATED',
+  SUPPORT_CASE_CLAIMED: 'SUPPORT_CASE_CLAIMED',
+  SUPPORT_CASE_RELEASED: 'SUPPORT_CASE_RELEASED',
+  SUPPORT_AGENT_REPLIED: 'SUPPORT_AGENT_REPLIED',
+  SUPPORT_CASE_RESOLVED: 'SUPPORT_CASE_RESOLVED',
+  SUPPORT_CASE_CLOSED: 'SUPPORT_CASE_CLOSED',
+  SUPPORT_KNOWLEDGE_CREATED: 'SUPPORT_KNOWLEDGE_CREATED',
+  SUPPORT_KNOWLEDGE_UPDATED: 'SUPPORT_KNOWLEDGE_UPDATED',
+  SUPPORT_KNOWLEDGE_ARCHIVED: 'SUPPORT_KNOWLEDGE_ARCHIVED',
+  SUPPORT_KNOWLEDGE_INDEXED: 'SUPPORT_KNOWLEDGE_INDEXED',
 } as const;
 
 export type ContentEvent = (typeof CONTENT_EVENT)[keyof typeof CONTENT_EVENT];
@@ -96,4 +108,7 @@ export type AuditEntity =
   | 'RewardPrize'
   | 'RewardSpin'
   // MF-3: viewer traffic stays off the movie timeline, so its row has no movie_id either.
-  | 'StreamingSession';
+  | 'StreamingSession'
+  // AI Customer Support: cases live outside a movie, so their audit row has no movie_id.
+  | 'SupportConversation'
+  | 'SupportKnowledgeArticle';

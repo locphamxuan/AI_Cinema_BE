@@ -70,6 +70,10 @@ model User {
   devices                 UserDevice[]
   watchProgresses         WatchProgress[]
   episodeAdSlotsCreated   EpisodeAdSlot[]            @relation("EpisodeAdSlotCreatedBy")
+  supportConversations    SupportConversation[]      @relation("SupportConversationMember")
+  assignedSupportCases    SupportConversation[]      @relation("SupportConversationAgent")
+  supportKnowledgeCreated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleCreatedBy")
+  supportKnowledgeUpdated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleUpdatedBy")
 
   @@index([role])
   @@map("users")

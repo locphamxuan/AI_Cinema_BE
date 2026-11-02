@@ -38,6 +38,12 @@ export const PERMISSION = {
   ANALYTICS_CHURN_READ: 'analytics.churn.read',
   // MF-3 — mid-roll ads
   AD_MANAGE: 'ad.manage',
+  // AI Customer Support
+  SUPPORT_CHAT: 'support:chat',
+  SUPPORT_CASE_READ: 'support:case.read',
+  SUPPORT_CASE_MANAGE: 'support:case.manage',
+  SUPPORT_CASE_ASSIGN: 'support:case.assign',
+  SUPPORT_KNOWLEDGE_MANAGE: 'support:knowledge.manage',
   // Administration
   MEMBER_OPS_READ: 'member:ops.read',
   USER_READ: 'user:read',
@@ -103,6 +109,12 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'analytics.revenue.read': { area: 'billing', description: 'Read the plan revenue reports' },
   'analytics.churn.read': { area: 'billing', description: 'Read the plan churn reports' },
   'ad.manage': { area: 'advertising', description: 'Create ads and pause or resume them' },
+  // AI Customer Support
+  'support:chat': { area: 'support', description: 'Member mở chat hỗ trợ' },
+  'support:case.read': { area: 'support', description: 'Staff/ADMIN đọc support case' },
+  'support:case.manage': { area: 'support', description: 'Staff manage case: claim, reply, resolve, close' },
+  'support:case.assign': { area: 'support', description: 'ADMIN gán case cho Staff' },
+  'support:knowledge.manage': { area: 'support', description: 'Admin quản lý Knowledge Base' },
   'member:ops.read': { area: 'administration', description: 'Read member accounts (read-only, BR-20)' },
   'user:read': { area: 'administration', description: 'Read every account, staff included' },
   'user:manage': { area: 'administration', description: 'Create staff accounts, change roles, lock accounts' },
@@ -134,6 +146,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.WALLET_TOPUP,
     PERMISSION.REWARD_CHECKIN,
     PERMISSION.SUBSCRIPTION_SELF_MANAGE,
+    PERMISSION.SUPPORT_CHAT,
   ],
   CONTENT_CREATOR: [PERMISSION.PROJECT_SUGGEST, PERMISSION.STUDIO_HANDOFF, PERMISSION.MEDIA_INGEST],
   CONTENT_REVIEWER: [
@@ -154,6 +167,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.COIN_WALLET_READ,
     PERMISSION.COIN_TRANSACTION_READ,
     PERMISSION.BILLING_SUBSCRIPTION_READ,
+    PERMISSION.SUPPORT_CASE_READ,
+    PERMISSION.SUPPORT_CASE_MANAGE,
   ],
   // MF-1: the Admin reads every project and decides the change requests sent to them, never edits a project (BR-55).
   ADMIN: [
@@ -181,5 +196,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.ANALYTICS_CHURN_READ,
     // MF-3: mid-roll ads shown to ad-supported plans.
     PERMISSION.AD_MANAGE,
+    // AI Customer Support
+    PERMISSION.SUPPORT_CASE_READ,
+    PERMISSION.SUPPORT_CASE_MANAGE,
+    PERMISSION.SUPPORT_CASE_ASSIGN,
+    PERMISSION.SUPPORT_KNOWLEDGE_MANAGE,
   ],
 };
