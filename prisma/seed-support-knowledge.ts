@@ -82,15 +82,15 @@ Coin thưởng hết hạn sẽ bị trừ khỏi ví và không được hoàn 
 Số dư Coin chính, Coin thưởng và hạn dùng của từng lô luôn hiển thị trong mục Ví Coin của ứng dụng. Nếu số dư hiển thị không khớp với giao dịch gần đây, hãy liên hệ nhân viên hỗ trợ kèm thời điểm và số Coin dự kiến.`,
   },
   {
-    slug: 'nap-coin-qua-momo-vnpay',
-    title: 'Nạp Coin qua MoMo và VNPay',
+    slug: 'nap-coin-qua-vnpay',
+    title: 'Nạp Coin qua VNPay',
     category: 'Payments',
     audience: SupportAudience.MEMBER,
     source: KnowledgeSource.FAQ,
     markdown: `## Cách nạp Coin
 1. Mở mục Ví Coin và chọn Nạp Coin.
 2. Chọn số tiền VND muốn nạp trong khoảng hệ thống cho phép.
-3. Chọn MoMo hoặc VNPay, sau đó xác nhận để chuyển sang cổng thanh toán.
+3. Xác nhận để chuyển sang cổng thanh toán VNPay.
 4. Hoàn tất thanh toán trên ứng dụng của nhà cung cấp.
 
 ## Trạng thái đơn nạp
@@ -185,7 +185,7 @@ Bạn có thể đăng ký bằng email hoặc đăng nhập bằng Google. Mỗ
 Nếu bạn đã tạo tài khoản bằng email, hãy đăng nhập bằng email đó. Đăng nhập Google bằng một email khác sẽ tạo tài khoản riêng và không tự liên kết với tài khoản cũ.
 
 ## Quên mật khẩu
-Dùng chức năng Quên mật khẩu trên màn hình đăng nhập. AI Cinema gửi liên kết đặt lại mật khẩu đến email đã đăng ký; liên kết có thời hạn. Nhân viên hỗ trợ không bao giờ hỏi mật khẩu, OTP hay số thẻ của bạn.
+Chức năng đặt lại mật khẩu bằng mã OTP gửi qua Gmail sẽ có trong bản cập nhật sau. Hiện tại, hãy liên hệ nhân viên hỗ trợ kèm email đã đăng ký. Nhân viên hỗ trợ không bao giờ hỏi mật khẩu, OTP hay số thẻ của bạn.
 
 ## Xác thực email
 Một số tính năng yêu cầu email đã xác thực. Nếu chưa nhận được email xác thực, kiểm tra thư mục Spam và thử gửi lại. Nếu vẫn không nhận được, liên hệ nhân viên kèm địa chỉ email đăng ký.
@@ -227,16 +227,15 @@ Khiếu nại được tiếp nhận và chuyển đến nhân viên phụ trác
     audience: SupportAudience.MEMBER,
     source: KnowledgeSource.FAQ,
     markdown: `## Video không phát được
-1. Kiểm tra kết nối mạng và thử tải lại trang hoặc mở lại ứng dụng.
+1. Kiểm tra kết nối mạng và thử mở lại ứng dụng.
 2. Thử một tập khác để xác định lỗi do tập phim hay do thiết bị.
 3. Cập nhật ứng dụng lên phiên bản mới nhất.
-4. Nếu dùng trình duyệt, thử tắt tiện ích chặn quảng cáo cho AI Cinema.
 
 ## Hình ảnh mờ hoặc giật
 Chất lượng HLS tự điều chỉnh theo băng thông. Khi mạng yếu, trình phát giảm độ phân giải để tránh dừng hình. Kết nối Wi-Fi ổn định hoặc mạng di động tốc độ cao sẽ cho hình ảnh tốt hơn.
 
 ## Âm thanh nhưng không có hình
-Tắt chế độ tiết kiệm pin hoặc trình tăng tốc phần cứng của trình duyệt, sau đó mở lại trình phát. Trên một số thiết bị cũ, codec của phim có thể không được hỗ trợ.
+Tắt chế độ tiết kiệm pin, sau đó mở lại trình phát. Trên một số thiết bị cũ, codec của phim có thể không được hỗ trợ.
 
 ## Tập phim báo không có quyền xem
 - Tập Free Starter: kiểm tra bạn đang đăng nhập đúng tài khoản.
