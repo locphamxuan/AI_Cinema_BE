@@ -98,7 +98,7 @@ export class TokenRequestService {
       ...(projectId ? { projectId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(user.role === UserRole.CONTENT_REVIEWER
-        ? { movie: { reviewerId: user.id } }
+        ? { project: { reviewerId: user.id } }
         : user.role === UserRole.CONTENT_CREATOR
           ? { requestedById: user.id }
           : {}),
