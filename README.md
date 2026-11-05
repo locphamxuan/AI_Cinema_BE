@@ -1,7 +1,6 @@
 # AI Cinema — Backend
 
 [![CI/CD](https://github.com/locphamxuan/AI_Cinema_BE/actions/workflows/ci.yml/badge.svg)](https://github.com/locphamxuan/AI_Cinema_BE/actions/workflows/ci.yml)
-[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=locphamxuan_AI_Cinema_BE&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=locphamxuan_AI_Cinema_BE)
 
 NestJS 11 + Prisma 7 (PostgreSQL) API of AI Cinema. MF-1 — *Movie Project Management &
 Publishing* — is implemented end to end: movies are commissioned from studios outside the
@@ -72,35 +71,13 @@ media pipeline as a mock, so FFmpeg is not needed for tests.
 | Lint, typecheck, unit tests, build | ESLint + Prettier without autofix, `tsc`, unit tests with coverage, `nest build` |
 | E2E tests (Postgres) | the e2e suite with coverage against a Postgres service, then that `prisma/schema` matches the migrations |
 | Dependency audit | no high or critical vulnerability in production dependencies |
-| SonarCloud analysis | bugs, vulnerabilities, code smells, duplication and the merged unit + e2e coverage; fails when the quality gate fails |
 | Docker image | builds the `runtime` image; on `main` or a `v*` tag, once everything above is green, pushes it to `ghcr.io/locphamxuan/ai_cinema_be` and calls the deploy hook |
 
 Repository settings (*Settings → Secrets and variables → Actions*):
 
-- `SONAR_TOKEN` (secret) — without it the analysis is skipped, everything else still runs.
-- `SONAR_HOST_URL` (variable) — only for a self-hosted SonarQube; defaults to SonarCloud.
 - `DEPLOY_HOOK_URL` (secret, optional) — e.g. a Render or Railway deploy hook, called after the
   image is pushed. The deployed container runs `npx prisma migrate deploy` first if the host
   allows a release command; otherwise run the `migrate` target of the Dockerfile.
-
-### Set up SonarCloud (once)
-
-1. Sign in to https://sonarcloud.io with GitHub and import `locphamxuan/AI_Cinema_BE`.
-2. In the project, *Administration → Analysis Method*: turn **Automatic Analysis off** (the CI
-   analysis carries the coverage).
-3. *My Account → Security*: generate a token, save it as the `SONAR_TOKEN` repository secret.
-4. If the organization or project key differ from `sonar-project.properties`, change them there.
-
-### Analyse locally (self-hosted SonarQube)
-
-```bash
-docker compose -f docker-compose.sonar.yml up -d     # http://localhost:9000, admin / admin
-# create a project "locphamxuan_AI_Cinema_BE" and a token in the UI, then:
-npm run test:cov && npm run test:e2e:db && npm run test:e2e:cov
-npx @sonar/scan -Dsonar.host.url=http://localhost:9000 -Dsonar.token=<token>
-```
-
-`@sonar/scan` is SonarSource's scanner on npm; it downloads its own Java runtime the first time.
 
 ## Code layout
 
