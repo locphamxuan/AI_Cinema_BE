@@ -16,13 +16,11 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import {
-  AssignSupportCaseRequestDto,
-  ResolveSupportCaseRequestDto,
-  StaffReplySupportCaseRequestDto,
-} from '../dto/support-requests.dto';
 import { MEMBER_CONTEXT_SECTIONS, type MemberContextSection } from './member-context.service';
 import { StaffSupportService } from './staff-support.service';
+import { AssignSupportCaseRequestDto } from 'src/modules/support/staff/dto/assign-support-case.request.dto';
+import { ResolveSupportCaseRequestDto } from 'src/modules/support/staff/dto/resolve-support-case.request.dto';
+import { StaffReplySupportCaseRequestDto } from 'src/modules/support/staff/dto/staff-reply-support-case.request.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 

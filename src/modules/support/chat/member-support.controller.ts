@@ -6,12 +6,10 @@ import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { SupportChatService } from './support-chat.service';
-import {
-  CloseSupportConversationRequestDto,
-  ConfirmResolvedSupportCaseRequestDto,
-  RequestStaffRequestDto,
-  SendSupportMessageRequestDto,
-} from '../dto/support-requests.dto';
+import { CloseSupportConversationRequestDto } from 'src/modules/support/chat/dto/close-support-conversation.request.dto';
+import { ConfirmResolvedSupportCaseRequestDto } from 'src/modules/support/chat/dto/confirm-resolved-support-case.request.dto';
+import { RequestStaffRequestDto } from 'src/modules/support/chat/dto/request-staff.request.dto';
+import { SendSupportMessageRequestDto } from 'src/modules/support/chat/dto/send-support-message.request.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 

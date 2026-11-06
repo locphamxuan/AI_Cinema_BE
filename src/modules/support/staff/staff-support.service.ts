@@ -261,7 +261,7 @@ export class StaffSupportService {
       const updated = await this.conversations.findById(id);
       await this.notifications.notify([updated.memberId], {
         type: NOTIFICATION_TYPE.SUPPORT_AGENT_REPLIED,
-        title: 'NhA�n viA�n �`A� ph���n h��"i yA�u c��u h��- tr���',
+        title: 'Nhân viên phản hồi yêu cầu hỗ trợ',
         body: truncatePreview(content),
         link: `/support/conversations/${id}`,
         payload: { conversationId: id },
