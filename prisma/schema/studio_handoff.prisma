@@ -24,10 +24,11 @@ model StudioHandoff {
     projectId             String                @map("project_id") @db.Uuid
     studioId            String                @map("studio_id") @db.Uuid
     seasonId            String?               @map("season_id") @db.Uuid
-    /// Production fee printed in the brief when it was sent.
-    productionFeeTokens BigInt                @map("production_fee_tokens")
-    /// Token spent on this hand-off when it was replaced: the studio got the brief and did not decline (BR-59).
-    lostTokens          BigInt                @default(0) @map("lost_tokens")
+    /// Production fee (VND) the brief offered the studio; committed against the project budget.
+    offeredFeeVnd       BigInt                @map("offered_fee_vnd")
+    /// VND already spent on this studio when it was replaced (paid, or owed as compensation), entered by
+    /// hand; the rest of the offered fee returns to the budget (BR-59).
+    forfeitedVnd        BigInt                @default(0) @map("forfeited_vnd")
     /// Required when the studio is changed.
     changeReason        String?               @map("change_reason") @db.Text
     briefFileKey        String?               @map("brief_file_key") @db.VarChar(500)
@@ -56,6 +57,7 @@ model StudioHandoff {
     milestoneEvents StudioMilestoneEvent[]
     deliveries      MediaAsset[]
     filmLinks       StudioFilmLink[]
+    costRequests    ProductionCostRequest[]
 
     @@index([projectId, createdAt])
     @@index([studioId])

@@ -37,14 +37,12 @@ model User {
   milestoneChanges        StudioMilestoneEvent[]     @relation("MilestoneChangedBy")
   changeRequestsMade      ProjectChangeRequest[]     @relation("ChangeRequestRequestedBy")
   changeRequestsResolved  ProjectChangeRequest[]     @relation("ChangeRequestResolvedBy")
-  tokenRequestsMade       TokenRequest[]             @relation("TokenRequestRequestedBy")
-  tokenRequestsResolved   TokenRequest[]             @relation("TokenRequestResolvedBy")
+  costRequestsMade        ProductionCostRequest[]    @relation("CostRequestRequestedBy")
+  costRequestsResolved    ProductionCostRequest[]    @relation("CostRequestResolvedBy")
   movieLikes              MovieLike[]
   savedMovies             SavedMovie[]
   episodeViews            EpisodeView[]
-  tokenEntries            TokenLedgerEntry[]
-  tokenBudget             ReviewerTokenEntry[]       @relation("ReviewerTokenBudget")
-  tokenBudgetGranted      ReviewerTokenEntry[]       @relation("ReviewerTokenGrantedBy")
+  costEntries             ProductionCostEntry[]      @relation("CostEntryCreatedBy")
   mediaSubmitted          MediaAsset[]
   contentReviews          ContentReview[]
   labelsApplied           AiContentLabel[]
