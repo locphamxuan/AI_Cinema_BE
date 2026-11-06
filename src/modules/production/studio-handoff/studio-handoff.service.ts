@@ -11,10 +11,12 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService, type TitledProject } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { StudioService } from 'src/modules/production/studio/studio.service';
+import { formatVnd } from './brief/brief-pdf';
+import { assertFeeFits, splitForfeit } from './handoff-fee';
 import { type BriefContext, BriefService, type PreparedBrief } from './brief/brief.service';
 import type { ChangeStudioRequestDto, HandOffRequestDto } from './dto/studio-handoff.request.dto';
-import { lostOnReplace } from './studio-swap-loss';
 import { HandoffMaterialService, type MaterialUploads, type StoredMaterial } from './material/handoff-material.service';
 
 const HISTORY_INCLUDE = {
@@ -43,8 +45,8 @@ interface HandoffPlan {
   materials: StoredMaterial[];
   brief: PreparedBrief;
   changeReason: string | null;
-  /** Token the replaced hand-offs cost (BR-59); 0 on a first hand-off. */
-  lostTokens: number;
+  /** VND the replaced studios kept (BR-59); 0 on a first hand-off. */
+  forfeitedVnd: number;
 }
 
 /** MF-1 steps 3–4: hand the project (or a season) to a studio outside the platform, or change studio (BR-13, BR-59). */
@@ -54,6 +56,7 @@ export class StudioHandoffService {
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
     private readonly studios: StudioService,
+    private readonly costs: ProductionCostService,
     private readonly briefs: BriefService,
     private readonly materials: HandoffMaterialService,
     private readonly emails: EmailOutboxService,
@@ -71,10 +74,11 @@ export class StudioHandoffService {
     }
     const seasonId = await this.scopeSeason(projectId, dto.seasonId);
     const episodes = await this.episodesToHandOff(projectId, seasonId);
+    assertFeeFits(await this.costs.summary(projectId), dto.offeredFeeVnd, 0);
 
     const plan = await this.plan(projectId, studio, seasonId, uploads, null, {
       senderId: user.id,
-      pendingLostTokens: 0,
+      offeredFeeVnd: dto.offeredFeeVnd,
     });
     return this.send(project, plan, user, async (tx) => {
       const { count } = await tx.movieProject.updateMany({
@@ -108,22 +112,22 @@ export class StudioHandoffService {
     const seasonId = await this.scopeSeason(projectId, dto.seasonId);
     const replaced = await this.prisma.studioHandoff.findMany({
       where: { projectId, seasonId, milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },
-      include: { emailMessage: { select: { status: true } } },
     });
     if (!replaced.length) throw new ConflictException('There is no hand-off for that scope to replace');
 
-    const lost = replaced.map((handoff) => ({ id: handoff.id, tokens: lostOnReplace(handoff) }));
-    const lostTokens = lost.reduce((sum, { tokens }) => sum + tokens, 0n);
+    const forfeited = splitForfeit(replaced, dto.forfeitedVnd ?? 0);
+    const releasedVnd = replaced.reduce((sum, h) => sum + Number(h.offeredFeeVnd), 0) - (dto.forfeitedVnd ?? 0);
+    assertFeeFits(await this.costs.summary(projectId), dto.offeredFeeVnd, releasedVnd);
     const plan = await this.plan(projectId, studio, seasonId, uploads, dto.reason.trim(), {
       senderId: user.id,
-      pendingLostTokens: Number(lostTokens),
+      offeredFeeVnd: dto.offeredFeeVnd,
     });
-    plan.lostTokens = Number(lostTokens);
+    plan.forfeitedVnd = dto.forfeitedVnd ?? 0;
     return this.send(project, plan, user, async (tx) => {
-      for (const { id, tokens } of lost) {
+      for (const { id, forfeitedVnd } of forfeited) {
         await tx.studioHandoff.update({
           where: { id },
-          data: { milestoneStatus: StudioMilestoneStatus.SUPERSEDED, lostTokens: tokens },
+          data: { milestoneStatus: StudioMilestoneStatus.SUPERSEDED, forfeitedVnd: BigInt(forfeitedVnd) },
         });
       }
       await tx.studioMilestoneEvent.createMany({
@@ -202,7 +206,7 @@ export class StudioHandoffService {
     const materials = await this.materials.store(projectId, uploads);
     try {
       const brief = await this.briefs.prepare(projectId, studio, seasonId, materials, context);
-      return { studio, seasonId, materials, brief, changeReason, lostTokens: 0 };
+      return { studio, seasonId, materials, brief, changeReason, forfeitedVnd: 0 };
     } catch (error) {
       await this.materials.discard(materials);
       throw error;
@@ -220,6 +224,8 @@ export class StudioHandoffService {
     try {
       emailId = await this.prisma.$transaction(async (tx) => {
         await change(tx);
+        // After `change`, so a replaced studio's fee is already back in the budget.
+        await this.costs.assertAffordable(tx, project.id, plan.brief.offeredFeeVnd);
         return this.recordHandoff(tx, project, plan, user);
       });
     } catch (error) {
@@ -231,7 +237,7 @@ export class StudioHandoffService {
   }
 
   private async recordHandoff(tx: PrismaTx, project: TitledProject, plan: HandoffPlan, user: AuthenticatedUser) {
-    const { studio, seasonId, brief, materials, changeReason, lostTokens } = plan;
+    const { studio, seasonId, brief, materials, changeReason, forfeitedVnd } = plan;
     const emailId = await this.emails.create(tx, {
       to: studio.email,
       template: EMAIL_TEMPLATE.STUDIO_BRIEF,
@@ -248,7 +254,7 @@ export class StudioHandoffService {
         projectId: project.id,
         studioId: studio.id,
         seasonId,
-        productionFeeTokens: BigInt(brief.productionFeeTokens),
+        offeredFeeVnd: BigInt(brief.offeredFeeVnd),
         changeReason,
         briefFileKey: brief.briefKey,
         emailMessageId: emailId,
@@ -268,7 +274,14 @@ export class StudioHandoffService {
         entityId: handoff.id,
         projectId: project.id,
         actorId: user.id,
-        payload: { studio: studio.name, seasonId, materials: materials.length, reason: changeReason, lostTokens },
+        payload: {
+          studio: studio.name,
+          seasonId,
+          materials: materials.length,
+          reason: changeReason,
+          offeredFeeVnd: brief.offeredFeeVnd,
+          forfeitedVnd,
+        },
       },
       tx,
     );
@@ -282,8 +295,8 @@ export class StudioHandoffService {
             ? `Creator đổi Studio của phim "${project.movie.title}" sang ${studio.name}`
             : `Creator đã gửi bàn giao phim "${project.movie.title}" cho Studio ${studio.name}`,
           body: changeReason
-            ? `Lý do: ${changeReason}. Token mất do đổi Studio: ${lostTokens}. Brief mới ghi ${brief.productionFeeTokens} Token.`
-            : undefined,
+            ? `Lý do: ${changeReason}. Chi phí mất do đổi Studio: ${formatVnd(forfeitedVnd)}. Brief mới đề xuất ${formatVnd(brief.offeredFeeVnd)}.`
+            : `Phí sản xuất đề xuất: ${formatVnd(brief.offeredFeeVnd)}.`,
           link: `/projects/${project.id}/studio`,
           payload: { projectId: project.id, handoffId: handoff.id, studioId: studio.id, seasonId },
         },

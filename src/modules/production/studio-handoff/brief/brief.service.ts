@@ -1,30 +1,28 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import type { EmailAttachment } from 'src/modules/platform/email/email-outbox.service';
-import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
 import type { StoredMaterial } from '../material/handoff-material.service';
-import { briefFont, type BriefContent, renderBriefPdf } from './brief-pdf';
+import { briefFont, type BriefContent, formatVnd, renderBriefPdf } from './brief-pdf';
 
 export interface BriefStudio {
   name: string;
   contactName: string | null;
 }
 
-/** Who the brief comes from and what replaced studios already cost: the fee it promises depends on both. */
+/** Who the brief comes from and the fee it offers. */
 export interface BriefContext {
   /** The Creator handing off: named as the studio's contact and where the film is mailed back. */
   senderId: string;
-  /** Fee of the hand-offs this brief replaces, spent on the old studio (BR-59). */
-  pendingLostTokens: number;
+  /** Production fee (VND) offered to the studio, already checked against the budget left. */
+  offeredFeeVnd: number;
 }
 
 export interface PreparedBrief {
   briefKey: string;
-  productionFeeTokens: number;
+  offeredFeeVnd: number;
   subject: string;
   text: string;
   attachments: EmailAttachment[];
@@ -47,8 +45,6 @@ export class BriefService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: ObjectStorage,
-    private readonly fees: ProductionFeeService,
-    private readonly settings: PlatformSettingService,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
     this.fontPath = briefFont(config.briefFontPath);
@@ -63,12 +59,6 @@ export class BriefService {
     materials: StoredMaterial[],
     context: BriefContext,
   ): Promise<PreparedBrief> {
-    const productionFeeTokens = await this.fees.spendableTokens(projectId, seasonId, context.pendingLostTokens);
-    if (productionFeeTokens <= 0) {
-      throw new ConflictException(
-        'No production fee is left for this scope: earlier studios used it up. Ask the Reviewer for more Token first',
-      );
-    }
     const sender = await this.prisma.user.findUniqueOrThrow({
       where: { id: context.senderId },
       select: { fullName: true, email: true },
@@ -93,7 +83,6 @@ export class BriefService {
     const latestIdeaFiles = project.ideaFiles.filter(
       (file, i, all) => all.findIndex((other) => other.fileName === file.fileName) === i,
     );
-    const { tokenRateVnd } = await this.settings.get();
 
     const content: BriefContent = {
       movieTitle: movie.title,
@@ -104,8 +93,7 @@ export class BriefService {
       creatorEmail: sender.email,
       ideaDescription: project.ideaDescription,
       genres: movie.genres.map(({ genre }) => genre.name),
-      productionFeeTokens,
-      tokenRateVnd,
+      offeredFeeVnd: context.offeredFeeVnd,
       episodes: movie.episodes.map((episode) => ({
         episodeNumber: episode.episodeNumber,
         seasonNumber: episode.season.seasonNumber,
@@ -122,7 +110,7 @@ export class BriefService {
 
     return {
       briefKey,
-      productionFeeTokens,
+      offeredFeeVnd: context.offeredFeeVnd,
       creatorName: content.creatorName,
       creatorEmail: content.creatorEmail,
       subject: `[AI Cinema] Đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope})`,
@@ -130,7 +118,8 @@ export class BriefService {
         `Kính gửi ${studio.name},`,
         '',
         `AI Cinema gửi đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope}) gồm ${movie.episodes.length} tập.`,
-        `Phí sản xuất: ${productionFeeTokens} Token (= ${productionFeeTokens * tokenRateVnd} VND).`,
+        `Phí sản xuất đề xuất: ${formatVnd(context.offeredFeeVnd)} (trọn gói, không chia doanh thu).`,
+        'Nếu chưa đồng ý mức phí, vui lòng phản hồi mức phí mong muốn qua email cho đầu mối bên dưới.',
         'Chi tiết từng tập và hạn giao nằm trong brief PDF đính kèm, kèm kịch bản và tài liệu tham khảo.',
         'Khi hoàn tất, vui lòng gửi phim đã soạn sẵn qua email cho đầu mối bên dưới.',
         '',

@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { StudioMilestoneStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsVnd } from 'src/modules/production/production-cost/dto/vnd';
 
 const trimmed = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -46,6 +47,13 @@ export class HandOffRequestDto extends StudioChoiceDto {
   @IsUUID('4')
   @IsOptional()
   seasonId?: string;
+
+  @ApiProperty({
+    example: 150_000_000,
+    description: 'Production fee (VND) the brief offers the studio; at most the budget left.',
+  })
+  @IsVnd()
+  offeredFeeVnd: number;
 }
 
 export class ChangeStudioRequestDto extends StudioChoiceDto {
@@ -59,6 +67,19 @@ export class ChangeStudioRequestDto extends StudioChoiceDto {
   @MinLength(5)
   @MaxLength(2000)
   reason: string;
+
+  @ApiProperty({ example: 150_000_000, description: 'Production fee (VND) the brief offers the new studio.' })
+  @IsVnd()
+  offeredFeeVnd: number;
+
+  @ApiPropertyOptional({
+    example: 20_000_000,
+    description:
+      'VND already spent on the replaced studio (paid, or owed as compensation); the rest of its fee returns to the budget. Defaults to 0.',
+  })
+  @IsVnd(0)
+  @IsOptional()
+  forfeitedVnd?: number;
 }
 
 /** The milestones a Creator can move a hand-off to; the rest are set by the system (BR-58). */

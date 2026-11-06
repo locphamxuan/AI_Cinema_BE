@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
-import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
-import { ProductionFeeModule } from 'src/modules/production/production-fee/production-fee.module';
+import { ProductionCostModule } from 'src/modules/production/production-cost/production-cost.module';
 import { StudioModule } from 'src/modules/production/studio/studio.module';
 import { BriefService } from './brief/brief.service';
 import { FilmSentController } from './film-sent/film-sent.controller';
@@ -12,7 +11,7 @@ import { StudioHandoffController } from './studio-handoff.controller';
 import { StudioHandoffService } from './studio-handoff.service';
 
 @Module({
-  imports: [ProductionFeeModule, PlatformSettingModule, StudioModule],
+  imports: [ProductionCostModule, StudioModule],
   controllers: [StudioHandoffController, FilmSentController],
   providers: [
     StudioHandoffService,
