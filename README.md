@@ -132,8 +132,8 @@ All under `src/modules/production/` except `catalog`.
 
 | Module | Steps | What it does |
 | --- | --- | --- |
-| `movie-project`, `production-fee` | 1–2 | projects, seasons, episodes, idea files, Token production fee, Admin change proposals (BR-55) |
-| `studio-handoff` | 3–4 | hand-off to a studio with a brief PDF by email, studio changes, deadlines and overdue alerts |
+| `movie-project`, `production-cost`, `cost-request` | 1–2 | projects, seasons, episodes, idea files, production budget in VND set by the Admin, Reviewer requests for more cost, Admin change proposals (BR-55) |
+| `studio-handoff` | 3–4 | hand-off to a studio with a brief PDF by email offering a fixed VND fee within the budget left, studio changes, deadlines and overdue alerts |
 | `media-ingest` | 5–7 | deliveries by upload, HLS link or import URL (SSRF-safe), FFmpeg HLS ladder, link checks |
 | `content-review` | 8–11 | review, AI label (BR-40) and the four compliance items (BR-42) |
 | `publishing` | 12–16 | Coin price and price alerts (BR-47), scheduling, releases, take-downs to fix or for good (BR-56) |
