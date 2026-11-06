@@ -3,7 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, UserRole } from '@prisma/client';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
-import { createAccounts, SEED_USER_PASSWORD, topUpReviewerBudgets } from './seed-accounts';
+import { createAccounts, SEED_USER_PASSWORD } from './seed-accounts';
 import { ADMIN_EMAIL, SEED_ACCOUNTS, SEED_POLICIES, SEED_REWARD_PRIZES, SEED_REWARD_RULES } from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
@@ -65,10 +65,8 @@ async function main() {
   await seedPermissions();
   await seedPolicies();
   await createAccounts(prisma, SEED_ACCOUNTS, SEED_USER_PASSWORD);
-  const reviewers = SEED_ACCOUNTS.filter((a) => a.role === UserRole.CONTENT_REVIEWER).map((a) => a.email);
-  await topUpReviewerBudgets(prisma, reviewers, ADMIN_EMAIL);
   await seedRewards();
-  console.log('Seeded genres, permissions, policies, the four platform accounts, the Reviewer budget and rewards.');
+  console.log('Seeded genres, permissions, policies, the four platform accounts and rewards.');
 }
 
 main()
