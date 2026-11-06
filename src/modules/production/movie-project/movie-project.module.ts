@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ProductionFeeModule } from 'src/modules/production/production-fee/production-fee.module';
-import { ReviewerTokenModule } from 'src/modules/production/reviewer-token/reviewer-token.module';
+import { ProductionCostModule } from 'src/modules/production/production-cost/production-cost.module';
 import { StudioModule } from 'src/modules/production/studio/studio.module';
 import { ArtworkController } from './artwork/artwork.controller';
 import { ArtworkService } from './artwork/artwork.service';
@@ -19,7 +18,7 @@ import { ProjectTeamController } from './team/project-team.controller';
 import { ProjectTeamService } from './team/project-team.service';
 
 @Module({
-  imports: [ProductionFeeModule, ReviewerTokenModule, StudioModule],
+  imports: [ProductionCostModule, StudioModule],
   controllers: [
     MovieProjectController,
     ProjectStructureController,

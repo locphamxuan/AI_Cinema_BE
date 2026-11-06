@@ -42,7 +42,6 @@ export class ProjectStructureService {
           movieId: projectId,
           seasonNumber: (last._max.seasonNumber ?? 0) + 1,
           title: dto.title,
-          episodeProductionCost: BigInt(dto.episodeProductionCost),
           ...window,
         },
       });
@@ -82,7 +81,6 @@ export class ProjectStructureService {
       where: { id: seasonId },
       data: {
         title: dto.title,
-        episodeProductionCost: dto.episodeProductionCost === undefined ? undefined : BigInt(dto.episodeProductionCost),
         ...window,
       },
     });

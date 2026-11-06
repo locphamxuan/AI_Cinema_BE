@@ -16,8 +16,8 @@ export type TitledProject = Prisma.MovieProjectGetPayload<{ include: typeof WITH
  * - reviewer: only the Reviewer who owns it;
  * - creator: its lead Creator or a Creator holding an active assignment (BR-13); an episode is worked on by
  *   the Creator it was given to or the lead, and one not given to anyone belongs to the lead;
- * - lead: only the lead Creator, who speaks for the team to the studio (hand-off, studio change, milestones,
- *   asking for Token). The other Creators never mail the studio: each answers for the episodes given to them
+ * - lead: only the lead Creator, who speaks for the team to the studio (hand-off, studio change,
+ *   milestones). The other Creators never mail the studio: each answers for the episodes given to them
  *   (checks and submits the film, answers change requests) and writes to the lead through episode notes.
  * Someone who may not read a project gets 404, so ids of other projects reveal nothing.
  */

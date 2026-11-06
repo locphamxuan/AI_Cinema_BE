@@ -26,9 +26,6 @@ import { Trim } from 'src/common/validation/trim';
 /** BR-31: any length the Reviewer wants; the bound only catches typos (12 h). */
 export const MAX_TARGET_DURATION_SECONDS = 12 * 60 * 60;
 
-/** Token for one episode; the bound only catches typos. */
-export const MAX_EPISODE_PRODUCTION_COST = 100_000_000;
-
 export class NewEpisodeDto {
   @ApiProperty({ example: 'Tập 1: Tiếng gõ cửa lúc nửa đêm' })
   @Trim()
@@ -73,15 +70,6 @@ export class NewSeasonDto {
   @MaxLength(255)
   @IsOptional()
   title?: string;
-
-  @ApiProperty({
-    example: 5000,
-    description: 'Token the studio is paid for one episode of this season (BR-37); the season fee is price × episodes.',
-  })
-  @IsInt()
-  @Min(1)
-  @Max(MAX_EPISODE_PRODUCTION_COST)
-  episodeProductionCost: number;
 
   @ApiPropertyOptional({ example: '2026-12-01', description: 'First day of the release window (BR-60).' })
   @IsDateString({ strict: true })

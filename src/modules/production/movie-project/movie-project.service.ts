@@ -5,7 +5,7 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
-import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
+import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { CreateMovieProjectRequestDto } from './dto/create-movie-project.request.dto';
 import { UpdateMovieProjectRequestDto } from './dto/update-movie-project.request.dto';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
@@ -95,7 +95,7 @@ export class MovieProjectService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly fees: ProductionFeeService,
+    private readonly costs: ProductionCostService,
     private readonly studios: StudioService,
     private readonly auditLog: AuditLogService,
   ) {}
@@ -133,7 +133,6 @@ export class MovieProjectService {
             movieId: movie.id,
             seasonNumber: index + 1,
             title: season.title,
-            episodeProductionCost: BigInt(season.episodeProductionCost),
             ...window,
           },
         });
@@ -220,8 +219,7 @@ export class MovieProjectService {
       ...movie,
       ...rest,
       genres: genres.map(({ genre }) => genre),
-      productionFeeTokens: await this.fees.totalTokens(projectId),
-      seasonFees: await this.fees.seasonFees(projectId),
+      cost: await this.costs.summary(projectId),
       openChangeRequests: _count.changeRequests,
       revision: revisionSummary(movie.seasons),
     };

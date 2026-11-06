@@ -6,7 +6,7 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
-import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
+import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import {
   assertProjectStatus,
@@ -23,7 +23,7 @@ export class ProjectLifecycleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly fees: ProductionFeeService,
+    private readonly costs: ProductionCostService,
     private readonly team: ProjectTeamService,
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
@@ -40,8 +40,8 @@ export class ProjectLifecycleService {
     if (creator?.role !== UserRole.CONTENT_CREATOR || !creator.isActive) {
       throw new BadRequestException('Pick an active Content Creator account');
     }
-    if (!(await this.fees.isFunded(projectId))) {
-      throw new ConflictException('Allocate the production fee of every season before assigning a Creator (BR-12)');
+    if (!(await this.costs.isFunded(projectId))) {
+      throw new ConflictException('The Admin must set the production budget before a Creator is assigned (BR-12)');
     }
     if (!(await this.prisma.episode.count({ where: { movieId: projectId } }))) {
       throw new ConflictException('The project needs at least one episode');
@@ -88,7 +88,7 @@ export class ProjectLifecycleService {
   }
 
   /**
-   * BR-39: cancel while no episode was ever published; the Token spent stays a cost. Releases
+   * BR-39: cancel while no episode was ever published; the fees committed to studios stay a cost. Releases
    * still scheduled are withdrawn with it, so the scheduler never puts them out.
    */
   async cancel(projectId: string, reason: string, user: AuthenticatedUser): Promise<void> {
