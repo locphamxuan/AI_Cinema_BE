@@ -4,16 +4,13 @@ import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import {
-  CreateKnowledgeArticleRequestDto,
-  PreviewKnowledgeRequestDto,
-  UpdateKnowledgeArticleRequestDto,
-} from '../dto/knowledge-requests.dto';
 import { KnowledgeService } from './knowledge.service';
+import { CreateKnowledgeArticleRequestDto } from 'src/modules/support/knowledge/dto/create-knowledge-article.request.dto';
+import { PreviewKnowledgeRequestDto } from 'src/modules/support/knowledge/dto/preview-knowledge.request.dto';
+import { UpdateKnowledgeArticleRequestDto } from 'src/modules/support/knowledge/dto/update-knowledge-article.request.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
-/** Admin Knowledge Base (plan §6.3). */
 @ApiTags('support-knowledge')
 @ApiBearerAuth()
 @RequirePermission(PERMISSION.SUPPORT_KNOWLEDGE_MANAGE)
