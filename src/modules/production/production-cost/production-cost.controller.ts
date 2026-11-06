@@ -4,29 +4,29 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { AddFeeEntryRequestDto } from './dto/add-fee-entry.request.dto';
-import { ProductionFeeService } from './production-fee.service';
+import { AddCostEntryRequestDto } from './dto/add-cost-entry.request.dto';
+import { ProductionCostService } from './production-cost.service';
 
-@ApiTags('production-fee')
+@ApiTags('production-cost')
 @ApiBearerAuth()
-@Controller('projects/:projectId/fee')
-export class ProductionFeeController {
-  constructor(private readonly fees: ProductionFeeService) {}
+@Controller('projects/:projectId/costs')
+export class ProductionCostController {
+  constructor(private readonly costs: ProductionCostService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Production fee of the project: total and every ledger entry' })
+  @ApiOperation({ summary: 'Production cost (VND): budget, committed to studios, left, and every ledger entry' })
   ledger(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.fees.ledger(projectId, user);
+    return this.costs.ledger(projectId, user);
   }
 
   @Post('entries')
-  @RequirePermission(PERMISSION.PROJECT_FEE_ALLOCATE)
-  @ApiOperation({ summary: 'Allocate (INITIAL), top up or correct the production fee (BR-46)' })
+  @RequirePermission(PERMISSION.COST_ADJUST)
+  @ApiOperation({ summary: 'Admin: set the budget of the project (BUDGET, once) or correct it (BR-46)' })
   addEntry(
     @Param('projectId', ParseUUIDPipe) projectId: string,
-    @Body() dto: AddFeeEntryRequestDto,
+    @Body() dto: AddCostEntryRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.fees.addEntry(projectId, dto, user);
+    return this.costs.addEntry(projectId, dto, user);
   }
 }

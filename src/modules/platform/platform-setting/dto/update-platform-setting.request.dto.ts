@@ -13,12 +13,6 @@ export class UpdatePlatformSettingRequestDto {
   @IsOptional()
   freeStarterEpisodeCount?: number;
 
-  @ApiPropertyOptional({ example: 1000, description: 'VND value of one Token, the unit of production fees (BR-45).' })
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  tokenRateVnd?: number;
-
   @ApiPropertyOptional({ example: 1000, description: 'VND value of one main Coin, the unit of revenue (BR-45).' })
   @IsInt()
   @Min(1)
