@@ -3,7 +3,7 @@ import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
 import { deliver } from './support/media';
-import { assignedProject, episodesOf, type ProjectDetail } from './support/projects';
+import { assignedProject, episodesOf, HANDOFF, type ProjectDetail } from './support/projects';
 
 interface Seat {
   creatorId: string;
@@ -73,10 +73,10 @@ describe('Project team of Creators (e2e)', () => {
     await reviewer.put(`/episodes/${first.id}/assignee`, { creatorId: second.id });
     expect((await team()).find((s) => s.creatorId === second.id)?.episodes.map((e) => e.id)).toEqual([first.id]);
 
-    await reviewer.post(`/projects/${project.id}/handoff`, {}, 403);
+    await reviewer.post(`/projects/${project.id}/handoff`, HANDOFF, 403);
     // Only the lead speaks to the studio; the other Creators are CC'd and pass their episodes up.
-    await second.post(`/projects/${project.id}/handoff`, {}, 403);
-    await lead.post(`/projects/${project.id}/handoff`, {});
+    await second.post(`/projects/${project.id}/handoff`, HANDOFF, 403);
+    await lead.post(`/projects/${project.id}/handoff`, HANDOFF);
     // The assignee delivers their episode; an episode nobody holds belongs to the lead.
     await deliver(second, first.id);
     await deliver(second, other.id, 403);

@@ -94,6 +94,11 @@ export class Actor {
     return { body: res.body as Buffer, type: String(res.headers['content-type']) };
   }
 
+  /** Another account on the same app, e.g. the Admin who funds a project. */
+  signInAs(email: string): Promise<Actor> {
+    return signIn(this.app, email);
+  }
+
   private expect<T>(res: request.Response, what: string, status: number): T {
     if (res.status !== status) {
       throw new Error(`${what} -> ${res.status} (expected ${status}): ${JSON.stringify(res.body)}`);

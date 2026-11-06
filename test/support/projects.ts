@@ -9,8 +9,18 @@ export interface ProjectDetail extends Row {
 
 export const episodesOf = (project: ProjectDetail) => project.seasons.flatMap((season) => season.episodes);
 
-/** Token the studio is paid for one episode in the helpers below. */
-export const EPISODE_COST = 5000;
+/** Budget (VND) the Admin sets on every project of the helpers below. */
+export const PROJECT_BUDGET_VND = 100_000_000;
+/** Fee (VND) the helpers' hand-offs offer the studio. */
+export const HANDOFF_FEE_VND = 40_000_000;
+/** The body of a hand-off of the whole project at HANDOFF_FEE_VND. */
+export const HANDOFF = { offeredFeeVnd: HANDOFF_FEE_VND };
+
+/** The Admin sets the production budget of a project (BR-46). */
+export async function fundProject(anyActor: Actor, projectId: string, amountVnd = PROJECT_BUDGET_VND): Promise<void> {
+  const admin = await anyActor.signInAs('admin@aicinema.com');
+  await admin.post(`/projects/${projectId}/costs/entries`, { entryType: 'BUDGET', amountVnd });
+}
 
 const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 
@@ -19,7 +29,7 @@ export function newStudio(reviewer: Actor, name = 'Studio Ánh Trăng'): Promise
   return reviewer.post('/studios', { name, email: `studio-${randomUUID()}@anhtrang.example` });
 }
 
-/** A funded project assigned to `creator`, with `episodes` episodes of 15 minutes in one season. */
+/** A project funded with PROJECT_BUDGET_VND and assigned to `creator`, with `episodes` episodes of 15 minutes in one season. */
 export async function assignedProject(reviewer: Actor, creator: Actor, episodes = 2): Promise<ProjectDetail> {
   const genreId = (await reviewer.get<{ data: Row[] }>('/genres?limit=1')).data[0].id;
   const studio = await newStudio(reviewer);
@@ -30,7 +40,6 @@ export async function assignedProject(reviewer: Actor, creator: Actor, episodes 
     studioId: studio.id,
     seasons: [
       {
-        episodeProductionCost: EPISODE_COST,
         releaseStartDate: inDays(30),
         releaseEndDate: inDays(90),
         episodes: Array.from({ length: episodes }, (_, i) => ({
@@ -42,17 +51,15 @@ export async function assignedProject(reviewer: Actor, creator: Actor, episodes 
       },
     ],
   });
-  for (const season of project.seasons) {
-    await reviewer.post(`/projects/${project.id}/fee/entries`, { entryType: 'INITIAL', seasonId: season.id });
-  }
+  await fundProject(reviewer, project.id);
   await reviewer.post(`/projects/${project.id}/assign`, { creatorId: creator.id }, 204);
   return reviewer.get<ProjectDetail>(`/projects/${project.id}`);
 }
 
-/** The project above, handed off to its studio, due on the Reviewer deadlines (30 days out). */
+/** The project above, handed off to its studio for HANDOFF_FEE_VND, due on the Reviewer deadlines (30 days out). */
 export async function projectInProduction(reviewer: Actor, creator: Actor, episodes = 2): Promise<ProjectDetail> {
   const project = await assignedProject(reviewer, creator, episodes);
-  await creator.post(`/projects/${project.id}/handoff`, {});
+  await creator.post(`/projects/${project.id}/handoff`, HANDOFF);
   return reviewer.get<ProjectDetail>(`/projects/${project.id}`);
 }
 
