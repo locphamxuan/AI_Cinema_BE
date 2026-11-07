@@ -43,7 +43,8 @@ const COMPLIANCE_ITEMS = 4;
 type EpisodeWithMovie = Episode & { movie: Movie };
 
 /**
- * MF-1 steps 12–16: schedule or publish an episode with its reviewed version (BR-14, BR-19),
+ * MF-1 steps 12–16: the Admin schedules or publishes an episode with its reviewed version once the Reviewer
+ * confirmed it as the Final Film (BR-14, BR-19),
  * take it down, and complete the project once every episode is out (BR-38). The same gate is
  * enforced by database triggers, so no other code path can publish around it.
  */
@@ -63,7 +64,8 @@ export class PublicationService {
   ) {}
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
-    const episode = await this.access.episode(episodeId, user, 'reviewer');
+    // MF-1 (07/11/2026): only the Admin publishes, once the Reviewer confirmed the Final Film.
+    const episode = await this.access.episode(episodeId, user, 'read');
     assertProjectStatus(episode.project.status, RELEASING_PROJECT, 'publish');
     assertEpisodeStatus(episode.status, RELEASABLE, 'publish');
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
@@ -109,7 +111,7 @@ export class PublicationService {
   async unpublish(publicationId: string, dto: UnpublishRequestDto, user: AuthenticatedUser) {
     const publication = await this.prisma.publication.findUnique({ where: { id: publicationId } });
     if (!publication) throw new NotFoundException('Publication not found');
-    const episode = await this.access.episode(publication.episodeId, user, 'reviewer');
+    const episode = await this.access.episode(publication.episodeId, user, 'read');
     if (publication.unpublishedAt) throw new ConflictException('This release was already taken down');
 
     const live = publication.publishedAt !== null;
@@ -208,6 +210,9 @@ export class PublicationService {
     const missing: string[] = [];
     const mediaAssetId = episode.approvedMediaAssetId;
     if (!mediaAssetId) missing.push('an approved media version');
+    if (episode.status === EpisodeStatus.COMPLIANCE_PASSED && !episode.finalConfirmedAt) {
+      missing.push('the Final Film confirmation of the Reviewer');
+    }
     if (episode.coinPrice === null) missing.push('a Coin price (BR-29)');
     if (!episode.movie.synopsis?.trim()) missing.push('the movie synopsis');
     if (!episode.movie.ageRating) missing.push('the movie age rating');
