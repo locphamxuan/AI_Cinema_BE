@@ -6,6 +6,7 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
+import { ContractService } from 'src/modules/production/contract/contract.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import type { UpdateMilestoneRequestDto } from '../dto/studio-handoff.request.dto';
@@ -20,6 +21,7 @@ export class MilestoneService {
     private readonly access: ProjectAccessService,
     private readonly auditLog: AuditLogService,
     private readonly notifications: NotificationService,
+    private readonly contracts: ContractService,
   ) {}
 
   async update(projectId: string, handoffId: string, dto: UpdateMilestoneRequestDto, user: AuthenticatedUser) {
@@ -32,6 +34,9 @@ export class MilestoneService {
     const note = dto.note?.trim() || undefined;
     assertMilestoneMove(handoff.milestoneStatus, to);
     assertMilestoneInput(to, { note, mediaAssetId: dto.mediaAssetId });
+    if (to === Milestone.IN_PROGRESS && !(await this.contracts.isSigned(handoffId))) {
+      throw new ConflictException('The studio can only start production once the contract has both signatures');
+    }
 
     await this.prisma.$transaction(async (tx) => {
       if (dto.mediaAssetId) await this.assertSubmission(tx, dto.mediaAssetId, handoff);

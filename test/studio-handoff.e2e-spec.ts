@@ -39,15 +39,17 @@ describe('Studio hand-off (e2e)', () => {
   let reviewer: Actor;
   let creator: Actor;
   let otherCreator: Actor;
+  let admin: Actor;
   let project: ProjectDetail;
   let handoffId: string;
 
   beforeAll(async () => {
     app = await bootApp();
-    [reviewer, creator, otherCreator] = await Promise.all([
+    [reviewer, creator, otherCreator, admin] = await Promise.all([
       signIn(app, 'reviewer01@aicinema.com'),
       signIn(app, 'creator01@aicinema.com'),
       signIn(app, 'creator02@aicinema.com'),
+      signIn(app, 'admin@aicinema.com'),
     ]);
     project = await assignedProject(reviewer, creator, 2);
   });
@@ -55,6 +57,17 @@ describe('Studio hand-off (e2e)', () => {
   afterAll(() => app.close());
 
   const handoffs = () => reviewer.get<Handoff[]>(`/projects/${project.id}/handoffs`);
+
+  /** BR-new: production can only start once a hand-off's contract has both signatures. */
+  const signContract = async (projectId: string, offId: string, costVnd: number) => {
+    const template = await admin.post<Row>(`/projects/${projectId}/handoffs/${offId}/contracts`, {});
+    await request(app.getHttpServer())
+      .post(`/api/studio-inbound/contracts/${template.id}/propose`)
+      .set('x-studio-token', 'e2e-studio-token')
+      .send({ costVnd })
+      .expect(200);
+    await admin.post(`/contracts/${template.id}/sign`, {});
+  };
 
   it('is reserved to the assigned Creator and dues each episode on its Reviewer deadline', async () => {
     const [first, second] = episodesOf(project);
@@ -166,6 +179,8 @@ describe('Studio hand-off (e2e)', () => {
     await creator.patch(path, { status: 'SUPERSEDED' }, 400);
 
     await creator.patch(path, { status: 'STUDIO_ACCEPTED', note: 'Studio xác nhận qua email.' });
+    await creator.patch(path, { status: 'IN_PROGRESS' }, 409); // no signed contract yet
+    await signContract(project.id, handoffId, HANDOFF_FEE_VND);
     await creator.patch(path, { status: 'IN_PROGRESS' });
     await creator.patch(path, { status: 'DELIVERED' }, 400);
     await creator.patch(path, { status: 'DELIVERED', mediaAssetId: '00000000-0000-4000-8000-000000000000' }, 400);
