@@ -35,3 +35,22 @@ export async function compliantEpisode(reviewer: Actor, creator: Actor, episodeI
   );
   return asset;
 }
+
+const ADMIN_EMAIL = 'admin@aicinema.com';
+
+/**
+ * MF-1 §5–6 (07/11/2026): the Reviewer confirms the Final Film (when it is not yet), then the Admin publishes or
+ * schedules it. `path` is the publications path of the episode.
+ */
+export async function release<T = Row>(reviewer: Actor, path: string, body: object = {}, status?: number): Promise<T> {
+  const episodeId = path.split('/')[2];
+  await reviewer.attempt(`/episodes/${episodeId}/final-confirmation`);
+  const admin = await reviewer.signInAs(ADMIN_EMAIL);
+  return admin.post<T>(path, body, status);
+}
+
+/** Only the Admin takes a release down or cancels it. */
+export async function unpublish<T = Row>(anyActor: Actor, path: string, body: object, status?: number): Promise<T> {
+  const admin = await anyActor.signInAs(ADMIN_EMAIL);
+  return admin.post<T>(path, body, status);
+}

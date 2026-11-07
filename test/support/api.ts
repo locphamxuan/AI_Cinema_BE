@@ -94,6 +94,15 @@ export class Actor {
     return { body: res.body as Buffer, type: String(res.headers['content-type']) };
   }
 
+  /** The status code of a POST, without failing on it (a step that may already be done). */
+  async attempt(path: string, body: object = {}): Promise<number> {
+    const res = await request(this.app.getHttpServer())
+      .post(`/api${path}`)
+      .set('Authorization', `Bearer ${this.token}`)
+      .send(body);
+    return res.status;
+  }
+
   /** Another account on the same app, e.g. the Admin who funds a project. */
   signInAs(email: string): Promise<Actor> {
     return signIn(this.app, email);

@@ -4,15 +4,15 @@ import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { OverdueEpisodesJob } from 'src/modules/production/studio-handoff/overdue-episodes.job';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
-import { deliver } from './support/media';
+import { DISCLOSURE, MP4 } from './support/media';
 import {
   assignedProject,
   episodesOf,
-  HANDOFF,
   HANDOFF_FEE_VND,
   inDays,
   newStudio,
   type ProjectDetail,
+  studioAccount,
 } from './support/projects';
 
 interface Handoff {
@@ -25,113 +25,161 @@ interface Handoff {
   studio: { id: string; name: string; email: string };
   filmSentNote: string | null;
   filmLinks: { episodeId: string; version: string; fileName: string; url: string }[];
-  emailMessage: { status: string };
-  materials: { id: string; kind: string; fileName: string }[];
   milestoneEvents: { fromStatus: string | null; toStatus: string; mediaAsset: { id: string } | null }[];
 }
 
-const PDF = Buffer.from('%PDF-1.7\n1 0 obj\n<<>>\nendobj\n');
-const SCRIPT = { field: 'scripts', name: 'kich-ban.pdf', content: PDF };
-const REFERENCE = { field: 'references', name: 'tham-khao.txt', content: Buffer.from('Phong cách u tối, màu lạnh.') };
+interface Contract extends Row {
+  round: number;
+  status: string;
+  costVnd: number | null;
+  handoff: { id: string } | null;
+}
 
-describe('Studio hand-off (e2e)', () => {
+interface Script {
+  status: string;
+  currentVersion: number;
+  versions: { version: number }[];
+  reviews: { stage: string; approved: boolean }[];
+}
+
+/**
+ * MF-1 (07/11/2026): Final Script → system template contract → the studio (logged in) quotes and signs → the Admin
+ * countersigns or counter-proposes until both signed → the signed contract hands the project off → the studio
+ * delivers its film to the Reviewer through its portal.
+ */
+describe('Studio contract and hand-off (e2e)', () => {
   let app: INestApplication<App>;
   let reviewer: Actor;
   let creator: Actor;
-  let otherCreator: Actor;
   let admin: Actor;
+  let studio: Actor;
   let project: ProjectDetail;
   let handoffId: string;
 
   beforeAll(async () => {
     app = await bootApp();
-    [reviewer, creator, otherCreator, admin] = await Promise.all([
+    [reviewer, creator, admin] = await Promise.all([
       signIn(app, 'reviewer01@aicinema.com'),
       signIn(app, 'creator01@aicinema.com'),
-      signIn(app, 'creator02@aicinema.com'),
       signIn(app, 'admin@aicinema.com'),
     ]);
     project = await assignedProject(reviewer, creator, 2);
+    studio = await studioAccount(admin, project.studio!.id);
   });
 
   afterAll(() => app.close());
 
   const handoffs = () => reviewer.get<Handoff[]>(`/projects/${project.id}/handoffs`);
+  const contracts = () => admin.get<Contract[]>(`/projects/${project.id}/contracts`);
+  const script = (path = '') => `/projects/${project.id}/script${path}`;
 
-  /** BR-new: production can only start once a hand-off's contract has both signatures. */
-  const signContract = async (projectId: string, offId: string, costVnd: number) => {
-    const template = await admin.post<Row>(`/projects/${projectId}/handoffs/${offId}/contracts`, {});
-    await request(app.getHttpServer())
-      .post(`/api/studio-inbound/contracts/${template.id}/propose`)
-      .set('x-studio-token', 'e2e-studio-token')
-      .send({ costVnd })
-      .expect(200);
-    await admin.post(`/contracts/${template.id}/sign`, {});
-  };
+  it('takes the script through the Reviewer and the Admin, both able to send it back', async () => {
+    await reviewer.post(script('/versions'), { content: 'x' }, 403);
+    await creator.post(script('/versions'), { content: 'CẢNH 1 — bản nháp' });
+    await creator.post(script('/versions'), { content: 'again' }, 409);
+    await reviewer.post(script('/review'), { approve: false }, 400);
+    await reviewer.post(script('/review'), { approve: false, comment: 'Mở đầu quá chậm.' });
+    await admin.post(script('/final-review'), { approve: true }, 409);
 
-  it('is reserved to the assigned Creator and dues each episode on its Reviewer deadline', async () => {
-    const [first, second] = episodesOf(project);
-    await otherCreator.post(`/projects/${project.id}/handoff`, HANDOFF, 404);
-    await reviewer.post(`/projects/${project.id}/handoff`, HANDOFF, 403);
-    // A deadline already past has to be moved by the Reviewer before the hand-off.
+    await creator.post(script('/versions'), { content: 'CẢNH 1 — bản 2', note: 'Cắt bớt mở đầu' });
+    await reviewer.post(script('/review'), { approve: true });
+    await admin.post(script('/final-review'), { approve: false, comment: 'Đổi kết phim.' });
+    expect((await creator.get<Script>(script())).status).toBe('REVISION_REQUESTED');
+
+    await creator.post(script('/versions'), { content: 'CẢNH 1 — bản 3' });
+    await reviewer.post(script('/review'), { approve: true });
+    // Every episode needs a deadline before the studio is contracted.
+    const [, second] = episodesOf(project);
     const prisma = app.get(PrismaService);
-    await prisma.episode.update({
-      where: { id: second.id },
-      data: { deliveryDeadline: new Date('2026-01-01'), expectedReleaseDate: null },
-    });
-    await creator.post(`/projects/${project.id}/handoff`, HANDOFF, 409);
+    await prisma.episode.update({ where: { id: second.id }, data: { deliveryDeadline: null } });
+    await admin.post(script('/final-review'), { approve: true }, 409);
     await reviewer.patch(`/episodes/${second.id}`, { deliveryDeadline: inDays(14) });
-    // The fee is in whole thousands of VND and fits in the budget (100 000 000).
-    await creator.post(`/projects/${project.id}/handoff`, { offeredFeeVnd: 40_000_500 }, 400);
-    await creator.post(`/projects/${project.id}/handoff`, { offeredFeeVnd: 100_001_000 }, 409);
+    await reviewer.post(script('/final-review'), { approve: true }, 403);
+    const final = await admin.post<Script>(script('/final-review'), { approve: true });
+    expect(final).toMatchObject({ status: 'FINAL', currentVersion: 3 });
+    expect(final.reviews.map((r) => [r.stage, r.approved])[0]).toEqual(['ADMIN', true]);
+    await creator.post(script('/versions'), { content: 'too late' }, 409);
 
-    const history = await creator.upload<Handoff[]>(`/projects/${project.id}/handoff`, [SCRIPT, REFERENCE], {
-      offeredFeeVnd: String(HANDOFF_FEE_VND),
-    });
-    expect(history).toHaveLength(1);
-    expect(history[0]).toMatchObject({ seasonId: null, milestoneStatus: 'BRIEF_SENT', offeredFeeVnd: HANDOFF_FEE_VND });
-    handoffId = history[0].id;
-    // Without SMTP the mailer only logs, so the brief counts as sent.
-    expect(history[0].emailMessage.status).toBe('SENT');
-    expect(history[0].materials.map((m) => [m.kind, m.fileName])).toEqual([
-      ['SCRIPT', 'kich-ban.pdf'],
-      ['REFERENCE', 'tham-khao.txt'],
-    ]);
-    expect(history[0].milestoneEvents.map((e) => [e.fromStatus, e.toStatus])).toEqual([[null, 'BRIEF_SENT']]);
+    const [template] = await contracts();
+    expect(template).toMatchObject({ round: 1, status: 'SENT', costVnd: null, handoff: null });
+    expect((await reviewer.get<ProjectDetail>(`/projects/${project.id}`)).status).toBe('ASSIGNED');
+  });
 
+  it('shows the studio only its own projects, with the Final Script', async () => {
+    const stranger = await studioAccount(admin, (await newStudio(admin, 'Studio lạ')).id);
+    expect(await stranger.get<Row[]>('/studio-portal/contracts')).toEqual([]);
+    await stranger.get(`/studio-portal/projects/${project.id}`, 404);
+    await creator.get('/studio-portal/contracts', 403);
+
+    const detail = await studio.get<{ finalScript: { version: number; content: string } }>(
+      `/studio-portal/projects/${project.id}`,
+    );
+    expect(detail.finalScript).toMatchObject({ version: 3, content: 'CẢNH 1 — bản 3' });
+    // No film before both signatures.
+    await studio.upload(
+      `/studio-portal/episodes/${episodesOf(project)[0].id}/media/upload`,
+      { field: 'file', name: 'tap.mp4', content: MP4 },
+      { aiDisclosure: JSON.stringify(DISCLOSURE), proposedLabelType: 'AI_GENERATED' },
+      409,
+    );
+  });
+
+  it('negotiates the cost round by round until both sides signed, then hands the project off', async () => {
+    const [template] = await contracts();
+    await admin.post(`/contracts/${template.id}/sign`, {}, 409);
+    await studio.post(`/studio-portal/contracts/${template.id}/propose`, { costVnd: 45_000_500 }, 400);
+    await studio.post(`/studio-portal/contracts/${template.id}/propose`, { costVnd: 45_000_000 }, 200);
+    // The Admin's counter must fit the budget (100 000 000).
+    await admin.post(`/contracts/${template.id}/counter`, { costVnd: 100_001_000 }, 409);
+    const countered = await admin.post<Contract>(`/contracts/${template.id}/counter`, { costVnd: 35_000_000 }, 200);
+    expect(countered).toMatchObject({ round: 2, status: 'ADMIN_COUNTERED' });
+    const again = await studio.post<Contract>(
+      `/studio-portal/contracts/${countered.id}/counter`,
+      { costVnd: HANDOFF_FEE_VND },
+      200,
+    );
+    expect(again).toMatchObject({ round: 3, status: 'STUDIO_SIGNED' });
+    const signed = await admin.post<Contract>(`/contracts/${again.id}/sign`, {}, 200);
+    expect(signed.status).toBe('SIGNED');
+    expect(signed.handoff).not.toBeNull();
+    handoffId = signed.handoff!.id;
+
+    const rounds = await contracts();
+    expect(rounds.map((c) => c.status)).toEqual(['SUPERSEDED', 'SUPERSEDED', 'SIGNED']);
     const detail = await reviewer.get<ProjectDetail>(`/projects/${project.id}`);
     expect(detail.status).toBe('IN_PRODUCTION');
-    const episodes = await prisma.episode.findMany({ where: { id: { in: [first.id, second.id] } } });
+    const [handoff] = await handoffs();
+    expect(handoff).toMatchObject({ milestoneStatus: 'IN_PROGRESS', offeredFeeVnd: HANDOFF_FEE_VND });
+    const episodes = await app.get(PrismaService).episode.findMany({ where: { movieId: project.id } });
     for (const episode of episodes) {
       expect(episode.status).toBe('AWAITING_MEDIA');
       expect(episode.dueDate).toEqual(episode.deliveryDeadline);
     }
-    await creator.post(`/projects/${project.id}/handoff`, HANDOFF, 409);
+    await admin.post(`/projects/${project.id}/contracts`, {}, 409);
   });
 
-  it('refuses a material whose content is not what its extension says', async () => {
-    const fake = { field: 'scripts', name: 'x.pdf', content: Buffer.from('not a pdf') };
-    const other = await assignedProject(reviewer, creator, 1);
-    await creator.upload(`/projects/${other.id}/handoff`, fake, { offeredFeeVnd: '1000' }, 400);
-  });
-
-  it('moves the studio due date with the Reviewer deadline', async () => {
-    const [, second] = episodesOf(project);
-    await creator.patch(`/episodes/${second.id}`, { deliveryDeadline: inDays(20) }, 403);
-    await reviewer.patch(`/episodes/${second.id}`, { deliveryDeadline: inDays(20) });
-    const episode = await app.get(PrismaService).episode.findUniqueOrThrow({ where: { id: second.id } });
-    expect(episode.dueDate?.toISOString().slice(0, 10)).toBe(inDays(20));
-  });
-
-  it('serves the brief PDF and the material to the people of the project', async () => {
-    const [handoff] = await handoffs();
-    const pdf = await reviewer.download(`/projects/${project.id}/handoffs/${handoff.id}/brief`);
-    expect(pdf.body.subarray(0, 4).toString()).toBe('%PDF');
-    const material = await creator.download(
-      `/projects/${project.id}/handoffs/${handoff.id}/materials/${handoff.materials[0].id}/content`,
+  it('takes the studio film to the Reviewer, who asks the studio for changes directly', async () => {
+    const [first] = episodesOf(project);
+    const submission = await studio.upload<Row>(
+      `/studio-portal/episodes/${first.id}/media/upload`,
+      { field: 'file', name: 'tap.mp4', content: MP4 },
+      { aiDisclosure: JSON.stringify(DISCLOSURE), proposedLabelType: 'AI_GENERATED' },
     );
-    expect(material.body.equals(PDF)).toBe(true);
-    await otherCreator.get(`/projects/${project.id}/handoffs`, 404);
+    const [handoff] = await handoffs();
+    expect(handoff.milestoneStatus).toBe('DELIVERED');
+    expect(handoff.milestoneEvents.at(-1)?.mediaAsset?.id).toBe(submission.id);
+
+    await reviewer.post(
+      `/media-assets/${submission.id}/reviews`,
+      { decision: 'CHANGES_REQUESTED', comments: 'Màu cảnh 2 quá tối.' },
+      200,
+    );
+    const bell = await studio.get<{ data: { type: string }[] }>('/notifications');
+    expect(bell.data.map((n) => n.type)).toContain('CONTENT_CHANGES_REQUESTED');
+    const detail = await studio.get<{ episodes: { latestDelivery: { changeRequest: { comments: string } } }[] }>(
+      `/studio-portal/projects/${project.id}`,
+    );
+    expect(detail.episodes[0].latestDelivery.changeRequest.comments).toBe('Màu cảnh 2 quá tối.');
   });
 
   it('keeps the link of every episode the studio mails back, the newest one each (BR-58)', async () => {
@@ -171,39 +219,6 @@ describe('Studio hand-off (e2e)', () => {
     ]);
   });
 
-  it('lets only the Creator move the milestone, step by step, and DELIVERED needs the Submission (BR-58)', async () => {
-    const path = `/projects/${project.id}/handoffs/${handoffId}/milestone`;
-    await reviewer.patch(path, { status: 'STUDIO_ACCEPTED' }, 403);
-    await otherCreator.patch(path, { status: 'STUDIO_ACCEPTED' }, 404);
-    await creator.patch(path, { status: 'DELIVERED', mediaAssetId: '00000000-0000-4000-8000-000000000000' }, 409);
-    await creator.patch(path, { status: 'SUPERSEDED' }, 400);
-
-    await creator.patch(path, { status: 'STUDIO_ACCEPTED', note: 'Studio xác nhận qua email.' });
-    await creator.patch(path, { status: 'IN_PROGRESS' }, 409); // no signed contract yet
-    await signContract(project.id, handoffId, HANDOFF_FEE_VND);
-    await creator.patch(path, { status: 'IN_PROGRESS' });
-    await creator.patch(path, { status: 'DELIVERED' }, 400);
-    await creator.patch(path, { status: 'DELIVERED', mediaAssetId: '00000000-0000-4000-8000-000000000000' }, 400);
-
-    // Uploading the Submission is the delivery: the milestone moves by itself.
-    const submission = await deliver(creator, episodesOf(project)[0].id);
-    await creator.patch(path, { status: 'DELIVERED', mediaAssetId: submission.id }, 409);
-
-    const [handoff] = await handoffs();
-    expect(handoff.milestoneStatus).toBe('DELIVERED');
-    expect(handoff.milestoneEvents.map((e) => e.toStatus)).toEqual([
-      'BRIEF_SENT',
-      'STUDIO_ACCEPTED',
-      'IN_PROGRESS',
-      'DELIVERED',
-    ]);
-    expect(handoff.milestoneEvents[3].mediaAsset?.id).toBe(submission.id);
-    const asset = await creator.get<{ studioHandoff: { id: string } }>(`/media-assets/${submission.id}`);
-    expect(asset.studioHandoff.id).toBe(handoffId);
-    // The Reviewer asked for changes: the work reopens.
-    await creator.patch(path, { status: 'IN_PROGRESS', note: 'Reviewer yêu cầu sửa màu.' });
-  });
-
   it('changes the studio only with a reason, from the catalog, and keeps the history', async () => {
     const next = await newStudio(reviewer, 'Studio B');
     const inactive = await newStudio(reviewer, 'Studio C');
@@ -234,45 +249,12 @@ describe('Studio hand-off (e2e)', () => {
     await creator.patch(`/projects/${project.id}/handoffs/${handoffId}/milestone`, { status: 'IN_PROGRESS' }, 409);
   });
 
-  it('hands off one season at a time and replaces only that season', async () => {
-    const seasonProject = await assignedProject(reviewer, creator, 1);
-    const extra = await reviewer.post<Row & { episodes: Row[] }>(`/projects/${seasonProject.id}/seasons`, {
-      releaseStartDate: inDays(60),
-      releaseEndDate: inDays(120),
-      episodes: [{ title: 'Tập mùa 2', targetDurationSeconds: 600, deliveryDeadline: inDays(45) }],
-    });
-    const [season1] = seasonProject.seasons;
-    const handoff = `/projects/${seasonProject.id}/handoff`;
-    await creator.post(handoff, { seasonId: '00000000-0000-4000-8000-000000000000', offeredFeeVnd: 1000 }, 404);
-
-    const first = await creator.post<Handoff[]>(handoff, { seasonId: season1.id, offeredFeeVnd: 30_000_000 });
-    expect(first[0].seasonId).toBe(season1.id);
-    // Season 1 holds 30M of the 100M budget: season 2 may offer up to 70M.
-    await creator.post(handoff, { seasonId: extra.id, offeredFeeVnd: 71_000_000 }, 409);
-    const second = await creator.post<Handoff[]>(handoff, { seasonId: extra.id, offeredFeeVnd: 50_000_000 });
-    expect(second.map((h) => h.seasonId)).toEqual([extra.id, season1.id]);
-    await creator.post(handoff, { seasonId: extra.id, offeredFeeVnd: 1000 }, 409);
-
-    const studio = await newStudio(reviewer, 'Studio D');
-    const change = { studioId: studio.id, seasonId: extra.id, reason: 'Mùa 2 cần studio hoạt hình.' };
-    const changed = await creator.post<Handoff[]>(`/projects/${seasonProject.id}/studio-change`, {
-      ...change,
-      offeredFeeVnd: 60_000_000,
-    });
-    expect(changed.map((h) => h.milestoneStatus)).toEqual(['BRIEF_SENT', 'SUPERSEDED', 'BRIEF_SENT']);
-    expect(changed.map((h) => h.seasonId)).toEqual([extra.id, extra.id, season1.id]);
-    // Only season 2 changed studio; season 1 keeps its studio and its fee.
-    expect(changed.map((h) => [h.offeredFeeVnd, h.forfeitedVnd])).toEqual([
-      [60_000_000, 0],
-      [50_000_000, 0],
-      [30_000_000, 0],
-    ]);
-  });
-
   it('flags an overdue episode once to its Creator and Reviewer (BR-38)', async () => {
     // The first episode was delivered; the second still waits for the studio.
-    const [, first] = episodesOf(project);
-    await app.get(PrismaService).episode.update({ where: { id: first.id }, data: { dueDate: new Date('2026-01-01') } });
+    const [, second] = episodesOf(project);
+    await app
+      .get(PrismaService)
+      .episode.update({ where: { id: second.id }, data: { dueDate: new Date('2026-01-01') } });
     const job = app.get(OverdueEpisodesJob);
 
     expect(await job.sweep()).toBeGreaterThanOrEqual(1);
@@ -280,7 +262,7 @@ describe('Studio hand-off (e2e)', () => {
     const bell = await creator.get<{ data: { type: string; payload: { episodeId: string } }[] }>(
       '/notifications?limit=100',
     );
-    const overdue = bell.data.filter((n) => n.type === 'EPISODE_OVERDUE' && n.payload.episodeId === first.id);
+    const overdue = bell.data.filter((n) => n.type === 'EPISODE_OVERDUE' && n.payload.episodeId === second.id);
     expect(overdue).toHaveLength(1);
   });
 });

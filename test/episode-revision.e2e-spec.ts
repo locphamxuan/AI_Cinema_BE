@@ -1,8 +1,8 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode, deliver } from './support/media';
-import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
+import { compliantEpisode, deliver, release, unpublish } from './support/media';
+import { episodesOf, projectInProduction, type ProjectDetail, studioOf } from './support/projects';
 
 interface Detail extends ProjectDetail {
   seasons: {
@@ -39,7 +39,7 @@ describe('Episode taken down to be fixed (BR-56)', () => {
     for (const episode of episodesOf(project)) {
       await compliantEpisode(reviewer, creator, episode.id);
       await reviewer.patch(`/episodes/${episode.id}/coin-price`, { coinPrice: 10 });
-      await reviewer.post(`/episodes/${episode.id}/publications`, {});
+      await release(reviewer, `/episodes/${episode.id}/publications`, {});
     }
   });
 
@@ -57,7 +57,8 @@ describe('Episode taken down to be fixed (BR-56)', () => {
 
   it('sends the episode back to the Creator with the reason; the movie is UNDER_REVISION', async () => {
     const release = await liveRelease(0);
-    const after = await reviewer.post<Publication[]>(
+    const after = await unpublish<Publication[]>(
+      reviewer,
       `/publications/${release.id}/unpublish`,
       {
         mode: 'REVISION',
@@ -74,7 +75,7 @@ describe('Episode taken down to be fixed (BR-56)', () => {
     expect(episodeIn(d, 0).revisionStartedAt).not.toBeNull();
     expect(d.revision).toEqual({ episodeCount: 1, bySeason: [{ seasonNumber: 1, episodeNumbers: [1] }] });
 
-    const bell = (await creator.get<Bell>('/notifications?limit=100')).data;
+    const bell = (await studioOf(project.id).get<Bell>('/notifications?limit=100')).data;
     const notice = bell.find((n) => n.type === 'CONTENT_CHANGES_REQUESTED' && n.payload.episodeId === episodeId(0));
     expect(notice?.body).toContain('giống một ca sĩ có thật');
   });
@@ -87,13 +88,13 @@ describe('Episode taken down to be fixed (BR-56)', () => {
       200,
     );
     // Not releasable until the fixed version passed review, label and compliance again (BR-19).
-    await reviewer.post(`/episodes/${episodeId(0)}/publications`, {}, 409);
+    await release(reviewer, `/episodes/${episodeId(0)}/publications`, {}, 409);
     expect((await detail()).status).toBe('UNDER_REVISION');
   });
 
   it('is released again with the fixed version and the movie completes again', async () => {
     await compliantEpisode(reviewer, creator, episodeId(0));
-    await reviewer.post(`/episodes/${episodeId(0)}/publications`, {});
+    await release(reviewer, `/episodes/${episodeId(0)}/publications`, {});
 
     const d = await detail();
     expect(d.status).toBe('COMPLETED');
@@ -106,7 +107,8 @@ describe('Episode taken down to be fixed (BR-56)', () => {
 
   it('keeps the movie COMPLETED when an episode is taken down for good', async () => {
     const release = await liveRelease(1);
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${release.id}/unpublish`,
       { mode: 'REMOVAL', reason: 'MANUAL', note: 'Tập này không còn phù hợp, gỡ hẳn.' },
       200,

@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode } from './support/media';
+import { compliantEpisode, release, unpublish } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Card {
@@ -57,7 +57,7 @@ describe('Public catalog (e2e)', () => {
       await compliantEpisode(reviewer, creator, episodeId(i));
       await reviewer.patch(`/episodes/${episodeId(i)}/coin-price`, { coinPrice: 10 + i });
       // Episodes 1–3 are out, episode 4 is only scheduled.
-      await reviewer.post(`/episodes/${episodeId(i)}/publications`, i < 3 ? {} : { scheduledAt: inHours(24) });
+      await release(reviewer, `/episodes/${episodeId(i)}/publications`, i < 3 ? {} : { scheduledAt: inHours(24) });
     }
   });
 
@@ -122,12 +122,14 @@ describe('Public catalog (e2e)', () => {
       (await reviewer.get<{ id: string; publishedAt: string | null }[]>(`/episodes/${episodeId(i)}/publications`)).find(
         (p) => p.publishedAt,
       )!;
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${(await live(1)).id}/unpublish`,
       { mode: 'REVISION', reason: 'COMPLIANCE_ISSUE', note: 'Cảnh cuối cần làm lại phụ đề.' },
       200,
     );
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${(await live(2)).id}/unpublish`,
       { mode: 'REMOVAL', reason: 'MANUAL', note: 'Gỡ hẳn tập này.' },
       200,

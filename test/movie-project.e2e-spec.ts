@@ -51,6 +51,7 @@ describe('Movie projects (e2e)', () => {
     title: 'Căn Hộ Số 13',
     ideaDescription: 'Phim kinh dị tâm lý về một căn hộ không ai dám thuê.',
     genreIds: [genreId],
+    reviewerId: reviewer.id,
     seasons: [
       {
         title: 'Mùa 1',
@@ -63,7 +64,7 @@ describe('Movie projects (e2e)', () => {
   });
 
   it('creates a project whose episodes are numbered across seasons (BR-37)', async () => {
-    const project = await reviewer.post<Project>(
+    const project = await admin.post<Project>(
       '/projects',
       newProject([
         { title: 'Tập 1', targetDurationSeconds: 900, deliveryDeadline: inDays(20), expectedReleaseDate: inDays(45) },
@@ -80,18 +81,15 @@ describe('Movie projects (e2e)', () => {
 
   it('adds a genre the list does not have yet when the project names it', async () => {
     const name = `Thể loại mới ${Date.now()}`;
-    const project = await reviewer.post<Project & { genres: Row[]; synopsis: string; releaseYear: number }>(
-      '/projects',
-      {
-        ...newProject(
-          [1, 2, 3].map((n) => ({ title: `Tập ${n}`, targetDurationSeconds: 900, deliveryDeadline: inDays(20 + n) })),
-        ),
-        genreNames: [name],
-        synopsis: 'Tóm tắt cho người xem.',
-        releaseYear: 2026,
-        ageRating: 'T16',
-      },
-    );
+    const project = await admin.post<Project & { genres: Row[]; synopsis: string; releaseYear: number }>('/projects', {
+      ...newProject(
+        [1, 2, 3].map((n) => ({ title: `Tập ${n}`, targetDurationSeconds: 900, deliveryDeadline: inDays(20 + n) })),
+      ),
+      genreNames: [name],
+      synopsis: 'Tóm tắt cho người xem.',
+      releaseYear: 2026,
+      ageRating: 'T16',
+    });
     expect(project.genres.map((g) => g.name)).toContain(name);
     expect(project).toMatchObject({ synopsis: 'Tóm tắt cho người xem.', releaseYear: 2026, ageRating: 'T16' });
     const listed = await reviewer.get<{ data: Row[] }>(`/genres?search=${encodeURIComponent(name)}`);
@@ -100,8 +98,8 @@ describe('Movie projects (e2e)', () => {
 
   it('needs a delivery deadline, today or later, for every episode', async () => {
     const episode = { title: 'Tập 1', targetDurationSeconds: 900 };
-    await reviewer.post('/projects', newProject([episode]), 400);
-    await reviewer.post('/projects', newProject([{ ...episode, deliveryDeadline: '2020-01-01' }]), 400);
+    await admin.post('/projects', newProject([episode]), 400);
+    await admin.post('/projects', newProject([{ ...episode, deliveryDeadline: '2020-01-01' }]), 400);
     await reviewer.post(`/projects/${projectId}/seasons`, { episodes: [episode] }, 400);
 
     const [first] = (await reviewer.get<Project>(`/projects/${projectId}`)).seasons[0].episodes;
@@ -142,19 +140,21 @@ describe('Movie projects (e2e)', () => {
 
   it('keeps projects private to their Reviewer and away from Creators who are not assigned', async () => {
     await creator.post('/projects', { title: 'x' }, 403);
+    // MF-1 (07/11/2026): only the Admin creates projects now.
+    await reviewer.post('/projects', newProject([]), 403);
     await otherReviewer.get(`/projects/${projectId}`, 404);
     await creator.get(`/projects/${projectId}`, 404);
     await otherReviewer.get(`/projects/${projectId}/costs`, 404);
   });
 
-  it('assigns the Creator only once the Admin set the budget in VND (BR-12, BR-46)', async () => {
-    await reviewer.post(`/projects/${projectId}/assign`, { creatorId: creator.id }, 409);
+  it('lets the Admin assign the lead Creator and set the budget in VND (MF-1 step 1, BR-46)', async () => {
     // The budget is the Admin's: a Reviewer cannot set it, nor a Creator.
     await reviewer.post(`/projects/${projectId}/costs/entries`, { entryType: 'BUDGET', amountVnd: 1000 }, 403);
     await fundProject(reviewer, projectId, 120_000_000);
 
-    await reviewer.post(`/projects/${projectId}/assign`, { creatorId: otherReviewer.id }, 400);
-    await reviewer.post(`/projects/${projectId}/assign`, { creatorId: creator.id }, 204);
+    await reviewer.post(`/projects/${projectId}/assign`, { creatorId: creator.id }, 403);
+    await admin.post(`/projects/${projectId}/assign`, { creatorId: otherReviewer.id }, 400);
+    await admin.post(`/projects/${projectId}/assign`, { creatorId: creator.id }, 204);
     const project = await creator.get<Project>(`/projects/${projectId}`);
     expect(project).toMatchObject({
       status: 'ASSIGNED',
@@ -163,6 +163,16 @@ describe('Movie projects (e2e)', () => {
 
     const bell = await creator.get<{ data: { type: string }[] }>('/notifications');
     expect(bell.data.map((n) => n.type)).toContain('PROJECT_ASSIGNED');
+  });
+
+  it('lets the Admin and the lead Creator align on the idea, the Reviewer following (MF-1 §1)', async () => {
+    await admin.post(`/projects/${projectId}/notes`, { message: 'Giữ không khí u tối, kết mở.' });
+    const notes = await creator.post<{ message: string; author: { id: string } }[]>(`/projects/${projectId}/notes`, {
+      message: 'Đồng ý, em sẽ viết kịch bản theo hướng đó.',
+    });
+    expect(notes.map((n) => n.author.id)).toEqual([admin.id, creator.id]);
+    expect((await reviewer.get<Row[]>(`/projects/${projectId}/notes`)).length).toBe(2);
+    await otherReviewer.post(`/projects/${projectId}/notes`, { message: 'Xin chào' }, 404);
   });
 
   it('versions idea files and checks their content, not their name', async () => {
