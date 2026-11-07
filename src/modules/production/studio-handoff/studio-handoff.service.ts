@@ -1,7 +1,6 @@
 import { ConflictException, Injectable, NotFoundException, StreamableFile } from '@nestjs/common';
-import { EpisodeStatus, ProjectStatus, StudioMilestoneStatus, type Studio } from '@prisma/client';
+import { StudioMilestoneStatus, type Studio } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
-import { businessDay } from 'src/common/time/business-day';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -16,7 +15,7 @@ import { StudioService } from 'src/modules/production/studio/studio.service';
 import { formatVnd } from './brief/brief-pdf';
 import { assertFeeFits, splitForfeit } from './handoff-fee';
 import { type BriefContext, BriefService, type PreparedBrief } from './brief/brief.service';
-import type { ChangeStudioRequestDto, HandOffRequestDto } from './dto/studio-handoff.request.dto';
+import type { ChangeStudioRequestDto } from './dto/studio-handoff.request.dto';
 import { HandoffMaterialService, type MaterialUploads, type StoredMaterial } from './material/handoff-material.service';
 
 const HISTORY_INCLUDE = {
@@ -49,7 +48,10 @@ interface HandoffPlan {
   forfeitedVnd: number;
 }
 
-/** MF-1 steps 3–4: hand the project (or a season) to a studio outside the platform, or change studio (BR-13, BR-59). */
+/**
+ * MF-1 hand-off history and studio change (BR-13, BR-59). Since 07/11/2026 the first hand-off is no longer sent by
+ * the Creator: it opens when the contract carries both signatures (ContractHandoffService).
+ */
 @Injectable()
 export class StudioHandoffService {
   constructor(
@@ -64,41 +66,6 @@ export class StudioHandoffService {
     private readonly auditLog: AuditLogService,
     private readonly notifications: NotificationService,
   ) {}
-
-  async handOff(projectId: string, dto: HandOffRequestDto, uploads: MaterialUploads, user: AuthenticatedUser) {
-    const project = await this.access.project(projectId, user, 'lead');
-    assertProjectStatus(project.status, [ProjectStatus.ASSIGNED, ProjectStatus.IN_PRODUCTION], 'hand the project off');
-    const studio = await this.studios.resolve(dto, project.studioId, user);
-    if (project.studioId && project.studioId !== studio.id) {
-      throw new ConflictException('The project already has a studio; change the studio instead');
-    }
-    const seasonId = await this.scopeSeason(projectId, dto.seasonId);
-    const episodes = await this.episodesToHandOff(projectId, seasonId);
-    assertFeeFits(await this.costs.summary(projectId), dto.offeredFeeVnd, 0);
-
-    const plan = await this.plan(projectId, studio, seasonId, uploads, null, {
-      senderId: user.id,
-      offeredFeeVnd: dto.offeredFeeVnd,
-    });
-    return this.send(project, plan, user, async (tx) => {
-      const { count } = await tx.movieProject.updateMany({
-        where: { id: projectId, status: { in: [ProjectStatus.ASSIGNED, ProjectStatus.IN_PRODUCTION] } },
-        data: {
-          studioId: studio.id,
-          status: ProjectStatus.IN_PRODUCTION,
-          ...(project.handedOffAt ? {} : { handedOffAt: new Date() }),
-        },
-      });
-      if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
-      // The studio is due on the Reviewer's deadline of each episode (BR-38).
-      for (const { id, deliveryDeadline } of episodes) {
-        await tx.episode.update({
-          where: { id },
-          data: { dueDate: deliveryDeadline, status: EpisodeStatus.AWAITING_MEDIA },
-        });
-      }
-    });
-  }
 
   async changeStudio(
     projectId: string,
@@ -172,27 +139,6 @@ export class StudioHandoffService {
     });
     if (!season) throw new NotFoundException('Season not found in this project');
     return season.id;
-  }
-
-  /** Episodes of the scope the studio does not owe yet; their deadline must not be past (BR-38). */
-  private async episodesToHandOff(
-    projectId: string,
-    seasonId: string | null,
-  ): Promise<{ id: string; deliveryDeadline: Date }[]> {
-    const episodes = await this.prisma.episode.findMany({
-      where: { movieId: projectId, dueDate: null, ...(seasonId ? { seasonId } : {}) },
-      orderBy: { episodeNumber: 'asc' },
-      select: { id: true, episodeNumber: true, deliveryDeadline: true },
-    });
-    if (!episodes.length) throw new ConflictException('Every episode of this scope was already handed off');
-    const today = businessDay();
-    const late = episodes.filter((e) => !e.deliveryDeadline || e.deliveryDeadline < today).map((e) => e.episodeNumber);
-    if (late.length) {
-      throw new ConflictException(
-        `Episodes ${late.join(', ')} have no delivery deadline or one already past; the Reviewer must set it first`,
-      );
-    }
-    return episodes.map(({ id, deliveryDeadline }) => ({ id, deliveryDeadline: deliveryDeadline! }));
   }
 
   private async plan(

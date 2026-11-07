@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
@@ -9,32 +9,34 @@ import { ContractCostRequestDto, CreateContractRequestDto } from './dto/contract
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
-/** MF-1 contract negotiation between Admin and a studio, on top of a hand-off's production cost. */
+/** MF-1 contract negotiation between the Admin and the project's studio (Admin side; the studio uses /studio-portal). */
 @ApiTags('contracts')
 @ApiBearerAuth()
 @Controller()
 export class ContractController {
   constructor(private readonly contracts: ContractService) {}
 
-  @Post('projects/:projectId/handoffs/:handoffId/contracts')
+  @Post('projects/:projectId/contracts')
   @RequirePermission(PERMISSION.CONTRACT_MANAGE)
-  @ApiOperation({ summary: 'Admin: send the studio a template contract for this hand-off (no cost yet)' })
+  @ApiOperation({
+    summary: "Admin: send the project's studio its template contract again (normally sent on Final Script)",
+  })
   create(
     @Param('projectId', ID) projectId: string,
-    @Param('handoffId', ID) handoffId: string,
     @Body() dto: CreateContractRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.contracts.create(projectId, handoffId, dto.terms, user);
+    return this.contracts.resend(projectId, dto.terms, user);
   }
 
   @Get('projects/:projectId/contracts')
-  @ApiOperation({ summary: 'Every negotiation round of every hand-off of the project' })
+  @ApiOperation({ summary: 'Every negotiation round of the project with its studio' })
   list(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.contracts.list(projectId, user);
   }
 
   @Post('contracts/:contractId/sign')
+  @HttpCode(200)
   @RequirePermission(PERMISSION.CONTRACT_MANAGE)
   @ApiOperation({ summary: "Admin: agree with the studio's cost and sign, completing the contract" })
   sign(@Param('contractId', ID) contractId: string, @CurrentUser() user: AuthenticatedUser) {
@@ -42,6 +44,7 @@ export class ContractController {
   }
 
   @Post('contracts/:contractId/counter')
+  @HttpCode(200)
   @RequirePermission(PERMISSION.CONTRACT_MANAGE)
   @ApiOperation({ summary: 'Admin: propose a different cost instead, signed, opening a new round for the studio' })
   counter(

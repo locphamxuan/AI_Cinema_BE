@@ -15,7 +15,7 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { ChangeStudioRequestDto, HandOffRequestDto, UpdateMilestoneRequestDto } from './dto/studio-handoff.request.dto';
+import { ChangeStudioRequestDto, UpdateMilestoneRequestDto } from './dto/studio-handoff.request.dto';
 import {
   HandoffMaterialService,
   MATERIAL_MAX_BYTES,
@@ -43,23 +43,6 @@ export class StudioHandoffController {
     private readonly milestones: MilestoneService,
     private readonly materials: HandoffMaterialService,
   ) {}
-
-  @Post('handoff')
-  @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @UseInterceptors(MATERIAL_FIELDS)
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({
-    summary:
-      'Hand the project or one season to a studio: brief PDF, scripts and references by email; IN_PRODUCTION (steps 3–4)',
-  })
-  handOff(
-    @Param('projectId', ID) projectId: string,
-    @Body() dto: HandOffRequestDto,
-    @UploadedFiles() files: MaterialUploads,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.handoffs.handOff(projectId, dto, files ?? {}, user);
-  }
 
   @Post('studio-change')
   @RequirePermission(PERMISSION.STUDIO_HANDOFF)

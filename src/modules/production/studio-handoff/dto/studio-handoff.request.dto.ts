@@ -38,24 +38,7 @@ class StudioChoiceDto {
   studioPhone?: string;
 }
 
-/**
- * Step 3, sent as multipart so the hand-off can carry its material: `scripts` and `references` files go
- * to the studio with the brief (BR-59). Without `seasonId` the whole project is handed off.
- */
-export class HandOffRequestDto extends StudioChoiceDto {
-  @ApiPropertyOptional({ description: 'Hand off one season only; omitted = every episode not handed off yet.' })
-  @IsUUID('4')
-  @IsOptional()
-  seasonId?: string;
-
-  @ApiProperty({
-    example: 150_000_000,
-    description: 'Production fee (VND) the brief offers the studio; at most the budget left.',
-  })
-  @IsVnd()
-  offeredFeeVnd: number;
-}
-
+/** Sent as multipart so the new brief can carry its material: `scripts` and `references` files (BR-59). */
 export class ChangeStudioRequestDto extends StudioChoiceDto {
   @ApiPropertyOptional({ description: 'Season whose hand-off is replaced; omitted = the whole-project hand-off.' })
   @IsUUID('4')

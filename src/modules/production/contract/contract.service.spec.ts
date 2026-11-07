@@ -1,19 +1,20 @@
-import { ConflictException } from '@nestjs/common';
-import { ContractStatus } from '@prisma/client';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ContractStatus, ProjectStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
+import type { ContractHandoffService } from './contract-handoff.service';
 import { ContractService } from './contract.service';
 
 const ADMIN = { id: 'admin', role: 'ADMIN' } as const;
 const PROJECT = { id: 'p1', reviewerId: 'rev', creatorId: 'cre', movie: { title: 'Phim' } };
-const HANDOFF = { id: 'h1', milestoneStatus: 'BRIEF_SENT', studio: { id: 's1', name: 'Studio A' } };
 
 const contract = (overrides: Record<string, unknown> = {}) => ({
   id: 'c1',
   projectId: 'p1',
-  handoffId: 'h1',
+  studioId: 's1',
+  handoffId: null,
   round: 1,
   previousId: null,
   costVnd: null,
@@ -23,18 +24,19 @@ const contract = (overrides: Record<string, unknown> = {}) => ({
   adminSignedAt: null,
   adminSignedById: null,
   studioSignedAt: null,
-  createdById: 'rev',
+  createdById: 'admin',
   project: PROJECT,
-  handoff: HANDOFF,
-  createdBy: { id: 'rev', fullName: 'Reviewer' },
+  studio: { id: 's1', name: 'Studio A' },
+  handoff: null,
+  createdBy: { id: 'admin', fullName: 'Admin' },
   adminSignedBy: null,
   ...overrides,
 });
 
 describe('ContractService', () => {
   const db = {
+    movieProject: { findUniqueOrThrow: jest.fn() },
     contract: {
-      findFirst: jest.fn(),
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(),
       findMany: jest.fn(),
@@ -42,16 +44,17 @@ describe('ContractService', () => {
       update: jest.fn(),
       count: jest.fn(),
     },
-    studioHandoff: { findFirst: jest.fn() },
     $queryRaw: jest.fn(),
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn() };
-  const notifications = { notify: jest.fn(), adminIds: jest.fn() };
+  const handoffs = { open: jest.fn(), assertAffordable: jest.fn() };
+  const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
   const auditLog = { record: jest.fn() };
   const service = new ContractService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
+    handoffs as unknown as ContractHandoffService,
     notifications as unknown as NotificationService,
     auditLog as unknown as AuditLogService,
   );
@@ -59,134 +62,95 @@ describe('ContractService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     notifications.adminIds.mockResolvedValue(['admin']);
+    notifications.studioAccountIds.mockResolvedValue(['studio-user']);
     access.project.mockResolvedValue(PROJECT);
-    db.studioHandoff.findFirst.mockResolvedValue(HANDOFF);
-    db.contract.findUnique.mockResolvedValue({ id: 'c1' });
+    db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1' });
+    db.movieProject.findUniqueOrThrow.mockResolvedValue({ id: 'p1', studioId: 's1', status: ProjectStatus.ASSIGNED });
   });
 
-  it('sends a template with no cost, once per hand-off', async () => {
-    db.contract.findFirst.mockResolvedValue(null);
+  it("sends the project's studio a template with no cost and tells the studio accounts", async () => {
+    db.contract.count.mockResolvedValue(0);
     db.contract.create.mockResolvedValue(contract());
-
-    await service.create('p1', 'h1', undefined, ADMIN);
-
+    await service.sendTemplate(db as never, 'p1', 'admin');
     expect(db.contract.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ projectId: 'p1', handoffId: 'h1' }) as unknown }),
+      expect.objectContaining({ data: expect.objectContaining({ projectId: 'p1', studioId: 's1' }) }),
     );
     expect(notifications.notify).toHaveBeenCalledWith(
-      expect.arrayContaining(['rev', 'cre', 'admin']),
-      expect.objectContaining({ type: 'CONTRACT_UPDATED' }),
+      ['studio-user'],
+      expect.objectContaining({ link: '/contracts/c1' }),
       db,
     );
-
-    db.contract.findFirst.mockResolvedValue(contract({ status: ContractStatus.SENT }));
-    await expect(service.create('p1', 'h1', undefined, ADMIN)).rejects.toThrow(ConflictException);
   });
 
-  it('lets the studio fill in the cost and sign a freshly sent template', async () => {
-    db.contract.findUniqueOrThrow.mockResolvedValue(contract());
-
-    await service.propose('c1', 170_000_000);
-
-    expect(db.contract.update).toHaveBeenCalledWith({
-      where: { id: 'c1' },
-      data: expect.objectContaining({
-        costVnd: 170_000_000n,
-        proposedBy: 'STUDIO',
-        status: ContractStatus.STUDIO_SIGNED,
-      }) as unknown,
-    });
+  it('refuses a second contract and a project without a studio', async () => {
+    db.contract.count.mockResolvedValue(1);
+    await expect(service.sendTemplate(db as never, 'p1', 'admin')).rejects.toThrow(ConflictException);
+    db.movieProject.findUniqueOrThrow.mockResolvedValue({ id: 'p1', studioId: null, status: ProjectStatus.ASSIGNED });
+    await expect(service.sendTemplate(db as never, 'p1', 'admin')).rejects.toThrow(/studio/);
   });
 
-  it('refuses to fill in a template that already moved on', async () => {
-    db.contract.findUniqueOrThrow.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED }));
-    await expect(service.propose('c1', 170_000_000)).rejects.toThrow(ConflictException);
-  });
-
-  it('lets Admin countersign the cost the studio proposed, completing the contract', async () => {
-    db.contract.findUniqueOrThrow.mockResolvedValue(
-      contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 170_000_000n, proposedBy: 'STUDIO' }),
+  it('lets the studio fill in the cost of its own template only', async () => {
+    db.contract.findUniqueOrThrow
+      .mockResolvedValueOnce(contract())
+      .mockResolvedValueOnce(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 150_000_000n }));
+    const proposed = await service.propose('c1', 150_000_000, 's1');
+    expect(proposed.status).toBe(ContractStatus.STUDIO_SIGNED);
+    expect(db.contract.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: ContractStatus.STUDIO_SIGNED }) }),
     );
+    await expect(service.propose('c1', 1_000, 'other-studio')).rejects.toThrow(NotFoundException);
+  });
 
+  it('signs as Admin and hands the project off', async () => {
+    const signed = contract({ status: ContractStatus.SIGNED, costVnd: 150_000_000n, adminSignedById: 'admin' });
+    db.contract.findUniqueOrThrow
+      .mockResolvedValueOnce(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 150_000_000n }))
+      .mockResolvedValue(signed);
     await service.sign('c1', ADMIN);
-
-    expect(db.contract.update).toHaveBeenCalledWith({
-      where: { id: 'c1' },
-      data: expect.objectContaining({ status: ContractStatus.SIGNED, adminSignedById: 'admin' }) as unknown,
-    });
+    expect(handoffs.open).toHaveBeenCalledWith(db, signed);
   });
 
-  it('refuses to sign a contract the studio has not proposed yet', async () => {
-    db.contract.findUniqueOrThrow.mockResolvedValue(contract({ status: ContractStatus.SENT }));
-    await expect(service.sign('c1', ADMIN)).rejects.toThrow(ConflictException);
-  });
-
-  it('opens a new, countersigned round when Admin disagrees with the cost', async () => {
-    const current = contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 170_000_000n, proposedBy: 'STUDIO' });
-    db.contract.findUniqueOrThrow.mockResolvedValue(current);
-    db.contract.create.mockResolvedValue(
-      contract({ id: 'c2', round: 2, previousId: 'c1', status: ContractStatus.ADMIN_COUNTERED }),
+  it('counters within the budget, opening a new round signed by the Admin', async () => {
+    db.contract.findUniqueOrThrow.mockResolvedValueOnce(
+      contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 200_000_000n }),
     );
-
-    const next = await service.counter('c1', 150_000_000, ADMIN);
-
+    db.contract.create.mockResolvedValue(contract({ id: 'c2', round: 2, status: ContractStatus.ADMIN_COUNTERED }));
+    const next = await service.counter('c1', 160_000_000, ADMIN);
+    expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 160_000_000);
     expect(db.contract.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
       data: { status: ContractStatus.SUPERSEDED },
     });
-    expect(db.contract.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          round: 2,
-          previousId: 'c1',
-          costVnd: 150_000_000n,
-          proposedBy: 'ADMIN',
-          status: ContractStatus.ADMIN_COUNTERED,
-          adminSignedById: 'admin',
-        }) as unknown,
-      }),
-    );
-    expect(next.id).toBe('c2');
+    expect(next.round).toBe(2);
   });
 
-  it('completes the contract when the studio signs what Admin countered', async () => {
-    db.contract.findUniqueOrThrow.mockResolvedValue(
-      contract({ status: ContractStatus.ADMIN_COUNTERED, costVnd: 150_000_000n }),
-    );
+  it('refuses to countersign a round the studio has not signed', async () => {
+    db.contract.findUniqueOrThrow.mockResolvedValueOnce(contract());
+    await expect(service.sign('c1', ADMIN)).rejects.toThrow(ConflictException);
+  });
 
-    await service.studioSign('c1');
-
-    expect(db.contract.update).toHaveBeenCalledWith({
-      where: { id: 'c1' },
-      data: expect.objectContaining({ status: ContractStatus.SIGNED }) as unknown,
+  it("lets the studio sign the Admin's counter, completing the contract", async () => {
+    const countered = contract({ status: ContractStatus.ADMIN_COUNTERED, costVnd: 160_000_000n });
+    db.contract.findUniqueOrThrow.mockResolvedValueOnce(countered).mockResolvedValue({
+      ...countered,
+      status: ContractStatus.SIGNED,
     });
+    await service.studioSign('c1', 's1');
+    expect(handoffs.open).toHaveBeenCalled();
   });
 
-  it('opens a new round when the studio counters what Admin proposed', async () => {
-    const current = contract({ status: ContractStatus.ADMIN_COUNTERED, costVnd: 150_000_000n, proposedBy: 'ADMIN' });
-    db.contract.findUniqueOrThrow.mockResolvedValue(current);
-    db.contract.create.mockResolvedValue(
-      contract({ id: 'c3', round: 2, previousId: 'c1', status: ContractStatus.STUDIO_SIGNED }),
+  it("answers the Admin's counter with another price in a new round", async () => {
+    db.contract.findUniqueOrThrow.mockResolvedValueOnce(
+      contract({ status: ContractStatus.ADMIN_COUNTERED, costVnd: 160_000_000n }),
     );
-
-    await service.studioCounter('c1', 160_000_000);
-
-    expect(db.contract.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          costVnd: 160_000_000n,
-          proposedBy: 'STUDIO',
-          status: ContractStatus.STUDIO_SIGNED,
-        }) as unknown,
-      }),
-    );
+    db.contract.create.mockResolvedValue(contract({ id: 'c3', round: 3, status: ContractStatus.STUDIO_SIGNED }));
+    const next = await service.studioCounter('c1', 180_000_000, 's1');
+    expect(next.status).toBe(ContractStatus.STUDIO_SIGNED);
+    expect(handoffs.open).not.toHaveBeenCalled();
   });
 
-  it('reports whether a hand-off has a fully signed round', async () => {
+  it('tells whether a hand-off has a signed round', async () => {
     db.contract.count.mockResolvedValue(1);
     await expect(service.isSigned('h1')).resolves.toBe(true);
-
-    db.contract.count.mockResolvedValue(0);
-    await expect(service.isSigned('h1')).resolves.toBe(false);
   });
 });
