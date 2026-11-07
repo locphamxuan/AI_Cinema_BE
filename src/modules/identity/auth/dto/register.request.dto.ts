@@ -1,5 +1,5 @@
-import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsDateString, IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { PASSWORD_HINT, PASSWORD_RULE } from './password-rule';
 
 import { NormalizeEmail, Trim } from 'src/common/validation/trim';
@@ -29,9 +29,7 @@ export class RegisterRequestDto {
   @MaxLength(255)
   fullName: string;
 
-  /** BR-54: sign-up no longer asks for a birthday; still accepted (and ignored) so older app builds keep working. */
-  @ApiHideProperty()
-  @IsOptional()
+  @ApiProperty({ example: '2003-05-14', description: 'Date of birth; members must be 18 or older (BR-54).' })
   @IsDateString({ strict: true })
-  dateOfBirth?: string;
+  dateOfBirth: string;
 }
