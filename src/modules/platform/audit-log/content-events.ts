@@ -39,6 +39,10 @@ export const CONTENT_EVENT = {
   COST_REQUESTED: 'COST_REQUESTED',
   COST_REQUEST_APPROVED: 'COST_REQUEST_APPROVED',
   COST_REQUEST_REJECTED: 'COST_REQUEST_REJECTED',
+  CONTRACT_SENT: 'CONTRACT_SENT',
+  CONTRACT_PROPOSED: 'CONTRACT_PROPOSED',
+  CONTRACT_COUNTERED: 'CONTRACT_COUNTERED',
+  CONTRACT_SIGNED: 'CONTRACT_SIGNED',
   EPISODE_SCHEDULED: 'EPISODE_SCHEDULED',
   EPISODE_PUBLISHED: 'EPISODE_PUBLISHED',
   EPISODE_UNPUBLISHED: 'EPISODE_UNPUBLISHED',
@@ -85,6 +89,7 @@ export type AuditEntity =
   | 'PriceAlert'
   | 'ProjectChangeRequest'
   | 'ProductionCostRequest'
+  | 'Contract'
   // MF-2: these live outside a movie, so their audit row has no project_id.
   | 'CoinWallet'
   | 'CoinTransaction'

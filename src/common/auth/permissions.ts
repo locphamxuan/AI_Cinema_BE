@@ -15,6 +15,7 @@ export const PERMISSION = {
   COST_REQUEST: 'cost:request',
   COST_APPROVE: 'cost:approve',
   COST_ADJUST: 'cost:adjust',
+  CONTRACT_MANAGE: 'contract:manage',
   STUDIO_HANDOFF: 'studio:handoff',
   STUDIO_MANAGE: 'studio:manage',
   MEDIA_INGEST: 'media:ingest',
@@ -74,6 +75,10 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
     description: 'Grant (in full or in part) or refuse the production cost requests of Reviewers',
   },
   'cost:adjust': { area: 'movie-project', description: 'Set the production budget (VND) of a project and correct it' },
+  'contract:manage': {
+    area: 'movie-project',
+    description: 'Send the studio a contract template, sign it or counter-propose its cost',
+  },
   'studio:handoff': {
     area: 'studio',
     description: 'Hand an assigned project off to a studio, change the studio, record its milestones',
@@ -163,6 +168,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.PROJECT_CHANGE_REVIEW,
     PERMISSION.COST_APPROVE,
     PERMISSION.COST_ADJUST,
+    PERMISSION.CONTRACT_MANAGE,
     PERMISSION.PRICE_ALERT_MANAGE,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
