@@ -6,6 +6,7 @@ import {
   MediaIngestStatus,
   MediaSourceMethod,
   StudioMilestoneStatus,
+  UserRole,
   type MediaAsset,
   type Prisma,
 } from '@prisma/client';
@@ -59,7 +60,7 @@ interface NewVersion {
   submissionNote?: string;
 }
 
-/** MF-1 step 5: the Creator delivers an episode; every delivery is a new immutable version (BR-14). */
+/** MF-1 step 5: the studio (or a Creator) delivers an episode; every delivery is a new immutable version (BR-14). */
 @Injectable()
 export class MediaIngestService {
   constructor(
@@ -165,13 +166,23 @@ export class MediaIngestService {
     return this.enqueue(asset.id, `${asset.id}-retry-${Date.now()}`);
   }
 
+  /** The Creator of the episode, or (MF-1, 07/11/2026) the studio under a signed contract, delivers it. */
   private async assertCanSubmit(episodeId: string, user: AuthenticatedUser) {
-    const episode = await this.access.episode(episodeId, user, 'creator');
+    const episode =
+      user.role === UserRole.STUDIO
+        ? await this.access.studioEpisode(episodeId, await this.studioIdOf(user.id), true)
+        : await this.access.episode(episodeId, user, 'creator');
     assertProjectStatus(episode.project.status, DELIVERY_PROJECT_STATUSES, 'deliver media');
     if (episode.status === EpisodeStatus.PROCESSING) {
       throw new ConflictException('The previous delivery of this episode is still being processed');
     }
     assertEpisodeStatus(episode.status, SUBMITTABLE, 'deliver media');
+  }
+
+  private async studioIdOf(userId: string): Promise<string> {
+    const account = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { studioId: true } });
+    if (!account.studioId) throw new ConflictException('This account is not tied to a studio');
+    return account.studioId;
   }
 
   private async createVersion(episodeId: string, user: AuthenticatedUser, data: NewVersion): Promise<MediaAsset> {
@@ -201,11 +212,12 @@ export class MediaIngestService {
       // A Creator other than the lead passes their episode up: the lead follows it along with the Reviewer.
       const { movie } = asset.episode;
       const lead = movie.project?.creatorId;
+      const studio = user.role === UserRole.STUDIO;
       await this.notifications.notify(
-        [movie.project?.reviewerId, ...(lead && lead !== user.id ? [lead] : [])],
+        [movie.project?.reviewerId, ...(lead && lead !== user.id && !studio ? [lead] : [])],
         {
           type: NOTIFICATION_TYPE.MEDIA_SUBMITTED,
-          title: `Creator vừa nộp tập ${asset.episode.episodeNumber} của phim "${movie.title}"`,
+          title: `${studio ? 'Studio' : 'Creator'} vừa nộp tập ${asset.episode.episodeNumber} của phim "${movie.title}"`,
           body: `Bản ${asset.version}, đang được xử lý.`,
           link: `/projects/${asset.episode.movieId}/episodes/${episodeId}`,
           payload: { projectId: asset.episode.movieId, episodeId, mediaAssetId: asset.id },

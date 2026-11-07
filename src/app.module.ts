@@ -26,6 +26,8 @@ import { StudioHandoffModule } from 'src/modules/production/studio-handoff/studi
 import { StudioModule } from 'src/modules/production/studio/studio.module';
 import { CostRequestModule } from 'src/modules/production/cost-request/cost-request.module';
 import { ContractModule } from 'src/modules/production/contract/contract.module';
+import { ScriptModule } from 'src/modules/production/script/script.module';
+import { StudioPortalModule } from 'src/modules/production/studio-portal/studio-portal.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { UserModule } from 'src/modules/identity/user/user.module';
 import { AppController } from './app.controller';
@@ -57,6 +59,8 @@ import { AppController } from './app.controller';
     StudioModule,
     CostRequestModule,
     ContractModule,
+    ScriptModule,
+    StudioPortalModule,
     ContentReviewModule,
     PublishingModule,
     CatalogModule,

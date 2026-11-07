@@ -1,5 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { MovieProject, Prisma } from '@prisma/client';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ContractStatus, StudioMilestoneStatus, type MovieProject, type Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -73,6 +73,38 @@ export class ProjectAccessService {
     await this.assertRole(asset.episode.project, user, role, tx);
     this.assertEpisodeOwner(asset.episode, user, role);
     return asset;
+  }
+
+  /**
+   * A STUDIO account reaches only the projects of its own studio (MF-1, 07/11/2026); with `delivering`, only once
+   * the contract is signed and the project handed off to it — the studio never films before both signatures.
+   */
+  async studioProject(projectId: string, studioId: string, delivering = false, tx?: PrismaTx): Promise<TitledProject> {
+    const db = tx ?? this.prisma;
+    const project = await db.movieProject.findUnique({ where: { id: projectId }, include: WITH_TITLE });
+    const sent = project && (await db.contract.count({ where: { projectId, studioId } }));
+    if (!project || !sent || project.studioId !== studioId) throw new NotFoundException('Movie project not found');
+    if (delivering) {
+      const live = await db.studioHandoff.count({
+        where: {
+          projectId,
+          studioId,
+          milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED },
+          contracts: { some: { status: ContractStatus.SIGNED } },
+        },
+      });
+      if (!live) throw new ConflictException('The contract of this project is not signed by both sides yet');
+    }
+    return project;
+  }
+
+  /** The episode of a studio's project, checked as studioProject. */
+  async studioEpisode(episodeId: string, studioId: string, delivering = false, tx?: PrismaTx) {
+    const found = await (tx ?? this.prisma).episode.findUnique({ where: { id: episodeId }, include: WITH_PROJECT });
+    if (!found) throw new NotFoundException('Episode not found');
+    const episode = liftProject(found);
+    await this.studioProject(episode.project.id, studioId, delivering, tx);
+    return episode;
   }
 
   /** The lead Creator or a Creator with an active assignment on the project. */

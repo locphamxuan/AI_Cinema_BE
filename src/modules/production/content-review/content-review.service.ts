@@ -35,7 +35,7 @@ const DURATION_WARNING_RATIO = 0.2;
 /** A delivered version with its episode, the episode's catalog movie and its project. */
 export type ReviewedAsset = MediaAsset & { episode: Episode & { movie: Movie; project: MovieProject } };
 
-/** MF-1 steps 8–9: the Reviewer approves a delivered version or asks the studio for changes (BR-16, BR-18). */
+/** MF-1 §5: the Reviewer approves a delivered version or asks the studio for changes directly (BR-16, BR-18). */
 @Injectable()
 export class ContentReviewService {
   constructor(
@@ -74,7 +74,12 @@ export class ContentReviewService {
           { status: { in: [...REVIEWED_STATUSES, EpisodeStatus.PUBLISHED] }, approvedMediaAssetId: asset.id },
         ],
       },
-      data: { status: EpisodeStatus.CHANGES_REQUESTED, approvedMediaAssetId: null },
+      data: {
+        status: EpisodeStatus.CHANGES_REQUESTED,
+        approvedMediaAssetId: null,
+        finalConfirmedAt: null,
+        finalConfirmedById: null,
+      },
     });
     if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
     const review = await tx.contentReview.create({
@@ -91,28 +96,14 @@ export class ContentReviewService {
       },
       tx,
     );
-    // BR-67: the Creator holding the episode answers for it, the lead passes the fix on to the studio.
-    const holder = episode.assignedCreatorId !== episode.project.creatorId ? episode.assignedCreatorId : null;
-    if (holder) {
-      await this.notifications.notify(
-        [holder],
-        {
-          type: NOTIFICATION_TYPE.CONTENT_CHANGES_REQUESTED,
-          title: `Yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
-          body: `Xem góp ý, ghi lại phần Studio cần sửa ở mục Trao đổi của tập để Creator chính báo Studio: ${comments}`,
-          link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-          payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
-        },
-        tx,
-      );
-    }
+    // MF-1 §5 (07/11/2026): the Reviewer works with the studio directly; its accounts see the request on the portal.
     await this.notifications.notify(
-      [episode.project.creatorId],
+      await this.notifications.studioAccountIds(episode.project.studioId, tx),
       {
         type: NOTIFICATION_TYPE.CONTENT_CHANGES_REQUESTED,
-        title: `Yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
-        body: `Chuyển góp ý cho Studio, chuyển mốc về "Đang thực hiện" và tải lên bản mới: ${comments}`,
-        link: `/projects/${episode.movieId}/episodes/${episode.id}`,
+        title: `Reviewer yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
+        body: `Sửa theo góp ý rồi gửi lại bản mới: ${comments}`,
+        link: `/projects/${episode.movieId}`,
         payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },
       tx,
@@ -190,12 +181,12 @@ export class ContentReviewService {
       tx,
     );
     await this.notifications.notify(
-      [episode.project.creatorId],
+      await this.notifications.studioAccountIds(episode.project.studioId, tx),
       {
         type: NOTIFICATION_TYPE.CONTENT_APPROVED,
         title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã được duyệt`,
         body: `Bản ${asset.version} chuyển sang gắn nhãn AI và kiểm tra tuân thủ.`,
-        link: `/projects/${episode.movieId}/episodes/${episode.id}`,
+        link: `/projects/${episode.movieId}`,
         payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },
       tx,
