@@ -37,6 +37,8 @@ model User {
   milestoneChanges        StudioMilestoneEvent[]     @relation("MilestoneChangedBy")
   changeRequestsMade      ProjectChangeRequest[]     @relation("ChangeRequestRequestedBy")
   changeRequestsResolved  ProjectChangeRequest[]     @relation("ChangeRequestResolvedBy")
+  contractsCreated        Contract[]                 @relation("ContractCreatedBy")
+  contractsSignedAsAdmin  Contract[]                 @relation("ContractAdminSignedBy")
   costRequestsMade        ProductionCostRequest[]    @relation("CostRequestRequestedBy")
   costRequestsResolved    ProductionCostRequest[]    @relation("CostRequestResolvedBy")
   movieLikes              MovieLike[]

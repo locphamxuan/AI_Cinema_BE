@@ -58,6 +58,7 @@ model StudioHandoff {
     deliveries      MediaAsset[]
     filmLinks       StudioFilmLink[]
     costRequests    ProductionCostRequest[]
+    contracts       Contract[]
 
     @@index([projectId, createdAt])
     @@index([studioId])

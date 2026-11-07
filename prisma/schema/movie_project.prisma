@@ -37,6 +37,7 @@ model MovieProject {
   costEntries        ProductionCostEntry[]
   changeRequests     ProjectChangeRequest[]
   costRequests       ProductionCostRequest[]
+  contracts          Contract[]
   auditLogs          AuditLog[]
 
   @@index([status])
