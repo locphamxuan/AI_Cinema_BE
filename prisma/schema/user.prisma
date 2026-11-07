@@ -4,6 +4,8 @@ enum UserRole {
   CONTENT_REVIEWER
   STAFF
   ADMIN
+  /// MF-1 (07/11/2026): a partner studio's login, tied to one `studios` row (studio_id).
+  STUDIO
 }
 
 model User {
@@ -18,9 +20,12 @@ model User {
   role            UserRole  @default(MEMBER)
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
   isActive        Boolean   @default(true) @map("is_active")
+  /// Set on STUDIO accounts only: the studio the account speaks for.
+  studioId        String?   @map("studio_id") @db.Uuid
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  studio                  Studio?                    @relation("StudioAccounts", fields: [studioId], references: [id], onDelete: Restrict)
   refreshTokens           RefreshToken[]
   auditLogs               AuditLog[]
   platformSettingsUpdated PlatformSetting[]
@@ -70,8 +75,12 @@ model User {
   devices                 UserDevice[]
   watchProgresses         WatchProgress[]
   episodeAdSlotsCreated   EpisodeAdSlot[]            @relation("EpisodeAdSlotCreatedBy")
+  scriptVersionsSubmitted ScriptVersion[]            @relation("ScriptVersionSubmittedBy")
+  scriptReviews           ScriptReview[]             @relation("ScriptReviewer")
+  episodesFinalConfirmed  Episode[]                  @relation("EpisodeFinalConfirmedBy")
 
   @@index([role])
+  @@index([studioId])
   @@map("users")
 }
 

@@ -40,12 +40,19 @@ model Episode {
     coinPrice             Int?          @map("coin_price")
     /// BR-56: taken down to be fixed; players show it as under maintenance. Null once released again.
     revisionStartedAt     DateTime?     @map("revision_started_at") @db.Timestamptz(6)
+    /// MF-1 (07/11/2026): the Reviewer confirmed the approved, labeled and compliant version as the Final Film
+    /// and asked the Admin to publish it; cleared when the episode goes back to the studio.
+    finalConfirmedAt      DateTime?     @map("final_confirmed_at") @db.Timestamptz(6)
+    finalConfirmedById    String?       @map("final_confirmed_by_id") @db.Uuid
+    /// Why the Admin last sent the Final Film back to the Reviewer; cleared on the next confirmation.
+    finalRejectionNote    String?       @map("final_rejection_note") @db.Text
     createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
     movie              Movie                  @relation(fields: [movieId], references: [id], onDelete: Cascade)
     season             Season                 @relation(fields: [seasonId, movieId], references: [id, movieId], onDelete: Cascade)
     assignedCreator    User?                  @relation("EpisodeAssignedCreator", fields: [assignedCreatorId], references: [id], onDelete: SetNull)
+    finalConfirmedBy   User?                  @relation("EpisodeFinalConfirmedBy", fields: [finalConfirmedById], references: [id], onDelete: SetNull)
     approvedMediaAsset MediaAsset?            @relation("EpisodeApprovedMedia", fields: [approvedMediaAssetId], references: [id], onDelete: SetNull)
     mediaAssets        MediaAsset[]           @relation("EpisodeMedia")
     publications       Publication[]

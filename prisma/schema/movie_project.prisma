@@ -18,7 +18,7 @@ model MovieProject {
   status          ProjectStatus @default(DRAFT)
   reviewerId      String        @map("reviewer_id") @db.Uuid
   creatorId       String?       @map("creator_id") @db.Uuid
-  /// The one studio of the project (BR-59); it has no account (BR-15).
+  /// The one studio of the project (BR-59), chosen by the Admin; it logs in with STUDIO accounts.
   studioId        String?       @map("studio_id") @db.Uuid
   cancelReason    String?       @map("cancel_reason") @db.Text
   handedOffAt     DateTime?     @map("handed_off_at") @db.Timestamptz(6)
@@ -38,6 +38,7 @@ model MovieProject {
   changeRequests     ProjectChangeRequest[]
   costRequests       ProductionCostRequest[]
   contracts          Contract[]
+  script             ProjectScript?
   auditLogs          AuditLog[]
 
   @@index([status])

@@ -1,5 +1,5 @@
-/// Third-party studios the platform orders movies from (BR-59). The Reviewer keeps the list; a studio
-/// has no account and is never deleted once it received a hand-off, only deactivated.
+/// Third-party studios the platform orders movies from (BR-59). The Admin keeps the list; since 07/11/2026
+/// a studio logs in with STUDIO accounts (users.studio_id). It is never deleted once it received a hand-off, only deactivated.
 model Studio {
   id          String   @id @default(uuid()) @db.Uuid
   name        String   @db.VarChar(255)
@@ -15,6 +15,8 @@ model Studio {
   createdBy User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
   projects  MovieProject[]
   handoffs  StudioHandoff[]
+  accounts  User[]          @relation("StudioAccounts")
+  contracts Contract[]
 
   @@map("studios")
 }
