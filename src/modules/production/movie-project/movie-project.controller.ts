@@ -15,8 +15,8 @@ import { ProjectLifecycleService } from './project-lifecycle.service';
 const ID = new ParseUUIDPipe({ version: '4' });
 
 /**
- * Movie projects (MF-1 steps 1–2, §4.1.2). Reviewers see their own projects, Creators the
- * ones assigned to them and the Admin every project (read-only, BR-55).
+ * Movie projects (MF-1 step 1, §4.1.2). The Admin creates them and assigns the lead Creator; Reviewers see
+ * their own projects, Creators the ones assigned to them and the Admin every project.
  */
 @ApiTags('movie-projects')
 @ApiBearerAuth()
@@ -28,8 +28,8 @@ export class MovieProjectController {
   ) {}
 
   @Post()
-  @RequirePermission(PERMISSION.PROJECT_MANAGE)
-  @ApiOperation({ summary: 'Create a movie project with its seasons and episodes (step 1)' })
+  @RequirePermission(PERMISSION.PROJECT_CREATE)
+  @ApiOperation({ summary: 'Admin: create a movie project, pick its Reviewer and assign the lead Creator (step 1)' })
   create(@Body() dto: CreateMovieProjectRequestDto, @CurrentUser() user: AuthenticatedUser) {
     return this.projects.create(dto, user);
   }
@@ -59,8 +59,8 @@ export class MovieProjectController {
 
   @Post(':projectId/assign')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission(PERMISSION.PROJECT_MANAGE)
-  @ApiOperation({ summary: 'Assign (or reassign) the Content Creator; needs a production fee (step 2, BR-12)' })
+  @RequirePermission(PERMISSION.PROJECT_CREATE)
+  @ApiOperation({ summary: 'Admin: assign (or reassign) the lead Content Creator (step 1)' })
   assign(
     @Param('projectId', ID) projectId: string,
     @Body() dto: AssignCreatorRequestDto,

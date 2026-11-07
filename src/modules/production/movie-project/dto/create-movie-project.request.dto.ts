@@ -155,16 +155,29 @@ export class CreateMovieProjectRequestDto {
   @IsOptional()
   defaultLanguage?: string;
 
-  @ApiPropertyOptional({ description: 'Active studio from the catalog (BR-59); the Creator may pick it at hand-off.' })
+  @ApiPropertyOptional({
+    description: 'Active studio from the catalog (BR-59); the Admin may also pick it on the Final Script.',
+  })
   @IsUUID('4')
   @IsOptional()
   studioId?: string;
 
-  @ApiProperty({ type: [NewSeasonDto] })
+  @ApiProperty({ description: 'Content Reviewer in charge of the project (MF-1, chosen by the Admin).' })
+  @IsUUID('4')
+  reviewerId: string;
+
+  @ApiPropertyOptional({
+    description: 'Lead Content Creator the Admin assigns the project to; the project is then ASSIGNED.',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  creatorId?: string;
+
+  @ApiPropertyOptional({ type: [NewSeasonDto], description: 'Seasons and episodes; the Reviewer can add them later.' })
   @IsArray()
-  @ArrayMinSize(1)
+  @IsOptional()
   @ArrayMaxSize(20)
   @ValidateNested({ each: true })
   @Type(() => NewSeasonDto)
-  seasons: NewSeasonDto[];
+  seasons?: NewSeasonDto[];
 }

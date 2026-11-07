@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { ChangeRequestStatus, ProjectStatus, Prisma } from '@prisma/client';
+import { ChangeRequestStatus, ProjectStatus, Prisma, UserRole } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -14,6 +14,7 @@ import { revisionSummary } from './revision-summary';
 import { resolveGenreIds } from './genre-resolver';
 import { newEpisodeSchedule, seasonWindow } from './episode-schedule';
 import { StudioService } from 'src/modules/production/studio/studio.service';
+import { ProjectLifecycleService } from './project-lifecycle.service';
 
 const PERSON = { select: { id: true, fullName: true, email: true } } as const;
 
@@ -97,13 +98,16 @@ export class MovieProjectService {
     private readonly access: ProjectAccessService,
     private readonly costs: ProductionCostService,
     private readonly studios: StudioService,
+    private readonly lifecycle: ProjectLifecycleService,
     private readonly auditLog: AuditLogService,
   ) {}
 
-  /** Step 1: the project with its seasons and episodes, numbered across the whole movie (BR-03, BR-37). */
+  /** MF-1 step 1 (07/11/2026): the Admin creates the project, picks its Reviewer and assigns the lead Creator. */
   async create(dto: CreateMovieProjectRequestDto, user: AuthenticatedUser) {
     if (dto.studioId) await this.studios.assertUsable(dto.studioId);
-    const seasons = dto.seasons.map((season) => {
+    await this.lifecycle.assertActive(dto.reviewerId, UserRole.CONTENT_REVIEWER);
+    if (dto.creatorId) await this.lifecycle.assertActive(dto.creatorId, UserRole.CONTENT_CREATOR);
+    const seasons = (dto.seasons ?? []).map((season) => {
       const window = seasonWindow(season);
       return {
         season,
@@ -122,7 +126,7 @@ export class MovieProjectService {
           defaultLanguage: dto.defaultLanguage,
           genres: { create: genreIds.map((genreId) => ({ genreId })) },
           project: {
-            create: { ideaDescription: dto.ideaDescription.trim(), studioId: dto.studioId, reviewerId: user.id },
+            create: { ideaDescription: dto.ideaDescription.trim(), studioId: dto.studioId, reviewerId: dto.reviewerId },
           },
         },
       });
@@ -161,6 +165,8 @@ export class MovieProjectService {
       );
       return movie.id;
     });
+    await this.lifecycle.announceReviewer(projectId);
+    if (dto.creatorId) await this.lifecycle.assignCreator(projectId, dto.creatorId, user);
     return this.detail(projectId, user);
   }
 
