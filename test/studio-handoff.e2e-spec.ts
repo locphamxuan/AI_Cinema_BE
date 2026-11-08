@@ -182,6 +182,26 @@ describe('Studio contract and hand-off (e2e)', () => {
     expect(detail.episodes[0].latestDelivery.changeRequest.comments).toBe('Màu cảnh 2 quá tối.');
   });
 
+  it('emails the studio under the name of the Admin or the Reviewer, with no attachment', async () => {
+    const prisma = app.get(PrismaService);
+    const { email } = await prisma.studio.findUniqueOrThrow({ where: { id: project.studio!.id } });
+    const mails = await prisma.emailMessage.findMany({ where: { toEmail: email }, orderBy: { createdAt: 'asc' } });
+    const sent = mails.map((mail) => ({
+      replyTo: (mail.payload as { replyTo: string }).replyTo,
+      template: mail.template,
+      status: mail.status,
+      attachments: mail.attachmentKeys.length,
+    }));
+    const from = (replyTo: string) => ({ replyTo, template: 'STUDIO_UPDATE', status: 'SENT', attachments: 0 });
+    // Template, the Admin's counter, the signature, then the Reviewer's change request.
+    expect(sent).toEqual([
+      from('admin@aicinema.com'),
+      from('admin@aicinema.com'),
+      from('admin@aicinema.com'),
+      from('reviewer01@aicinema.com'),
+    ]);
+  });
+
   it('keeps the link of every episode the studio mails back, the newest one each (BR-58)', async () => {
     const [first, second] = episodesOf(project);
     const [handoff] = await handoffs();
@@ -227,12 +247,14 @@ describe('Studio contract and hand-off (e2e)', () => {
 
     const reason = 'Studio đầu tiên trễ hạn hai lần.';
     const swap = { studioId: next.id, reason, offeredFeeVnd: 70_000_000 };
-    await creator.post(path, { studioId: next.id, offeredFeeVnd: 70_000_000 }, 400);
-    await creator.post(path, { ...swap, studioId: inactive.id }, 409);
+    // The Admin deals with the studios now, not the Creator.
+    await creator.post(path, swap, 403);
+    await admin.post(path, { studioId: next.id, offeredFeeVnd: 70_000_000 }, 400);
+    await admin.post(path, { ...swap, studioId: inactive.id }, 409);
     // BR-59: the old studio keeps what it was paid; the rest of its 40M returns to the 60M left.
-    await creator.post(path, { ...swap, forfeitedVnd: 50_000_000 }, 400);
-    await creator.post(path, { ...swap, forfeitedVnd: 31_000_000 }, 409);
-    const history = await creator.post<Handoff[]>(path, { ...swap, forfeitedVnd: 30_000_000 });
+    await admin.post(path, { ...swap, forfeitedVnd: 50_000_000 }, 400);
+    await admin.post(path, { ...swap, forfeitedVnd: 31_000_000 }, 409);
+    const history = await admin.post<Handoff[]>(path, { ...swap, forfeitedVnd: 30_000_000 });
 
     expect(history.map((h) => h.studio.name)).toEqual(['Studio B', 'Studio Ánh Trăng']);
     expect(history.map((h) => h.milestoneStatus)).toEqual(['BRIEF_SENT', 'SUPERSEDED']);
