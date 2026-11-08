@@ -122,6 +122,7 @@ export class PublicationService {
       );
     }
     const mode = live ? dto.mode! : null;
+    let mailId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.publication.updateMany({
         where: { id: publicationId, unpublishedAt: null, publishedAt: live ? { not: null } : null },
@@ -135,7 +136,7 @@ export class PublicationService {
       });
       if (count === 0) throw new ConflictException('The release changed meanwhile; reload it');
       if (mode === UnpublishMode.REVISION) {
-        await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
+        mailId = await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
       } else {
         // A cancelled schedule goes back to the checked state; a removed episode can be released again.
         await this.moveEpisode(tx, episode, live ? EpisodeStatus.UNPUBLISHED : EpisodeStatus.COMPLIANCE_PASSED);
@@ -157,6 +158,7 @@ export class PublicationService {
         tx,
       );
     });
+    await this.revisions.announce(mailId);
     return this.list(episode.id, user);
   }
 
