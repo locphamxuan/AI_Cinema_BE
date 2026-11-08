@@ -8,6 +8,8 @@ export interface AppConfig {
   port: number;
   corsOrigins: string[];
   /** Web app origin, for links sent by email (the studio portal). */
+  /** Studio Web origin, for the links in the emails a studio receives. */
+  studioWebUrl: string;
   /** Where the payment return trip sends the member: the mobile app's top-up screen. */
   appReturnUrl: string;
   swaggerEnabled: boolean;
@@ -207,6 +209,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
+    studioWebUrl: read.string('STUDIO_WEB_URL', 'http://localhost:3100'),
     appReturnUrl: read.string('APP_RETURN_URL', 'aicinema://top-ups'),
     swaggerEnabled: read.bool('SWAGGER_ENABLED', !isProduction),
     trustProxy: read.bool('TRUST_PROXY', false),
