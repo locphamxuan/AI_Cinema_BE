@@ -73,7 +73,7 @@ export class StudioHandoffService {
     uploads: MaterialUploads,
     user: AuthenticatedUser,
   ) {
-    const project = await this.access.project(projectId, user, 'lead');
+    const project = await this.access.project(projectId, user, 'read');
     assertProjectStatus(project.status, DELIVERY_PROJECT_STATUSES, 'change the studio');
     const studio = await this.studios.resolve(dto, null, user);
     const seasonId = await this.scopeSeason(projectId, dto.seasonId);
@@ -192,7 +192,7 @@ export class StudioHandoffService {
       attachments: brief.attachments,
       notifyOnFailureId: user.id,
       link: `/projects/${project.id}/studio`,
-      fromName: brief.creatorName || undefined,
+      fromName: brief.creatorName ? `${brief.creatorName} - AI Cinema` : undefined,
       replyTo: brief.creatorEmail || undefined,
     });
     const handoff = await tx.studioHandoff.create({
@@ -238,8 +238,8 @@ export class StudioHandoffService {
         {
           type: NOTIFICATION_TYPE.STUDIO_HANDOFF_SENT,
           title: changeReason
-            ? `Creator đổi Studio của phim "${project.movie.title}" sang ${studio.name}`
-            : `Creator đã gửi bàn giao phim "${project.movie.title}" cho Studio ${studio.name}`,
+            ? `Admin đổi Studio của phim "${project.movie.title}" sang ${studio.name}`
+            : `Admin đã gửi bàn giao phim "${project.movie.title}" cho Studio ${studio.name}`,
           body: changeReason
             ? `Lý do: ${changeReason}. Chi phí mất do đổi Studio: ${formatVnd(forfeitedVnd)}. Brief mới đề xuất ${formatVnd(brief.offeredFeeVnd)}.`
             : `Phí sản xuất đề xuất: ${formatVnd(brief.offeredFeeVnd)}.`,

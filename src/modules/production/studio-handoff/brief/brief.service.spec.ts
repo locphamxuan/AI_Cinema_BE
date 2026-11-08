@@ -44,6 +44,14 @@ describe('BriefService.prepare', () => {
     expect(JSON.stringify(query)).not.toContain('assignedCreator');
   });
 
+  it('attaches the brief PDF alone: scripts and idea files stay on the platform', async () => {
+    const { service } = setup();
+    const script = [{ storageKey: 'm', fileName: 'kich-ban.pdf', mimeType: 'application/pdf' }] as never;
+    const context = { senderId: 'admin', offeredFeeVnd: 1_000 };
+    const brief = await service.prepare('p1', { name: 'Lumen', contactName: null }, null, script, context);
+    expect(brief.attachments.map((a) => a.fileName)).toEqual(['brief-p1.pdf']);
+  });
+
   it('offers the fee in VND as a fixed fee, never in Token', async () => {
     const { service } = setup();
 

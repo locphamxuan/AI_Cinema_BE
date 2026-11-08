@@ -14,7 +14,7 @@ export interface BriefStudio {
 
 /** Who the brief comes from and the fee it offers. */
 export interface BriefContext {
-  /** The Creator handing off: named as the studio's contact and where the film is mailed back. */
+  /** The Admin changing the studio: named as the studio's contact and where its reply goes. */
   senderId: string;
   /** Production fee (VND) offered to the studio, already checked against the budget left. */
   offeredFeeVnd: number;
@@ -26,16 +26,15 @@ export interface PreparedBrief {
   subject: string;
   text: string;
   attachments: EmailAttachment[];
-  /** The Creator the brief comes from: shown as the sender, and where the studio's reply goes. */
+  /** The Admin the brief comes from: shown as the sender, and where the studio's reply goes. */
   creatorName: string;
   creatorEmail: string;
 }
 
 /**
- * Builds the brief a studio receives (BR-13, BR-67): the lead Creator is its only contact. Co-Creators support
- * the lead inside AI Cinema, so the brief names none of them and the studio mails the film to the lead alone.
- * The PDF is generated from the project as it is now, stored privately, and sent with the latest version of
- * every idea file and the material of the hand-off.
+ * Builds the brief a new studio receives when the Admin changes the studio: the Admin is its contact. The PDF is
+ * generated from the project as it is now, stored privately and is the only attachment: scripts, idea files and
+ * films never leave the platform by email (MF-1, 08/11/2026).
  */
 @Injectable()
 export class BriefService {
@@ -119,21 +118,13 @@ export class BriefService {
         '',
         `AI Cinema gửi đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope}) gồm ${movie.episodes.length} tập.`,
         `Phí sản xuất đề xuất: ${formatVnd(context.offeredFeeVnd)} (trọn gói, không chia doanh thu).`,
-        'Nếu chưa đồng ý mức phí, vui lòng phản hồi mức phí mong muốn qua email cho đầu mối bên dưới.',
-        'Chi tiết từng tập và hạn giao nằm trong brief PDF đính kèm, kèm kịch bản và tài liệu tham khảo.',
-        'Khi hoàn tất, vui lòng gửi phim đã soạn sẵn qua email cho đầu mối bên dưới.',
+        'Nếu chưa đồng ý mức phí, vui lòng trả lời thư này cho đầu mối bên dưới.',
+        'Chi tiết từng tập và hạn giao nằm trong brief PDF đính kèm.',
+        'Kịch bản và việc nộp phim được thực hiện trên hệ thống sau khi hai bên thống nhất hợp đồng.',
         '',
         `Đầu mối: ${content.creatorName} - ${content.creatorEmail}`,
       ].join('\n'),
-      attachments: [
-        { key: briefKey, fileName: `brief-${projectId}.pdf`, contentType: 'application/pdf' },
-        ...latestIdeaFiles.map((file) => ({
-          key: file.storageKey,
-          fileName: file.fileName,
-          contentType: file.mimeType,
-        })),
-        ...materials.map((file) => ({ key: file.storageKey, fileName: file.fileName, contentType: file.mimeType })),
-      ],
+      attachments: [{ key: briefKey, fileName: `brief-${projectId}.pdf`, contentType: 'application/pdf' }],
     };
   }
 }

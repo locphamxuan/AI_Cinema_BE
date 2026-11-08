@@ -45,10 +45,12 @@ export class StudioHandoffController {
   ) {}
 
   @Post('studio-change')
-  @RequirePermission(PERMISSION.STUDIO_HANDOFF)
+  @RequirePermission(PERMISSION.CONTRACT_MANAGE)
   @UseInterceptors(MATERIAL_FIELDS)
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Move the project or a season to another studio, with the reason; a new brief is sent' })
+  @ApiOperation({
+    summary: 'Admin: move the project or a season to another studio, with the reason; a new brief is emailed',
+  })
   changeStudio(
     @Param('projectId', ID) projectId: string,
     @Body() dto: ChangeStudioRequestDto,
