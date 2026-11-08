@@ -4,6 +4,7 @@ import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
+import type { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import type { ContractHandoffService } from './contract-handoff.service';
 import { ContractService } from './contract.service';
 
@@ -51,17 +52,20 @@ describe('ContractService', () => {
   const handoffs = { open: jest.fn(), assertAffordable: jest.fn() };
   const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
   const auditLog = { record: jest.fn() };
+  const mails = { queue: jest.fn(), dispatch: jest.fn() };
   const service = new ContractService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
     handoffs as unknown as ContractHandoffService,
     notifications as unknown as NotificationService,
     auditLog as unknown as AuditLogService,
+    mails as unknown as StudioMailService,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
     notifications.adminIds.mockResolvedValue(['admin']);
+    mails.queue.mockResolvedValue('m1');
     notifications.studioAccountIds.mockResolvedValue(['studio-user']);
     access.project.mockResolvedValue(PROJECT);
     db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1' });
@@ -71,13 +75,17 @@ describe('ContractService', () => {
   it("sends the project's studio a template with no cost and tells the studio accounts", async () => {
     db.contract.count.mockResolvedValue(0);
     db.contract.create.mockResolvedValue(contract());
-    await service.sendTemplate(db as never, 'p1', 'admin');
+    await expect(service.sendTemplate(db as never, 'p1', 'admin')).resolves.toMatchObject({ mailId: 'm1' });
+    expect(mails.queue).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ studioId: 's1', senderId: 'admin', portalPath: '/contracts' }),
+    );
     expect(db.contract.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ projectId: 'p1', studioId: 's1' }) }),
     );
     expect(notifications.notify).toHaveBeenCalledWith(
       ['studio-user'],
-      expect.objectContaining({ link: '/contracts/c1' }),
+      expect.objectContaining({ link: '/contracts' }),
       db,
     );
   });
@@ -108,6 +116,11 @@ describe('ContractService', () => {
       .mockResolvedValue(signed);
     await service.sign('c1', ADMIN);
     expect(handoffs.open).toHaveBeenCalledWith(db, signed);
+    expect(mails.queue).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ senderId: 'admin', portalPath: '/projects/p1' }),
+    );
+    expect(mails.dispatch).toHaveBeenCalledWith('m1');
   });
 
   it('counters within the budget, opening a new round signed by the Admin', async () => {
@@ -122,6 +135,7 @@ describe('ContractService', () => {
       data: { status: ContractStatus.SUPERSEDED },
     });
     expect(next.round).toBe(2);
+    expect(mails.dispatch).toHaveBeenCalledWith('m1');
   });
 
   it('refuses to countersign a round the studio has not signed', async () => {
@@ -147,6 +161,8 @@ describe('ContractService', () => {
     const next = await service.studioCounter('c1', 180_000_000, 's1');
     expect(next.status).toBe(ContractStatus.STUDIO_SIGNED);
     expect(handoffs.open).not.toHaveBeenCalled();
+    // The studio just acted: the Admin hears about it in the app, nothing is mailed back to the studio.
+    expect(mails.queue).not.toHaveBeenCalled();
   });
 
   it('tells whether a hand-off has a signed round', async () => {

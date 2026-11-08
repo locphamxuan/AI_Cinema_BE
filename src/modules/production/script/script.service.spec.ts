@@ -26,7 +26,8 @@ function setup(script: { status: ScriptStatus; currentVersion: number } | null) 
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn().mockResolvedValue(PROJECT) };
-  const contracts = { sendTemplate: jest.fn() };
+  const contracts = { sendTemplate: jest.fn().mockResolvedValue({ mailId: 'm1' }) };
+  const mails = { dispatch: jest.fn() };
   const studios = { assertUsable: jest.fn() };
   const notifications = { notify: jest.fn(), adminIds: jest.fn().mockResolvedValue(['admin']) };
   const auditLog = { record: jest.fn() };
@@ -37,8 +38,9 @@ function setup(script: { status: ScriptStatus; currentVersion: number } | null) 
     studios as never,
     notifications as never,
     auditLog as never,
+    mails as never,
   );
-  return { service, db, contracts, notifications };
+  return { service, db, contracts, notifications, mails };
 }
 
 const ADMIN = { id: 'admin', role: 'ADMIN' } as const;
@@ -73,12 +75,13 @@ describe('ScriptService (MF-1 §2)', () => {
   });
 
   it('sends the studio its template contract once the Admin approves the Final Script', async () => {
-    const { service, db, contracts } = setup({ status: ScriptStatus.REVIEWER_APPROVED, currentVersion: 2 });
+    const { service, db, contracts, mails } = setup({ status: ScriptStatus.REVIEWER_APPROVED, currentVersion: 2 });
     await service.finalReview('p1', { approve: true }, ADMIN);
     expect(db.projectScript.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: ScriptStatus.FINAL }) }),
     );
     expect(contracts.sendTemplate).toHaveBeenCalledWith(db, 'p1', 'admin', undefined);
+    expect(mails.dispatch).toHaveBeenCalledWith('m1');
   });
 
   it('sends the Final Script straight back to the Creator without a contract', async () => {

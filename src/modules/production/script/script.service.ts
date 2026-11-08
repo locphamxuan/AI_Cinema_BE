@@ -8,6 +8,7 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ContractService } from 'src/modules/production/contract/contract.service';
 import { ProjectAccessService, type TitledProject } from 'src/modules/production/project-access/project-access.service';
+import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { StudioService } from 'src/modules/production/studio/studio.service';
 import type {
   FinalReviewScriptRequestDto,
@@ -38,6 +39,7 @@ export class ScriptService {
     private readonly studios: StudioService,
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
+    private readonly mails: StudioMailService,
   ) {}
 
   async get(projectId: string, user: AuthenticatedUser) {
@@ -100,7 +102,8 @@ export class ScriptService {
     const project = await this.access.project(projectId, admin, 'read');
     this.assertAssigned(project);
     if (dto.approve) await this.assertReadyForStudio(project, dto.studioId);
-    return this.prisma.$transaction(async (tx) => {
+    let mailId: string | null = null;
+    const result = await this.prisma.$transaction(async (tx) => {
       const script = await this.locked(tx, projectId, ScriptStatus.REVIEWER_APPROVED);
       const version = script.currentVersion;
       if (!dto.approve) {
@@ -130,9 +133,11 @@ export class ScriptService {
         project,
         `Admin đã duyệt Kịch bản Final (bản ${version}); hệ thống gửi hợp đồng mẫu cho Studio.`,
       );
-      await this.contracts.sendTemplate(tx, projectId, admin.id, dto.terms);
+      ({ mailId } = await this.contracts.sendTemplate(tx, projectId, admin.id, dto.terms));
       return this.find(projectId, tx);
     });
+    await this.mails.dispatch(mailId);
+    return result;
   }
 
   private assertAssigned(project: TitledProject): void {

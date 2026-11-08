@@ -8,6 +8,7 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { PROJECT_REF } from 'src/modules/production/project-access/project-relations';
+import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { ContractHandoffService } from './contract-handoff.service';
 
 const PERSON = { select: { id: true, fullName: true } } as const;
@@ -21,6 +22,12 @@ export const CONTRACT_DETAIL = {
 
 type Detailed = Prisma.ContractGetPayload<{ include: typeof CONTRACT_DETAIL }>;
 type Project = Detailed['project'];
+
+export interface SentTemplate {
+  contract: Detailed;
+  /** The email telling the studio; send it with StudioMailService.dispatch once the transaction committed. */
+  mailId: string | null;
+}
 
 /** Rounds still being negotiated: a project has at most one at a time. */
 const OPEN: ContractStatus[] = [ContractStatus.SENT, ContractStatus.STUDIO_SIGNED, ContractStatus.ADMIN_COUNTERED];
@@ -44,10 +51,11 @@ export class ContractService {
     private readonly handoffs: ContractHandoffService,
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
+    private readonly mails: StudioMailService,
   ) {}
 
   /** The system sends the project's studio its template contract (no cost yet); also the Admin's resend. */
-  async sendTemplate(tx: PrismaTx, projectId: string, actorId: string, terms?: string): Promise<Detailed> {
+  async sendTemplate(tx: PrismaTx, projectId: string, actorId: string, terms?: string): Promise<SentTemplate> {
     const project = await tx.movieProject.findUniqueOrThrow({ where: { id: projectId } });
     if (!project.studioId) throw new ConflictException('Pick the studio of the project before sending its contract');
     if (project.status !== ProjectStatus.ASSIGNED) {
@@ -66,13 +74,29 @@ export class ContractService {
     });
     await this.record(tx, contract, CONTENT_EVENT.CONTRACT_SENT, actorId, { studioId: project.studioId });
     await this.tell(tx, contract, `Hợp đồng mẫu đã gửi cho studio "${contract.studio.name}", chờ Studio báo giá.`);
-    return contract;
+    const title = contract.project.movie.title;
+    const mailId = await this.mail(
+      tx,
+      contract,
+      actorId,
+      `Hợp đồng phim "${title}": mời Studio báo giá`,
+      '/contracts',
+      [
+        `Kịch bản Final của phim "${title}" đã được duyệt và hợp đồng mẫu đã sẵn sàng.`,
+        'Vui lòng đăng nhập Studio Web để xem điều khoản, điền chi phí sản xuất và ký.',
+      ],
+    );
+    return { contract, mailId };
   }
 
   /** Admin: send the template again, e.g. once the project's studio changed. */
   async resend(projectId: string, terms: string | undefined, admin: AuthenticatedUser): Promise<Detailed> {
     await this.access.project(projectId, admin, 'read');
-    return this.prisma.$transaction((tx) => this.sendTemplate(tx, projectId, admin.id, terms));
+    const { contract, mailId } = await this.prisma.$transaction((tx) =>
+      this.sendTemplate(tx, projectId, admin.id, terms),
+    );
+    await this.mails.dispatch(mailId);
+    return contract;
   }
 
   /** Every negotiation round of a project, oldest first. */
@@ -92,7 +116,7 @@ export class ContractService {
 
   /** Admin agrees with the cost the studio proposed: signs, completing the contract and handing the project off. */
   async sign(contractId: string, admin: AuthenticatedUser): Promise<Detailed> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.withMail(async (tx, mailIds) => {
       const contract = await this.locked(tx, contractId);
       await this.access.project(contract.projectId, admin, 'read');
       this.assertStatus(contract, ContractStatus.STUDIO_SIGNED, 'countersign');
@@ -100,13 +124,13 @@ export class ContractService {
         where: { id: contractId },
         data: { status: ContractStatus.SIGNED, adminSignedAt: new Date(), adminSignedById: admin.id },
       });
-      return this.complete(tx, contractId, admin.id);
+      return this.complete(tx, contractId, admin.id, mailIds);
     });
   }
 
   /** Admin disagrees: proposes a new cost, signs it, and opens a new round for the studio. */
   async counter(contractId: string, costVnd: number, admin: AuthenticatedUser): Promise<Detailed> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.withMail(async (tx, mailIds) => {
       const contract = await this.locked(tx, contractId);
       await this.access.project(contract.projectId, admin, 'read');
       this.assertStatus(contract, ContractStatus.STUDIO_SIGNED, 'counter');
@@ -120,6 +144,13 @@ export class ContractService {
       });
       await this.record(tx, next, CONTENT_EVENT.CONTRACT_COUNTERED, admin.id, { costVnd });
       await this.tell(tx, next, `Admin đề xuất giá mới ${vnd(costVnd)} (đã ký), chờ studio "${next.studio.name}".`);
+      const title = next.project.movie.title;
+      mailIds.push(
+        await this.mail(tx, next, admin.id, `Hợp đồng phim "${title}": Admin đề xuất chi phí mới`, '/contracts', [
+          `Admin đề xuất chi phí sản xuất ${vnd(costVnd)} cho phim "${title}" và đã ký.`,
+          'Vui lòng đăng nhập Studio Web để đồng ý và ký, hoặc đề xuất mức chi phí khác.',
+        ]),
+      );
       return next;
     });
   }
@@ -147,14 +178,14 @@ export class ContractService {
 
   /** Studio: agrees with the Admin's countered cost and signs, completing the contract. */
   async studioSign(contractId: string, studioId: string): Promise<Detailed> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.withMail(async (tx, mailIds) => {
       const contract = await this.locked(tx, contractId, studioId);
       this.assertStatus(contract, ContractStatus.ADMIN_COUNTERED, 'sign');
       await tx.contract.update({
         where: { id: contractId },
         data: { status: ContractStatus.SIGNED, studioSignedAt: new Date() },
       });
-      return this.complete(tx, contractId, null);
+      return this.complete(tx, contractId, null, mailIds);
     });
   }
 
@@ -182,7 +213,12 @@ export class ContractService {
   }
 
   /** Both sides signed: the project is handed off to the studio and everyone is told. */
-  private async complete(tx: PrismaTx, contractId: string, actorId: string | null): Promise<Detailed> {
+  private async complete(
+    tx: PrismaTx,
+    contractId: string,
+    actorId: string | null,
+    mailIds: (string | null)[],
+  ): Promise<Detailed> {
     const signed = await this.reload(tx, contractId);
     await this.handoffs.open(tx, signed);
     await this.record(tx, signed, CONTENT_EVENT.CONTRACT_SIGNED, actorId, { costVnd: Number(signed.costVnd) });
@@ -191,7 +227,47 @@ export class ContractService {
       signed,
       `Hợp đồng với studio "${signed.studio.name}" đã đủ chữ ký hai bên (${vnd(signed.costVnd!)}); Studio bắt đầu sản xuất.`,
     );
+    const title = signed.project.movie.title;
+    mailIds.push(
+      await this.mail(
+        tx,
+        signed,
+        signed.adminSignedById ?? signed.createdById,
+        `Hợp đồng phim "${title}" đã hoàn tất`,
+        `/projects/${signed.projectId}`,
+        [
+          `Hợp đồng phim "${title}" đã đủ chữ ký hai bên, chi phí sản xuất ${vnd(signed.costVnd!)}.`,
+          'Studio có thể bắt đầu sản xuất. Kịch bản Final và hạn giao từng tập nằm trên Studio Web.',
+        ],
+      ),
+    );
     return this.reload(tx, contractId);
+  }
+
+  /** Runs `work` in a transaction, then sends the emails it queued once they committed. */
+  private async withMail<T>(work: (tx: PrismaTx, mailIds: (string | null)[]) => Promise<T>): Promise<T> {
+    const mailIds: (string | null)[] = [];
+    const result = await this.prisma.$transaction((tx) => work(tx, mailIds));
+    await this.mails.dispatch(...mailIds);
+    return result;
+  }
+
+  private mail(
+    tx: PrismaTx,
+    contract: Detailed,
+    senderId: string,
+    subject: string,
+    portalPath: string,
+    lines: string[],
+  ): Promise<string | null> {
+    return this.mails.queue(tx, {
+      studioId: contract.studioId,
+      senderId,
+      subject: `[AI Cinema] ${subject}`,
+      lines,
+      portalPath,
+      failureLink: `/projects/${contract.projectId}/contract`,
+    });
   }
 
   private assertStatus(contract: Detailed, expected: ContractStatus, action: string): void {
@@ -250,7 +326,7 @@ export class ContractService {
     );
     await this.notifications.notify(
       await this.notifications.studioAccountIds(contract.studioId, tx),
-      { type: NOTIFICATION_TYPE.CONTRACT_UPDATED, title, body, link: `/contracts/${contract.id}`, payload },
+      { type: NOTIFICATION_TYPE.CONTRACT_UPDATED, title, body, link: '/contracts', payload },
       tx,
     );
   }
