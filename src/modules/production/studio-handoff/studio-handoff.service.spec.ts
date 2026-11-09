@@ -8,6 +8,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { EMAIL_TEMPLATE } from 'src/modules/platform/email/email-outbox.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
+import type { ContractService } from 'src/modules/production/contract/contract.service';
 import type { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import type { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
@@ -35,6 +36,7 @@ describe('StudioHandoffService', () => {
   const costs = { summary: jest.fn(), assertAffordable: jest.fn() };
   const briefs = { prepare: jest.fn() };
   const mails = { queue: jest.fn(), dispatch: jest.fn() };
+  const contracts = { sendForStudioChange: jest.fn() };
   const storage = { stream: jest.fn() };
   const auditLog = { record: jest.fn() };
   const notifications = { notify: jest.fn() };
@@ -48,6 +50,7 @@ describe('StudioHandoffService', () => {
     storage as unknown as ObjectStorage,
     auditLog as unknown as AuditLogService,
     notifications as unknown as NotificationService,
+    contracts as unknown as ContractService,
   );
 
   beforeEach(() => {
@@ -99,7 +102,6 @@ describe('StudioHandoffService', () => {
           offeredFeeVnd: 30_000_000n,
           changeReason: 'Trễ hạn',
           briefFileKey: 'briefs/1.pdf',
-          emailMessageId: 'mail-1',
         }),
       });
       expect(auditLog.record).toHaveBeenCalledWith(
@@ -115,6 +117,20 @@ describe('StudioHandoffService', () => {
         expect.objectContaining({ type: NOTIFICATION_TYPE.STUDIO_HANDOFF_SENT }),
         db,
       );
+      expect(contracts.sendForStudioChange).toHaveBeenCalledWith(db, {
+        projectId: 'p1',
+        studioId: 'st2',
+        handoffId: 'h2',
+        actorId: 'admin',
+      });
+      // The brief invites the new studio to sign on Studio Web; production waits for the signature.
+      const [, mail] = mails.queue.mock.calls[0] as [unknown, { portalPath: string; lines: string[] }];
+      expect(mail.portalPath).toBe('/contracts');
+      expect(mail.lines.at(-1)).toMatch(/ký/);
+      expect(contracts.sendForStudioChange.mock.invocationCallOrder[0]).toBeLessThan(
+        mails.queue.mock.invocationCallOrder[0],
+      );
+      expect(db.studioHandoff.update).toHaveBeenCalledWith({ where: { id: 'h2' }, data: { emailMessageId: 'mail-1' } });
       expect(mails.dispatch).toHaveBeenCalledWith('mail-1');
     });
 

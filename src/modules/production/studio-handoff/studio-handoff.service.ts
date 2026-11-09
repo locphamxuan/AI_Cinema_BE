@@ -9,6 +9,7 @@ import { EMAIL_TEMPLATE } from 'src/modules/platform/email/email-outbox.service'
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService, type TitledProject } from 'src/modules/production/project-access/project-access.service';
+import { ContractService } from 'src/modules/production/contract/contract.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
@@ -24,6 +25,8 @@ const HISTORY_INCLUDE = {
   createdBy: { select: { id: true, fullName: true } },
   emailMessage: { select: { status: true, sentAt: true, errorMessage: true } },
   materials: { orderBy: { createdAt: 'asc' } },
+  // A studio change waits for its contract: the rounds tell whether the new studio signed yet.
+  contracts: { orderBy: { round: 'asc' }, select: { id: true, round: true, status: true, costVnd: true } },
   milestoneEvents: {
     orderBy: { createdAt: 'asc' },
     include: {
@@ -60,6 +63,7 @@ export class StudioHandoffService {
     private readonly storage: ObjectStorage,
     private readonly auditLog: AuditLogService,
     private readonly notifications: NotificationService,
+    private readonly contracts: ContractService,
   ) {}
 
   async changeStudio(projectId: string, dto: ChangeStudioRequestDto, user: AuthenticatedUser) {
@@ -141,16 +145,6 @@ export class StudioHandoffService {
   /** Records the new hand-off with its brief email; returns the email to dispatch once committed. */
   private async record(tx: PrismaTx, project: TitledProject, handoff: NewHandoff, user: AuthenticatedUser) {
     const { studio, seasonId, brief, reason, forfeitedVnd } = handoff;
-    const mailId = await this.mails.queue(tx, {
-      studioId: studio.id,
-      senderId: user.id,
-      subject: brief.subject,
-      lines: brief.lines,
-      portalPath: `/projects/${project.id}`,
-      failureLink: `/projects/${project.id}/studio`,
-      template: EMAIL_TEMPLATE.STUDIO_BRIEF,
-      attachments: brief.attachments,
-    });
     const created = await tx.studioHandoff.create({
       data: {
         projectId: project.id,
@@ -159,13 +153,30 @@ export class StudioHandoffService {
         offeredFeeVnd: BigInt(brief.offeredFeeVnd),
         changeReason: reason,
         briefFileKey: brief.briefKey,
-        emailMessageId: mailId,
         createdById: user.id,
         milestoneEvents: {
           create: { fromStatus: null, toStatus: StudioMilestoneStatus.BRIEF_SENT, changedById: user.id },
         },
       },
     });
+    // The new studio starts once it signs: the hand-off waits in BRIEF_SENT for this contract.
+    await this.contracts.sendForStudioChange(tx, {
+      projectId: project.id,
+      studioId: studio.id,
+      handoffId: created.id,
+      actorId: user.id,
+    });
+    const mailId = await this.mails.queue(tx, {
+      studioId: studio.id,
+      senderId: user.id,
+      subject: brief.subject,
+      lines: [...brief.lines, 'Vui lòng đăng nhập Studio Web để xem hợp đồng, xác nhận chi phí sản xuất và ký.'],
+      portalPath: '/contracts',
+      failureLink: `/projects/${project.id}/studio`,
+      template: EMAIL_TEMPLATE.STUDIO_BRIEF,
+      attachments: brief.attachments,
+    });
+    await tx.studioHandoff.update({ where: { id: created.id }, data: { emailMessageId: mailId } });
     await this.auditLog.record(
       {
         action: CONTENT_EVENT.STUDIO_CHANGED,
