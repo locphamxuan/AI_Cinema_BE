@@ -118,4 +118,11 @@ export class StudioPortalController {
   ) {
     return this.media.submitUpload(episodeId, file, dto, parseAiDisclosure(dto.aiDisclosure), user);
   }
+
+  @Post('media-assets/:mediaAssetId/retry')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Process a failed delivery again, e.g. once the link is fixed (latest version only)' })
+  retry(@Param('mediaAssetId', ID) mediaAssetId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.media.retry(mediaAssetId, user);
+  }
 }

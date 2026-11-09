@@ -42,7 +42,7 @@ export class HlsLinkCheckJob implements OnModuleInit {
       include: {
         episode: {
           include: {
-            movie: { select: { id: true, title: true, project: { select: { reviewerId: true, creatorId: true } } } },
+            movie: { select: { id: true, title: true, project: { select: { reviewerId: true, studioId: true } } } },
           },
         },
       },
@@ -64,7 +64,8 @@ export class HlsLinkCheckJob implements OnModuleInit {
         });
         if (reported) continue;
         const { movie } = asset.episode;
-        await this.notifications.notify([movie.project?.creatorId, movie.project?.reviewerId], {
+        const studio = await this.notifications.studioAccountIds(movie.project?.studioId);
+        await this.notifications.notify([...studio, movie.project?.reviewerId], {
           type: NOTIFICATION_TYPE.HLS_LINK_DEAD,
           title: `Link video tập ${asset.episode.episodeNumber} của phim "${movie.title}" không còn hoạt động`,
           body: `${(error as Error).message}. Hãy nhờ studio sửa link hoặc giao lại tập.`,

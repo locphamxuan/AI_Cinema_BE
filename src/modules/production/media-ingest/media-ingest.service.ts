@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   EpisodeStatus,
   MediaIngestStatus,
@@ -60,7 +67,7 @@ interface NewVersion {
   submissionNote?: string;
 }
 
-/** MF-1 step 5: the studio (or a Creator) delivers an episode; every delivery is a new immutable version (BR-14). */
+/** MF-1 step 5: the studio delivers an episode; every delivery is a new immutable version (BR-14). */
 @Injectable()
 export class MediaIngestService {
   constructor(
@@ -142,8 +149,12 @@ export class MediaIngestService {
   }
 
   /** Runs a failed delivery again, e.g. once the studio fixed its link; only the latest version. */
+  /** The studio runs its failed delivery again, e.g. once it fixed its link; only the latest version. */
   async retry(mediaAssetId: string, user: AuthenticatedUser) {
-    const asset = await this.access.mediaAsset(mediaAssetId, user, 'creator');
+    const found = await this.prisma.mediaAsset.findUnique({ where: { id: mediaAssetId }, select: { episodeId: true } });
+    if (!found) throw new NotFoundException('Media not found');
+    const episode = await this.access.studioEpisode(found.episodeId, await this.studioIdOf(user), true);
+    const asset = { ...(await this.prisma.mediaAsset.findUniqueOrThrow({ where: { id: mediaAssetId } })), episode };
     if (asset.ingestStatus !== MediaIngestStatus.FAILED) {
       throw new ConflictException('Only a failed delivery can be processed again');
     }
@@ -166,12 +177,9 @@ export class MediaIngestService {
     return this.enqueue(asset.id, `${asset.id}-retry-${Date.now()}`);
   }
 
-  /** The Creator of the episode, or (MF-1, 07/11/2026) the studio under a signed contract, delivers it. */
+  /** Only the studio delivers its episodes, under a contract both sides signed (MF-1, 08/11/2026). */
   private async assertCanSubmit(episodeId: string, user: AuthenticatedUser) {
-    const episode =
-      user.role === UserRole.STUDIO
-        ? await this.access.studioEpisode(episodeId, await this.studioIdOf(user.id), true)
-        : await this.access.episode(episodeId, user, 'creator');
+    const episode = await this.access.studioEpisode(episodeId, await this.studioIdOf(user), true);
     assertProjectStatus(episode.project.status, DELIVERY_PROJECT_STATUSES, 'deliver media');
     if (episode.status === EpisodeStatus.PROCESSING) {
       throw new ConflictException('The previous delivery of this episode is still being processed');
@@ -179,9 +187,10 @@ export class MediaIngestService {
     assertEpisodeStatus(episode.status, SUBMITTABLE, 'deliver media');
   }
 
-  private async studioIdOf(userId: string): Promise<string> {
-    const account = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { studioId: true } });
-    if (!account.studioId) throw new ConflictException('This account is not tied to a studio');
+  private async studioIdOf(user: AuthenticatedUser): Promise<string> {
+    if (user.role !== UserRole.STUDIO) throw new ForbiddenException('Only the studio delivers its films');
+    const account = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { studioId: true } });
+    if (!account.studioId) throw new ForbiddenException('This account is not tied to a studio');
     return account.studioId;
   }
 
