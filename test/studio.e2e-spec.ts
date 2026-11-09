@@ -27,10 +27,10 @@ describe('Studio catalog (e2e)', () => {
 
   afterAll(() => app.close());
 
-  it('is kept by the Reviewer only; the Creator reads it to pick a studio (BR-59)', async () => {
+  it('is kept by the Admin and the Reviewer; Creators no longer deal with studios (BR-59, MF-1 08/11)', async () => {
     await creator.post('/studios', { name: 'Studio X', email }, 403);
     await member.get('/studios', 403);
-    await creator.get('/studios');
+    await creator.get('/studios', 403);
     await reviewer.post('/studios', { name: 'S', email }, 400);
     await reviewer.post('/studios', { name: 'Studio X', email: 'not-an-email' }, 400);
   });
