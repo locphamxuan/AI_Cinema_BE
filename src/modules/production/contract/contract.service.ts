@@ -12,7 +12,7 @@ import { StudioMailService } from 'src/modules/production/studio/studio-mail.ser
 import { ContractHandoffService } from './contract-handoff.service';
 
 const PERSON = { select: { id: true, fullName: true } } as const;
-export const CONTRACT_DETAIL = {
+const CONTRACT_DETAIL = {
   project: PROJECT_REF,
   studio: { select: { id: true, name: true } },
   handoff: { select: { id: true, milestoneStatus: true } },
@@ -32,7 +32,7 @@ export interface SentTemplate {
 /** Rounds still being negotiated: a project has at most one at a time. */
 const OPEN: ContractStatus[] = [ContractStatus.SENT, ContractStatus.STUDIO_SIGNED, ContractStatus.ADMIN_COUNTERED];
 
-export const STANDARD_TERMS =
+const STANDARD_TERMS =
   'Studio sản xuất đúng Kịch bản Final và tiến độ đã thống nhất; nền tảng có quyền yêu cầu chỉnh sửa nội dung trước khi nghiệm thu; Studio không chia sẻ phim cho bên thứ ba.';
 
 const vnd = (amount: number | bigint) => `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
