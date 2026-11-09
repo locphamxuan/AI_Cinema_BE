@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AccessDecisionService } from 'src/modules/episode-access/access-decision/access-decision.service';
+import { MembershipPlanService } from 'src/modules/episode-access/membership-plan/membership-plan.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { SUPPORT_TOOL, type SupportToolName } from './tool-definitions';
 
@@ -18,6 +19,7 @@ export class SupportTools {
     private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingService,
     private readonly accessDecisions: AccessDecisionService,
+    private readonly plans: MembershipPlanService,
   ) {}
 
   async execute(
@@ -147,26 +149,9 @@ export class SupportTools {
   }
 
   private async planCatalog(): Promise<SupportToolResult> {
-    const plans = await this.prisma.membershipPlan.findMany({
-      where: { isActive: true },
-      orderBy: { sortOrder: 'asc' },
-      select: {
-        code: true,
-        name: true,
-        description: true,
-        period: true,
-        durationDays: true,
-        isFree: true,
-        features: true,
-        prices: {
-          where: { effectiveTo: null },
-          orderBy: { effectiveFrom: 'desc' },
-          take: 1,
-          select: { priceCoins: true },
-        },
-      },
-    });
-    return { ok: true, data: plans };
+    // Plan §5.2: the public catalogue only — plans on sale, price in force, admin-only columns
+    // gone. `priceCoins` is null for the free plan.
+    return { ok: true, data: await this.plans.listPublic() };
   }
 
   private async searchCatalog(query: string): Promise<SupportToolResult> {
