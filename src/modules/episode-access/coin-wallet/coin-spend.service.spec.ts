@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { CoinEntryType, CoinLotSource } from '@prisma/client';
-import type { PrismaService, PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { CoinSpendService } from './coin-spend.service';
 
@@ -15,7 +15,7 @@ describe('CoinSpendService.spend', () => {
     coinTransaction: { findUnique: jest.fn().mockResolvedValue(null), createManyAndReturn: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000 }) };
-  const service = new CoinSpendService({} as unknown as PrismaService, settings as unknown as PlatformSettingService);
+  const service = new CoinSpendService(settings as unknown as PlatformSettingService);
 
   const spendRequest = (amountCoins: number) => ({
     entryType: CoinEntryType.EPISODE_PURCHASE,
@@ -129,7 +129,7 @@ describe('CoinSpendService.credit', () => {
     coinTransaction: { findUnique: jest.fn().mockResolvedValue(null), createManyAndReturn: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000, bonusCoinExpiryDays: 30 }) };
-  const service = new CoinSpendService({} as unknown as PrismaService, settings as unknown as PlatformSettingService);
+  const service = new CoinSpendService(settings as unknown as PlatformSettingService);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -209,7 +209,7 @@ describe('CoinSpendService.expireBonus', () => {
     coinTransaction: { createManyAndReturn: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000 }) };
-  const service = new CoinSpendService({} as unknown as PrismaService, settings as unknown as PlatformSettingService);
+  const service = new CoinSpendService(settings as unknown as PlatformSettingService);
 
   it('writes one BONUS_EXPIRY row and leaves main Coins alone (BR-28)', async () => {
     tx.coinWallet.findUniqueOrThrow.mockResolvedValue({ id: 'w1', mainBalance: 5, bonusBalance: 10 });

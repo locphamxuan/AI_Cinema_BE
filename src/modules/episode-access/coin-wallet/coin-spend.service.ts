@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, type CoinTransaction, type Prisma } from '@prisma/client';
-import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { noticeReceived, noticeSpent } from './coin-notices';
@@ -17,7 +17,6 @@ import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './l
 @Injectable()
 export class CoinSpendService {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingService,
     @Optional() private readonly notifications?: NotificationService,
   ) {}

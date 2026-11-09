@@ -6,7 +6,6 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
-import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import {
   assertProjectStatus,
@@ -23,7 +22,6 @@ export class ProjectLifecycleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly costs: ProductionCostService,
     private readonly team: ProjectTeamService,
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
