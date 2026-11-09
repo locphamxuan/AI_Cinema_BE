@@ -21,6 +21,7 @@ import {
   DELIVERY_PROJECT_STATUSES,
 } from 'src/modules/production/project-access/project-rules';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
+import { reopenOnChanges } from 'src/modules/production/studio-handoff/milestone/deliver-on-submission';
 import type { ReviewMediaRequestDto } from './dto/content-review.request.dto';
 
 /** Until it is scheduled, a reviewed episode can still be sent back to the studio. */
@@ -94,6 +95,11 @@ export class ContentReviewService {
       },
     });
     if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+    await reopenOnChanges(tx, this.auditLog, {
+      handoffId: asset.studioHandoffId,
+      projectId: episode.movieId,
+      reviewerId,
+    });
     const review = await tx.contentReview.create({
       data: { mediaAssetId: asset.id, reviewerId, decision: ContentReviewDecision.CHANGES_REQUESTED, comments },
     });
