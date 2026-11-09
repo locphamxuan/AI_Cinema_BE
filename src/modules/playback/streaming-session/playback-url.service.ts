@@ -13,11 +13,16 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
-import { parseMasterPlaylist } from 'src/modules/production/media-ingest/hls/hls-playlist';
-import { HLS_LADDER, qualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
-
-/** Guests and plan-less members cap here; a plan may raise it via features.maxQuality. */
-export const DEFAULT_MAX_QUALITY = '720p';
+import { qualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
+import { DEFAULT_MAX_QUALITY, qualityCeiling } from './playback-quality';
+import {
+  isHlsPlaylist,
+  selectVariants,
+  variantLines,
+  type MasterVariant,
+  type PlaylistUri,
+  type VariantLine,
+} from './playlist-rewrite';
 
 /**
  * P2-1: ABR switches re-read the same origin playlist on every rendition change. Cache the
@@ -31,26 +36,6 @@ interface PlayableAsset {
   id: string;
   streamUrl: string;
 }
-
-interface CachedMasterVariant {
-  /** The raw `#EXT-X-STREAM-INF` line, kept byte-for-byte. */
-  tag: string;
-  /** Rendition folder, e.g. `720p`; the API variant route takes it as the quality. */
-  folder: string;
-}
-
-interface PlaylistUri {
-  /** Object path relative to the asset folder, e.g. `720p/seg_000.ts`. */
-  path: string;
-  /** Query exactly as written, e.g. `?token=abc`; empty when the playlist had none. */
-  search: string;
-}
-
-type CachedVariantLine =
-  | { kind: 'raw'; line: string }
-  | { kind: 'segment'; uri: PlaylistUri }
-  /** A URI-bearing tag such as `#EXT-X-MAP`; the signed URL replaces the placeholder at render time. */
-  | { kind: 'tag'; prefix: string; suffix: string; uri: PlaylistUri };
 
 export interface PlaybackToken {
   sessionId: string;
@@ -111,7 +96,7 @@ export class PlaybackUrlService {
   async masterPlaylist(sessionId: string, token: PlaybackToken): Promise<{ text: string; maxQuality: string }> {
     const { session, asset } = await this.assertToken(sessionId, token);
     const maxQuality = session.maxQuality ?? DEFAULT_MAX_QUALITY;
-    const ceiling = this.ceilingOf(maxQuality);
+    const ceiling = qualityCeiling(maxQuality);
     const variants = await this.cached(`master:${asset.id}:${ceiling}`, () => this.readMaster(asset, ceiling));
     if (variants.length === 0) {
       throw new ForbiddenException({
@@ -133,7 +118,7 @@ export class PlaybackUrlService {
   async variantPlaylist(sessionId: string, quality: string, token: PlaybackToken): Promise<string> {
     const { session, asset } = await this.assertToken(sessionId, token);
     const maxQuality = session.maxQuality ?? DEFAULT_MAX_QUALITY;
-    const ceiling = this.ceilingOf(maxQuality);
+    const ceiling = qualityCeiling(maxQuality);
     const rung = qualityRung(quality);
     if (!rung || rung.height > ceiling) {
       throw new ForbiddenException({
@@ -160,10 +145,10 @@ export class PlaybackUrlService {
   }
 
   /** Reads the origin once per (asset, ceiling) and keeps only the variants the plan may see. */
-  private async readMaster(asset: PlayableAsset, ceiling: number): Promise<CachedMasterVariant[]> {
+  private async readMaster(asset: PlayableAsset, ceiling: number): Promise<MasterVariant[]> {
     const raw = await this.readText(`hls/${asset.id}/master.m3u8`, asset.streamUrl);
     try {
-      return this.selectVariants(raw, asset, ceiling);
+      return selectVariants(raw, asset.streamUrl, ceiling);
     } catch (error) {
       // P2-6: a corrupt playlist is an origin/transcode fault, not a bad request and not a 500.
       // Log the parse error, then answer 502 so the player and ops see a broken upstream.
@@ -171,51 +156,12 @@ export class PlaybackUrlService {
     }
   }
 
-  /** Parses a master playlist and keeps every rendition at or below the plan ceiling. */
-  private selectVariants(raw: string, asset: PlayableAsset, ceiling: number): CachedMasterVariant[] {
-    const heightByUri = new Map(
-      parseMasterPlaylist(raw, asset.streamUrl).map((variant) => [variant.uri, variant.height]),
-    );
-    const allowed: CachedMasterVariant[] = [];
-    const rawLines = raw.split('\n');
-    for (let i = 0; i < rawLines.length; i++) {
-      const tag = rawLines[i].trim();
-      if (!tag.startsWith('#EXT-X-STREAM-INF')) continue;
-      const uri = (rawLines[i + 1] ?? '').trim();
-      if (!uri || uri.startsWith('#')) continue;
-      const absolute = new URL(uri, asset.streamUrl).toString();
-      const height = heightByUri.get(absolute) ?? null;
-      // Renditions without RESOLUTION stay (never strip the only way to play); known ones filter by ceiling.
-      if (height !== null && height > ceiling) continue;
-      allowed.push({ tag: rawLines[i], folder: folderOf(absolute) });
-    }
-    return allowed;
-  }
-
-  /**
-   * Reads the origin once per (asset, rendition) and keeps each line ready for per-request signing.
-   * URIs are resolved against the playlist so query strings and sub-folders survive, and the
-   * fMP4 `#EXT-X-MAP` init segment is rewritten like a segment instead of leaking a relative URL.
-   */
-  private async readVariant(asset: PlayableAsset, folder: string): Promise<CachedVariantLine[]> {
+  /** Reads the origin once per (asset, rendition) and keeps each line ready for per-request signing. */
+  private async readVariant(asset: PlayableAsset, folder: string): Promise<VariantLine[]> {
     const key = `hls/${asset.id}/${folder}/index.m3u8`;
     const raw = await this.readText(key, asset.streamUrl);
     try {
-      const playlistUrl = new URL(`${folder}/index.m3u8`, asset.streamUrl);
-      const assetRoot = new URL('.', asset.streamUrl);
-      const uriOf = (uri: string): PlaylistUri | null => {
-        const resolved = new URL(uri, playlistUrl);
-        // Only objects under this asset are ours to sign; anything else stays exactly as written.
-        if (resolved.origin !== assetRoot.origin || !resolved.pathname.startsWith(assetRoot.pathname)) return null;
-        return { path: resolved.pathname.slice(assetRoot.pathname.length), search: resolved.search };
-      };
-      return raw.split('\n').map((line) => {
-        const trimmed = line.trim();
-        if (!trimmed) return { kind: 'raw', line };
-        if (trimmed.startsWith('#')) return mapUriTag(line, uriOf);
-        const uri = uriOf(trimmed);
-        return uri ? { kind: 'segment', uri } : { kind: 'raw', line };
-      });
+      return variantLines(raw, folder, asset.streamUrl);
     } catch (error) {
       // Same contract as the master: a malformed rendition playlist is a bad upstream, not a 500.
       return this.invalidPlaylist(key, 'The rendition playlist is invalid', error);
@@ -252,11 +198,6 @@ export class PlaybackUrlService {
       this.playlistCache.delete(key);
       removed++;
     }
-  }
-
-  /** Pixel ceiling of a plan label; the default keeps an unknown or removed label from locking playback. */
-  private ceilingOf(maxQuality: string): number {
-    return (qualityRung(maxQuality) ?? qualityRung(DEFAULT_MAX_QUALITY) ?? HLS_LADDER[HLS_LADDER.length - 1]).height;
   }
 
   private async assertToken(sessionId: string, token: PlaybackToken) {
@@ -369,21 +310,6 @@ export class PlaybackUrlService {
   }
 }
 
-/** HLS master playlist (`.m3u8`, query string allowed), as opposed to a progressive MP4. */
-export function isHlsPlaylist(url: string): boolean {
-  return /\.m3u8(\?|#|$)/i.test(url);
-}
-
-/**
- * Ceiling label, e.g. '720p', read off the member's plan features (running plan or Free plan)
- * when the session is opened; guests and unknown labels get the default. P2-7: labels come from
- * the pipeline's ladder, so a newly encoded rendition is allowed here too.
- */
-export function maxQualityOf(features: unknown): string {
-  const value = features && typeof features === 'object' ? (features as { maxQuality?: unknown }).maxQuality : null;
-  return typeof value === 'string' && qualityRung(value) ? value : DEFAULT_MAX_QUALITY;
-}
-
 /** Error name plus the S3 error code / HTTP status when present, so logs separate 404, 403/5xx and bad playlists. */
 function describeError(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
@@ -392,35 +318,4 @@ function describeError(error: unknown): string {
   if (typeof code === 'string' || typeof code === 'number') parts.push(`code=${code}`);
   if (typeof $metadata?.httpStatusCode === 'number') parts.push(`http=${$metadata.httpStatusCode}`);
   return `${parts.join(' ')}: ${error.message}`;
-}
-
-/** Last path segment's folder, e.g. `.../720p/index.m3u8` -> `720p`. */
-function folderOf(uri: string): string {
-  const parts = new URL(uri).pathname.split('/').filter(Boolean);
-  return parts.length >= 2 ? parts[parts.length - 2] : 'source';
-}
-
-/**
- * P2-8: rewrites the URI attribute of `#EXT-X-MAP` (the fMP4 init segment), keeping any
- * BYTERANGE and the rest of the tag intact. Other tags stay raw so signing never mangles
- * something that is not a media object of this asset.
- */
-function mapUriTag(line: string, uriOf: (uri: string) => PlaylistUri | null): CachedVariantLine {
-  const tagStart = line.indexOf('#');
-  if (tagStart < 0) return { kind: 'raw', line };
-  const tag = line.slice(tagStart);
-  if (!tag.startsWith('#EXT-X-MAP:')) return { kind: 'raw', line };
-  const match = /URI=("[^"]*"|[^,]*)/.exec(tag);
-  if (!match) return { kind: 'raw', line };
-  const value = match[1];
-  const quoted = value.startsWith('"');
-  const uri = uriOf(quoted ? value.slice(1, -1) : value);
-  if (!uri) return { kind: 'raw', line };
-  const valueStart = tagStart + match.index + 'URI='.length;
-  return {
-    kind: 'tag',
-    prefix: line.slice(0, valueStart + (quoted ? 1 : 0)),
-    suffix: line.slice(valueStart + value.length - (quoted ? 1 : 0)),
-    uri,
-  };
 }
