@@ -4,6 +4,7 @@ import { HashingEmbeddingClient } from 'src/infrastructure/ai/hashing-embedding.
 import { CHAT_CLIENT, EMBEDDING_CLIENT, type ChatClient } from 'src/infrastructure/ai/llm-client';
 import { OpenAiCompatibleChatClient } from 'src/infrastructure/ai/openai-compatible-chat.client';
 import { OpenAiCompatibleEmbeddingClient } from 'src/infrastructure/ai/openai-compatible-embedding.client';
+import { AccessDecisionModule } from 'src/modules/episode-access/access-decision/access-decision.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { SupportAgentService } from './ai/support-agent.service';
 import { GuardrailsService } from './ai/guardrails';
@@ -30,7 +31,7 @@ import { StaffSupportService } from './staff/staff-support.service';
 import { SupportAutoCloseSweep } from './support-auto-close.sweep';
 
 @Module({
-  imports: [PlatformSettingModule],
+  imports: [PlatformSettingModule, AccessDecisionModule],
   controllers: [MemberSupportController, StaffSupportController, KnowledgeController, SupportAiHealthController],
   providers: [
     // AI providers

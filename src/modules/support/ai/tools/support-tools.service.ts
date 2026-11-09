@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { AccessDecisionService } from 'src/modules/episode-access/access-decision/access-decision.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { SUPPORT_TOOL, type SupportToolName } from './tool-definitions';
 
@@ -16,6 +17,7 @@ export class SupportTools {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingService,
+    private readonly accessDecisions: AccessDecisionService,
   ) {}
 
   async execute(
@@ -192,21 +194,33 @@ export class SupportTools {
   }
 
   private async episodeAccess(memberId: string, episodeId?: string): Promise<SupportToolResult> {
-    const rows = await this.prisma.episodeAccess.findMany({
-      where: { userId: memberId, ...(episodeId ? { episodeId } : {}) },
-      orderBy: { grantedAt: 'desc' },
-      take: 10,
-      select: {
-        episodeId: true,
-        source: true,
-        paidCoins: true,
-        grantedAt: true,
-        revokedAt: true,
-        revokeReason: true,
-        episode: { select: { episodeNumber: true, title: true, movie: { select: { title: true } } } },
-      },
-    });
-    return { ok: true, data: rows };
+    // Plan §5.2: one episode at a time — `decide` answers free starter, running plan and single
+    // purchase alike. Without an id there is nothing to decide.
+    if (!episodeId?.trim()) return { ok: false, error: 'NOT_FOUND' };
+    try {
+      const decision = await this.accessDecisions.decide(episodeId.trim(), memberId);
+      // `decide` also returns a deprecated streamUrl when access is granted; only the
+      // member-facing decision fields may reach the model (plan §5.2 sensitive-field rule).
+      return {
+        ok: true,
+        data: {
+          episodeId: decision.episodeId,
+          movieId: decision.movieId,
+          availability: decision.availability,
+          notice: decision.notice,
+          accessGranted: decision.accessGranted,
+          source: decision.source,
+          planCode: decision.planCode,
+          accessMethods: decision.accessMethods,
+          required: decision.required,
+          nextAction: decision.nextAction,
+        },
+      };
+    } catch (error) {
+      // Unknown or invisible episode: the model just sees "no data" (plan §5.2).
+      if (error instanceof NotFoundException) return { ok: false, error: 'NOT_FOUND' };
+      throw error;
+    }
   }
 
   private async devices(memberId: string): Promise<SupportToolResult> {

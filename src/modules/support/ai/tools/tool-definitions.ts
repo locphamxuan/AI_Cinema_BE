@@ -75,11 +75,12 @@ export const SUPPORT_TOOL_DEFINITIONS: SupportToolDefinition[] = [
   },
   {
     name: SUPPORT_TOOL.GET_EPISODE_ACCESS,
-    description: 'Quyền xem đã mua của thành viên: tập, nguồn quyền, số Coin đã trả, trạng thái thu hồi.',
+    description:
+      'Quyền xem một tập cụ thể: có được xem không, nguồn quyền (free starter / gói subscription / mua lẻ), giá và bước tiếp theo để mở khóa. Cần episodeId (hãy dùng search_catalog để lấy khi chưa biết).',
     parameters: {
       type: 'object',
-      properties: { episodeId: { type: 'string', description: 'Mã tập phim, nếu muốn kiểm tra một tập cụ thể' } },
-      required: [],
+      properties: { episodeId: { type: 'string', description: 'Mã tập phim cần kiểm tra' } },
+      required: ['episodeId'],
     },
   },
   {
