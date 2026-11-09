@@ -8,7 +8,7 @@ name: CI/CD
 
 on:
   push:
-    branches: [main, dev, 'refactor/**', 'feat/**', 'fix/**', 'ci/**']
+    branches: [main, dev, 'refactor/**', 'feat/**', 'fix/**', 'ci/**', 'chore/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
