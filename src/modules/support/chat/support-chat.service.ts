@@ -241,13 +241,14 @@ export class SupportChatService {
       conversationId,
       senderType: SupportSenderType.AI_CHATBOT,
       senderId: null,
-      content: reply.reply,
+      // Plan §5.5: redact secrets after guardrails inspected the raw text, before persist/send.
+      content: this.summary.redact(reply.reply),
       replyToMessageId: memberMessage.id,
       aiMetadata: {
         ...reply.metadata,
         confidence: reply.confidence,
         resolution: reply.resolution,
-      } as Prisma.InputJsonValue,
+      } as unknown as Prisma.InputJsonValue,
     });
 
     await this.conversations.recordAiTurn(conversationId, {

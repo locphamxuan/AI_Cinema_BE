@@ -1,3 +1,7 @@
+import { SupportEscalationReason } from '@prisma/client';
+import type { ChatToolDefinition } from 'src/infrastructure/ai/llm-client';
+import { SUPPORT_QUICK_REPLY } from '../../shared/support-status';
+
 /** Read-only tools the AI may call (plan §5.2). None of them writes, and none takes memberId
  * from the model: the chat layer always passes the signed-in member's id. */
 export const SUPPORT_TOOL = {
@@ -94,3 +98,48 @@ export const SUPPORT_TOOL_DEFINITIONS: SupportToolDefinition[] = [
     parameters: noArguments,
   },
 ];
+
+/**
+ * Plan §5.3/§3.4: the model must answer through this tool, so the server receives a validated
+ * object instead of parsing free text. The tool is only offered on the final turn.
+ */
+export const FINAL_ANSWER_TOOL_NAME = 'final_answer';
+
+export const FINAL_ANSWER_TOOL: ChatToolDefinition = {
+  name: FINAL_ANSWER_TOOL_NAME,
+  description:
+    'Gửi câu trả lời cuối cùng cho thành viên. Chỉ gọi sau khi đã kiểm tra tài liệu và dữ liệu công cụ cần thiết.',
+  parameters: {
+    type: 'object',
+    properties: {
+      reply: {
+        type: 'string',
+        description: 'Câu trả lời hiển thị cho thành viên, ngắn gọn, lịch sự, bằng tiếng Việt.',
+      },
+      resolution: {
+        type: 'string',
+        enum: ['ANSWERED', 'RESOLVED_SUGGESTED', 'NEEDS_HUMAN', 'UNCERTAIN'],
+        description: 'Kết quả của lượt trả lời. NEEDS_HUMAN/UNCERTAIN sẽ chuyển cho nhân viên.',
+      },
+      escalationReason: {
+        type: 'string',
+        enum: Object.values(SupportEscalationReason),
+        description: 'Lý do escalate khi resolution là NEEDS_HUMAN hoặc UNCERTAIN; bỏ trống nếu không escalate.',
+      },
+      confidence: {
+        type: 'number',
+        description: 'Độ tin cậy của câu trả lời, từ 0 đến 1.',
+      },
+      handoffSummary: {
+        type: 'string',
+        description: 'Tóm tắt vấn đề, dữ liệu đã kiểm tra và đề xuất cho nhân viên khi escalate.',
+      },
+      quickReplies: {
+        type: 'array',
+        items: { type: 'string', enum: Object.values(SUPPORT_QUICK_REPLY) },
+        description: 'Các nút gợi ý cho thành viên; để trống nếu không cần.',
+      },
+    },
+    required: ['reply', 'resolution', 'confidence', 'quickReplies'],
+  },
+};

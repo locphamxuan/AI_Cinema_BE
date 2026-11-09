@@ -291,7 +291,7 @@ export class KnowledgeService {
     return {
       mode: this.config.support.aiMode,
       chatModel: this.config.support.aiChatModel,
-      chatConfigured: Boolean(this.config.support.aiChatApiKey),
+      chatConfigured: Boolean(this.config.support.aiChatBaseUrl && this.config.support.aiChatApiKey),
       embeddingModel: this.config.support.aiEmbeddingModel,
       embeddingDimensions: this.config.support.aiEmbeddingDimensions,
       embeddingConfigured: Boolean(this.config.support.aiEmbeddingApiKey),

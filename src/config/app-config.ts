@@ -114,7 +114,7 @@ export interface AppConfig {
     aiEmbeddingBaseUrl?: string;
     aiEmbeddingApiKey?: string;
     aiEmbeddingModel: string;
-    /** Must match the `vector(N)` column in the migration (768 for Gemini text-embedding-004). */
+    /** Must match the `vector(N)` column in the migration (768 for gemini-embedding-001 with dimensions=768). */
     aiEmbeddingDimensions: number;
     aiTimeoutMs: number;
     aiMaxOutputTokens: number;
@@ -325,10 +325,10 @@ export function loadConfig(env: Env = process.env): AppConfig {
       aiMode: read.oneOf('AI_MODE', ['live', 'mock', 'disabled'] as const, 'live'),
       aiChatBaseUrl: read.optional('AI_CHAT_BASE_URL'),
       aiChatApiKey: read.optional('AI_CHAT_API_KEY'),
-      aiChatModel: read.string('AI_CHAT_MODEL', 'gemini-1.5-flash'),
+      aiChatModel: read.string('AI_CHAT_MODEL', 'gemini-3.1-flash-lite'),
       aiEmbeddingBaseUrl: read.optional('AI_EMBEDDING_BASE_URL'),
       aiEmbeddingApiKey: read.optional('AI_EMBEDDING_API_KEY'),
-      aiEmbeddingModel: read.string('AI_EMBEDDING_MODEL', 'text-embedding-004'),
+      aiEmbeddingModel: read.string('AI_EMBEDDING_MODEL', 'gemini-embedding-001'),
       aiEmbeddingDimensions: read.int('AI_EMBEDDING_DIMENSIONS', 768, 1),
       aiTimeoutMs: read.int('AI_TIMEOUT_MS', 30_000, 1000),
       aiMaxOutputTokens: read.int('AI_MAX_OUTPUT_TOKENS', 800, 1),

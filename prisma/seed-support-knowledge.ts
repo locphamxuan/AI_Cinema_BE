@@ -290,7 +290,7 @@ function embeddingClient(): EmbeddingClient | null {
   return new OpenAiCompatibleEmbeddingClient({
     baseUrl,
     apiKey,
-    model: process.env.AI_EMBEDDING_MODEL ?? 'text-embedding-004',
+    model: process.env.AI_EMBEDDING_MODEL ?? 'gemini-embedding-001',
     dimensions,
     timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 30_000),
   });

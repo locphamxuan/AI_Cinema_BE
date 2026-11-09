@@ -49,7 +49,13 @@ export class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
         authorization: `Bearer ${this.options.apiKey}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ model: this.options.model, input: batch }),
+      body: JSON.stringify({
+        model: this.options.model,
+        input: batch,
+        // The vector column is fixed-width; ask the provider for that exact size (Gemini
+        // `gemini-embedding-001` otherwise returns 3072).
+        dimensions: this.options.dimensions,
+      }),
       signal: AbortSignal.timeout(this.options.timeoutMs),
     });
 

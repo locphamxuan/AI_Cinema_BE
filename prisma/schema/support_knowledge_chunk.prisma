@@ -1,5 +1,5 @@
 /// One embedded slice of an article. The vector column is pgvector's `vector(768)` for
-/// Gemini text-embedding-004; AI_EMBEDDING_DIMENSIONS must stay 768 until the migration is
+/// Gemini gemini-embedding-001; AI_EMBEDDING_DIMENSIONS must stay 768 until the migration is
 /// rewritten. Prisma cannot read or write Unsupported columns, so the index job writes the
 /// embedding with $executeRaw and retrieval searches with $queryRaw (`<=>` cosine distance).
 model SupportKnowledgeChunk {
