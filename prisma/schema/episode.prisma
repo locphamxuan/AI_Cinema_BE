@@ -62,7 +62,6 @@ model Episode {
     streamingSessions  StreamingSession[]
     watchProgresses    WatchProgress[]
     views              EpisodeView[]
-    studioFilmLinks    StudioFilmLink[]
     adSlots            EpisodeAdSlot[]
     watchStats         EpisodeWatchStat[]
 
