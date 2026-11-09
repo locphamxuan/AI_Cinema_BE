@@ -7,7 +7,8 @@ import { IdempotencyKey } from 'src/common/decorators/idempotency-key.decorator'
 import { Public } from 'src/common/decorators/public.decorator';
 import { appConfig } from 'src/config/config.module';
 import { StreamingSessionViewDto } from './dto/streaming-session.dto';
-import { PlaybackUrlService, type PlaybackToken } from './playback-url.service';
+import { PlaybackUrlService } from './playback-url.service';
+import type { PlaybackToken } from './playback-token';
 import { StreamingSessionService } from './streaming-session.service';
 import { NextEpisodeViewDto } from 'src/modules/playback/streaming-session/dto/next-episode.view.dto';
 import { CreateStreamingSessionRequestDto } from 'src/modules/playback/streaming-session/dto/create-streaming-session.request.dto';

@@ -9,12 +9,12 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { StreamingSessionStatus } from '@prisma/client';
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { qualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
 import { DEFAULT_MAX_QUALITY, qualityCeiling } from './playback-quality';
+import { assertPlaybackToken, playbackSignature, type PlaybackToken } from './playback-token';
 import {
   isHlsPlaylist,
   selectVariants,
@@ -35,12 +35,6 @@ const PLAYLIST_CACHE_MAX_ENTRIES = 500;
 interface PlayableAsset {
   id: string;
   streamUrl: string;
-}
-
-export interface PlaybackToken {
-  sessionId: string;
-  exp: number;
-  sig: string;
 }
 
 /**
@@ -89,7 +83,7 @@ export class PlaybackUrlService {
       });
     }
     const exp = Math.floor(Date.now() / 1000) + this.config.playback.urlTtlSeconds;
-    return { exp, sig: this.hmac(secret, sessionId, assetId, exp) };
+    return { exp, sig: playbackSignature(secret, sessionId, assetId, exp) };
   }
 
   /** Master playlist with only renditions at or below the caller's ceiling. */
@@ -228,44 +222,8 @@ export class PlaybackUrlService {
       });
     }
     const streamUrl: string = asset.streamUrl;
-    this.verify(token, asset.id);
+    assertPlaybackToken(token, asset.id, this.config.playback.urlSecret);
     return { session, asset: { id: asset.id, streamUrl } };
-  }
-
-  private verify(token: PlaybackToken, assetId: string): void {
-    const secret = this.config.playback.urlSecret;
-    if (!secret) {
-      throw new UnprocessableEntityException({
-        message: 'Signed playback is not configured',
-        details: { reason: 'PLAYBACK_SIGNING_DISABLED' },
-      });
-    }
-    if (!Number.isInteger(token.exp) || !/^[0-9a-f]{64}$/i.test(token.sig)) {
-      throw new BadRequestException({
-        message: 'The playback token is malformed',
-        details: { reason: 'PLAYBACK_TOKEN_INVALID' },
-      });
-    }
-    if (token.exp * 1000 <= Date.now()) {
-      throw new ForbiddenException({
-        message: 'The playback token has expired',
-        details: { reason: 'PLAYBACK_TOKEN_EXPIRED' },
-      });
-    }
-    const expected = this.hmac(secret, token.sessionId, assetId, token.exp);
-    if (
-      expected.length !== token.sig.length ||
-      !timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(token.sig.toLowerCase(), 'hex'))
-    ) {
-      throw new ForbiddenException({
-        message: 'The playback token signature is invalid',
-        details: { reason: 'PLAYBACK_TOKEN_INVALID' },
-      });
-    }
-  }
-
-  private hmac(secret: string, sessionId: string, assetId: string, exp: number): string {
-    return createHmac('sha256', secret).update(`${sessionId}|${assetId}|${exp}`).digest('hex');
   }
 
   /** API-issued variant URL: its response is where segment URLs receive a fresh expiry. */
