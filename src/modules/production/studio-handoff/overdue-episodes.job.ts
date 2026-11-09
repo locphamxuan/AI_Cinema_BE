@@ -36,7 +36,7 @@ export class OverdueEpisodesJob implements OnModuleInit {
         dueDate: { lt: startOfToday },
         movie: { project: { status: { in: DELIVERY_PROJECT_STATUSES } } },
       },
-      include: { movie: { select: { title: true, project: { select: { reviewerId: true, creatorId: true } } } } },
+      include: { movie: { select: { title: true, project: { select: { reviewerId: true, studioId: true } } } } },
     });
 
     let flagged = 0;
@@ -45,7 +45,8 @@ export class OverdueEpisodesJob implements OnModuleInit {
         where: { type: NOTIFICATION_TYPE.EPISODE_OVERDUE, payload: { path: ['episodeId'], equals: episode.id } },
       });
       if (alreadyFlagged) continue;
-      await this.notifications.notify([episode.movie.project?.creatorId, episode.movie.project?.reviewerId], {
+      const studio = await this.notifications.studioAccountIds(episode.movie.project?.studioId);
+      await this.notifications.notify([...studio, episode.movie.project?.reviewerId], {
         type: NOTIFICATION_TYPE.EPISODE_OVERDUE,
         title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã trễ hạn`,
         body: `Studio phải giao tập này trước ngày ${episode.dueDate?.toISOString().slice(0, 10)}.`,

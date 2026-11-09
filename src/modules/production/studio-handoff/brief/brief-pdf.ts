@@ -15,14 +15,13 @@ export interface BriefContent {
   scope: string;
   studioName: string;
   studioContact: string | null;
-  creatorName: string;
-  creatorEmail: string;
+  contactName: string;
+  contactEmail: string;
   ideaDescription: string;
   genres: string[];
   /** Production fee offered, in VND: a fixed fee, no revenue share. */
   offeredFeeVnd: number;
   episodes: BriefEpisode[];
-  ideaFiles: string[];
   issuedAt: Date;
 }
 
@@ -65,7 +64,7 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
   doc.moveDown();
   doc.fontSize(12).text(text(`Studio: ${brief.studioName}${brief.studioContact ? ` (${brief.studioContact})` : ''}`));
   doc.text(text(`Phạm vi bàn giao: ${brief.scope}`));
-  doc.text(text(`Đầu mối AI Cinema: ${brief.creatorName} - ${brief.creatorEmail}`));
+  doc.text(text(`Đầu mối AI Cinema: ${brief.contactName} - ${brief.contactEmail}`));
   doc.text(text(`Thể loại: ${brief.genres.join(', ')}`));
   doc.text(text(`Phí sản xuất đề xuất: ${formatVnd(brief.offeredFeeVnd)} (trọn gói, không chia doanh thu)`));
   doc.moveDown().fontSize(13).text(text('Ý tưởng phim'));
@@ -81,10 +80,6 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
     );
   }
 
-  if (brief.ideaFiles.length) {
-    doc.moveDown().fontSize(13).text(text('Tài liệu đính kèm'));
-    doc.fontSize(11).text(text(brief.ideaFiles.join('\n')));
-  }
   doc
     .moveDown()
     .fontSize(9)

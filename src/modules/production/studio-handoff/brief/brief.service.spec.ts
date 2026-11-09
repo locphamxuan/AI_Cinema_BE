@@ -1,10 +1,10 @@
 import { BriefService } from './brief.service';
 
-const lead = { fullName: 'Creator Test', email: 'creator@gmail.com' };
+const admin = { fullName: 'Admin Test', email: 'admin@gmail.com' };
 
 function setup() {
   const prisma = {
-    user: { findUniqueOrThrow: jest.fn().mockResolvedValue(lead) },
+    user: { findUniqueOrThrow: jest.fn().mockResolvedValue(admin) },
     movieProject: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({
         ideaDescription: 'Ý tưởng',
@@ -29,40 +29,30 @@ function setup() {
 }
 
 describe('BriefService.prepare', () => {
-  it('names the lead Creator as the only contact and leaves co-Creators out of the mail (BR-67)', async () => {
+  const context = { senderId: 'admin', offeredFeeVnd: 150_000_000 };
+
+  it('names the Admin changing the studio in the PDF, and leaves the Creators out of the mail', async () => {
     const { service, prisma } = setup();
-
-    const brief = await service.prepare('p1', { name: 'Studio X', contactName: null }, null, [], {
-      senderId: 'c1',
-      offeredFeeVnd: 150_000_000,
-    });
-
-    expect(brief.creatorEmail).toBe(lead.email);
-    expect(brief.text).toContain(`Đầu mối: ${lead.fullName} - ${lead.email}`);
-    expect(brief.text).not.toMatch(/Đồng gửi|Phân công tập|CC/);
+    const brief = await service.prepare('p1', { name: 'Studio X', contactName: null }, null, context);
+    expect(prisma.user.findUniqueOrThrow).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'admin' } }));
+    expect(brief.lines.join(' ')).not.toMatch(/Đồng gửi|Phân công tập|CC|Creator/);
     const [query] = prisma.movieProject.findUniqueOrThrow.mock.calls[0] as unknown[];
     expect(JSON.stringify(query)).not.toContain('assignedCreator');
   });
 
   it('attaches the brief PDF alone: scripts and idea files stay on the platform', async () => {
     const { service } = setup();
-    const script = [{ storageKey: 'm', fileName: 'kich-ban.pdf', mimeType: 'application/pdf' }] as never;
-    const context = { senderId: 'admin', offeredFeeVnd: 1_000 };
-    const brief = await service.prepare('p1', { name: 'Lumen', contactName: null }, null, script, context);
+    const brief = await service.prepare('p1', { name: 'Lumen', contactName: null }, null, context);
     expect(brief.attachments.map((a) => a.fileName)).toEqual(['brief-p1.pdf']);
   });
 
   it('offers the fee in VND as a fixed fee, never in Token', async () => {
     const { service } = setup();
-
-    const brief = await service.prepare('p1', { name: 'Studio X', contactName: null }, null, [], {
-      senderId: 'c1',
-      offeredFeeVnd: 150_000_000,
-    });
-
+    const brief = await service.prepare('p1', { name: 'Studio X', contactName: null }, null, context);
+    const text = brief.lines.join(' ');
     expect(brief.offeredFeeVnd).toBe(150_000_000);
-    expect(brief.text).toContain('150.000.000 VND');
-    expect(brief.text).toContain('không chia doanh thu');
-    expect(brief.text).not.toMatch(/Token/);
+    expect(text).toContain('150.000.000 VND');
+    expect(text).toContain('không chia doanh thu');
+    expect(text).not.toMatch(/Token/);
   });
 });

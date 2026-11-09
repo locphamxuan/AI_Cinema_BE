@@ -4,7 +4,6 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import type { EmailAttachment } from 'src/modules/platform/email/email-outbox.service';
-import type { StoredMaterial } from '../material/handoff-material.service';
 import { briefFont, type BriefContent, formatVnd, renderBriefPdf } from './brief-pdf';
 
 export interface BriefStudio {
@@ -14,7 +13,7 @@ export interface BriefStudio {
 
 /** Who the brief comes from and the fee it offers. */
 export interface BriefContext {
-  /** The Admin changing the studio: named as the studio's contact and where its reply goes. */
+  /** The Admin changing the studio: named in the PDF as the studio's contact. */
   senderId: string;
   /** Production fee (VND) offered to the studio, already checked against the budget left. */
   offeredFeeVnd: number;
@@ -24,11 +23,10 @@ export interface PreparedBrief {
   briefKey: string;
   offeredFeeVnd: number;
   subject: string;
-  text: string;
+  /** Body of the email; StudioMailService adds the greeting, the Studio Web link and the contact. */
+  lines: string[];
+  /** The brief PDF alone. */
   attachments: EmailAttachment[];
-  /** The Admin the brief comes from: shown as the sender, and where the studio's reply goes. */
-  creatorName: string;
-  creatorEmail: string;
 }
 
 /**
@@ -55,7 +53,6 @@ export class BriefService {
     projectId: string,
     studio: BriefStudio,
     seasonId: string | null,
-    materials: StoredMaterial[],
     context: BriefContext,
   ): Promise<PreparedBrief> {
     const sender = await this.prisma.user.findUniqueOrThrow({
@@ -75,21 +72,17 @@ export class BriefService {
             },
           },
         },
-        ideaFiles: { where: { purpose: 'IDEA' }, orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
       },
     });
     const { movie } = project;
-    const latestIdeaFiles = project.ideaFiles.filter(
-      (file, i, all) => all.findIndex((other) => other.fileName === file.fileName) === i,
-    );
 
     const content: BriefContent = {
       movieTitle: movie.title,
       scope: seasonId ? `Mùa ${movie.episodes[0]?.season.seasonNumber ?? ''}` : 'Toàn bộ dự án',
       studioName: studio.name,
       studioContact: studio.contactName,
-      creatorName: sender.fullName,
-      creatorEmail: sender.email,
+      contactName: sender.fullName,
+      contactEmail: sender.email,
       ideaDescription: project.ideaDescription,
       genres: movie.genres.map(({ genre }) => genre.name),
       offeredFeeVnd: context.offeredFeeVnd,
@@ -100,7 +93,6 @@ export class BriefService {
         targetDurationSeconds: episode.targetDurationSeconds,
         dueDate: episode.deliveryDeadline,
       })),
-      ideaFiles: [...latestIdeaFiles.map((file) => file.fileName), ...materials.map((file) => file.fileName)],
       issuedAt: new Date(),
     };
 
@@ -110,20 +102,13 @@ export class BriefService {
     return {
       briefKey,
       offeredFeeVnd: context.offeredFeeVnd,
-      creatorName: content.creatorName,
-      creatorEmail: content.creatorEmail,
       subject: `[AI Cinema] Đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope})`,
-      text: [
-        `Kính gửi ${studio.name},`,
-        '',
+      lines: [
         `AI Cinema gửi đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope}) gồm ${movie.episodes.length} tập.`,
         `Phí sản xuất đề xuất: ${formatVnd(context.offeredFeeVnd)} (trọn gói, không chia doanh thu).`,
-        'Nếu chưa đồng ý mức phí, vui lòng trả lời thư này cho đầu mối bên dưới.',
         'Chi tiết từng tập và hạn giao nằm trong brief PDF đính kèm.',
-        'Kịch bản và việc nộp phim được thực hiện trên hệ thống sau khi hai bên thống nhất hợp đồng.',
-        '',
-        `Đầu mối: ${content.creatorName} - ${content.creatorEmail}`,
-      ].join('\n'),
+        'Kịch bản và việc nộp phim được thực hiện trên Studio Web sau khi hai bên thống nhất hợp đồng.',
+      ],
       attachments: [{ key: briefKey, fileName: `brief-${projectId}.pdf`, contentType: 'application/pdf' }],
     };
   }

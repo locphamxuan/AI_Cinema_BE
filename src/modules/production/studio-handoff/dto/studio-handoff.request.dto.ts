@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { StudioMilestoneStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 import { IsVnd } from 'src/modules/production/production-cost/dto/vnd';
 
 const trimmed = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -38,7 +37,7 @@ class StudioChoiceDto {
   studioPhone?: string;
 }
 
-/** Sent as multipart so the new brief can carry its material: `scripts` and `references` files (BR-59). */
+/** Admin: move the project or a season to another studio; the new brief PDF is emailed to it. */
 export class ChangeStudioRequestDto extends StudioChoiceDto {
   @ApiPropertyOptional({ description: 'Season whose hand-off is replaced; omitted = the whole-project hand-off.' })
   @IsUUID('4')
@@ -63,29 +62,4 @@ export class ChangeStudioRequestDto extends StudioChoiceDto {
   @IsVnd(0)
   @IsOptional()
   forfeitedVnd?: number;
-}
-
-/** The milestones a Creator can move a hand-off to; the rest are set by the system (BR-58). */
-export const CREATOR_MILESTONES = [
-  StudioMilestoneStatus.STUDIO_ACCEPTED,
-  StudioMilestoneStatus.IN_PROGRESS,
-  StudioMilestoneStatus.DELIVERED,
-  StudioMilestoneStatus.STUDIO_DECLINED,
-] as const;
-
-export class UpdateMilestoneRequestDto {
-  @ApiProperty({ enum: CREATOR_MILESTONES })
-  @IsIn(CREATOR_MILESTONES)
-  status: (typeof CREATOR_MILESTONES)[number];
-
-  @ApiPropertyOptional({ example: 'Studio gửi bản dựng qua email ngày 20/10.', description: 'Required to decline.' })
-  @IsString()
-  @MaxLength(2000)
-  @IsOptional()
-  note?: string;
-
-  @ApiPropertyOptional({ description: 'Required for DELIVERED: the Submission the Creator uploaded from the studio.' })
-  @IsUUID('4')
-  @IsOptional()
-  mediaAssetId?: string;
 }

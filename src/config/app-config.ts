@@ -97,8 +97,6 @@ export interface AppConfig {
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
   google: { clientIds: string[] };
-  /** The Studio Web reports the films it mails back; null leaves that channel closed. */
-  studio: { webhookToken: string | null };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -271,7 +269,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
-    studio: { webhookToken: read.optional('STUDIO_WEBHOOK_TOKEN') ?? null },
     google: {
       clientIds: [
         ...new Set(

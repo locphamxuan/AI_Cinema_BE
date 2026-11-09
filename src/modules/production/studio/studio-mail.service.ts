@@ -1,7 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
-import { EMAIL_TEMPLATE, EmailOutboxService } from 'src/modules/platform/email/email-outbox.service';
+import {
+  EMAIL_TEMPLATE,
+  EmailOutboxService,
+  type EmailAttachment,
+  type NewEmail,
+} from 'src/modules/platform/email/email-outbox.service';
 
 export interface StudioMail {
   /** No studio on the project yet: nothing is sent. */
@@ -14,6 +19,10 @@ export interface StudioMail {
   portalPath: string;
   /** Screen of the back office opened by the failure notification. */
   failureLink: string;
+  /** STUDIO_UPDATE unless said otherwise (the brief of a studio change). */
+  template?: NewEmail['template'];
+  /** Only the brief PDF of a studio change: scripts and films never leave the platform by email. */
+  attachments?: EmailAttachment[];
 }
 
 /**
@@ -41,7 +50,7 @@ export class StudioMailService {
     const portal = `${this.config.studioWebUrl.replace(/\/+$/, '')}${mail.portalPath}`;
     return this.outbox.create(tx, {
       to: studio.email,
-      template: EMAIL_TEMPLATE.STUDIO_UPDATE,
+      template: mail.template ?? EMAIL_TEMPLATE.STUDIO_UPDATE,
       subject: mail.subject,
       text: [
         `Kính gửi ${studio.name},`,
@@ -52,7 +61,7 @@ export class StudioMailService {
         '',
         `Đầu mối: ${sender.fullName} - ${sender.email}. Trả lời thư này để trao đổi trực tiếp.`,
       ].join('\n'),
-      attachments: [],
+      attachments: mail.attachments ?? [],
       notifyOnFailureId: mail.senderId,
       link: mail.failureLink,
       fromName: `${sender.fullName} - AI Cinema`,
