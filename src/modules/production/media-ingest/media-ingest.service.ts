@@ -23,6 +23,7 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
+import { removeQuietly } from 'src/infrastructure/storage/remove-quietly';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
@@ -127,7 +128,7 @@ export class MediaIngestService {
       submissionNote: dto.submissionNote?.trim() || undefined,
     }).catch(async (error: unknown) => {
       // No version points at the stored file (e.g. a concurrent delivery won): do not leave it behind.
-      await this.storage.remove(storageKey, 'private').catch(() => undefined);
+      await removeQuietly(this.storage, storageKey, 'private');
       throw error;
     });
     return this.enqueue(asset.id);

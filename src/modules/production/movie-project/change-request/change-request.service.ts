@@ -12,6 +12,7 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
+import { removeQuietly } from 'src/infrastructure/storage/remove-quietly';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
@@ -117,7 +118,7 @@ export class ChangeRequestService {
         return request;
       })
       .catch(async (error: unknown) => {
-        if (attachment) await this.storage.remove(attachment.attachmentKey, 'private').catch(() => undefined);
+        if (attachment) await removeQuietly(this.storage, attachment.attachmentKey, 'private');
         throw error;
       });
   }
