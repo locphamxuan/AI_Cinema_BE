@@ -66,7 +66,8 @@ export const SUPPORT_TOOL_DEFINITIONS: SupportToolDefinition[] = [
   },
   {
     name: SUPPORT_TOOL.SEARCH_CATALOG,
-    description: 'Tìm phim/tập đã publish theo tên.',
+    description:
+      'Tìm phim theo tên (chỉ phim đang bán có ít nhất một tập đã phát hành), kèm các tập đầu tiên: số thứ tự, giá Coin, free starter, trạng thái phát hành. Dùng để lấy episodeId cho get_episode_access.',
     parameters: {
       type: 'object',
       properties: { query: { type: 'string', description: 'Tên phim hoặc tập cần tìm' } },

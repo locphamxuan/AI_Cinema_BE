@@ -6,6 +6,7 @@ import { OpenAiCompatibleChatClient } from 'src/infrastructure/ai/openai-compati
 import { OpenAiCompatibleEmbeddingClient } from 'src/infrastructure/ai/openai-compatible-embedding.client';
 import { AccessDecisionModule } from 'src/modules/episode-access/access-decision/access-decision.module';
 import { MembershipPlanModule } from 'src/modules/episode-access/membership-plan/membership-plan.module';
+import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { SupportAgentService } from './ai/support-agent.service';
 import { GuardrailsService } from './ai/guardrails';
@@ -32,7 +33,7 @@ import { StaffSupportService } from './staff/staff-support.service';
 import { SupportAutoCloseSweep } from './support-auto-close.sweep';
 
 @Module({
-  imports: [PlatformSettingModule, AccessDecisionModule, MembershipPlanModule],
+  imports: [PlatformSettingModule, AccessDecisionModule, MembershipPlanModule, CatalogModule],
   controllers: [MemberSupportController, StaffSupportController, KnowledgeController, SupportAiHealthController],
   providers: [
     // AI providers

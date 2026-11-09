@@ -3,6 +3,7 @@ import { SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AccessDecisionService } from 'src/modules/episode-access/access-decision/access-decision.service';
 import { MembershipPlanService } from 'src/modules/episode-access/membership-plan/membership-plan.service';
+import { CatalogService } from 'src/modules/catalog/catalog.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { SUPPORT_TOOL, type SupportToolName } from './tool-definitions';
 
@@ -20,6 +21,7 @@ export class SupportTools {
     private readonly settings: PlatformSettingService,
     private readonly accessDecisions: AccessDecisionService,
     private readonly plans: MembershipPlanService,
+    private readonly catalog: CatalogService,
   ) {}
 
   async execute(
@@ -155,27 +157,39 @@ export class SupportTools {
   }
 
   private async searchCatalog(query: string): Promise<SupportToolResult> {
-    if (!query.trim()) return { ok: false, error: 'NOT_FOUND' };
-    const movies = await this.prisma.movie.findMany({
-      where: {
-        title: { contains: query.trim(), mode: 'insensitive' },
-        episodes: { some: { status: 'PUBLISHED' } },
-      },
-      take: 5,
-      select: {
-        id: true,
-        title: true,
-        synopsis: true,
-        releaseYear: true,
-        episodes: {
-          where: { status: 'PUBLISHED' },
-          orderBy: { episodeNumber: 'asc' },
-          take: 5,
-          select: { id: true, episodeNumber: true, title: true, coinPrice: true },
-        },
-      },
-    });
-    return movies.length ? { ok: true, data: movies } : { ok: false, error: 'NOT_FOUND' };
+    const term = query.trim();
+    if (!term) return { ok: false, error: 'NOT_FOUND' };
+    // Plan §5.2: the public catalog, the same read queries the library screen uses, so the
+    // agent sees exactly what members can browse: listed movies and their visible episodes.
+    const page = await this.catalog.listMovies({ search: term, page: 1, limit: 5, path: '' });
+    const results = await Promise.all(
+      page.data.map(async (movie) => {
+        try {
+          const episodes = await this.catalog.episodes(movie.id);
+          return {
+            id: movie.id,
+            title: movie.title,
+            synopsis: movie.synopsis,
+            releaseYear: movie.releaseYear,
+            episodes: episodes.slice(0, 5).map((episode) => ({
+              id: episode.id,
+              episodeNumber: episode.episodeNumber,
+              title: episode.title,
+              coinPrice: episode.coinPrice,
+              isFreeStarter: episode.isFreeStarter,
+              availability: episode.availability,
+              notice: episode.notice,
+            })),
+          };
+        } catch (error) {
+          // A movie unlisted between the two calls is just skipped, not a failed turn.
+          if (error instanceof NotFoundException) return null;
+          throw error;
+        }
+      }),
+    );
+    const found = results.filter((result) => result !== null);
+    return found.length ? { ok: true, data: found } : { ok: false, error: 'NOT_FOUND' };
   }
 
   private async episodeAccess(memberId: string, episodeId?: string): Promise<SupportToolResult> {
