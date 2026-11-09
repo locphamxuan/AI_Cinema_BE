@@ -15,7 +15,6 @@ import {
   StudioMilestoneStatus,
   UserRole,
   type MediaAsset,
-  type Prisma,
 } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind } from 'src/common/validation/uploaded-file';
@@ -39,34 +38,10 @@ import type {
   SubmitMediaLinkRequestDto,
   SubmitMediaUploadRequestDto,
 } from './dto/submit-media.request.dto';
+import { ASSET_DETAIL, SUBMITTABLE, type NewVersion } from './media-version';
 import { MediaOutcomeService } from './pipeline/media-outcome.service';
 import { MEDIA_INGEST_JOB, type MediaIngestJobData, VIDEO_KINDS } from './pipeline/media-pipeline.service';
 import { assertPublicUrl, UnsafeUrlError } from 'src/common/security/safe-url';
-
-/** A delivery is accepted while the studio still owes the episode, or replaces one under review. */
-const SUBMITTABLE: EpisodeStatus[] = [
-  EpisodeStatus.AWAITING_MEDIA,
-  EpisodeStatus.IN_REVIEW,
-  EpisodeStatus.CHANGES_REQUESTED,
-];
-
-const ASSET_DETAIL = {
-  ingestJobs: { orderBy: { createdAt: 'asc' } },
-  submittedBy: { select: { id: true, fullName: true } },
-  studioHandoff: { select: { id: true, studio: { select: { id: true, name: true } } } },
-} satisfies Prisma.MediaAssetInclude;
-
-interface NewVersion {
-  id: string;
-  sourceMethod: MediaSourceMethod;
-  sourceUrl?: string;
-  storageKey?: string;
-  fileSizeBytes?: bigint;
-  isSelfHosted: boolean;
-  aiDisclosure: AiDisclosureDto;
-  proposedLabelType: SubmitMediaLinkRequestDto['proposedLabelType'];
-  submissionNote?: string;
-}
 
 /** MF-1 step 5: the studio delivers an episode; every delivery is a new immutable version (BR-14). */
 @Injectable()
