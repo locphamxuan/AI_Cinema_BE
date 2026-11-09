@@ -34,24 +34,14 @@ export class StudioController {
   ) {}
 
   @Get()
-  @RequirePermission(
-    PERMISSION.STUDIO_MANAGE,
-    PERMISSION.STUDIO_HANDOFF,
-    PERMISSION.PROJECT_MANAGE,
-    PERMISSION.PROJECT_CREATE,
-  )
+  @RequirePermission(PERMISSION.STUDIO_MANAGE, PERMISSION.PROJECT_MANAGE, PERMISSION.PROJECT_CREATE)
   @ApiOperation({ summary: 'Studios by name; ?active=true lists only those that can take a project' })
   list(@Query() query: StudioListQueryDto) {
     return this.studios.list(query.active);
   }
 
   @Get(':studioId')
-  @RequirePermission(
-    PERMISSION.STUDIO_MANAGE,
-    PERMISSION.STUDIO_HANDOFF,
-    PERMISSION.PROJECT_MANAGE,
-    PERMISSION.PROJECT_CREATE,
-  )
+  @RequirePermission(PERMISSION.STUDIO_MANAGE, PERMISSION.PROJECT_MANAGE, PERMISSION.PROJECT_CREATE)
   detail(@Param('studioId', ID) studioId: string) {
     return this.studios.detail(studioId);
   }

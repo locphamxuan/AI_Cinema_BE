@@ -20,7 +20,6 @@ export const PERMISSION = {
   SCRIPT_WRITE: 'script:write',
   SCRIPT_APPROVE: 'script:approve',
   STUDIO_PORTAL: 'studio:portal',
-  STUDIO_HANDOFF: 'studio:handoff',
   STUDIO_MANAGE: 'studio:manage',
   MEDIA_INGEST: 'media:ingest',
   CONTENT_REVIEW: 'content:review',
@@ -97,12 +96,12 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
     area: 'studio',
     description: 'Studio account: negotiate and sign its contracts, read its projects, deliver films',
   },
-  'studio:handoff': {
-    area: 'studio',
-    description: 'Hand an assigned project off to a studio, change the studio, record its milestones',
-  },
   'studio:manage': { area: 'studio', description: 'Keep the catalog of partner studios: add, edit, deactivate' },
-  'media:ingest': { area: 'media', description: 'Upload the episodes, subtitles and artwork a studio delivers' },
+  'media:ingest': {
+    area: 'media',
+    description:
+      'Work on the episodes of an assigned project: team, delegations, episode notes (films come from the studio)',
+  },
   'content:review': {
     area: 'review',
     description: 'Review delivered episodes, apply the AI label, run the compliance check',
@@ -167,12 +166,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.REWARD_CHECKIN,
     PERMISSION.SUBSCRIPTION_SELF_MANAGE,
   ],
-  CONTENT_CREATOR: [
-    PERMISSION.PROJECT_SUGGEST,
-    PERMISSION.SCRIPT_WRITE,
-    PERMISSION.STUDIO_HANDOFF,
-    PERMISSION.MEDIA_INGEST,
-  ],
+  CONTENT_CREATOR: [PERMISSION.PROJECT_SUGGEST, PERMISSION.SCRIPT_WRITE, PERMISSION.MEDIA_INGEST],
   CONTENT_REVIEWER: [
     PERMISSION.PROJECT_MANAGE,
     PERMISSION.PROJECT_SUGGEST,
