@@ -1,13 +1,11 @@
 import { SubscriptionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import type { CoinSpendService } from '../coin-wallet/coin-spend.service';
-import type { WalletService } from '../coin-wallet/wallet.service';
-import { SUB_REASON, SubscriptionService } from './subscription.service';
+import { SUB_REASON } from './subscription-rules';
+import { SubscriptionAutoRenewService } from './subscription-auto-renew.service';
 
-describe('SubscriptionService auto-renew toggles', () => {
+describe('SubscriptionAutoRenewService', () => {
   const tx = { subscription: { update: jest.fn() } };
   const prisma = {
     $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
@@ -16,13 +14,10 @@ describe('SubscriptionService auto-renew toggles', () => {
   };
   const settings = { get: jest.fn().mockResolvedValue({ subscriptionCancelWindowHours: 24 }) };
   const notifications = { notify: jest.fn() };
-  const service = new SubscriptionService(
+  const service = new SubscriptionAutoRenewService(
     prisma as unknown as PrismaService,
-    {} as unknown as CoinSpendService,
-    {} as unknown as WalletService,
     settings as unknown as PlatformSettingService,
     notifications as unknown as NotificationService,
-    {} as unknown as AuditLogService,
   );
 
   const active = {
