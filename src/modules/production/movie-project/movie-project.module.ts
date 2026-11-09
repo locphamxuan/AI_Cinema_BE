@@ -12,6 +12,7 @@ import { IdeaFileService } from './idea-file/idea-file.service';
 import { MovieProjectController } from './movie-project.controller';
 import { MovieProjectService } from './movie-project.service';
 import { ProjectLifecycleService } from './project-lifecycle.service';
+import { ProjectPipelineService } from './project-pipeline.service';
 import { ProjectNoteController } from './project-note/project-note.controller';
 import { ProjectNoteService } from './project-note/project-note.service';
 import { ProjectStructureController } from './structure/project-structure.controller';
@@ -34,6 +35,7 @@ import { ProjectTeamService } from './team/project-team.service';
   providers: [
     MovieProjectService,
     ProjectLifecycleService,
+    ProjectPipelineService,
     ProjectStructureService,
     ProjectTeamService,
     ArtworkService,

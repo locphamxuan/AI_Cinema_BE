@@ -10,6 +10,7 @@ import { AssignCreatorRequestDto, ReasonRequestDto } from './dto/project-actions
 import { MovieProjectSummaryDto } from './dto/movie-project-summary.dto';
 import { UpdateMovieProjectRequestDto } from './dto/update-movie-project.request.dto';
 import { MovieProjectService } from './movie-project.service';
+import { ProjectPipelineService } from './project-pipeline.service';
 import { ProjectLifecycleService } from './project-lifecycle.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -25,6 +26,7 @@ export class MovieProjectController {
   constructor(
     private readonly projects: MovieProjectService,
     private readonly lifecycle: ProjectLifecycleService,
+    private readonly pipelines: ProjectPipelineService,
   ) {}
 
   @Post()
@@ -39,6 +41,13 @@ export class MovieProjectController {
   @ApiPaginatedResponse(MovieProjectSummaryDto, { filterableColumns: { status: ['$eq', '$in'], creatorId: ['$eq'] } })
   list(@Paginate() query: PaginateQuery, @CurrentUser() user: AuthenticatedUser) {
     return this.projects.list(query, user);
+  }
+
+  // Declared before :projectId so "pipeline" is not read as an id.
+  @Get('pipeline')
+  @ApiOperation({ summary: 'The projects of GET /projects, each with its script, episodes and open contract round' })
+  pipeline(@Paginate() query: PaginateQuery, @CurrentUser() user: AuthenticatedUser) {
+    return this.pipelines.list(query, user);
   }
 
   @Get(':projectId')
