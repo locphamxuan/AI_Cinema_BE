@@ -1,7 +1,10 @@
+import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { CatalogService, episodeView } from './catalog.service';
-import { REVISION_NOTICE } from './episode-visibility';
+import { REVISION_NOTICE, VISIBLE_EPISODE } from './episode-visibility';
+
+jest.mock('@nestarc/pagination', () => ({ paginate: jest.fn() }));
 
 const base = {
   id: 'e1',
@@ -82,5 +85,33 @@ describe('Catalog ranking', () => {
   it('keeps only the top of the list', async () => {
     prisma.movie.findMany.mockResolvedValue([movie('a', [3]), movie('b', [2]), movie('c', [1])]);
     expect((await catalog.ranking(2)).map((m) => m.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('Catalog movie list', () => {
+  const paginateMock = paginate as jest.MockedFunction<typeof paginate>;
+  const prisma = { movie: {} };
+  const service = new CatalogService(prisma as unknown as PrismaService, {} as unknown as PlatformSettingService);
+  const QUERY = { path: '', page: 1, limit: 20 } as PaginateQuery;
+
+  it('adds the visible episode count to each card in the one paginated query', async () => {
+    paginateMock.mockResolvedValueOnce({
+      data: [{ id: 'm1', title: 'Phim', genres: [{ genre: { id: 'g1', name: 'Kinh dị' } }], _count: { episodes: 3 } }],
+      meta: { totalItems: 1 },
+    } as never);
+
+    const page = await service.listMovies(QUERY);
+
+    expect(page.meta).toEqual({ totalItems: 1 });
+    expect(page.data[0]).toMatchObject({ id: 'm1', title: 'Phim', genres: [{ id: 'g1' }], episodeCount: 3 });
+    expect(page.data[0]).not.toHaveProperty('_count');
+    expect(paginateMock).toHaveBeenCalledTimes(1);
+    expect(paginateMock).toHaveBeenCalledWith(
+      QUERY,
+      prisma.movie,
+      expect.objectContaining({
+        relations: expect.objectContaining({ _count: { select: { episodes: { where: VISIBLE_EPISODE } } } }),
+      }),
+    );
   });
 });

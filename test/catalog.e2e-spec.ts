@@ -67,7 +67,8 @@ describe('Public catalog (e2e)', () => {
     const page = await guest<{ data: (Card & Record<string, unknown>)[] }>('/movies?limit=100');
     const card = page.data.find((m) => m.id === listed.id)!;
 
-    expect(card).toMatchObject({ ageRating: 'T16', aiGenerated: true });
+    // Episodes 1–3 are out; the scheduled episode 4 is not counted.
+    expect(card).toMatchObject({ ageRating: 'T16', aiGenerated: true, episodeCount: 3 });
     expect(card.genres.length).toBeGreaterThan(0);
     for (const internal of ['reviewerId', 'creatorId', 'studioId', 'studio', 'ideaDescription', 'status']) {
       expect(card).not.toHaveProperty(internal);
