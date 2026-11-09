@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { ChangeRequestStatus, ProjectStatus, Prisma, UserRole } from '@prisma/client';
+import { ProjectStatus, Prisma, UserRole } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -15,12 +15,7 @@ import { resolveGenreIds } from './genre-resolver';
 import { newEpisodeSchedule, seasonWindow } from './episode-schedule';
 import { StudioService } from 'src/modules/production/studio/studio.service';
 import { ProjectLifecycleService } from './project-lifecycle.service';
-
-const PERSON = { select: { id: true, fullName: true, email: true } } as const;
-
-const OPEN_CHANGE_REQUESTS = {
-  _count: { select: { changeRequests: { where: { status: ChangeRequestStatus.OPEN } } } },
-} satisfies Prisma.MovieProjectInclude;
+import { lastActivityOf, LIST_ROW, OPEN_CHANGE_REQUESTS, PERSON, PROJECT_PAGE, titledProjects } from './project-list';
 
 const PROJECT_DETAIL = {
   movie: {
@@ -61,14 +56,6 @@ const PROJECT_DETAIL = {
   ...OPEN_CHANGE_REQUESTS,
 } satisfies Prisma.MovieProjectInclude;
 
-/** A row of the project list: its catalog face, people, studio and open change requests. */
-const LIST_ROW = {
-  movie: { include: { _count: { select: { episodes: true } } } },
-  reviewer: PERSON,
-  creator: PERSON,
-  studio: true,
-  ...OPEN_CHANGE_REQUESTS,
-} satisfies Prisma.MovieProjectInclude;
 type ListRow = Prisma.MovieProjectGetPayload<{ include: typeof LIST_ROW }>;
 
 /** Fields of an update that the catalog shows; the others belong to the project row. */
@@ -173,18 +160,15 @@ export class MovieProjectService {
   /** One row per project, its catalog fields alongside, with the open change requests (§4.1.8). */
   async list(query: PaginateQuery, user: AuthenticatedUser) {
     const readable = await this.access.readableWhere(user);
-    // The title lives on the catalog movie, out of reach of the paginator's own search.
-    const titled: Prisma.MovieProjectWhereInput = query.search
-      ? { movie: { title: { contains: query.search, mode: 'insensitive' } } }
-      : {};
     const page = await paginate(query, this.prisma.movieProject, {
-      where: { AND: [readable, titled] },
+      where: { AND: [readable, titledProjects(query)] },
       relations: LIST_ROW,
-      sortableColumns: ['status', 'createdAt', 'updatedAt'],
-      defaultSortBy: [['updatedAt', 'DESC']],
-      filterableColumns: { status: ['$eq', '$in'], creatorId: ['$eq'] },
+      ...PROJECT_PAGE,
     });
-    const lastActivity = await this.lastActivity(page.data.map((project) => project.id));
+    const lastActivity = await lastActivityOf(
+      this.prisma,
+      page.data.map((project) => project.id),
+    );
     return {
       ...page,
       data: (page.data as ListRow[]).map(({ movie: { _count: movieCount, ...movie }, _count, ...project }) => ({
@@ -195,18 +179,6 @@ export class MovieProjectService {
         lastActivityAt: lastActivity.get(project.id) ?? project.updatedAt,
       })),
     };
-  }
-
-  /** The newest content event of each project: "Cập nhật lần cuối" counts every change, not only the project row. */
-  private async lastActivity(projectIds: string[]): Promise<Map<string, Date>> {
-    const latest = await this.prisma.auditLog.groupBy({
-      by: ['projectId'],
-      where: { projectId: { in: projectIds } },
-      _max: { createdAt: true },
-    });
-    return new Map(
-      latest.flatMap(({ projectId, _max }) => (projectId && _max.createdAt ? [[projectId, _max.createdAt]] : [])),
-    );
   }
 
   /** The project with its catalog fields flattened in, as the production screens read it. */
