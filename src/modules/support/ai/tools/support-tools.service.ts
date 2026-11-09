@@ -116,6 +116,8 @@ export class SupportTools {
   }
 
   private async recentPayments(memberId: string): Promise<SupportToolResult> {
+    // Plan §5.2 sensitive-field rule: providerTxnId / providerPaymentId / redirectUrl never
+    // leave this service — the model only needs provider, amount and status.
     const rows = await this.prisma.payment.findMany({
       where: { userId: memberId },
       orderBy: { createdAt: 'desc' },
@@ -223,6 +225,7 @@ export class SupportTools {
   }
 
   private async devices(memberId: string): Promise<SupportToolResult> {
+    // deviceKey (bearer identifier, X-Device-Id) stays internal; UserDevice has no IP column.
     const rows = await this.prisma.userDevice.findMany({
       where: { userId: memberId },
       orderBy: { lastSeenAt: 'desc' },
@@ -233,6 +236,8 @@ export class SupportTools {
   }
 
   private async streamingSessions(memberId: string): Promise<SupportToolResult> {
+    // Plan §5.2 sensitive-field rule: ipAddress / userAgent / idempotencyKey never leave this
+    // service; the tool description promises no IP and no stream URL.
     const rows = await this.prisma.streamingSession.findMany({
       where: { userId: memberId },
       orderBy: { startedAt: 'desc' },
