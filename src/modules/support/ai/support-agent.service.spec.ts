@@ -258,4 +258,167 @@ describe('SupportAgentService (live)', () => {
     expect(reply.metadata.model).toBe('mock');
     expect(client.calls).toHaveLength(0);
   });
+
+  it('never runs a tool the model hallucinates and feeds it UNAVAILABLE', async () => {
+    const client = new FakeChatClient([
+      toolCall('hack_the_planet', { memberId: 'member-1' }),
+      chatResult(''),
+      finalAnswer({ reply: 'Không thể làm được.', resolution: 'NEEDS_HUMAN', confidence: 0.5, quickReplies: [] }),
+    ]);
+    const { agent, execute } = buildAgent(client);
+
+    const reply = await agent.reply(turn);
+
+    expect(execute).not.toHaveBeenCalled(); // not isSupportToolName → no handler runs
+    expect(reply.metadata.toolCalls).toEqual([
+      {
+        name: 'hack_the_planet',
+        arguments: { memberId: 'member-1' },
+        result: { ok: false, error: 'UNAVAILABLE' },
+      },
+    ]);
+    expect(reply.resolution).toBe('NEEDS_HUMAN');
+  });
+
+  it('feeds a tool NOT_FOUND back without failing the whole turn', async () => {
+    const client = new FakeChatClient([
+      toolCall('get_member_wallet'),
+      chatResult(''),
+      finalAnswer({
+        reply: 'Không tìm thấy ví cho tài khoản này.',
+        resolution: 'NEEDS_HUMAN',
+        confidence: 0.6,
+        quickReplies: [],
+      }),
+    ]);
+    const execute = jest.fn().mockResolvedValue({ ok: false, error: 'NOT_FOUND' });
+    const { agent } = buildAgent(client, { execute });
+
+    const reply = await agent.reply(turn);
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(reply.resolution).toBe('NEEDS_HUMAN');
+    expect(reply.metadata.toolCalls[0].result).toEqual({ ok: false, error: 'NOT_FOUND' });
+  });
+
+  it('retries an out-of-range confidence and accepts the corrected answer', async () => {
+    const client = new FakeChatClient([
+      chatResult('draft'),
+      finalAnswer({
+        reply: 'Câu trả lời lỗi, độ chắc chắn 5.',
+        resolution: 'ANSWERED',
+        confidence: 5,
+        quickReplies: [],
+      }),
+      finalAnswer({ reply: 'Số dư Coin của bạn là 100.', resolution: 'ANSWERED', confidence: 0.9, quickReplies: [] }),
+    ]);
+    const { agent } = buildAgent(client);
+
+    const reply = await agent.reply(turn);
+
+    expect(client.calls).toHaveLength(3);
+    expect(reply.reply).toBe('Số dư Coin của bạn là 100.');
+    expect(reply.confidence).toBe(0.9);
+  });
+
+  it('falls back to Staff when resolution is not one of the enum values', async () => {
+    const client = new FakeChatClient([
+      chatResult('draft'),
+      finalAnswer({ reply: 'Đã xong.', resolution: 'DONE_NOW', confidence: 0.9, quickReplies: [] }),
+      finalAnswer({ reply: 'Đã xong.', resolution: 'DONE_NOW', confidence: 0.9, quickReplies: [] }),
+    ]);
+    const { agent } = buildAgent(client);
+
+    const reply = await agent.reply(turn);
+
+    expect(reply.resolution).toBe('NEEDS_HUMAN');
+    expect(reply.escalationReason).toBe(SupportEscalationReason.INSUFFICIENT_INFO);
+  });
+
+  it('keeps a valid reply with a junk escalationReason but drops unknown quick replies', async () => {
+    const client = new FakeChatClient([
+      chatResult('draft'),
+      finalAnswer({
+        reply: 'Số dư Coin của bạn là 100.',
+        resolution: 'ANSWERED',
+        escalationReason: 'NOT_A_REASON',
+        confidence: 0.9,
+        quickReplies: ['REQUEST_STAFF', 'WARP_SPEED'],
+      }),
+    ]);
+    const { agent } = buildAgent(client);
+
+    const reply = await agent.reply(turn);
+
+    expect(reply.resolution).toBe('ANSWERED');
+    expect(reply.escalationReason).toBeUndefined();
+    expect(reply.quickReplies).toEqual(['REQUEST_STAFF']);
+  });
+
+  it('skips the tool loop entirely when AI_MAX_TOOL_ROUNDS is 0', async () => {
+    const client = new FakeChatClient([
+      toolCall('get_member_wallet'),
+      finalAnswer({ reply: 'Không gọi tool, trả thẳng.', resolution: 'ANSWERED', confidence: 0.9, quickReplies: [] }),
+    ]);
+    const { agent, execute } = buildAgent(client, { overrides: { aiMaxToolRounds: 0 } });
+
+    const reply = await agent.reply(turn);
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(client.calls).toHaveLength(2);
+    expect(reply.metadata.toolCalls).toEqual([]);
+    expect(reply.reply).toBe('Không gọi tool, trả thẳng.');
+  });
+
+  it('blocks a reply that promises a refund the AI cannot grant', async () => {
+    const client = new FakeChatClient([
+      chatResult('draft'),
+      finalAnswer({
+        reply: 'Mình sẽ hoàn tiền toàn bộ cho bạn ngay.',
+        resolution: 'ANSWERED',
+        confidence: 0.95,
+        quickReplies: [],
+      }),
+    ]);
+    const { agent } = buildAgent(client);
+
+    const reply = await agent.reply(turn);
+
+    expect(reply.resolution).toBe('NEEDS_HUMAN');
+    expect(reply.escalationReason).toBe(SupportEscalationReason.STAFF_NEEDED);
+    expect(reply.reply).not.toContain('hoàn tiền');
+  });
+
+  it('keeps the LLM handoff summary when escalating on low confidence', async () => {
+    const client = new FakeChatClient([
+      chatResult('draft'),
+      finalAnswer({
+        reply: 'Có lẽ số dư là 100.',
+        resolution: 'ANSWERED',
+        confidence: 0.2,
+        handoffSummary: 'Member hỏi số dư, tool chưa có dữ liệu chắc chắn.',
+        quickReplies: [],
+      }),
+    ]);
+    const { agent } = buildAgent(client);
+
+    const reply = await agent.reply(turn);
+
+    expect(reply.resolution).toBe('NEEDS_HUMAN');
+    expect(reply.handoffSummary).toBe('Member hỏi số dư, tool chưa có dữ liệu chắc chắn.');
+  });
+
+  it('propagates provider errors so the chat layer escalates instead of inventing an answer', async () => {
+    const client = new FakeChatClient([new Error('Provider down')]);
+    const { agent } = buildAgent(client);
+
+    await expect(agent.reply(turn)).rejects.toThrow('Provider down');
+  });
+
+  it('reports disabled mode through the enabled getter', () => {
+    const client = new FakeChatClient([]);
+    const { agent } = buildAgent(client, { overrides: { aiMode: 'disabled' } });
+
+    expect(agent.enabled).toBe(false);
+  });
 });
