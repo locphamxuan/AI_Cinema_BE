@@ -1,5 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ContractProposedBy, ContractStatus, ProjectStatus, type Prisma } from '@prisma/client';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { ContractProposedBy, ContractStatus, ProjectStatus } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -7,33 +7,24 @@ import { CONTENT_EVENT, type ContentEvent } from 'src/modules/platform/audit-log
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
-import { PROJECT_REF } from 'src/modules/production/project-access/project-relations';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { ContractHandoffService } from './contract-handoff.service';
-
-const PERSON = { select: { id: true, fullName: true } } as const;
-const CONTRACT_DETAIL = {
-  project: PROJECT_REF,
-  studio: { select: { id: true, name: true } },
-  handoff: { select: { id: true, milestoneStatus: true } },
-  createdBy: PERSON,
-  adminSignedBy: PERSON,
-} satisfies Prisma.ContractInclude;
-
-type Detailed = Prisma.ContractGetPayload<{ include: typeof CONTRACT_DETAIL }>;
-type Project = Detailed['project'];
+import {
+  assertContractStatus,
+  CONTRACT_DETAIL,
+  lockedContract,
+  OPEN_CONTRACT_STATUSES,
+  openNextRound,
+  reloadContract,
+  STANDARD_TERMS,
+  type Detailed,
+} from './contract-rounds';
 
 export interface SentTemplate {
   contract: Detailed;
   /** The email telling the studio; send it with StudioMailService.dispatch once the transaction committed. */
   mailId: string | null;
 }
-
-/** Rounds still being negotiated: a project has at most one at a time. */
-const OPEN: ContractStatus[] = [ContractStatus.SENT, ContractStatus.STUDIO_SIGNED, ContractStatus.ADMIN_COUNTERED];
-
-const STANDARD_TERMS =
-  'Studio sản xuất đúng Kịch bản Final và tiến độ đã thống nhất; nền tảng có quyền yêu cầu chỉnh sửa nội dung trước khi nghiệm thu; Studio không chia sẻ phim cho bên thứ ba.';
 
 const vnd = (amount: number | bigint) => `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
 
@@ -61,7 +52,9 @@ export class ContractService {
     if (project.status !== ProjectStatus.ASSIGNED) {
       throw new ConflictException(`A contract is only sent while the project is ASSIGNED, not ${project.status}`);
     }
-    const open = await tx.contract.count({ where: { projectId, status: { in: [...OPEN, ContractStatus.SIGNED] } } });
+    const open = await tx.contract.count({
+      where: { projectId, status: { in: [...OPEN_CONTRACT_STATUSES, ContractStatus.SIGNED] } },
+    });
     if (open) throw new ConflictException('This project already has a contract');
     const contract = await tx.contract.create({
       data: {
@@ -117,9 +110,9 @@ export class ContractService {
   /** Admin agrees with the cost the studio proposed: signs, completing the contract and handing the project off. */
   async sign(contractId: string, admin: AuthenticatedUser): Promise<Detailed> {
     return this.withMail(async (tx, mailIds) => {
-      const contract = await this.locked(tx, contractId);
+      const contract = await lockedContract(tx, contractId);
       await this.access.project(contract.projectId, admin, 'read');
-      this.assertStatus(contract, ContractStatus.STUDIO_SIGNED, 'countersign');
+      assertContractStatus(contract, ContractStatus.STUDIO_SIGNED, 'countersign');
       await tx.contract.update({
         where: { id: contractId },
         data: { status: ContractStatus.SIGNED, adminSignedAt: new Date(), adminSignedById: admin.id },
@@ -131,11 +124,11 @@ export class ContractService {
   /** Admin disagrees: proposes a new cost, signs it, and opens a new round for the studio. */
   async counter(contractId: string, costVnd: number, admin: AuthenticatedUser): Promise<Detailed> {
     return this.withMail(async (tx, mailIds) => {
-      const contract = await this.locked(tx, contractId);
+      const contract = await lockedContract(tx, contractId);
       await this.access.project(contract.projectId, admin, 'read');
-      this.assertStatus(contract, ContractStatus.STUDIO_SIGNED, 'counter');
+      assertContractStatus(contract, ContractStatus.STUDIO_SIGNED, 'counter');
       await this.handoffs.assertAffordable(tx, contract.projectId, costVnd);
-      const next = await this.nextRound(tx, contract, {
+      const next = await openNextRound(tx, contract, {
         costVnd: BigInt(costVnd),
         proposedBy: ContractProposedBy.ADMIN,
         status: ContractStatus.ADMIN_COUNTERED,
@@ -158,8 +151,8 @@ export class ContractService {
   /** Studio: fills in the cost and signs the freshly sent template. */
   async propose(contractId: string, costVnd: number, studioId: string): Promise<Detailed> {
     return this.prisma.$transaction(async (tx) => {
-      const contract = await this.locked(tx, contractId, studioId);
-      this.assertStatus(contract, ContractStatus.SENT, 'fill in');
+      const contract = await lockedContract(tx, contractId, studioId);
+      assertContractStatus(contract, ContractStatus.SENT, 'fill in');
       await tx.contract.update({
         where: { id: contractId },
         data: {
@@ -169,7 +162,7 @@ export class ContractService {
           status: ContractStatus.STUDIO_SIGNED,
         },
       });
-      const proposed = await this.reload(tx, contractId);
+      const proposed = await reloadContract(tx, contractId);
       await this.record(tx, proposed, CONTENT_EVENT.CONTRACT_PROPOSED, null, { costVnd });
       await this.tell(tx, proposed, `Studio "${proposed.studio.name}" báo giá ${vnd(costVnd)} và đã ký, chờ Admin.`);
       return proposed;
@@ -179,8 +172,8 @@ export class ContractService {
   /** Studio: agrees with the Admin's countered cost and signs, completing the contract. */
   async studioSign(contractId: string, studioId: string): Promise<Detailed> {
     return this.withMail(async (tx, mailIds) => {
-      const contract = await this.locked(tx, contractId, studioId);
-      this.assertStatus(contract, ContractStatus.ADMIN_COUNTERED, 'sign');
+      const contract = await lockedContract(tx, contractId, studioId);
+      assertContractStatus(contract, ContractStatus.ADMIN_COUNTERED, 'sign');
       await tx.contract.update({
         where: { id: contractId },
         data: { status: ContractStatus.SIGNED, studioSignedAt: new Date() },
@@ -192,9 +185,9 @@ export class ContractService {
   /** Studio: disagrees with the Admin's countered cost, proposes another and signs it. */
   async studioCounter(contractId: string, costVnd: number, studioId: string): Promise<Detailed> {
     return this.prisma.$transaction(async (tx) => {
-      const contract = await this.locked(tx, contractId, studioId);
-      this.assertStatus(contract, ContractStatus.ADMIN_COUNTERED, 'answer with another price');
-      const next = await this.nextRound(tx, contract, {
+      const contract = await lockedContract(tx, contractId, studioId);
+      assertContractStatus(contract, ContractStatus.ADMIN_COUNTERED, 'answer with another price');
+      const next = await openNextRound(tx, contract, {
         costVnd: BigInt(costVnd),
         proposedBy: ContractProposedBy.STUDIO,
         status: ContractStatus.STUDIO_SIGNED,
@@ -219,7 +212,7 @@ export class ContractService {
     actorId: string | null,
     mailIds: (string | null)[],
   ): Promise<Detailed> {
-    const signed = await this.reload(tx, contractId);
+    const signed = await reloadContract(tx, contractId);
     await this.handoffs.open(tx, signed);
     await this.record(tx, signed, CONTENT_EVENT.CONTRACT_SIGNED, actorId, { costVnd: Number(signed.costVnd) });
     await this.tell(
@@ -241,7 +234,7 @@ export class ContractService {
         ],
       ),
     );
-    return this.reload(tx, contractId);
+    return reloadContract(tx, contractId);
   }
 
   /** Runs `work` in a transaction, then sends the emails it queued once they committed. */
@@ -270,51 +263,9 @@ export class ContractService {
     });
   }
 
-  private assertStatus(contract: Detailed, expected: ContractStatus, action: string): void {
-    if (contract.status !== expected) {
-      throw new ConflictException(`Cannot ${action} a contract that is ${contract.status} (expected ${expected})`);
-    }
-  }
-
-  /** The contract, row-locked, so a double click cannot answer the same round twice; a studio sees only its own. */
-  private async locked(tx: PrismaTx, contractId: string, studioId?: string): Promise<Detailed> {
-    const found = await tx.contract.findUnique({ where: { id: contractId }, select: { id: true, studioId: true } });
-    if (!found || (studioId && found.studioId !== studioId)) throw new NotFoundException('Contract not found');
-    await tx.$queryRaw`SELECT id FROM contracts WHERE id = ${contractId}::uuid FOR UPDATE`;
-    return tx.contract.findUniqueOrThrow({ where: { id: contractId }, include: CONTRACT_DETAIL });
-  }
-
-  private reload(tx: PrismaTx, contractId: string): Promise<Detailed> {
-    return tx.contract.findUniqueOrThrow({ where: { id: contractId }, include: CONTRACT_DETAIL });
-  }
-
-  /** Closes the current round (SUPERSEDED) and opens the next one with the new proposal. */
-  private async nextRound(
-    tx: PrismaTx,
-    contract: Detailed,
-    data: Pick<
-      Prisma.ContractUncheckedCreateInput,
-      'costVnd' | 'proposedBy' | 'status' | 'adminSignedAt' | 'adminSignedById' | 'studioSignedAt'
-    >,
-  ): Promise<Detailed> {
-    await tx.contract.update({ where: { id: contract.id }, data: { status: ContractStatus.SUPERSEDED } });
-    return tx.contract.create({
-      data: {
-        projectId: contract.projectId,
-        studioId: contract.studioId,
-        round: contract.round + 1,
-        previousId: contract.id,
-        terms: contract.terms,
-        createdById: contract.createdById,
-        ...data,
-      },
-      include: CONTRACT_DETAIL,
-    });
-  }
-
   /** The project team and the Admins follow the negotiation; the studio's accounts see their side of it. */
   private async tell(tx: PrismaTx, contract: Detailed, body: string): Promise<void> {
-    const project: Project = contract.project;
+    const { project } = contract;
     const title = `Hợp đồng phim "${project.movie.title}" có cập nhật`;
     const payload = { projectId: project.id, contractId: contract.id };
     const admins = await this.notifications.adminIds(tx);
