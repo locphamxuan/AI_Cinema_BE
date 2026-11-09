@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   EpisodeStatus,
   Prisma,
@@ -15,26 +9,18 @@ import {
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { DeviceEligibilityPort, type DeviceIdentity } from '../playback-access/device-eligibility.port';
-import { PlaybackAccessService, type VerifiedPlayback } from '../playback-access/playback-access.service';
+import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
+import { PlaybackAccessService } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
-import { AdBreakService, isAdFreePlan, type AdScheduleItem } from '../ad-break/ad-break.service';
-import { maxQualityOf, PlaybackUrlService } from './playback-url.service';
+import { AdBreakService, isAdFreePlan } from '../ad-break/ad-break.service';
+import { PlaybackUrlService } from './playback-url.service';
+import { maxQualityOf } from './playback-quality';
 import { sessionEnded, sessionStarted } from './playback-events';
 import { assertLiveSessionOf, sessionNotActive, type SessionCaller } from './session-owner';
+import { assertCreateSessionInput, sessionState, sessionView, type CreateSessionInput } from './session-view';
 import { progressWriteDue, watchCreditSeconds } from './watch-pacing';
 import type { StreamingSessionViewDto } from './dto/streaming-session.dto';
-import { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/session-state.view.dto';
-
-export interface CreateSessionInput {
-  episodeId: string;
-  userId?: string;
-  guestKey?: string;
-  device?: DeviceIdentity;
-  idempotencyKey?: string;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-}
+import type { SessionStateViewDto } from 'src/modules/playback/watch-progress/dto/session-state.view.dto';
 
 /** The episode after this one (flow 3, steps 22–24); null when the movie ends here. */
 export interface NextEpisodeView {
@@ -43,8 +29,6 @@ export interface NextEpisodeView {
   episodeNumber: number | null;
   title: string | null;
 }
-
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Main Flow 3: verifies playback access, opens streaming sessions (step 11) and
@@ -65,32 +49,8 @@ export class StreamingSessionService {
   ) {}
 
   async create(input: CreateSessionInput): Promise<StreamingSessionViewDto> {
-    const { userId, guestKey } = input;
-    if (!userId && !guestKey) {
-      throw new BadRequestException({
-        message: 'Guests must send X-Guest-Key',
-        details: { reason: 'GUEST_KEY_REQUIRED' },
-      });
-    }
-    if (userId && guestKey) {
-      throw new BadRequestException({
-        message: 'A session belongs to either a member or a guest, never both',
-        details: { reason: 'OWNER_CONFLICT' },
-      });
-    }
-    if (guestKey && !UUID_V4.test(guestKey)) {
-      throw new BadRequestException({
-        message: 'X-Guest-Key must be a UUID v4',
-        details: { reason: 'GUEST_KEY_INVALID' },
-      });
-    }
-    const { idempotencyKey } = input;
-    if (idempotencyKey && idempotencyKey.length > 100) {
-      throw new BadRequestException({
-        message: 'Idempotency-Key must be at most 100 characters',
-        details: { reason: 'IDEMPOTENCY_KEY_TOO_LONG' },
-      });
-    }
+    assertCreateSessionInput(input);
+    const { userId, guestKey, idempotencyKey } = input;
 
     // P4-5: one plan read for the whole request. The same snapshot answers access,
     // the device limit and ad-free, so a paid session never reads the subscription
@@ -205,19 +165,28 @@ export class StreamingSessionService {
       }
     }
     const { session, reused, idempotent } = outcome;
-    if (reused) return this.view(session, verified, true, null, await this.ads.scheduleOf(session.id), idempotent);
-    return this.view(
-      session,
-      verified,
-      false,
-      await this.resumeOf(userId, verified.episodeId),
-      await this.ads.scheduleFor(session.id, {
+    const masterUrl = this.urls.masterUrl(session.id, {
+      id: verified.mediaAssetId,
+      streamUrl: verified.streamUrl,
+      isSelfHosted: verified.isSelfHosted,
+    });
+    if (reused) {
+      return sessionView(session, verified, masterUrl, {
+        reused: true,
+        adSchedule: await this.ads.scheduleOf(session.id),
+        idempotent,
+      });
+    }
+    return sessionView(session, verified, masterUrl, {
+      reused: false,
+      resumePositionSeconds: await this.resumeOf(userId, verified.episodeId),
+      adSchedule: await this.ads.scheduleFor(session.id, {
         episodeId: verified.episodeId,
         adFree: isAdFreePlan(memberPlan),
         durationSeconds: verified.durationSeconds,
       }),
       idempotent,
-    );
+    });
   }
 
   /**
@@ -264,7 +233,7 @@ export class StreamingSessionService {
       endReason: null,
       persistProgress: progressWriteDue(session, new Date()),
     });
-    return this.state(
+    return sessionState(
       saved.session,
       saved.completed,
       await this.ads.dueBreakOf(session.id, saved.session.lastPositionSeconds),
@@ -284,7 +253,7 @@ export class StreamingSessionService {
       // Whatever the cadence, the last position must land before the session closes.
       persistProgress: true,
     });
-    return this.state(saved.session, saved.completed);
+    return sessionState(saved.session, saved.completed);
   }
 
   /**
@@ -306,7 +275,7 @@ export class StreamingSessionService {
       endReason: StreamingEndReason.STOPPED,
       persistProgress: true,
     });
-    return this.state(saved.session, saved.completed);
+    return sessionState(saved.session, saved.completed);
   }
 
   /** Ends a session whose entitlement vanished mid-viewing: position saved, row closed as KICKED. */
@@ -407,22 +376,6 @@ export class StreamingSessionService {
     return { session: current, completed };
   }
 
-  private state(
-    session: StreamingSession,
-    completed: boolean,
-    dueAdBreakId: string | null = null,
-  ): SessionStateViewDto {
-    return {
-      sessionId: session.id,
-      episodeId: session.episodeId,
-      status: session.status,
-      positionSeconds: session.lastPositionSeconds,
-      totalWatchedSeconds: session.totalWatchedSeconds,
-      completed,
-      dueAdBreakId,
-    };
-  }
-
   /** Step 9 hint for the resume-or-restart question; guests always get null. */
   private async resumeOf(userId: string | undefined, episodeId: string): Promise<number | null> {
     if (!userId) return null;
@@ -454,47 +407,5 @@ export class StreamingSessionService {
     });
     if (!next) return { movieId: current.movieId, episodeId: null, episodeNumber: null, title: null };
     return { movieId: next.movieId, episodeId: next.id, episodeNumber: next.episodeNumber, title: next.title };
-  }
-
-  private view(
-    session: {
-      id: string;
-      status: StreamingSessionStatus;
-      startPositionSeconds: number;
-    },
-    verified: VerifiedPlayback,
-    reused: boolean,
-    resumePositionSeconds: number | null = null,
-    adSchedule: AdScheduleItem[] = [],
-    idempotent = false,
-  ): StreamingSessionViewDto {
-    return {
-      sessionId: session.id,
-      episodeId: verified.episodeId,
-      movieId: verified.movieId,
-      accessType: verified.accessType,
-      planCode: verified.planCode,
-      status: session.status,
-      startPositionSeconds: session.startPositionSeconds,
-      stream: {
-        masterUrl: this.urls.masterUrl(session.id, {
-          id: verified.mediaAssetId,
-          streamUrl: verified.streamUrl,
-          isSelfHosted: verified.isSelfHosted,
-        }),
-        qualities: verified.qualities,
-        durationSeconds: verified.durationSeconds,
-      },
-      subtitles: verified.subtitles.map((subtitle) => ({
-        language: subtitle.language,
-        url: subtitle.fileUrl,
-        isDefault: subtitle.isDefault,
-      })),
-      aiLabel: verified.aiLabel,
-      adSchedule,
-      ...(reused ? { reused: true } : {}),
-      ...(idempotent ? { idempotent: true } : {}),
-      ...(resumePositionSeconds !== null ? { resumePositionSeconds } : {}),
-    };
   }
 }
