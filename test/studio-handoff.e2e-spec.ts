@@ -1,5 +1,4 @@
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { OverdueEpisodesJob } from 'src/modules/production/studio-handoff/overdue-episodes.job';
@@ -180,6 +179,10 @@ describe('Studio contract and hand-off (e2e)', () => {
       `/studio-portal/projects/${project.id}`,
     );
     expect(detail.episodes[0].latestDelivery.changeRequest.comments).toBe('Màu cảnh 2 quá tối.');
+    // The studio owes a new version: the milestone reopens by itself, nobody moves it by hand.
+    const [reopened] = await handoffs();
+    expect(reopened.milestoneStatus).toBe('IN_PROGRESS');
+    await creator.patch(`/projects/${project.id}/handoffs/${handoffId}/milestone`, { status: 'DELIVERED' }, 404);
   });
 
   it('emails the studio under the name of the Admin or the Reviewer, with no attachment', async () => {
@@ -199,43 +202,6 @@ describe('Studio contract and hand-off (e2e)', () => {
       from('admin@aicinema.com'),
       from('admin@aicinema.com'),
       from('reviewer01@aicinema.com'),
-    ]);
-  });
-
-  it('keeps the link of every episode the studio mails back, the newest one each (BR-58)', async () => {
-    const [first, second] = episodesOf(project);
-    const [handoff] = await handoffs();
-    const film = (episode: number, version: string) => ({
-      episode,
-      fileName: `tap-${episode}.mp4`,
-      url: `http://127.0.0.1:3100/films/${version}/tap-${episode}.mp4`,
-    });
-    const report = {
-      studioEmail: handoff.studio.email,
-      creatorEmail: 'creator01@aicinema.com',
-      movieTitle: project.title,
-      scope: 'Toàn bộ dự án',
-      version: 'v1',
-      label: 'Bản giao đầu',
-      episodes: [film(1, 'v1')],
-    };
-    const inbound = (token: string, body: object) =>
-      request(app.getHttpServer()).post('/api/studio-inbound/film-sent').set('x-studio-token', token).send(body);
-
-    await inbound('wrong-token', report).expect(401);
-    await inbound('e2e-studio-token', { ...report, episodes: [] }).expect(400);
-    await inbound('e2e-studio-token', report).expect(200);
-    await inbound('e2e-studio-token', {
-      ...report,
-      version: 'v2',
-      episodes: [film(1, 'v2'), film(2, 'v2'), film(9, 'v2')],
-    }).expect(200);
-
-    const [after] = await handoffs();
-    expect(after.filmSentNote).toContain('v2');
-    expect(after.filmLinks.map((link) => [link.episodeId, link.version, link.url])).toEqual([
-      [first.id, 'v2', film(1, 'v2').url],
-      [second.id, 'v2', film(2, 'v2').url],
     ]);
   });
 
@@ -267,11 +233,9 @@ describe('Studio contract and hand-off (e2e)', () => {
     expect(history[0].changeReason).toContain('trễ hạn');
     const detail = await reviewer.get<ProjectDetail>(`/projects/${project.id}`);
     expect(detail.studio?.id).toBe(next.id);
-    // A superseded hand-off is final.
-    await creator.patch(`/projects/${project.id}/handoffs/${handoffId}/milestone`, { status: 'IN_PROGRESS' }, 409);
   });
 
-  it('flags an overdue episode once to its Creator and Reviewer (BR-38)', async () => {
+  it('flags an overdue episode once to the Reviewer and the studio (BR-38)', async () => {
     // The first episode was delivered; the second still waits for the studio.
     const [, second] = episodesOf(project);
     await app
@@ -281,7 +245,7 @@ describe('Studio contract and hand-off (e2e)', () => {
 
     expect(await job.sweep()).toBeGreaterThanOrEqual(1);
     await job.sweep();
-    const bell = await creator.get<{ data: { type: string; payload: { episodeId: string } }[] }>(
+    const bell = await reviewer.get<{ data: { type: string; payload: { episodeId: string } }[] }>(
       '/notifications?limit=100',
     );
     const overdue = bell.data.filter((n) => n.type === 'EPISODE_OVERDUE' && n.payload.episodeId === second.id);

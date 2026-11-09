@@ -73,7 +73,7 @@ describe('Project team of Creators (e2e)', () => {
     expect(bell.data.map((n) => n.type)).toContain('PROJECT_ASSIGNED');
   });
 
-  it('gives an episode to one Creator; only that Creator or the lead works on it', async () => {
+  it('gives episodes to Creators, while the studio alone delivers the films', async () => {
     const [first, other] = episodesOf(project);
     await outsider.put(`/episodes/${first.id}/assignee`, { creatorId: second.id }, 404);
     await reviewer.put(`/episodes/${first.id}/assignee`, { creatorId: outsider.id }, 400);
@@ -83,16 +83,13 @@ describe('Project team of Creators (e2e)', () => {
     // MF-1 (07/11/2026): the project is handed off once its contract carries both signatures.
     await finalScript(reviewer, lead, project.id);
     await signContract(reviewer, project.id, await studioAccount(reviewer, project.studio!.id));
-    // The assignee delivers their episode; an episode nobody holds belongs to the lead.
-    await deliver(second, first.id);
-    await deliver(second, other.id, 403);
-    // Given to the second Creator, it stays open to the lead as well.
-    await reviewer.put(`/episodes/${other.id}/assignee`, { creatorId: second.id });
-    await deliver(lead, other.id);
-    // An episode held by the lead is closed to the other Creators.
     const third = episodesOf(project)[2];
     await reviewer.put(`/episodes/${third.id}/assignee`, { creatorId: lead.id });
-    await deliver(second, third.id, 403);
+    // Since 08/11/2026 only the studio delivers films: no Creator does, whatever episode they hold.
+    const studio = await studioAccount(reviewer, project.studio!.id);
+    await deliver(second, first.id, 403);
+    await deliver(lead, other.id, 403);
+    await deliver(studio, first.id);
   });
 
   it('rolls the season status up from its episodes', async () => {

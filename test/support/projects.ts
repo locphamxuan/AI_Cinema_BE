@@ -90,6 +90,8 @@ export async function signContract(reviewer: Actor, projectId: string, studio: A
 
 /** The studio account each project of projectInProduction signed with, by project id. */
 const studios = new Map<string, Actor>();
+/** The same studio accounts, by the id of each episode they deliver. */
+const episodeStudios = new Map<string, Actor>();
 
 /** The project above, through the Final Script and a signed contract: IN_PRODUCTION, its studio delivering. */
 export async function projectInProduction(reviewer: Actor, creator: Actor, episodes = 2): Promise<ProjectDetail> {
@@ -98,10 +100,14 @@ export async function projectInProduction(reviewer: Actor, creator: Actor, episo
   const studio = await studioAccount(reviewer, project.studio!.id);
   await signContract(reviewer, project.id, studio);
   studios.set(project.id, studio);
+  for (const episode of episodesOf(project)) episodeStudios.set(episode.id, studio);
   return reviewer.get<ProjectDetail>(`/projects/${project.id}`);
 }
 
 /** The logged-in studio of a project made by projectInProduction. */
 export const studioOf = (projectId: string): Actor => studios.get(projectId)!;
+
+/** The logged-in studio that delivers an episode of a project made by projectInProduction. */
+export const studioOfEpisode = (episodeId: string): Actor | undefined => episodeStudios.get(episodeId);
 
 export { inDays };
