@@ -28,9 +28,15 @@ export interface ChatMessage {
   toolCalls?: ChatToolCall[];
 }
 
+export type ChatToolChoice = 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
+
 export interface ChatRequest {
   messages: ChatMessage[];
   tools?: ChatToolDefinition[];
+  /** OpenAI `tool_choice`; `required` forces at least one tool call (plan §3.4). */
+  toolChoice?: ChatToolChoice;
+  /** OpenAI-compatible `response_format`; used when a provider can return a JSON object. */
+  responseFormat?: { type: 'json_object' };
   temperature?: number;
   maxOutputTokens?: number;
   timeoutMs?: number;

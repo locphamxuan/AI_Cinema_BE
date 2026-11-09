@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { HashingEmbeddingClient } from 'src/infrastructure/ai/hashing-embedding.client';
-import { EMBEDDING_CLIENT } from 'src/infrastructure/ai/llm-client';
+import { CHAT_CLIENT, EMBEDDING_CLIENT, type ChatClient } from 'src/infrastructure/ai/llm-client';
+import { OpenAiCompatibleChatClient } from 'src/infrastructure/ai/openai-compatible-chat.client';
 import { OpenAiCompatibleEmbeddingClient } from 'src/infrastructure/ai/openai-compatible-embedding.client';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { SupportAgentService } from './ai/support-agent.service';
@@ -33,6 +34,23 @@ import { SupportAutoCloseSweep } from './support-auto-close.sweep';
   controllers: [MemberSupportController, StaffSupportController, KnowledgeController, SupportAiHealthController],
   providers: [
     // AI providers
+    {
+      provide: CHAT_CLIENT,
+      inject: [APP_CONFIG],
+      useFactory: (config: AppConfig): ChatClient | null => {
+        // mock mode answers inside SupportAgentService; disabled runs as a human inbox.
+        if (config.support.aiMode !== 'live') return null;
+        if (!config.support.aiChatBaseUrl || !config.support.aiChatApiKey) return null;
+        return new OpenAiCompatibleChatClient({
+          baseUrl: config.support.aiChatBaseUrl,
+          apiKey: config.support.aiChatApiKey,
+          model: config.support.aiChatModel,
+          timeoutMs: config.support.aiTimeoutMs,
+          temperature: config.support.aiTemperature,
+          maxOutputTokens: config.support.aiMaxOutputTokens,
+        });
+      },
+    },
     {
       provide: EMBEDDING_CLIENT,
       inject: [APP_CONFIG],
