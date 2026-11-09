@@ -23,7 +23,7 @@ model Contract {
   id              String              @id @default(uuid()) @db.Uuid
   projectId       String              @map("project_id") @db.Uuid
   studioId        String              @map("studio_id") @db.Uuid
-  /// Null until the round is SIGNED and the hand-off it opened exists.
+  /// The hand-off the round belongs to: set when signing opens it, or from round 1 on a studio change (BR-59).
   handoffId       String?             @map("handoff_id") @db.Uuid
   /// 1 for the template, +1 each time either side counter-proposes.
   round           Int                 @default(1)

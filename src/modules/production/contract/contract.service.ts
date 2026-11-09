@@ -3,12 +3,12 @@ import { ContractProposedBy, ContractStatus, ProjectStatus } from '@prisma/clien
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
-import { CONTENT_EVENT, type ContentEvent } from 'src/modules/platform/audit-log/content-events';
-import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
+import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { ContractHandoffService } from './contract-handoff.service';
+import { queueContractMail, recordContractEvent, tellContractUpdate } from './contract-notice';
 import {
   assertContractStatus,
   CONTRACT_DETAIL,
@@ -56,19 +56,10 @@ export class ContractService {
       where: { projectId, status: { in: [...OPEN_CONTRACT_STATUSES, ContractStatus.SIGNED] } },
     });
     if (open) throw new ConflictException('This project already has a contract');
-    const contract = await tx.contract.create({
-      data: {
-        projectId,
-        studioId: project.studioId,
-        terms: terms?.trim() || STANDARD_TERMS,
-        createdById: actorId,
-      },
-      include: CONTRACT_DETAIL,
-    });
-    await this.record(tx, contract, CONTENT_EVENT.CONTRACT_SENT, actorId, { studioId: project.studioId });
-    await this.tell(tx, contract, `Hợp đồng mẫu đã gửi cho studio "${contract.studio.name}", chờ Studio báo giá.`);
+    const contract = await this.openRound(tx, { projectId, studioId: project.studioId, actorId, terms });
     const title = contract.project.movie.title;
-    const mailId = await this.mail(
+    const mailId = await queueContractMail(
+      this.mails,
       tx,
       contract,
       actorId,
@@ -80,6 +71,38 @@ export class ContractService {
       ],
     );
     return { contract, mailId };
+  }
+
+  /**
+   * BR-59 studio change: the rounds still being negotiated are SUPERSEDED (a SIGNED one stays as history) and
+   * the new studio gets a template for the hand-off waiting on it. The caller emails the studio with its brief.
+   */
+  async sendForStudioChange(
+    tx: PrismaTx,
+    change: { projectId: string; studioId: string; handoffId: string; actorId: string },
+  ): Promise<Detailed> {
+    const { projectId, studioId, handoffId, actorId } = change;
+    await tx.contract.updateMany({
+      where: { projectId, status: { in: OPEN_CONTRACT_STATUSES } },
+      data: { status: ContractStatus.SUPERSEDED },
+    });
+    return this.openRound(tx, { projectId, studioId, actorId, handoffId });
+  }
+
+  /** Round 1 of a negotiation: a template with no cost, as both the first contract and a studio change send it. */
+  private async openRound(
+    tx: PrismaTx,
+    round: { projectId: string; studioId: string; actorId: string; terms?: string; handoffId?: string },
+  ): Promise<Detailed> {
+    const { projectId, studioId, actorId, terms, handoffId } = round;
+    const contract = await tx.contract.create({
+      data: { projectId, studioId, handoffId, terms: terms?.trim() || STANDARD_TERMS, createdById: actorId },
+      include: CONTRACT_DETAIL,
+    });
+    await recordContractEvent(this.auditLog, tx, contract, CONTENT_EVENT.CONTRACT_SENT, actorId, { studioId });
+    const body = `Hợp đồng mẫu đã gửi cho studio "${contract.studio.name}", chờ Studio báo giá.`;
+    await tellContractUpdate(this.notifications, tx, contract, body);
+    return contract;
   }
 
   /** Admin: send the template again, e.g. once the project's studio changed. */
@@ -127,7 +150,7 @@ export class ContractService {
       const contract = await lockedContract(tx, contractId);
       await this.access.project(contract.projectId, admin, 'read');
       assertContractStatus(contract, ContractStatus.STUDIO_SIGNED, 'counter');
-      await this.handoffs.assertAffordable(tx, contract.projectId, costVnd);
+      await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
       const next = await openNextRound(tx, contract, {
         costVnd: BigInt(costVnd),
         proposedBy: ContractProposedBy.ADMIN,
@@ -135,14 +158,27 @@ export class ContractService {
         adminSignedAt: new Date(),
         adminSignedById: admin.id,
       });
-      await this.record(tx, next, CONTENT_EVENT.CONTRACT_COUNTERED, admin.id, { costVnd });
-      await this.tell(tx, next, `Admin đề xuất giá mới ${vnd(costVnd)} (đã ký), chờ studio "${next.studio.name}".`);
+      await recordContractEvent(this.auditLog, tx, next, CONTENT_EVENT.CONTRACT_COUNTERED, admin.id, { costVnd });
+      await tellContractUpdate(
+        this.notifications,
+        tx,
+        next,
+        `Admin đề xuất giá mới ${vnd(costVnd)} (đã ký), chờ studio "${next.studio.name}".`,
+      );
       const title = next.project.movie.title;
       mailIds.push(
-        await this.mail(tx, next, admin.id, `Hợp đồng phim "${title}": Admin đề xuất chi phí mới`, '/contracts', [
-          `Admin đề xuất chi phí sản xuất ${vnd(costVnd)} cho phim "${title}" và đã ký.`,
-          'Vui lòng đăng nhập Studio Web để đồng ý và ký, hoặc đề xuất mức chi phí khác.',
-        ]),
+        await queueContractMail(
+          this.mails,
+          tx,
+          next,
+          admin.id,
+          `Hợp đồng phim "${title}": Admin đề xuất chi phí mới`,
+          '/contracts',
+          [
+            `Admin đề xuất chi phí sản xuất ${vnd(costVnd)} cho phim "${title}" và đã ký.`,
+            'Vui lòng đăng nhập Studio Web để đồng ý và ký, hoặc đề xuất mức chi phí khác.',
+          ],
+        ),
       );
       return next;
     });
@@ -163,8 +199,13 @@ export class ContractService {
         },
       });
       const proposed = await reloadContract(tx, contractId);
-      await this.record(tx, proposed, CONTENT_EVENT.CONTRACT_PROPOSED, null, { costVnd });
-      await this.tell(tx, proposed, `Studio "${proposed.studio.name}" báo giá ${vnd(costVnd)} và đã ký, chờ Admin.`);
+      await recordContractEvent(this.auditLog, tx, proposed, CONTENT_EVENT.CONTRACT_PROPOSED, null, { costVnd });
+      await tellContractUpdate(
+        this.notifications,
+        tx,
+        proposed,
+        `Studio "${proposed.studio.name}" báo giá ${vnd(costVnd)} và đã ký, chờ Admin.`,
+      );
       return proposed;
     });
   }
@@ -193,8 +234,13 @@ export class ContractService {
         status: ContractStatus.STUDIO_SIGNED,
         studioSignedAt: new Date(),
       });
-      await this.record(tx, next, CONTENT_EVENT.CONTRACT_COUNTERED, null, { costVnd });
-      await this.tell(tx, next, `Studio "${next.studio.name}" đề xuất giá khác ${vnd(costVnd)} (đã ký), chờ Admin.`);
+      await recordContractEvent(this.auditLog, tx, next, CONTENT_EVENT.CONTRACT_COUNTERED, null, { costVnd });
+      await tellContractUpdate(
+        this.notifications,
+        tx,
+        next,
+        `Studio "${next.studio.name}" đề xuất giá khác ${vnd(costVnd)} (đã ký), chờ Admin.`,
+      );
       return next;
     });
   }
@@ -214,15 +260,19 @@ export class ContractService {
   ): Promise<Detailed> {
     const signed = await reloadContract(tx, contractId);
     await this.handoffs.open(tx, signed);
-    await this.record(tx, signed, CONTENT_EVENT.CONTRACT_SIGNED, actorId, { costVnd: Number(signed.costVnd) });
-    await this.tell(
+    await recordContractEvent(this.auditLog, tx, signed, CONTENT_EVENT.CONTRACT_SIGNED, actorId, {
+      costVnd: Number(signed.costVnd),
+    });
+    await tellContractUpdate(
+      this.notifications,
       tx,
       signed,
       `Hợp đồng với studio "${signed.studio.name}" đã đủ chữ ký hai bên (${vnd(signed.costVnd!)}); Studio bắt đầu sản xuất.`,
     );
     const title = signed.project.movie.title;
     mailIds.push(
-      await this.mail(
+      await queueContractMail(
+        this.mails,
         tx,
         signed,
         signed.adminSignedById ?? signed.createdById,
@@ -243,55 +293,5 @@ export class ContractService {
     const result = await this.prisma.$transaction((tx) => work(tx, mailIds));
     await this.mails.dispatch(...mailIds);
     return result;
-  }
-
-  private mail(
-    tx: PrismaTx,
-    contract: Detailed,
-    senderId: string,
-    subject: string,
-    portalPath: string,
-    lines: string[],
-  ): Promise<string | null> {
-    return this.mails.queue(tx, {
-      studioId: contract.studioId,
-      senderId,
-      subject: `[AI Cinema] ${subject}`,
-      lines,
-      portalPath,
-      failureLink: `/projects/${contract.projectId}/contract`,
-    });
-  }
-
-  /** The project team and the Admins follow the negotiation; the studio's accounts see their side of it. */
-  private async tell(tx: PrismaTx, contract: Detailed, body: string): Promise<void> {
-    const { project } = contract;
-    const title = `Hợp đồng phim "${project.movie.title}" có cập nhật`;
-    const payload = { projectId: project.id, contractId: contract.id };
-    const admins = await this.notifications.adminIds(tx);
-    const team = [project.reviewerId, project.creatorId, ...admins].filter((id): id is string => !!id);
-    await this.notifications.notify(
-      [...new Set(team)],
-      { type: NOTIFICATION_TYPE.CONTRACT_UPDATED, title, body, link: `/projects/${project.id}/contract`, payload },
-      tx,
-    );
-    await this.notifications.notify(
-      await this.notifications.studioAccountIds(contract.studioId, tx),
-      { type: NOTIFICATION_TYPE.CONTRACT_UPDATED, title, body, link: '/contracts', payload },
-      tx,
-    );
-  }
-
-  private record(
-    tx: PrismaTx,
-    contract: { id: string; projectId: string },
-    action: ContentEvent,
-    actorId: string | null,
-    payload: Record<string, unknown>,
-  ) {
-    return this.auditLog.record(
-      { action, entityType: 'Contract', entityId: contract.id, projectId: contract.projectId, actorId, payload },
-      tx,
-    );
   }
 }

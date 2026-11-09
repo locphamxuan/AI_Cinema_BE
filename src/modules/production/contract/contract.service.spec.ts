@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ContractStatus, ProjectStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
+import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import type { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
@@ -43,6 +44,7 @@ describe('ContractService', () => {
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       count: jest.fn(),
     },
     $queryRaw: jest.fn(),
@@ -90,6 +92,47 @@ describe('ContractService', () => {
     );
   });
 
+  it('supersedes the open rounds and sends the new studio a template tied to its waiting hand-off', async () => {
+    db.contract.create.mockResolvedValue(contract({ id: 'c9', studioId: 's2', handoffId: 'h2' }));
+    notifications.studioAccountIds.mockResolvedValue(['new-studio-user']);
+
+    const sent = await service.sendForStudioChange(db as never, {
+      projectId: 'p1',
+      studioId: 's2',
+      handoffId: 'h2',
+      actorId: 'admin',
+    });
+
+    expect(sent.id).toBe('c9');
+    expect(db.contract.updateMany).toHaveBeenCalledWith({
+      where: {
+        projectId: 'p1',
+        status: { in: [ContractStatus.SENT, ContractStatus.STUDIO_SIGNED, ContractStatus.ADMIN_COUNTERED] },
+      },
+      data: { status: ContractStatus.SUPERSEDED },
+    });
+    expect(db.contract.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      db.contract.create.mock.invocationCallOrder[0],
+    );
+    expect(db.contract.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ projectId: 'p1', studioId: 's2', handoffId: 'h2', createdById: 'admin' }),
+      }),
+    );
+    expect(auditLog.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: CONTENT_EVENT.CONTRACT_SENT, entityId: 'c9', payload: { studioId: 's2' } }),
+      db,
+    );
+    expect(notifications.studioAccountIds).toHaveBeenCalledWith('s2', db);
+    expect(notifications.notify).toHaveBeenCalledWith(
+      ['new-studio-user'],
+      expect.objectContaining({ link: '/contracts' }),
+      db,
+    );
+    // The studio change emails the brief itself, so no second invitation goes out here.
+    expect(mails.queue).not.toHaveBeenCalled();
+  });
+
   it('refuses a second contract and a project without a studio', async () => {
     db.contract.count.mockResolvedValue(1);
     await expect(service.sendTemplate(db as never, 'p1', 'admin')).rejects.toThrow(ConflictException);
@@ -129,7 +172,7 @@ describe('ContractService', () => {
     );
     db.contract.create.mockResolvedValue(contract({ id: 'c2', round: 2, status: ContractStatus.ADMIN_COUNTERED }));
     const next = await service.counter('c1', 160_000_000, ADMIN);
-    expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 160_000_000);
+    expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 160_000_000, null);
     expect(db.contract.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
       data: { status: ContractStatus.SUPERSEDED },

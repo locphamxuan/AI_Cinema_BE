@@ -9,6 +9,7 @@ const ROUND: SignedRound = {
   projectId: 'p1',
   studioId: 's1',
   costVnd: 50_000_000n,
+  handoffId: null,
   adminSignedById: 'admin',
   createdById: 'creator-of-round',
 };
@@ -16,7 +17,7 @@ const ROUND: SignedRound = {
 describe('ContractHandoffService', () => {
   const tx = {
     movieProject: { updateMany: jest.fn() },
-    studioHandoff: { create: jest.fn() },
+    studioHandoff: { create: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
     studioMilestoneEvent: { create: jest.fn() },
     episode: { findMany: jest.fn(), update: jest.fn() },
     contract: { update: jest.fn() },
@@ -31,11 +32,14 @@ describe('ContractHandoffService', () => {
     tx.movieProject.updateMany.mockResolvedValue({ count: 1 });
     tx.studioHandoff.create.mockResolvedValue({ id: 'h1' });
     tx.episode.findMany.mockResolvedValue([]);
+    tx.studioHandoff.findUniqueOrThrow.mockResolvedValue({ offeredFeeVnd: 30_000_000n });
+    tx.studioHandoff.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it('delegates the budget check to the production cost ledger', async () => {
     await service.assertAffordable(tx as unknown as PrismaTx, 'p1', 1_000);
     expect(costs.assertAffordable).toHaveBeenCalledWith(tx, 'p1', 1_000);
+    expect(tx.studioHandoff.findUniqueOrThrow).not.toHaveBeenCalled();
   });
 
   it('hands the whole project to the studio at the signed cost, already in progress', async () => {
@@ -99,5 +103,50 @@ describe('ContractHandoffService', () => {
     costs.assertAffordable.mockRejectedValue(new ConflictException('over budget'));
     await expect(run()).rejects.toThrow('over budget');
     expect(tx.movieProject.updateMany).not.toHaveBeenCalled();
+  });
+
+  describe('after a studio change', () => {
+    const CHANGED: SignedRound = { ...ROUND, studioId: 's2', handoffId: 'h2' };
+
+    it('counts the fee the waiting hand-off holds as available', async () => {
+      await service.assertAffordable(tx as unknown as PrismaTx, 'p1', 50_000_000, 'h2');
+      expect(tx.studioHandoff.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { id: 'h2' },
+        select: { offeredFeeVnd: true },
+      });
+      expect(costs.assertAffordable).toHaveBeenCalledWith(tx, 'p1', 20_000_000);
+    });
+
+    it('starts the waiting hand-off at the signed cost instead of opening another one', async () => {
+      await expect(run(CHANGED)).resolves.toBe('h2');
+
+      expect(costs.assertAffordable).toHaveBeenCalledWith(tx, 'p1', 20_000_000);
+      expect(tx.studioHandoff.updateMany).toHaveBeenCalledWith({
+        where: { id: 'h2', milestoneStatus: StudioMilestoneStatus.BRIEF_SENT },
+        data: expect.objectContaining({
+          offeredFeeVnd: 50_000_000n,
+          milestoneStatus: StudioMilestoneStatus.IN_PROGRESS,
+        }),
+      });
+      expect(tx.studioMilestoneEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          handoffId: 'h2',
+          fromStatus: StudioMilestoneStatus.BRIEF_SENT,
+          toStatus: StudioMilestoneStatus.IN_PROGRESS,
+          changedById: 'admin',
+        }),
+      });
+      // The project is already in production and its episodes keep their state.
+      expect(tx.movieProject.updateMany).not.toHaveBeenCalled();
+      expect(tx.studioHandoff.create).not.toHaveBeenCalled();
+      expect(tx.episode.update).not.toHaveBeenCalled();
+      expect(tx.contract.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the hand-off is no longer waiting', async () => {
+      tx.studioHandoff.updateMany.mockResolvedValue({ count: 0 });
+      await expect(run(CHANGED)).rejects.toBeInstanceOf(ConflictException);
+      expect(tx.studioMilestoneEvent.create).not.toHaveBeenCalled();
+    });
   });
 });

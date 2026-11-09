@@ -56,6 +56,8 @@ export async function openNextRound(
     data: {
       projectId: contract.projectId,
       studioId: contract.studioId,
+      // A studio change links its rounds to the hand-off waiting on them from the start.
+      handoffId: contract.handoffId,
       round: contract.round + 1,
       previousId: contract.id,
       terms: contract.terms,

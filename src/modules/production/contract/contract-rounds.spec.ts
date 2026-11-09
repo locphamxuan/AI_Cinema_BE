@@ -10,6 +10,7 @@ const CONTRACT = {
   round: 2,
   terms: 'Điều khoản',
   createdById: 'admin',
+  handoffId: 'h2',
   status: ContractStatus.SENT,
 } as Detailed;
 
@@ -47,7 +48,7 @@ describe('contract-rounds', () => {
     expect(() => assertContractStatus(CONTRACT, ContractStatus.STUDIO_SIGNED, 'sign')).toThrow(ConflictException);
   });
 
-  it('supersedes the round and opens the next one with the same terms', async () => {
+  it('supersedes the round and opens the next one with the same terms and waiting hand-off', async () => {
     await expect(openNextRound(tx, CONTRACT, { costVnd: 5n, proposedBy: ContractProposedBy.STUDIO })).resolves.toEqual({
       id: 'c2',
     });
@@ -60,6 +61,7 @@ describe('contract-rounds', () => {
         data: {
           projectId: 'p1',
           studioId: 's1',
+          handoffId: 'h2',
           round: 3,
           previousId: 'c1',
           terms: 'Điều khoản',
