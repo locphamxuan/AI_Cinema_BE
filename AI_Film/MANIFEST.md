@@ -4,7 +4,7 @@ Video không nằm trong git mà nằm trên R2. Có phim mới thì chỉ cần
 rồi `npm run film:catalog`, commit `MANIFEST.json`, file này và `CATALOG.json` (không cần tải phim cũ về).
 Chỉ khi cần xem/sửa video trên máy mới chạy `npm run film:pull`.
 
-Tổng: 76 video.
+Tổng: 107 video.
 
 | File | MB |
 | :--- | ---: |
@@ -82,5 +82,36 @@ Tổng: 76 video.
 | AI_Film_v2/Lãng mạn - Chính kịch/Mạc ngôn tâm động/Lãng mạn -Mạc Ngôn Tâm Động-ep1.mp4 | 4 |
 | AI_Film_v2/Lãng mạn - Chính kịch/Mạc ngôn tâm động/Lãng mạn -Mạc Ngôn Tâm Động-ep2.mp4 | 14 |
 | AI_Film_v2/Lãng mạn - Chính kịch/Mạc ngôn tâm động/Lãng mạn -Mạc Ngôn Tâm Động-ep3.mp4 | 14 |
+| AI_Film_v2/Movie/Ấn Độ/Tình cảm/Meri Khamosh Mohabbat/Meri Khamosh Mohabbat - Part 1 _ Dil Ke Rishtey Aur Khamoshi _ Telefilm 2026 [ptEGo50H7HQ].mp4 | 241 |
+| AI_Film_v2/Movie/Ấn Độ/Tình cảm/Raaz E Muhabbat/Raaz E Muhabbat _ A Heart Touchig Story _ Short Film 2026 [MkNmIR9H6zY].mp4 | 168 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 1 [701922070_Episode-1].mp4 | 11 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 2 [701922071_Episode-2].mp4 | 6 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 3 [701922072_Episode-3].mp4 | 5 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 4 [701922073_Episode-4].mp4 | 5 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 5 [701922074_Episode-5].mp4 | 5 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 1 [701822412_Episode-1].mp4 | 14 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 2 [701822413_Episode-2].mp4 | 5 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 3 [701822414_Episode-3].mp4 | 5 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 4 [701822415_Episode-4].mp4 | 8 |
+| AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 5 [701822416_Episode-5].mp4 | 7 |
+| AI_Film_v2/Movie/Hàn Quốc/Học đường/Gỉa tưởng/Truy quỷ sư giả làm học sinh/Hai truy quỷ sư giả làm học sinh vào trường điều tra, không ngờ nhà thi đấu đang giấu một đại trận [cRQ9pfG1iX0].mp4 | 258 |
+| AI_Film_v2/Movie/Hàn Quốc/Học đường/Hành Động/Ngày Đầu Chuyển Trường, Cô Đã Đắc Tội Với Cả Hội Con Nhà Giàu Hàn Quốc/Ngày Đầu Chuyển Trường, Cô Đã Đắc Tội Với Cả Hội Con Nhà Giàu Hàn Quốc [mYgV2wwspYw].mp4 | 380 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Bị Bạn Gái Khinh Vì Lái Máy Xúc Cũ, Anh Vào Giải Đấu Khiến Hào Môn Quỳ Phục/Bị Bạn Gái Khinh Vì Lái Máy Xúc Cũ, Anh Vào Giải Đấu Khiến Hào Môn Quỳ Phục _ Full 50 Tập [YFK4Uj9BY6o].mp4 | 621 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Bị Chê Nghèo Vì Bố Chạy Xe Ôm, Bất Ngờ Kích Hoạt Hệ Thống Thần Hào Đổi Đời Thành Tỷ Phú/Bị Chê Nghèo Vì Bố Chạy Xe Ôm, Bất Ngờ Kích Hoạt Hệ Thống Thần Hào Đổi Đời Thành Tỷ Phú.mp4 | 594 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Bị Ép Tăng Tiền Thuê Gấp 2,5 Lần, Ông Chủ Quán Ăn Sáng Chuyển Đi Và Làm Ăn Ngày Càng Phất Lên/Bị Ép Tăng Tiền Thuê Gấp 2,5 Lần, Ông Chủ Quán Ăn Sáng Chuyển Đi Và Làm Ăn Ngày Càng Phất Lên.mp4 | 278 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Họ hàng cướp nhà sau 12 năm Anh đi lính Khi trở về anh làm lại và cái kết/Họ hàng cướp nhà sau 12 năm Anh đi lính Khi trở về anh làm lại và cái kết.mp4 | 683 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 1 [701686278_Episode-1].mp4 | 8 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 2 [701686279_Episode-2].mp4 | 4 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 3 [701686280_Episode-3].mp4 | 4 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 4 [701686281_Episode-4].mp4 | 6 |
+| AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 5 [701686282_Episode-5].mp4 | 5 |
+| AI_Film_v2/Movie/Trung Quốc/Trọng sinh/Hành động/Anh chàng về làng chài thập niên 80, đưa cả gia đình đổi đời/Anh Chàng Về Làng Chài Thập Niên 80, Đưa Cả Gia Đình Đổi Đời [TW8BVWq0azI].mp4 | 523 |
+| AI_Film_v2/Movie/Trung Quốc/Xuyên không/Cổ trang/Xuyên Không Về Cổ Đại, Nàng Chọn Mảnh Đất Chẳng Ai Muốn Dựng Cọn Nước, Mở Trang Trại Thỏ Phát Tài/Xuyên Không Về Cổ Đại, Nàng Chọn Mảnh Đất Chẳng Ai Muốn Dựng Cọn Nước, Mở Trang Trại Thỏ Phát Tài.mp4 | 574 |
+| AI_Film_v2/Movie/Việt Nam/Cổ tích/Chuyện chưa kể về mẹ Lang Liêu/Chuyện Chưa Kể Về Mẹ Lang Liêu [sxQjmfMk4S8].mp4 | 181 |
+| AI_Film_v2/Movie/Việt Nam/Cổ tích/Sự tích con muỗi/NGHIỆP DUYÊN HÓA KIẾP _ Sự Tích Con Muỗi _ Phim Cổ Trang Việt Nam AI [GysFzkdIbn4].mp4 | 142 |
+| AI_Film_v2/Movie/Việt Nam/Lịch sử/Huyền sử thời Hùng Vương/Huyền sử thời Hùng Vương [OA4QJWf_7uA].mp4 | 283 |
+| AI_Film_v2/Movie/Việt Nam/Tâm lý gia đình/Mẹ chồng nàng dâu/Bán Nhà 6 Tỷ, Mẹ Còn Tiếc Giàn Thiên Lý! _ Mẹ Chồng Nàng Dâu Tập 1 [OhoQYw9P0hc].mp4 | 10 |
+| AI_Film_v2/Movie/Việt Nam/Tâm lý gia đình/Mẹ chồng nàng dâu/Chưa Bán Được Nhà Đã Bị Giục Chuyển Phí! _ Mẹ Chồng Nàng Dâu Tập 2 [Xz3NDK37Nks].mp4 | 8 |
+| AI_Film_v2/Movie/Việt Nam/Tâm lý gia đình/Mẹ chồng nàng dâu/Suýt Chuyển Tiền Cho Khách Giả! Ai Kịp Ngăn Lại_ _ Mẹ Chồng Nàng Dâu Tập 3 [XBmEihEJJ4c].mp4 | 9 |
 | AI_Film_v2/She Raised a Monster They Tried to Kill [iXpEcPsswpU].mp4 | 102 |
 | AI_Film_v2/She Raised a Monster They Tried to Kill [iXpEcPsswpU].subbed.mp4 | 146 |
