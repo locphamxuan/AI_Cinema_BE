@@ -10,6 +10,11 @@ export const CONTRACT_DETAIL = {
   handoff: { select: { id: true, milestoneStatus: true } },
   createdBy: PERSON,
   adminSignedBy: PERSON,
+  // Metadata only: the storage keys of the signed PDFs never leave the server.
+  documents: {
+    orderBy: { side: 'asc' },
+    select: { id: true, side: true, fileName: true, sizeBytes: true, checksum: true, uploadedAt: true },
+  },
 } satisfies Prisma.ContractInclude;
 
 export type Detailed = Prisma.ContractGetPayload<{ include: typeof CONTRACT_DETAIL }>;

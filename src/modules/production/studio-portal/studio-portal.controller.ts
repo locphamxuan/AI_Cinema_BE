@@ -4,20 +4,24 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseEnumPipe,
   ParseUUIDPipe,
   Post,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ContractDocumentSide } from '@prisma/client';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { RemoveTempUploadInterceptor } from 'src/common/http/remove-temp-upload.interceptor';
-import { ContractService } from 'src/modules/production/contract/contract.service';
+import { ContractDocumentService } from 'src/modules/production/contract/contract-document.service';
+import { StudioContractService, type StudioActor } from 'src/modules/production/contract/contract-studio.service';
 import { ContractCostRequestDto } from 'src/modules/production/contract/dto/contract.request.dto';
+import { SignedPdfUpload } from 'src/modules/production/contract/signed-pdf-upload';
 import {
   parseAiDisclosure,
   SubmitMediaLinkRequestDto,
@@ -27,6 +31,7 @@ import { MediaIngestService } from 'src/modules/production/media-ingest/media-in
 import { StudioPortalService } from './studio-portal.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
+const SIDE = new ParseEnumPipe(ContractDocumentSide);
 
 /**
  * MF-1 (07/11/2026): the API the Studio Web calls once a studio logged in with its STUDIO account — its
@@ -39,7 +44,8 @@ const ID = new ParseUUIDPipe({ version: '4' });
 export class StudioPortalController {
   constructor(
     private readonly portal: StudioPortalService,
-    private readonly contracts: ContractService,
+    private readonly contracts: StudioContractService,
+    private readonly documents: ContractDocumentService,
     private readonly media: MediaIngestService,
   ) {}
 
@@ -55,33 +61,57 @@ export class StudioPortalController {
     return this.contracts.forStudio(await this.portal.studioOf(user));
   }
 
+  @Get('contracts/:contractId/documents/:side/content')
+  @ApiOperation({ summary: 'Download the Admin-signed, the studio-signed or the merged FINAL contract PDF' })
+  async downloadContract(
+    @Param('contractId', ID) contractId: string,
+    @Param('side', SIDE) side: ContractDocumentSide,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.documents.downloadForStudio(contractId, side, await this.portal.studioOf(user));
+  }
+
   @Post('contracts/:contractId/propose')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Fill in the production cost of a template and sign it' })
+  @SignedPdfUpload(true)
+  @ApiOperation({
+    summary: 'Fill the production cost into the template and upload the contract PDF signed by the studio',
+  })
   async propose(
     @Param('contractId', ID) contractId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
     @Body() dto: ContractCostRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.contracts.propose(contractId, dto.costVnd, await this.portal.studioOf(user));
+    return this.contracts.propose(contractId, dto.costVnd, await this.actor(user), file);
   }
 
   @Post('contracts/:contractId/sign')
   @HttpCode(200)
-  @ApiOperation({ summary: "Agree with the Admin's cost and sign: the contract is complete, production starts" })
-  async sign(@Param('contractId', ID) contractId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.contracts.studioSign(contractId, await this.portal.studioOf(user));
+  @SignedPdfUpload()
+  @ApiOperation({
+    summary:
+      "Agree with the Admin's cost by uploading the contract PDF signed by the studio: both signatures complete the contract and production starts",
+  })
+  async sign(
+    @Param('contractId', ID) contractId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.contracts.studioSign(contractId, await this.actor(user), file);
   }
 
   @Post('contracts/:contractId/counter')
   @HttpCode(200)
-  @ApiOperation({ summary: "Disagree with the Admin's cost: propose another one, signed" })
+  @SignedPdfUpload(true)
+  @ApiOperation({ summary: "Disagree with the Admin's cost: propose another one with the contract PDF signed for it" })
   async counter(
     @Param('contractId', ID) contractId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
     @Body() dto: ContractCostRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.contracts.studioCounter(contractId, dto.costVnd, await this.portal.studioOf(user));
+    return this.contracts.studioCounter(contractId, dto.costVnd, await this.actor(user), file);
   }
 
   @Get('projects')
@@ -124,5 +154,10 @@ export class StudioPortalController {
   @ApiOperation({ summary: 'Process a failed delivery again, e.g. once the link is fixed (latest version only)' })
   retry(@Param('mediaAssetId', ID) mediaAssetId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.media.retry(mediaAssetId, user);
+  }
+
+  /** The studio this account speaks for, plus the account itself: an upload is recorded against both. */
+  private async actor(user: AuthenticatedUser): Promise<StudioActor> {
+    return { studioId: await this.portal.studioOf(user), userId: user.id };
   }
 }
