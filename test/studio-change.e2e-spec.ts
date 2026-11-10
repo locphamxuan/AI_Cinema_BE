@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
+import { adminSign, proposeCost } from './support/contracts';
 import { DISCLOSURE, MP4 } from './support/media';
 import { newStudio, projectInProduction, type ProjectDetail, studioAccount, studioOf } from './support/projects';
 
@@ -108,17 +109,17 @@ describe('Studio change with a new contract (e2e)', () => {
     ]);
     const [forB] = await accountB.get<Contract[]>('/studio-portal/contracts');
     expect(forB.status).toBe('SUPERSEDED');
-    await accountB.post(`/studio-portal/contracts/${forB.id}/propose`, { costVnd: FEE_B }, 409);
+    await proposeCost(accountB, forB.id, FEE_B, 409);
   });
 
   it('opens the hand-off once the new studio and the Admin both signed', async () => {
     const [template] = await accountC.get<Contract[]>('/studio-portal/contracts');
     expect(template).toMatchObject({ status: 'SENT', costVnd: null });
 
-    await accountC.post(`/studio-portal/contracts/${template.id}/propose`, { costVnd: FEE_C }, 200);
+    await proposeCost(accountC, template.id, FEE_C);
     let [live] = await handoffs();
     expect(live).toMatchObject({ milestoneStatus: 'BRIEF_SENT', studio: { id: studioC.id } });
-    await admin.post(`/contracts/${template.id}/sign`, {}, 200);
+    await adminSign(admin, template.id);
 
     [live] = await handoffs();
     expect(live).toMatchObject({ milestoneStatus: 'IN_PROGRESS', offeredFeeVnd: FEE_C, studio: { id: studioC.id } });
