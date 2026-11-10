@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ContractDocumentSide } from '@prisma/client';
 import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
@@ -100,16 +100,6 @@ export class ContractSignatureService {
     for (const stored of [prepared.counterpart, prepared.final]) {
       if (stored) await removeQuietly(this.storage, stored.storageKey, 'private');
     }
-  }
-
-  /** The stored bytes of one side's document, for download or for the merge. */
-  async read(tx: PrismaTx, contractId: string, side: ContractDocumentSide): Promise<Buffer> {
-    const document = await tx.contractDocument.findUnique({
-      where: { contractId_side: { contractId, side } },
-      select: { storageKey: true },
-    });
-    if (!document) throw new NotFoundException('That contract has no such signed PDF');
-    return this.storage.read(document.storageKey, 'private');
   }
 
   private async store(
