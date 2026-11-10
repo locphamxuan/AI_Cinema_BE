@@ -9,6 +9,7 @@ import {
   UnpublishMode,
 } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { CdnPurgeService } from 'src/infrastructure/cdn/cdn-purge.service';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { EntitlementService } from 'src/modules/episode-access/entitlement/entitlement.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -61,6 +62,7 @@ export class PublicationService {
     private readonly revisions: EpisodeRevisionService,
     private readonly entitlements: EntitlementService,
     private readonly settings: PlatformSettingService,
+    private readonly cdn: CdnPurgeService,
   ) {}
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
@@ -159,6 +161,9 @@ export class PublicationService {
       );
     });
     await this.revisions.announce(mailId);
+    // The episode is down: drop its HLS objects from the edge cache, so a signed URL issued
+    // before the take-down cannot keep playing cached segments. Best effort, never blocking.
+    if (live) await this.cdn.purgeAsset(publication.mediaAssetId);
     return this.list(episode.id, user);
   }
 

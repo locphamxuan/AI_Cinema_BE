@@ -7,6 +7,7 @@ import { AppConfigModule } from 'src/config/config.module';
 import { MailerModule } from 'src/infrastructure/mailer/mailer.module';
 import { PrismaModule } from 'src/infrastructure/prisma/prisma.module';
 import { QueueModule } from 'src/infrastructure/queue/queue.module';
+import { CdnModule } from 'src/infrastructure/cdn/cdn.module';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/identity/auth/auth.module';
@@ -42,6 +43,7 @@ import { AppController } from './app.controller';
     PaginationModule.forRoot({ defaultLimit: 20, maxLimit: 100 }),
     PrismaModule,
     StorageModule,
+    CdnModule,
     QueueModule,
     MailerModule,
     AuthModule,
