@@ -82,7 +82,15 @@ jobs:
       - name: Prisma schema matches the migrations
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
-        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema --exit-code
+          DIRECT_DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+        # The hand-written objects of the migrations (CHECK constraints, triggers, the partial
+        # unique index of the support cases) are invisible to `migrate diff`; the HNSW index of
+        # the RAG embeddings is not, because the Prisma schema has no syntax for it, so that one
+        # line is the only difference the check accepts.
+        run: |
+          npx prisma migrate diff --from-config-datasource --to-schema prisma/schema --script > drift.sql
+          grep -vE '^\s*(--.*)?$' drift.sql | grep -v 'DROP INDEX "support_knowledge_chunks_embedding_idx";' > drift-unexpected.sql || true
+          if [ -s drift-unexpected.sql ]; then echo 'Prisma schema and migrations differ:'; cat drift.sql; exit 1; fi
 
   audit:
     name: Dependency audit
