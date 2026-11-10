@@ -85,6 +85,7 @@ export class ComplianceService {
     assertProjectStatus(asset.episode.project.status, DELIVERY_PROJECT_STATUSES, 'check compliance');
     this.reviews.assertUnderReview(asset, [EpisodeStatus.LABELED]);
 
+    let mailId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       const label = await tx.aiContentLabel.findUnique({ where: { mediaAssetId: asset.id } });
       const verdicts = complianceVerdicts({ aiDisclosure: asset.aiDisclosure, label }, dto);
@@ -108,7 +109,7 @@ export class ComplianceService {
       );
       if (failed.length) {
         const summary = failed.map((v) => `${ITEM_NAMES[v.checkType]}: ${v.failureReason}`).join('; ');
-        await this.reviews.requestChanges(tx, asset, user.id, `Compliance check failed. ${summary}`);
+        mailId = await this.reviews.requestChanges(tx, asset, user.id, `Compliance check failed. ${summary}`);
         return;
       }
       const { count } = await tx.episode.updateMany({
@@ -117,6 +118,7 @@ export class ComplianceService {
       });
       if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
     });
+    await this.reviews.announce(mailId);
     return this.reviews.sheet(mediaAssetId, user);
   }
 

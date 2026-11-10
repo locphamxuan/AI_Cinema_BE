@@ -82,7 +82,7 @@ export class UserService {
 
   /**
    * Deletes an account that never did anything in the platform (its notifications and sessions go with it).
-   * An account that already owns projects, reviews, deliveries or Token entries is part of that history:
+   * An account that already owns projects, reviews, deliveries or cost entries is part of that history:
    * lock it instead.
    */
   async remove(userId: string, caller: AuthenticatedUser): Promise<void> {

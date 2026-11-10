@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
 import { deliver } from './support/media';
-import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
+import { episodesOf, projectInProduction, type ProjectDetail, studioOf } from './support/projects';
 
 interface Sheet {
   id: string;
@@ -46,7 +46,8 @@ describe('Content review, AI label and compliance (e2e)', () => {
   afterAll(() => app.close());
 
   const episodeId = (i: number) => episodesOf(project)[i].id;
-  const creatorBell = async () => (await creator.get<Bell>('/notifications?limit=100')).data;
+  // MF-1 §5: the Reviewer works with the studio directly; its account hears about every decision.
+  const studioBell = async () => (await studioOf(project.id).get<Bell>('/notifications?limit=100')).data;
 
   it('shows the Reviewer the disclosure and how far the length is from the target (BR-31)', async () => {
     const v1 = await deliver(creator, episodeId(0));
@@ -78,7 +79,7 @@ describe('Content review, AI label and compliance (e2e)', () => {
     );
     expect(sheet.episode.status).toBe('CHANGES_REQUESTED');
     expect(sheet.contentReviews[0]).toMatchObject({ decision: 'CHANGES_REQUESTED' });
-    const notice = (await creatorBell()).find(
+    const notice = (await studioBell()).find(
       (n) => n.type === 'CONTENT_CHANGES_REQUESTED' && n.payload.mediaAssetId === v1.id,
     );
     expect(notice?.body).toContain('mặt nhân vật bị méo');
@@ -97,7 +98,7 @@ describe('Content review, AI label and compliance (e2e)', () => {
     await reviewer.post(`/media-assets/${v2.id}/ai-content-labels`, LABEL, 409);
     const sheet = await reviewer.post<Sheet>(`/media-assets/${v2.id}/reviews`, { decision: 'APPROVED' }, 200);
     expect(sheet).toMatchObject({ isApprovedVersion: true, episode: { status: 'APPROVED' } });
-    expect((await creatorBell()).some((n) => n.type === 'CONTENT_APPROVED' && n.payload.mediaAssetId === v2.id)).toBe(
+    expect((await studioBell()).some((n) => n.type === 'CONTENT_APPROVED' && n.payload.mediaAssetId === v2.id)).toBe(
       true,
     );
   });

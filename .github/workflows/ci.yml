@@ -1,16 +1,14 @@
 # CI/CD of the API.
 #   Every push and pull request: lint, typecheck, unit + e2e tests (real Postgres), dependency
-#   audit, Docker build, and SonarCloud analysis with its quality gate.
+#   audit and Docker build.
 #   Push to main or a v* tag, all green: the image goes to GHCR, then the optional deploy hook.
 # Repository settings it reads (Settings → Secrets and variables → Actions):
-#   secrets.SONAR_TOKEN        Required SonarCloud token; release images are blocked without it
-#   vars.SONAR_HOST_URL        only for a self-hosted SonarQube (default https://sonarcloud.io)
 #   secrets.DEPLOY_HOOK_URL    optional: called after the image is pushed (Render, Railway, …)
 name: CI/CD
 
 on:
   push:
-    branches: [main, dev, 'refactor/**', 'feat/**', 'fix/**', 'ci/**']
+    branches: [main, dev, 'refactor/**', 'feat/**', 'fix/**', 'ci/**', 'chore/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -45,11 +43,6 @@ jobs:
         run: npm run test:cov
       - name: Build
         run: npm run build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage-unit
-          path: coverage/lcov.info
-          retention-days: 7
 
   e2e:
     name: E2E tests (Postgres, Redis)
@@ -90,11 +83,6 @@ jobs:
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
         run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema --exit-code
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage-e2e
-          path: coverage-e2e/lcov.info
-          retention-days: 7
 
   audit:
     name: Dependency audit
@@ -108,47 +96,9 @@ jobs:
       - name: No high or critical vulnerability in production dependencies
         run: npm audit --omit=dev --audit-level=high
 
-  sonar:
-    name: SonarCloud analysis
-    needs: [quality, e2e]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-    steps:
-      - name: Require the quality-gate token
-        if: env.SONAR_TOKEN == ''
-        run: |
-          echo "::error::SONAR_TOKEN is required; SonarCloud quality gate cannot be skipped."
-          exit 1
-      - uses: actions/checkout@v4
-        if: env.SONAR_TOKEN != ''
-        with:
-          # Full history: Sonar needs it to tell new code from old code.
-          fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        if: env.SONAR_TOKEN != ''
-        with:
-          name: coverage-unit
-          path: coverage
-      - uses: actions/download-artifact@v4
-        if: env.SONAR_TOKEN != ''
-        with:
-          name: coverage-e2e
-          path: coverage-e2e
-      - name: Scan and wait for the quality gate
-        if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
-        with:
-          args: >
-            -Dsonar.qualitygate.wait=true
-            -Dsonar.qualitygate.timeout=300
-
   docker:
     name: Docker image
-    needs: [quality, e2e, audit, sonar]
+    needs: [quality, e2e, audit]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

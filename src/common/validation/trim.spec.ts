@@ -1,7 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { CreateStaffUserRequestDto } from 'src/modules/identity/user/dto/create-staff-user.request.dto';
-import { AddReviewerTokenEntryRequestDto } from 'src/modules/production/reviewer-token/dto/reviewer-token.request.dto';
+import { AddCostEntryRequestDto } from 'src/modules/production/production-cost/dto/add-cost-entry.request.dto';
 
 describe('Trim / NormalizeEmail', () => {
   it('refuses a name made of spaces and stores the email the way accounts are kept', async () => {
@@ -16,10 +16,10 @@ describe('Trim / NormalizeEmail', () => {
     expect(dto.email).toBe('creator09@aicinema.com');
   });
 
-  it('trims a Token reason', () => {
-    const dto = plainToInstance(AddReviewerTokenEntryRequestDto, {
-      entryType: 'GRANT',
-      amountTokens: 5,
+  it('trims the reason of a production cost correction', () => {
+    const dto = plainToInstance(AddCostEntryRequestDto, {
+      entryType: 'CORRECTION',
+      amountVnd: 5000,
       reason: ' Q4 ',
     });
     expect(dto.reason).toBe('Q4');

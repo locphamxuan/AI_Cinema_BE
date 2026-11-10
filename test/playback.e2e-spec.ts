@@ -5,7 +5,7 @@ import type { App } from 'supertest/types';
 import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
 import { REMOVED_NOTICE } from 'src/modules/catalog/episode-visibility';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode, MP4 } from './support/media';
+import { MP4, compliantEpisode, release, unpublish } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface SessionView {
@@ -61,7 +61,7 @@ describe('Playback viewing experience (e2e)', () => {
     for (let i = 0; i < 3; i += 1) {
       await compliantEpisode(reviewer, creator, episodeId(i));
       await reviewer.patch(`/episodes/${episodeId(i)}/coin-price`, { coinPrice: 10 });
-      await reviewer.post(`/episodes/${episodeId(i)}/publications`, {});
+      await release(reviewer, `/episodes/${episodeId(i)}/publications`, {});
     }
   }, 120000);
 
@@ -274,7 +274,8 @@ describe('Playback viewing experience (e2e)', () => {
     const live = (
       await reviewer.get<{ id: string; publishedAt: string | null }[]>(`/episodes/${episodeId(2)}/publications`)
     ).find((publication) => publication.publishedAt)!;
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${live.id}/unpublish`,
       { mode: 'REVISION', reason: 'COMPLIANCE_ISSUE', note: 'Cảnh cuối cần làm lại phụ đề.' },
       200,
@@ -301,7 +302,8 @@ describe('Playback viewing experience (e2e)', () => {
     const live = (
       await reviewer.get<{ id: string; publishedAt: string | null }[]>(`/episodes/${episodeId(1)}/publications`)
     ).find((publication) => publication.publishedAt)!;
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${live.id}/unpublish`,
       { mode: 'REMOVAL', reason: 'COMPLIANCE_ISSUE', note: 'Tập bị gỡ khỏi nền tảng.' },
       200,

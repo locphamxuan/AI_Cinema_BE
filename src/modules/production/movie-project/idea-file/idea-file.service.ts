@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
+import { removeQuietly } from 'src/infrastructure/storage/remove-quietly';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
@@ -121,7 +122,7 @@ export class IdeaFileService {
     const file = await this.prisma.movieIdeaFile.findFirst({ where: { id: fileId, projectId } });
     if (!file) throw new NotFoundException('Idea file not found');
     await this.prisma.movieIdeaFile.delete({ where: { id: file.id } });
-    await this.storage.remove(file.storageKey, 'private').catch(() => undefined);
+    await removeQuietly(this.storage, file.storageKey, 'private');
   }
 
   async download(projectId: string, fileId: string, user: AuthenticatedUser): Promise<StreamableFile> {

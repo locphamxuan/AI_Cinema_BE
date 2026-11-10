@@ -17,26 +17,31 @@ import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { CreateStudioRequestDto, StudioListQueryDto, UpdateStudioRequestDto } from './dto/studio.request.dto';
+import { CreateStudioAccountRequestDto } from './dto/studio-account.request.dto';
+import { StudioAccountService } from './studio-account.service';
 import { StudioService } from './studio.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
-/** Catalog of partner studios (BR-59): the Reviewer keeps it, the Creator picks from it at hand-off. */
+/** Catalog of partner studios (BR-59): the Admin keeps it and opens each studio's login accounts. */
 @ApiTags('studios')
 @ApiBearerAuth()
 @Controller('studios')
 export class StudioController {
-  constructor(private readonly studios: StudioService) {}
+  constructor(
+    private readonly studios: StudioService,
+    private readonly accounts: StudioAccountService,
+  ) {}
 
   @Get()
-  @RequirePermission(PERMISSION.STUDIO_MANAGE, PERMISSION.STUDIO_HANDOFF, PERMISSION.PROJECT_MANAGE)
+  @RequirePermission(PERMISSION.STUDIO_MANAGE, PERMISSION.PROJECT_MANAGE, PERMISSION.PROJECT_CREATE)
   @ApiOperation({ summary: 'Studios by name; ?active=true lists only those that can take a project' })
   list(@Query() query: StudioListQueryDto) {
     return this.studios.list(query.active);
   }
 
   @Get(':studioId')
-  @RequirePermission(PERMISSION.STUDIO_MANAGE, PERMISSION.STUDIO_HANDOFF, PERMISSION.PROJECT_MANAGE)
+  @RequirePermission(PERMISSION.STUDIO_MANAGE, PERMISSION.PROJECT_MANAGE, PERMISSION.PROJECT_CREATE)
   detail(@Param('studioId', ID) studioId: string) {
     return this.studios.detail(studioId);
   }
@@ -65,5 +70,24 @@ export class StudioController {
   @ApiOperation({ summary: 'Delete a studio that never took a project; otherwise deactivate it' })
   remove(@Param('studioId', ID) studioId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.studios.remove(studioId, user);
+  }
+
+  @Get(':studioId/accounts')
+  @RequirePermission(PERMISSION.USER_MANAGE)
+  @ApiOperation({ summary: 'Admin: the login accounts of a studio' })
+  accountsOf(@Param('studioId', ID) studioId: string) {
+    return this.accounts.list(studioId);
+  }
+
+  @Post(':studioId/accounts')
+  @RequirePermission(PERMISSION.USER_MANAGE)
+  @ApiOperation({ summary: 'Admin: open a STUDIO login for this studio (MF-1, 07/11/2026)' })
+  async createAccount(
+    @Param('studioId', ID) studioId: string,
+    @Body() dto: CreateStudioAccountRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.studios.detail(studioId);
+    return this.accounts.create(studioId, dto, user);
   }
 }

@@ -18,8 +18,7 @@ const PLATFORM_SETTING_SEED = {
   id: 'default',
   // BR-03: first episodes of every movie Guests and Free members watch.
   freeStarterEpisodeCount: 2,
-  // BR-45: VND value of one Token (production fee) and of one main Coin (revenue).
-  tokenRateVnd: 1000,
+  // BR-45: VND value of one main Coin (revenue).
   coinRateVnd: 1000,
   // BR-47: valid Coin price of one episode; outside it alerts the Admin.
   episodeCoinPriceMin: 1,

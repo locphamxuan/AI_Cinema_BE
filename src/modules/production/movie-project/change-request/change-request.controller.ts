@@ -66,7 +66,7 @@ export class ChangeRequestController {
 
   @Post('change-requests/:changeRequestId/approve')
   @RequirePermission(PERMISSION.PROJECT_CHANGE_REVIEW)
-  @ApiOperation({ summary: 'Approve a request; an approved budget supplement is granted to the Reviewer' })
+  @ApiOperation({ summary: 'Approve a request' })
   approve(
     @Param('changeRequestId', ID) changeRequestId: string,
     @Body() dto: ResolveChangeRequestDto,

@@ -6,7 +6,7 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { CreateStudioRequestDto, UpdateStudioRequestDto } from './dto/studio.request.dto';
 
-/** The catalog of partner studios the Reviewer keeps (BR-59). A studio has no account (BR-15). */
+/** The catalog of partner studios (BR-59); each logs in with STUDIO accounts (StudioAccountService). */
 @Injectable()
 export class StudioService {
   constructor(

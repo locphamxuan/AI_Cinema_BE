@@ -38,6 +38,12 @@ export default tseslint.config(
     },
   },
   {
+    // Application code stays small; specs and e2e suites keep the wider limit above.
+    files: ['src/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    rules: { 'max-lines': ['error', { max: 300, skipBlankLines: false, skipComments: false }] },
+  },
+  {
     // Jest's asymmetric matchers (expect.objectContaining, expect.any) are typed `any`.
     files: ['**/*.spec.ts', 'test/**/*.ts'],
     rules: { '@typescript-eslint/no-unsafe-assignment': 'off' },

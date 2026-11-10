@@ -24,10 +24,11 @@ model StudioHandoff {
     projectId             String                @map("project_id") @db.Uuid
     studioId            String                @map("studio_id") @db.Uuid
     seasonId            String?               @map("season_id") @db.Uuid
-    /// Production fee printed in the brief when it was sent.
-    productionFeeTokens BigInt                @map("production_fee_tokens")
-    /// Token spent on this hand-off when it was replaced: the studio got the brief and did not decline (BR-59).
-    lostTokens          BigInt                @default(0) @map("lost_tokens")
+    /// Production fee (VND) the brief offered the studio; committed against the project budget.
+    offeredFeeVnd       BigInt                @map("offered_fee_vnd")
+    /// VND already spent on this studio when it was replaced (paid, or owed as compensation), entered by
+    /// hand; the rest of the offered fee returns to the budget (BR-59).
+    forfeitedVnd        BigInt                @default(0) @map("forfeited_vnd")
     /// Required when the studio is changed.
     changeReason        String?               @map("change_reason") @db.Text
     briefFileKey        String?               @map("brief_file_key") @db.VarChar(500)
@@ -39,9 +40,6 @@ model StudioHandoff {
     respondedAt         DateTime?             @map("responded_at") @db.Timestamptz(6)
     /// Required when the studio declines.
     declineReason       String?               @map("decline_reason") @db.Text
-    /// When the Studio Web last reported a film mailed back to the Creator, and what it said.
-    filmSentAt          DateTime?             @map("film_sent_at") @db.Timestamptz(6)
-    filmSentNote        String?               @map("film_sent_note") @db.Text
     createdById        String                @map("created_by_id") @db.Uuid
     createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
     updatedAt           DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -55,7 +53,8 @@ model StudioHandoff {
     materials       StudioHandoffMaterial[]
     milestoneEvents StudioMilestoneEvent[]
     deliveries      MediaAsset[]
-    filmLinks       StudioFilmLink[]
+    costRequests    ProductionCostRequest[]
+    contracts       Contract[]
 
     @@index([projectId, createdAt])
     @@index([studioId])
@@ -100,24 +99,4 @@ model StudioMilestoneEvent {
 
     @@index([handoffId, createdAt])
     @@map("studio_milestone_events")
-}
-
-/// The link the Studio Web last mailed for one episode of a hand-off (BR-58): the Creator downloads it, or
-/// imports it as the Submission. A later mail for the same episode replaces it.
-model StudioFilmLink {
-    id        String   @id @default(uuid()) @db.Uuid
-    handoffId String   @map("handoff_id") @db.Uuid
-    episodeId String   @map("episode_id") @db.Uuid
-    /// The studio's own name for the cut, e.g. v2.
-    version   String   @db.VarChar(100)
-    fileName  String   @map("file_name") @db.VarChar(255)
-    url       String   @db.VarChar(2048)
-    sentAt    DateTime @map("sent_at") @db.Timestamptz(6)
-
-    handoff StudioHandoff @relation(fields: [handoffId], references: [id], onDelete: Cascade)
-    episode Episode       @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-
-    @@unique([handoffId, episodeId])
-    @@index([episodeId])
-    @@map("studio_film_links")
 }

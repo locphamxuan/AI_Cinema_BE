@@ -2,7 +2,7 @@ import { AdStatus } from '@prisma/client';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { AppConfig } from 'src/config/app-config';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import type { MediaProcessor } from 'src/modules/production/media-ingest/pipeline/media-processor';
+import type { MediaProcessor } from 'src/infrastructure/media/media-processor';
 import { AdCatalogService } from './ad-catalog.service';
 import { MAX_AD_DURATION_SECONDS } from './ad-limits';
 

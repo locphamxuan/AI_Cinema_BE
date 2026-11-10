@@ -88,7 +88,7 @@ export class MediaOutcomeService {
         });
       }
       await this.notifications.notify(
-        [episode.project.reviewerId, episode.project.creatorId],
+        [episode.project.reviewerId],
         {
           type: NOTIFICATION_TYPE.MEDIA_READY,
           title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" sẵn sàng để duyệt`,
@@ -135,8 +135,10 @@ export class MediaOutcomeService {
         tx,
       );
       if (!moved.count || !DELIVERY_PROJECT_STATUSES.includes(project.status)) return;
+      // The studio delivered it and fixes it (MF-1, 08/11/2026); the Reviewer follows along.
+      const studio = await this.notifications.studioAccountIds(project.studioId, tx);
       await this.notifications.notify(
-        [project.creatorId],
+        [...studio, project.reviewerId],
         {
           type: NOTIFICATION_TYPE.MEDIA_FAILED,
           title: `Không xử lý được tập ${asset.episode.episodeNumber} của phim "${movie.title}"`,

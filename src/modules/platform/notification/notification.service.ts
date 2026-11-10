@@ -43,6 +43,16 @@ export class NotificationService {
     return admins.map(({ id }) => id);
   }
 
+  /** Active accounts of a partner studio (MF-1, 07/11/2026): who hears about its contracts and films. */
+  async studioAccountIds(studioId: string | null | undefined, tx?: PrismaTx): Promise<string[]> {
+    if (!studioId) return [];
+    const accounts = await (tx ?? this.prisma).user.findMany({
+      where: { role: UserRole.STUDIO, studioId, isActive: true },
+      select: { id: true },
+    });
+    return accounts.map(({ id }) => id);
+  }
+
   findMine(userId: string, query: PaginateQuery) {
     return paginate(query, this.prisma.notification, {
       where: { userId },

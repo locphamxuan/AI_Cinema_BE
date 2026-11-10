@@ -165,7 +165,7 @@ export class ProjectTeamService {
     });
     if (existing) return existing;
     return tx.projectCreatorAssignment.create({
-      data: { projectId: project.id, creatorId, note: by.note?.trim(), ...by },
+      data: { projectId: project.id, creatorId, ...by, note: by.note?.trim() },
     });
   }
 

@@ -1,11 +1,11 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { ChangeRequestStatus, ProjectStatus, Prisma } from '@prisma/client';
+import { ProjectStatus, Prisma, UserRole } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
-import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
+import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { CreateMovieProjectRequestDto } from './dto/create-movie-project.request.dto';
 import { UpdateMovieProjectRequestDto } from './dto/update-movie-project.request.dto';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
@@ -14,12 +14,8 @@ import { revisionSummary } from './revision-summary';
 import { resolveGenreIds } from './genre-resolver';
 import { newEpisodeSchedule, seasonWindow } from './episode-schedule';
 import { StudioService } from 'src/modules/production/studio/studio.service';
-
-const PERSON = { select: { id: true, fullName: true, email: true } } as const;
-
-const OPEN_CHANGE_REQUESTS = {
-  _count: { select: { changeRequests: { where: { status: ChangeRequestStatus.OPEN } } } },
-} satisfies Prisma.MovieProjectInclude;
+import { ProjectLifecycleService } from './project-lifecycle.service';
+import { lastActivityOf, LIST_ROW, OPEN_CHANGE_REQUESTS, PERSON, PROJECT_PAGE, titledProjects } from './project-list';
 
 const PROJECT_DETAIL = {
   movie: {
@@ -60,14 +56,6 @@ const PROJECT_DETAIL = {
   ...OPEN_CHANGE_REQUESTS,
 } satisfies Prisma.MovieProjectInclude;
 
-/** A row of the project list: its catalog face, people, studio and open change requests. */
-const LIST_ROW = {
-  movie: { include: { _count: { select: { episodes: true } } } },
-  reviewer: PERSON,
-  creator: PERSON,
-  studio: true,
-  ...OPEN_CHANGE_REQUESTS,
-} satisfies Prisma.MovieProjectInclude;
 type ListRow = Prisma.MovieProjectGetPayload<{ include: typeof LIST_ROW }>;
 
 /** Fields of an update that the catalog shows; the others belong to the project row. */
@@ -95,15 +83,18 @@ export class MovieProjectService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly fees: ProductionFeeService,
+    private readonly costs: ProductionCostService,
     private readonly studios: StudioService,
+    private readonly lifecycle: ProjectLifecycleService,
     private readonly auditLog: AuditLogService,
   ) {}
 
-  /** Step 1: the project with its seasons and episodes, numbered across the whole movie (BR-03, BR-37). */
+  /** MF-1 step 1 (07/11/2026): the Admin creates the project, picks its Reviewer and assigns the lead Creator. */
   async create(dto: CreateMovieProjectRequestDto, user: AuthenticatedUser) {
     if (dto.studioId) await this.studios.assertUsable(dto.studioId);
-    const seasons = dto.seasons.map((season) => {
+    await this.lifecycle.assertActive(dto.reviewerId, UserRole.CONTENT_REVIEWER);
+    if (dto.creatorId) await this.lifecycle.assertActive(dto.creatorId, UserRole.CONTENT_CREATOR);
+    const seasons = (dto.seasons ?? []).map((season) => {
       const window = seasonWindow(season);
       return {
         season,
@@ -122,7 +113,7 @@ export class MovieProjectService {
           defaultLanguage: dto.defaultLanguage,
           genres: { create: genreIds.map((genreId) => ({ genreId })) },
           project: {
-            create: { ideaDescription: dto.ideaDescription.trim(), studioId: dto.studioId, reviewerId: user.id },
+            create: { ideaDescription: dto.ideaDescription.trim(), studioId: dto.studioId, reviewerId: dto.reviewerId },
           },
         },
       });
@@ -133,7 +124,6 @@ export class MovieProjectService {
             movieId: movie.id,
             seasonNumber: index + 1,
             title: season.title,
-            episodeProductionCost: BigInt(season.episodeProductionCost),
             ...window,
           },
         });
@@ -162,24 +152,23 @@ export class MovieProjectService {
       );
       return movie.id;
     });
+    await this.lifecycle.announceReviewer(projectId);
+    if (dto.creatorId) await this.lifecycle.assignCreator(projectId, dto.creatorId, user);
     return this.detail(projectId, user);
   }
 
   /** One row per project, its catalog fields alongside, with the open change requests (§4.1.8). */
   async list(query: PaginateQuery, user: AuthenticatedUser) {
     const readable = await this.access.readableWhere(user);
-    // The title lives on the catalog movie, out of reach of the paginator's own search.
-    const titled: Prisma.MovieProjectWhereInput = query.search
-      ? { movie: { title: { contains: query.search, mode: 'insensitive' } } }
-      : {};
     const page = await paginate(query, this.prisma.movieProject, {
-      where: { AND: [readable, titled] },
+      where: { AND: [readable, titledProjects(query)] },
       relations: LIST_ROW,
-      sortableColumns: ['status', 'createdAt', 'updatedAt'],
-      defaultSortBy: [['updatedAt', 'DESC']],
-      filterableColumns: { status: ['$eq', '$in'], creatorId: ['$eq'] },
+      ...PROJECT_PAGE,
     });
-    const lastActivity = await this.lastActivity(page.data.map((project) => project.id));
+    const lastActivity = await lastActivityOf(
+      this.prisma,
+      page.data.map((project) => project.id),
+    );
     return {
       ...page,
       data: (page.data as ListRow[]).map(({ movie: { _count: movieCount, ...movie }, _count, ...project }) => ({
@@ -190,18 +179,6 @@ export class MovieProjectService {
         lastActivityAt: lastActivity.get(project.id) ?? project.updatedAt,
       })),
     };
-  }
-
-  /** The newest content event of each project: "Cập nhật lần cuối" counts every change, not only the project row. */
-  private async lastActivity(projectIds: string[]): Promise<Map<string, Date>> {
-    const latest = await this.prisma.auditLog.groupBy({
-      by: ['projectId'],
-      where: { projectId: { in: projectIds } },
-      _max: { createdAt: true },
-    });
-    return new Map(
-      latest.flatMap(({ projectId, _max }) => (projectId && _max.createdAt ? [[projectId, _max.createdAt]] : [])),
-    );
   }
 
   /** The project with its catalog fields flattened in, as the production screens read it. */
@@ -220,8 +197,7 @@ export class MovieProjectService {
       ...movie,
       ...rest,
       genres: genres.map(({ genre }) => genre),
-      productionFeeTokens: await this.fees.totalTokens(projectId),
-      seasonFees: await this.fees.seasonFees(projectId),
+      cost: await this.costs.summary(projectId),
       openChangeRequests: _count.changeRequests,
       revision: revisionSummary(movie.seasons),
     };

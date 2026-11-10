@@ -1,6 +1,5 @@
 enum ChangeRequestType {
     PROJECT_UPDATE
-    BUDGET_SUPPLEMENT
     DEADLINE_EXTENSION
     OTHER
 }
@@ -12,7 +11,8 @@ enum ChangeRequestStatus {
 }
 
 /// A Reviewer or Creator asks the Admin to change a project, with the reason and the documents that
-/// prove it; the Admin approves or rejects (BR-55, §4.1.8). season_id / episode_id narrow the scope;
+/// prove it; the Admin approves or rejects (BR-55, §4.1.8). More production cost has its own request
+/// (production_cost_requests). season_id / episode_id narrow the scope;
 /// both NULL = the whole project.
 model ProjectChangeRequest {
     id                 String              @id @default(uuid()) @db.Uuid
@@ -23,8 +23,6 @@ model ProjectChangeRequest {
     requestType        ChangeRequestType   @default(PROJECT_UPDATE) @map("request_type")
     content            String              @db.Text
     reason             String              @db.Text
-    /// Only for BUDGET_SUPPLEMENT: the Token asked for.
-    requestedTokens    BigInt?             @map("requested_tokens")
     attachmentName     String?             @map("attachment_name") @db.VarChar(255)
     attachmentKey      String?             @map("attachment_key") @db.VarChar(500)
     attachmentMimeType String?             @map("attachment_mime_type") @db.VarChar(100)

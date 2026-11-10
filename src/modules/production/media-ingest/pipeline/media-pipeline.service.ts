@@ -10,9 +10,9 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { contentTypeOf, ObjectStorage } from 'src/infrastructure/storage/object-storage';
-import { probeHls } from '../hls/hls-playlist';
+import { probeHls } from 'src/common/hls/hls-playlist';
 import { DONE, MediaOutcomeService, type ReadyResult } from './media-outcome.service';
-import { MediaProcessor } from './media-processor';
+import { MediaProcessor } from 'src/infrastructure/media/media-processor';
 import { downloadTo, UnsafeUrlError, type UrlPolicy } from 'src/common/security/safe-url';
 
 export const MEDIA_INGEST_JOB = 'media.ingest';

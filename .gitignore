@@ -38,8 +38,6 @@ lib-cov
 # Coverage directory used by tools like istanbul
 coverage
 coverage-e2e
-# SonarScanner work files
-.scannerwork
 *.lcov
 
 # nyc test coverage

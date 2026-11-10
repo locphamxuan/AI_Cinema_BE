@@ -8,6 +8,8 @@ export interface AppConfig {
   port: number;
   corsOrigins: string[];
   /** Web app origin, for links sent by email (the studio portal). */
+  /** Studio Web origin, for the links in the emails a studio receives. */
+  studioWebUrl: string;
   /** Where the payment return trip sends the member: the mobile app's top-up screen. */
   appReturnUrl: string;
   swaggerEnabled: boolean;
@@ -95,8 +97,6 @@ export interface AppConfig {
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
   google: { clientIds: string[] };
-  /** The Studio Web reports the films it mails back; null leaves that channel closed. */
-  studio: { webhookToken: string | null };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -207,6 +207,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
+    studioWebUrl: read.string('STUDIO_WEB_URL', 'http://localhost:3100'),
     appReturnUrl: read.string('APP_RETURN_URL', 'aicinema://top-ups'),
     swaggerEnabled: read.bool('SWAGGER_ENABLED', !isProduction),
     trustProxy: read.bool('TRUST_PROXY', false),
@@ -268,7 +269,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
-    studio: { webhookToken: read.optional('STUDIO_WEBHOOK_TOKEN') ?? null },
     google: {
       clientIds: [
         ...new Set(

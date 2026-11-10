@@ -1,0 +1,67 @@
+/// Where the script of a project stands (MF-1 §2, 07/11/2026). SUBMITTED: waiting on the Reviewer.
+/// REVIEWER_APPROVED: the Reviewer passed it, waiting on the Admin. REVISION_REQUESTED: the Reviewer or the
+/// Admin sent it back to the Creator. FINAL: the Admin approved the Final Script; it is locked.
+enum ScriptStatus {
+  SUBMITTED
+  REVIEWER_APPROVED
+  REVISION_REQUESTED
+  FINAL
+}
+
+/// Who reviewed a script version: the Reviewer first, then the Admin on the Final Script.
+enum ScriptReviewStage {
+  REVIEWER
+  ADMIN
+}
+
+/// The script the lead Creator writes for a project, one per project. Each submission is a new immutable
+/// version; the reviews say who passed or sent back which version.
+model ProjectScript {
+  projectId      String       @id @map("project_id") @db.Uuid
+  status         ScriptStatus @default(SUBMITTED)
+  currentVersion Int          @map("current_version")
+  finalizedAt    DateTime?    @map("finalized_at") @db.Timestamptz(6)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project  MovieProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions ScriptVersion[]
+  reviews  ScriptReview[]
+
+  @@map("project_scripts")
+}
+
+model ScriptVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  projectId     String   @map("project_id") @db.Uuid
+  version       Int
+  content       String   @db.Text
+  /// What changed since the previous version, written by the Creator.
+  note          String?  @db.Text
+  submittedById String   @map("submitted_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  script      ProjectScript @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+  submittedBy User          @relation("ScriptVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, version])
+  @@map("script_versions")
+}
+
+model ScriptReview {
+  id         String            @id @default(uuid()) @db.Uuid
+  projectId  String            @map("project_id") @db.Uuid
+  version    Int
+  stage      ScriptReviewStage
+  approved   Boolean
+  /// Required when the version is sent back.
+  comment    String?           @db.Text
+  reviewerId String            @map("reviewer_id") @db.Uuid
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  script   ProjectScript @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+  reviewer User          @relation("ScriptReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@map("script_reviews")
+}

@@ -15,14 +15,13 @@ export interface BriefContent {
   scope: string;
   studioName: string;
   studioContact: string | null;
-  creatorName: string;
-  creatorEmail: string;
+  contactName: string;
+  contactEmail: string;
   ideaDescription: string;
   genres: string[];
-  productionFeeTokens: number;
-  tokenRateVnd: number;
+  /** Production fee offered, in VND: a fixed fee, no revenue share. */
+  offeredFeeVnd: number;
   episodes: BriefEpisode[];
-  ideaFiles: string[];
   issuedAt: Date;
 }
 
@@ -37,14 +36,14 @@ export function briefFont(configured: string | null): string | null {
   return [configured, ...FONT_CANDIDATES].find((path): path is string => Boolean(path && existsSync(path))) ?? null;
 }
 
-const vnd = (amount: number) => `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
+export const formatVnd = (amount: number) => `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
 const minutes = (seconds: number) => `${Math.round((seconds / 60) * 10) / 10} phút`;
 const day = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : '-');
 
 // Without a Unicode font the built-in Helvetica cannot draw Vietnamese marks; drop them rather than print garbage.
 const plain = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
 
-/** The brief PDF sent to the studio (BR-13): the order, its fee in Token and VND, and every episode deadline. */
+/** The brief PDF sent to the studio (BR-13): the order, its fee in VND, and every episode deadline. */
 export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Promise<Buffer> {
   const text = fontPath ? (value: string) => value : plain;
   const doc = new PDFDocument({ size: 'A4', margin: 50, info: { Title: `Brief - ${brief.movieTitle}` } });
@@ -65,10 +64,9 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
   doc.moveDown();
   doc.fontSize(12).text(text(`Studio: ${brief.studioName}${brief.studioContact ? ` (${brief.studioContact})` : ''}`));
   doc.text(text(`Phạm vi bàn giao: ${brief.scope}`));
-  doc.text(text(`Đầu mối AI Cinema: ${brief.creatorName} - ${brief.creatorEmail}`));
+  doc.text(text(`Đầu mối AI Cinema: ${brief.contactName} - ${brief.contactEmail}`));
   doc.text(text(`Thể loại: ${brief.genres.join(', ')}`));
-  const feeVnd = brief.productionFeeTokens * brief.tokenRateVnd;
-  doc.text(text(`Phí sản xuất: ${brief.productionFeeTokens} Token (= ${vnd(feeVnd)})`));
+  doc.text(text(`Phí sản xuất đề xuất: ${formatVnd(brief.offeredFeeVnd)} (trọn gói, không chia doanh thu)`));
   doc.moveDown().fontSize(13).text(text('Ý tưởng phim'));
   doc.fontSize(11).text(text(brief.ideaDescription), { align: 'justify' });
 
@@ -82,10 +80,6 @@ export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Pr
     );
   }
 
-  if (brief.ideaFiles.length) {
-    doc.moveDown().fontSize(13).text(text('Tài liệu đính kèm'));
-    doc.fontSize(11).text(text(brief.ideaFiles.join('\n')));
-  }
   doc
     .moveDown()
     .fontSize(9)
