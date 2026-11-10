@@ -8,6 +8,9 @@ platform, delivered, reviewed, labeled as AI content, checked for compliance, pr
 released and browsed in the public catalog. The business rules (BR-xx) live in the root
 `docs/PROJECT_OVERVIEW.md`.
 
+Phát HLS qua CDN (Cloudflare R2 + Cloudflare CDN, URL có chữ ký, purge cache khi gỡ tập):
+xem [`docs/cdn-cloudflare-r2.md`](docs/cdn-cloudflare-r2.md).
+
 ## Run it
 
 Requires Node.js 20.19+. Pick one of the two ways.
