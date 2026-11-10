@@ -102,6 +102,13 @@ describe('PlaybackAccessService.verify', () => {
     await expect(service.verify('ep-1')).resolves.toMatchObject({ accessType: PlaybackAccessType.FREE_STARTER });
   });
 
+  it('hands out no stream URL at all when access is refused (nothing to sign)', async () => {
+    // The signed CDN URL is built from what verify() returns, so a refusal here is what
+    // keeps a member without entitlement from ever holding a playable link.
+    await expect(service.verify('ep-1')).rejects.not.toHaveProperty('streamUrl');
+    await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
+  });
+
   it('sends a guest without free access back to Main Flow 2 (steps 3-4)', async () => {
     await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
     await expect(service.verify('ep-1')).rejects.toMatchObject({

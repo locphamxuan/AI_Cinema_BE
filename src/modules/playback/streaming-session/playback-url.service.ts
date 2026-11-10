@@ -232,7 +232,9 @@ export class PlaybackUrlService {
   }
 
   private cdnUrl(assetId: string, uri: PlaylistUri, token: PlaybackToken): string {
-    const base = this.config.storage.publicBaseUrl;
+    // CDN_BASE_URL when a Cloudflare custom domain fronts the bucket, the storage origin otherwise,
+    // so a local demo keeps serving the same signed paths straight from the API's /media mount.
+    const base = this.config.cdn.baseUrl;
     // Keep the playlist's own query; ours joins it instead of starting a second one.
     const separator = uri.search ? '&' : '?';
     return `${base}/public/hls/${assetId}/${uri.path}${uri.search}${separator}s=${token.sessionId}&exp=${token.exp}&sig=${token.sig}`;

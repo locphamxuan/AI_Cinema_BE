@@ -16,6 +16,7 @@ const ASSET_ID = 'asset-1';
 const config = {
   apiPublicUrl: 'https://api.example',
   storage: { publicBaseUrl: 'https://cdn.example' },
+  cdn: { baseUrl: 'https://cdn.example', enabled: true, purge: { apiUrl: 'https://api.cloudflare.test/client/v4' } },
   playback: { urlSecret: SECRET, urlTtlSeconds: 3600 },
 } as unknown as AppConfig;
 
@@ -325,6 +326,42 @@ describe('PlaybackUrlService', () => {
     expect(
       service.masterUrl(SESSION_ID, { id: ASSET_ID, streamUrl: 'https://third.example/m.m3u8', isSelfHosted: false }),
     ).toBe('https://third.example/m.m3u8');
+  });
+
+  it('sends segments to CDN_BASE_URL when a Cloudflare domain fronts the bucket', async () => {
+    const behindCdn = new PlaybackUrlService(
+      prisma as unknown as PrismaService,
+      storage as unknown as ObjectStorage,
+      {
+        ...config,
+        storage: { publicBaseUrl: 'https://pub-r2-origin.example' },
+        cdn: { baseUrl: 'https://stream.aicinema.example', enabled: true, purge: { apiUrl: 'https://api.cf.test' } },
+      } as unknown as AppConfig,
+    );
+
+    const text = await behindCdn.variantPlaylist(SESSION_ID, '720p', token());
+
+    expect(text).toContain(`https://stream.aicinema.example/public/hls/${ASSET_ID}/720p/seg_000.ts?s=${SESSION_ID}`);
+    expect(text).not.toContain('pub-r2-origin.example');
+  });
+
+  it('keeps playing from the local origin when no CDN is configured (local dev/demo)', async () => {
+    // loadConfig copies STORAGE_PUBLIC_BASE_URL into cdn.baseUrl when CDN_BASE_URL is empty,
+    // so the same signed paths resolve against the API's own /media mount.
+    const localOrigin = 'http://localhost:3001/media';
+    const onOrigin = new PlaybackUrlService(
+      prisma as unknown as PrismaService,
+      storage as unknown as ObjectStorage,
+      {
+        ...config,
+        storage: { publicBaseUrl: localOrigin },
+        cdn: { baseUrl: localOrigin, enabled: false, purge: { apiUrl: 'https://api.cf.test' } },
+      } as unknown as AppConfig,
+    );
+
+    const text = await onOrigin.variantPlaylist(SESSION_ID, '720p', token());
+
+    expect(text).toContain(`${localOrigin}/public/hls/${ASSET_ID}/720p/seg_000.ts?s=${SESSION_ID}&exp=`);
   });
 
   it('hands a self-hosted MP4 out as is: there is no HLS playlist to sign', () => {
