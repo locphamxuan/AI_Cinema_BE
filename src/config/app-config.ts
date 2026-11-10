@@ -97,6 +97,28 @@ export interface AppConfig {
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
   google: { clientIds: string[] };
+  support: {
+    aiMode: 'live' | 'mock' | 'disabled';
+    aiChatBaseUrl?: string;
+    aiChatApiKey?: string;
+    aiChatModel: string;
+    aiEmbeddingBaseUrl?: string;
+    aiEmbeddingApiKey?: string;
+    aiEmbeddingModel: string;
+    /** Must match the `vector(N)` column in the migration (768 for gemini-embedding-001 with dimensions=768). */
+    aiEmbeddingDimensions: number;
+    aiTimeoutMs: number;
+    aiMaxOutputTokens: number;
+    aiTemperature: number;
+    aiMaxToolRounds: number;
+    aiHistoryMessages: number;
+    ragTopK: number;
+    ragMinScore: number;
+    autoCloseHours: number;
+    autoCloseSweepMs: number;
+    dailyMessageLimit: number;
+    messageMaxChars: number;
+  };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -130,6 +152,17 @@ class EnvReader {
     const value = Number(raw);
     if (!Number.isInteger(value) || value < min) {
       this.errors.push(`${key} must be an integer >= ${min} (got "${raw}")`);
+      return fallback;
+    }
+    return value;
+  }
+
+  float(key: string, fallback: number, min = -Infinity): number {
+    const raw = this.optional(key);
+    if (raw === undefined) return fallback;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < min) {
+      this.errors.push(`${key} must be a finite number >= ${min} (got "${raw}")`);
       return fallback;
     }
     return value;
@@ -268,6 +301,27 @@ export function loadConfig(env: Env = process.env): AppConfig {
       urlSecret: read.optional('PLAYBACK_URL_SECRET'),
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
+    },
+    support: {
+      aiMode: read.oneOf('AI_MODE', ['live', 'mock', 'disabled'] as const, 'live'),
+      aiChatBaseUrl: read.optional('AI_CHAT_BASE_URL'),
+      aiChatApiKey: read.optional('AI_CHAT_API_KEY'),
+      aiChatModel: read.string('AI_CHAT_MODEL', 'gemini-3.1-flash-lite'),
+      aiEmbeddingBaseUrl: read.optional('AI_EMBEDDING_BASE_URL'),
+      aiEmbeddingApiKey: read.optional('AI_EMBEDDING_API_KEY'),
+      aiEmbeddingModel: read.string('AI_EMBEDDING_MODEL', 'gemini-embedding-001'),
+      aiEmbeddingDimensions: read.int('AI_EMBEDDING_DIMENSIONS', 768, 1),
+      aiTimeoutMs: read.int('AI_TIMEOUT_MS', 30_000, 1000),
+      aiMaxOutputTokens: read.int('AI_MAX_OUTPUT_TOKENS', 800, 1),
+      aiTemperature: read.float('AI_TEMPERATURE', 0.2, 0),
+      aiMaxToolRounds: read.int('AI_MAX_TOOL_ROUNDS', 4, 1),
+      aiHistoryMessages: read.int('AI_HISTORY_MESSAGES', 20, 1),
+      ragTopK: read.int('AI_RAG_TOP_K', 6, 1),
+      ragMinScore: read.float('AI_RAG_MIN_SCORE', 0.35, 0),
+      autoCloseHours: read.int('SUPPORT_AUTO_CLOSE_HOURS', 24, 1),
+      autoCloseSweepMs: read.int('SUPPORT_AUTO_CLOSE_SWEEP_MS', 15 * 60_000),
+      dailyMessageLimit: read.int('SUPPORT_DAILY_MESSAGE_LIMIT', 200, 1),
+      messageMaxChars: read.int('SUPPORT_MESSAGE_MAX_CHARS', 4000, 1),
     },
     google: {
       clientIds: [

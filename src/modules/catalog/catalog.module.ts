@@ -20,5 +20,6 @@ import { SubtitleController } from './subtitle/subtitle.controller';
     SubtitleController,
   ],
   providers: [CatalogService, EngagementService, SavedMovieService, FilmReportService],
+  exports: [CatalogService],
 })
 export class CatalogModule {}

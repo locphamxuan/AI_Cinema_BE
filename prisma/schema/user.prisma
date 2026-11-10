@@ -78,6 +78,10 @@ model User {
   scriptVersionsSubmitted ScriptVersion[]            @relation("ScriptVersionSubmittedBy")
   scriptReviews           ScriptReview[]             @relation("ScriptReviewer")
   episodesFinalConfirmed  Episode[]                  @relation("EpisodeFinalConfirmedBy")
+  supportConversations    SupportConversation[]      @relation("SupportConversationMember")
+  assignedSupportCases    SupportConversation[]      @relation("SupportConversationAgent")
+  supportKnowledgeCreated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleCreatedBy")
+  supportKnowledgeUpdated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleUpdatedBy")
 
   @@index([role])
   @@index([studioId])

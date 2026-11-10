@@ -24,6 +24,8 @@
     "seed:catalog": "tsx prisma/seed-catalog.ts",
     "seed:platform-setting": "tsx prisma/seed-platform-setting.ts",
     "seed:membership-plans": "tsx prisma/seed-membership-plans.ts",
+    "seed:support-knowledge": "tsx prisma/seed-support-knowledge.ts",
+    "eval:rag": "tsx prisma/eval-rag.ts",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",

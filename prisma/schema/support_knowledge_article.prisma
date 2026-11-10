@@ -1,0 +1,57 @@
+enum SupportAudience {
+  MEMBER
+  STAFF
+  ALL
+}
+
+enum KnowledgeArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KnowledgeIndexStatus {
+  PENDING
+  INDEXING
+  INDEXED
+  FAILED
+}
+
+enum KnowledgeSource {
+  MANUAL
+  POLICY
+  PLAN
+  FAQ
+}
+
+/// RAG knowledge an Admin writes (plan §4.1). Live facts (Coin balance, transaction status, plan
+/// prices) never live here; tools read them from the business tables so they cannot go stale.
+model SupportKnowledgeArticle {
+  id              String                 @id @default(uuid()) @db.Uuid
+  title           String                 @db.VarChar(255)
+  slug            String                 @db.VarChar(255)
+  category        String                 @db.VarChar(100)
+  audience        SupportAudience        @default(MEMBER)
+  locale          String                 @default("vi") @db.VarChar(10)
+  contentMarkdown String                 @map("content_markdown") @db.Text
+  status          KnowledgeArticleStatus @default(DRAFT)
+  source          KnowledgeSource        @default(MANUAL)
+  sourceRef       String?                @map("source_ref") @db.VarChar(255)
+  version         Int                    @default(1)
+  contentHash     String?                @map("content_hash") @db.VarChar(64)
+  indexStatus     KnowledgeIndexStatus   @default(PENDING) @map("index_status")
+  indexError      String?                @map("index_error") @db.Text
+  indexedAt       DateTime?              @map("indexed_at") @db.Timestamptz(6)
+  createdById     String?                @map("created_by_id") @db.Uuid
+  updatedById     String?                @map("updated_by_id") @db.Uuid
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  chunks    SupportKnowledgeChunk[]
+  createdBy User?                   @relation("SupportKnowledgeArticleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User?                   @relation("SupportKnowledgeArticleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([slug, locale])
+  @@index([status, locale, audience])
+  @@map("support_knowledge_articles")
+}

@@ -13,6 +13,7 @@ import { AuthModule } from 'src/modules/identity/auth/auth.module';
 import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { EpisodeAccessModule } from 'src/modules/episode-access/episode-access.module';
 import { PlaybackModule } from 'src/modules/playback/playback.module';
+import { SupportModule } from 'src/modules/support/support.module';
 import { ContentReviewModule } from 'src/modules/production/content-review/content-review.module';
 import { EmailModule } from 'src/modules/platform/email/email.module';
 import { GenreModule } from 'src/modules/platform/genre/genre.module';
@@ -66,6 +67,7 @@ import { AppController } from './app.controller';
     CatalogModule,
     EpisodeAccessModule,
     PlaybackModule,
+    SupportModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
