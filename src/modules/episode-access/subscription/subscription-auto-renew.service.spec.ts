@@ -27,6 +27,7 @@ describe('SubscriptionAutoRenewService', () => {
     autoRenew: true,
     currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000),
     nextRenewalAt: new Date(Date.now() + 30 * 86_400_000),
+    cancelWindowEndsAt: new Date(Date.now() + 29 * 86_400_000),
   };
 
   beforeEach(() => {
@@ -44,9 +45,15 @@ describe('SubscriptionAutoRenewService', () => {
 
     expect(tx.subscription.update).toHaveBeenCalledWith({
       where: { id: 'sub-1' },
-      data: expect.objectContaining({ autoRenew: false, nextRenewalAt: null }),
+      data: expect.objectContaining({ autoRenew: false, nextRenewalAt: null, cancelWindowEndsAt: null }),
     });
-    expect(result).toMatchObject({ id: 'sub-1', autoRenew: false, accessUntil: active.currentPeriodEnd });
+    expect(result).toMatchObject({
+      id: 'sub-1',
+      autoRenew: false,
+      accessUntil: active.currentPeriodEnd,
+      cancelDeadline: null,
+      cancelWindowEndsAt: null,
+    });
     expect(notifications.notify).toHaveBeenCalled();
   });
 
@@ -77,7 +84,11 @@ describe('SubscriptionAutoRenewService', () => {
       where: { id: 'sub-1' },
       data: expect.objectContaining({ autoRenew: true, nextRenewalAt: active.currentPeriodEnd }),
     });
-    expect(result).toMatchObject({ autoRenew: true });
+    // The member is told at once how long the new cycle can still be stopped (BR-05).
+    expect(result).toMatchObject({
+      autoRenew: true,
+      cancelDeadline: new Date(active.currentPeriodEnd.getTime() - 24 * 3_600_000),
+    });
   });
 
   it('resuming what already renews changes nothing', async () => {
@@ -88,7 +99,10 @@ describe('SubscriptionAutoRenewService', () => {
   it('stopping what is already stopped answers the same state without a second notice', async () => {
     prisma.subscription.findFirst.mockResolvedValue({ ...active, autoRenew: false, nextRenewalAt: null });
 
-    await expect(service.cancelAutoRenew('u1', 'sub-1')).resolves.toMatchObject({ autoRenew: false });
+    await expect(service.cancelAutoRenew('u1', 'sub-1')).resolves.toMatchObject({
+      autoRenew: false,
+      cancelDeadline: null,
+    });
     expect(tx.subscription.update).not.toHaveBeenCalled();
     expect(notifications.notify).not.toHaveBeenCalled();
   });

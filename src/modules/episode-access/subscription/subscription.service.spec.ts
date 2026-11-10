@@ -316,11 +316,12 @@ describe('SubscriptionService reads', () => {
     subscription: { findFirst: jest.fn(), findUnique: jest.fn() },
     subscriptionCycle: { findMany: jest.fn() },
   };
+  const settings = { get: jest.fn().mockResolvedValue({ subscriptionCancelWindowHours: 24 }) };
   const service = new SubscriptionService(
     prisma as unknown as PrismaService,
     {} as unknown as CoinSpendService,
     {} as unknown as WalletService,
-    {} as unknown as PlatformSettingService,
+    settings as unknown as PlatformSettingService,
     {} as unknown as NotificationService,
     {} as unknown as AuditLogService,
   );
@@ -333,20 +334,53 @@ describe('SubscriptionService reads', () => {
   });
 
   it('mine maps the plan, the deadline alias and the last cycle', async () => {
-    const deadline = new Date('2026-11-04T00:00:00.000Z');
+    const renewalAt = new Date(Date.now() + 10 * 86_400_000);
     prisma.subscription.findFirst.mockResolvedValue({
       id: 'sub-1',
       status: SubscriptionStatus.ACTIVE,
-      cancelWindowEndsAt: deadline,
+      autoRenew: true,
+      nextRenewalAt: renewalAt,
+      // The snapshot of a window the Admin has since changed: the reply must not repeat it.
+      cancelWindowEndsAt: new Date('2026-11-04T00:00:00.000Z'),
       plan: { id: 'p1', code: 'MONTHLY', name: 'Monthly', period: 'MONTHLY', durationDays: 30, features: {} },
       cycles: [{ cycleNumber: 2 }],
     });
 
     await expect(service.mine('u1')).resolves.toMatchObject({
-      cancelDeadline: deadline,
+      cancelDeadline: new Date(renewalAt.getTime() - 24 * 3_600_000),
+      cancelWindowEndsAt: new Date(renewalAt.getTime() - 24 * 3_600_000),
+      canCancelNow: true,
       plan: { code: 'MONTHLY' },
       lastCycle: { cycleNumber: 2 },
     });
+  });
+
+  it('mine says the window is shut once the renewal is less than the window away', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({
+      id: 'sub-1',
+      status: SubscriptionStatus.ACTIVE,
+      autoRenew: true,
+      nextRenewalAt: new Date(Date.now() + 3_600_000),
+      cancelWindowEndsAt: null,
+      plan: { id: 'p1', code: 'MONTHLY', name: 'Monthly', period: 'MONTHLY', durationDays: 30, features: {} },
+      cycles: [],
+    });
+
+    await expect(service.mine('u1')).resolves.toMatchObject({ canCancelNow: false });
+  });
+
+  it('mine shows no deadline on a plan that no longer renews', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({
+      id: 'sub-1',
+      status: SubscriptionStatus.ACTIVE,
+      autoRenew: false,
+      nextRenewalAt: null,
+      cancelWindowEndsAt: new Date(Date.now() + 86_400_000),
+      plan: { id: 'p1', code: 'MONTHLY', name: 'Monthly', period: 'MONTHLY', durationDays: 30, features: {} },
+      cycles: [],
+    });
+
+    await expect(service.mine('u1')).resolves.toMatchObject({ cancelDeadline: null, canCancelNow: false });
   });
 
   it('cycles reads only the owner’s rows, oldest first', async () => {

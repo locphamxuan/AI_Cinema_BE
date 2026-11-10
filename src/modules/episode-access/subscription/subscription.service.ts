@@ -218,9 +218,17 @@ export class SubscriptionService {
     });
     if (!subscription) return null;
     const { plan, cycles, ...row } = subscription;
+    // BR-05: the member must see the same deadline cancelAutoRenew enforces, so it is derived from
+    // nextRenewalAt and the window in force now, not from the snapshot written at the last renewal
+    // (which an Admin changing the window would leave stale).
+    const { subscriptionCancelWindowHours } = await this.settings.get();
+    const cancelWindowEndsAt =
+      row.autoRenew && row.nextRenewalAt ? windowEndOf(row.nextRenewalAt, subscriptionCancelWindowHours) : null;
     return {
       ...row,
-      cancelDeadline: row.cancelWindowEndsAt,
+      cancelWindowEndsAt,
+      cancelDeadline: cancelWindowEndsAt,
+      canCancelNow: cancelWindowEndsAt !== null && cancelWindowEndsAt.getTime() > Date.now(),
       plan: { ...planOf(plan), features: plan.features },
       lastCycle: cycles[0] ?? null,
     };
