@@ -1,20 +1,15 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import {
-  KnowledgeArticleStatus,
-  KnowledgeIndexStatus,
-  KnowledgeSource,
-  Prisma,
-  SupportAudience,
-  type SupportKnowledgeArticle,
-} from '@prisma/client';
-import { createHash } from 'node:crypto';
+import { KnowledgeArticleStatus, KnowledgeIndexStatus, KnowledgeSource, SupportAudience } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
+import { errorMessage, hashContent } from './knowledge-hash';
+import { SUMMARY_COLUMNS, SUMMARY_SELECT } from './knowledge-summary';
 import { ChunkingService } from './chunking.service';
+import { SupportAiHealthService } from './support-ai-health.service';
 import { RetrievalService, type RetrievalOptions } from './retrieval.service';
 
 export const KNOWLEDGE_INDEX_JOB = 'support.knowledge.index';
@@ -33,29 +28,6 @@ export interface CreateKnowledgeArticleInput {
 
 export type UpdateKnowledgeArticleInput = Partial<CreateKnowledgeArticleInput>;
 
-const SUMMARY_COLUMNS = [
-  'id',
-  'title',
-  'slug',
-  'category',
-  'audience',
-  'locale',
-  'status',
-  'source',
-  'sourceRef',
-  'version',
-  'contentHash',
-  'indexStatus',
-  'indexError',
-  'indexedAt',
-  'createdAt',
-  'updatedAt',
-] as const satisfies readonly (keyof SupportKnowledgeArticle)[];
-
-const SUMMARY_SELECT = Object.fromEntries(
-  SUMMARY_COLUMNS.map((column) => [column, true]),
-) as Prisma.SupportKnowledgeArticleSelect;
-
 /** Knowledge Base administration (plan §4.5, §6.3). */
 @Injectable()
 export class KnowledgeService {
@@ -68,6 +40,7 @@ export class KnowledgeService {
     private readonly queue: JobQueue,
     private readonly audit: AuditLogService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly aiHealth: SupportAiHealthService,
   ) {}
 
   list(query: PaginateQuery) {
@@ -272,34 +245,8 @@ export class KnowledgeService {
   }
 
   /** GET /admin/support/ai/health (plan §8.4): configuration and index health, no secrets. */
-  async health() {
-    const [indexedChunks, failedArticles, pendingArticles, lastIndexed] = await Promise.all([
-      this.prisma.supportKnowledgeChunk.count(),
-      this.prisma.supportKnowledgeArticle.count({
-        where: { status: KnowledgeArticleStatus.PUBLISHED, indexStatus: KnowledgeIndexStatus.FAILED },
-      }),
-      this.prisma.supportKnowledgeArticle.count({
-        where: { status: KnowledgeArticleStatus.PUBLISHED, indexStatus: KnowledgeIndexStatus.PENDING },
-      }),
-      this.prisma.supportKnowledgeArticle.findFirst({
-        where: { indexedAt: { not: null } },
-        orderBy: { indexedAt: 'desc' },
-        select: { indexedAt: true },
-      }),
-    ]);
-
-    return {
-      mode: this.config.support.aiMode,
-      chatModel: this.config.support.aiChatModel,
-      chatConfigured: Boolean(this.config.support.aiChatBaseUrl && this.config.support.aiChatApiKey),
-      embeddingModel: this.config.support.aiEmbeddingModel,
-      embeddingDimensions: this.config.support.aiEmbeddingDimensions,
-      embeddingConfigured: Boolean(this.config.support.aiEmbeddingApiKey),
-      indexedChunks,
-      failedArticles,
-      pendingArticles,
-      lastIndexedAt: lastIndexed?.indexedAt ?? null,
-    };
+  health() {
+    return this.aiHealth.health();
   }
 
   /** Tells the job which article to (re)build; the sweep is the safety net when Redis is down. */
@@ -324,17 +271,4 @@ export class KnowledgeService {
     if (!article) throw new NotFoundException('Knowledge article not found');
     return article;
   }
-}
-
-/** The manifest that decides whether a published article needs to be embedded again. */
-export function hashContent(markdown: string): string {
-  return createHash('sha256').update(markdown, 'utf8').digest('hex');
-}
-
-export function chunkHash(model: string, content: string): string {
-  return createHash('sha256').update(`${model}\u0000${content}`, 'utf8').digest('hex');
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

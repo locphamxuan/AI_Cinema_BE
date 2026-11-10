@@ -5,15 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  Prisma,
-  SupportCloseReason,
-  SupportConversation,
-  SupportEscalationReason,
-  SupportMessage,
-  SupportSenderType,
-  SupportStatus,
-} from '@prisma/client';
+import { SupportConversation, SupportSenderType, SupportStatus } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -25,15 +17,11 @@ import { SupportConversationService } from '../chat/support-conversation.service
 import { SupportMessageService } from '../chat/support-message.service';
 import { ResolutionService } from '../chat/resolution.service';
 import type { SupportStaffCaseView } from '../shared/support-view';
+import { messageView } from '../shared/support-presenter';
+import { CASE_RELATIONS, staffCaseView, type CaseRow } from './support-case-view';
+import { SupportStatsService } from './support-stats.service';
 import { MemberContextService, type MemberContextSection } from './member-context.service';
 import { SupportRecipientsService } from './support-recipients.service';
-
-const CASE_RELATIONS = {
-  member: { select: { id: true, fullName: true } },
-  assignedAgent: { select: { id: true, fullName: true } },
-} satisfies Prisma.SupportConversationInclude;
-
-type CaseRow = Prisma.SupportConversationGetPayload<{ include: typeof CASE_RELATIONS }>;
 
 export interface StaffReplyInput {
   content?: string;
@@ -56,6 +44,7 @@ export class StaffSupportService {
     private readonly memberContext: MemberContextService,
     private readonly audit: AuditLogService,
     private readonly notifications: NotificationService,
+    private readonly supportStats: SupportStatsService,
   ) {}
 
   async list(query: PaginateQuery) {
@@ -71,7 +60,7 @@ export class StaffSupportService {
         memberId: ['$eq'],
       },
     });
-    return { ...page, data: page.data.map((row) => this.view(row as CaseRow)) };
+    return { ...page, data: page.data.map((row) => staffCaseView(row as CaseRow)) };
   }
 
   async detail(id: string) {
@@ -79,7 +68,7 @@ export class StaffSupportService {
     const messages = await this.messages.listForConversation(id, { limit: 100, includeInternal: true });
     await this.conversations.markRead(id, 'staff');
     return {
-      conversation: this.view(conversation),
+      conversation: staffCaseView(conversation),
       messages: messages.reverse().map(messageView),
     };
   }
@@ -89,7 +78,7 @@ export class StaffSupportService {
     const conversation = await this.conversations.findById(id);
 
     if (conversation.status === SupportStatus.STAFF_HANDLING && conversation.assignedAgentId === staffId) {
-      return this.view(await this.caseById(id));
+      return staffCaseView(await this.caseById(id));
     }
     if (conversation.status !== SupportStatus.WAITING_FOR_STAFF) {
       throw new ConflictException('Only a case waiting for Staff can be claimed');
@@ -115,13 +104,13 @@ export class StaffSupportService {
       );
     });
 
-    return this.view(await this.caseById(id));
+    return staffCaseView(await this.caseById(id));
   }
 
   /** Returns a case to the queue; the assignee or an Admin may do it. */
   async release(id: string, user: AuthenticatedUser): Promise<SupportStaffCaseView> {
     const conversation = await this.conversations.findById(id);
-    if (conversation.status === SupportStatus.WAITING_FOR_STAFF) return this.view(await this.caseById(id));
+    if (conversation.status === SupportStatus.WAITING_FOR_STAFF) return staffCaseView(await this.caseById(id));
     if (conversation.status !== SupportStatus.STAFF_HANDLING) {
       throw new ConflictException('Only a case being handled by Staff can be released');
     }
@@ -149,7 +138,7 @@ export class StaffSupportService {
       );
     });
 
-    return this.view(await this.caseById(id));
+    return staffCaseView(await this.caseById(id));
   }
 
   /** Admin assignment: WAITING_FOR_STAFF or STAFF_HANDLING �+' STAFF_HANDLING with a new owner. */
@@ -188,7 +177,7 @@ export class StaffSupportService {
     });
     await this.recipients.notifyAssigned(conversation, targetStaffId);
 
-    return this.view(await this.caseById(id));
+    return staffCaseView(await this.caseById(id));
   }
 
   /**
@@ -268,81 +257,22 @@ export class StaffSupportService {
       });
     }
 
-    return { conversation: this.view(await this.caseById(id)), message: messageView(message) };
+    return { conversation: staffCaseView(await this.caseById(id)), message: messageView(message) };
   }
 
   async resolve(id: string, staffId: string, note?: string): Promise<SupportStaffCaseView> {
     await this.resolution.staffResolve(id, staffId, note);
-    return this.view(await this.caseById(id));
+    return staffCaseView(await this.caseById(id));
   }
 
   async close(id: string, staffId: string, note?: string): Promise<SupportStaffCaseView> {
     await this.resolution.staffClose(id, staffId, note);
-    return this.view(await this.caseById(id));
+    return staffCaseView(await this.caseById(id));
   }
 
-  /** Plan A8.4 dashboard; the counts are of the whole platform, not one operator. */
-  async stats() {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const startOfWindow = new Date(startOfToday.getTime() - 30 * 24 * 60 * 60_000);
-
-    const [byStatus, oldestWaiting, escalatedToday, resolvedToday, closedWindow, closedByAi, reasons] =
-      await Promise.all([
-        this.prisma.supportConversation.groupBy({ by: ['status'], _count: { _all: true } }),
-        this.prisma.supportConversation.findFirst({
-          where: { status: SupportStatus.WAITING_FOR_STAFF },
-          orderBy: { escalatedAt: 'asc' },
-          select: { id: true, escalatedAt: true, createdAt: true, priority: true },
-        }),
-        this.prisma.supportConversation.count({ where: { escalatedAt: { gte: startOfToday } } }),
-        this.prisma.supportConversation.count({ where: { resolvedAt: { gte: startOfToday } } }),
-        this.prisma.supportConversation.count({
-          where: { status: SupportStatus.CLOSED, closedAt: { gte: startOfWindow } },
-        }),
-        this.prisma.supportConversation.count({
-          where: {
-            status: SupportStatus.CLOSED,
-            closeReason: SupportCloseReason.AI_RESOLVED,
-            closedAt: { gte: startOfWindow },
-          },
-        }),
-        this.prisma.supportConversation.groupBy({
-          by: ['escalationReason'],
-          where: { escalationReason: { not: null }, escalatedAt: { gte: startOfWindow } },
-          _count: { _all: true },
-        }),
-      ]);
-
-    const counts = Object.fromEntries(Object.values(SupportStatus).map((status) => [status, 0])) as Record<
-      SupportStatus,
-      number
-    >;
-    for (const row of byStatus) counts[row.status] = row._count._all;
-
-    const waitingSince = oldestWaiting?.escalatedAt ?? oldestWaiting?.createdAt ?? null;
-
-    return {
-      byStatus: counts,
-      waiting: counts[SupportStatus.WAITING_FOR_STAFF] ?? 0,
-      oldestWaiting: oldestWaiting
-        ? {
-            conversationId: oldestWaiting.id,
-            priority: oldestWaiting.priority,
-            waitingMinutes: waitingSince ? Math.max(0, Math.round((Date.now() - waitingSince.getTime()) / 60_000)) : 0,
-          }
-        : null,
-      escalatedToday,
-      resolvedToday,
-      aiResolvedRate: closedWindow ? Math.round((closedByAi / closedWindow) * 1000) / 1000 : 0,
-      topEscalationReasons: reasons
-        .filter((row): row is typeof row & { escalationReason: SupportEscalationReason } =>
-          Boolean(row.escalationReason),
-        )
-        .map((row) => ({ reason: row.escalationReason, count: row._count._all }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5),
-    };
+  /** Plan A8.4 dashboard; the counts are of the whole platform, not one operator. */
+  stats() {
+    return this.supportStats.stats();
   }
 
   getMemberContext(id: string, user: AuthenticatedUser, section?: MemberContextSection) {
@@ -354,54 +284,9 @@ export class StaffSupportService {
     if (!conversation) throw new NotFoundException('Support conversation not found');
     return conversation;
   }
-
-  private view(row: CaseRow): SupportStaffCaseView {
-    return {
-      id: row.id,
-      status: row.status,
-      priority: row.priority,
-      escalationReason: row.escalationReason,
-      aiSummary: row.aiSummary,
-      lastMessageAt: row.lastMessageAt,
-      lastMemberMessageAt: row.lastMemberMessageAt,
-      lastStaffMessageAt: row.lastStaffMessageAt,
-      escalatedAt: row.escalatedAt,
-      claimedAt: row.claimedAt,
-      resolvedAt: row.resolvedAt,
-      closedAt: row.closedAt,
-      closeReason: row.closeReason,
-      aiResolutionSuggestedAt: row.aiResolutionSuggestedAt,
-      satisfactionRating: row.satisfactionRating,
-      satisfactionComment: row.satisfactionComment,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      memberId: row.memberId,
-      memberFullName: row.member.fullName,
-      assignedAgentId: row.assignedAgentId,
-      assignedAgentName: row.assignedAgent?.fullName ?? null,
-      escalationNote: row.escalationNote,
-      aiTurns: row.aiTurns,
-      aiFailureCount: row.aiFailureCount,
-      firstStaffReplyAt: row.firstStaffReplyAt,
-      resolutionNote: row.resolutionNote,
-    };
-  }
 }
 
 function truncatePreview(value: string): string {
   const text = value.trim();
   return text.length <= 200 ? text : `${text.slice(0, 200)}�?�`;
-}
-
-function messageView(message: SupportMessage) {
-  return {
-    id: message.id,
-    senderType: message.senderType,
-    content: message.content,
-    isInternal: message.isInternal,
-    clientMessageId: message.clientMessageId,
-    replyToMessageId: message.replyToMessageId,
-    aiMetadata: (message.aiMetadata as Record<string, unknown> | null) ?? null,
-    createdAt: message.createdAt,
-  };
 }

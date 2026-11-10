@@ -12,6 +12,7 @@ import type { ResolutionService } from '../chat/resolution.service';
 import type { SupportRecipientsService } from '../staff/support-recipients.service';
 import type { MemberContextService } from '../staff/member-context.service';
 import { StaffSupportService } from './staff-support.service';
+import { SupportStatsService } from './support-stats.service';
 
 const CASE_ID = 'conversation-1';
 const MEMBER_ID = 'member-1';
@@ -107,6 +108,7 @@ function buildService() {
     memberContext as unknown as MemberContextService,
     audit as unknown as AuditLogService,
     notifications as unknown as NotificationService,
+    new SupportStatsService(prisma as unknown as PrismaService),
   );
 
   return { service, prisma, tx, conversations, messages, resolution, recipients, memberContext, audit, notifications };

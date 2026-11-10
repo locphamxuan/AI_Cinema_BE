@@ -17,6 +17,7 @@ import { SupportTools } from './ai/tools/support-tools.service';
 import { EscalationService } from './chat/escalation.service';
 import { MemberSupportController } from './chat/member-support.controller';
 import { ResolutionService } from './chat/resolution.service';
+import { SupportAiTurnService } from './chat/support-ai-turn.service';
 import { SupportChatService } from './chat/support-chat.service';
 import { SupportConversationService } from './chat/support-conversation.service';
 import { SupportMessageService } from './chat/support-message.service';
@@ -25,11 +26,13 @@ import { ChunkingService } from './knowledge/chunking.service';
 import { KnowledgeController, SupportAiHealthController } from './knowledge/knowledge.controller';
 import { KnowledgeIndexJob } from './knowledge/knowledge-index.job';
 import { KnowledgeService } from './knowledge/knowledge.service';
+import { SupportAiHealthService } from './knowledge/support-ai-health.service';
 import { RetrievalService } from './knowledge/retrieval.service';
 import { SupportRecipientsService } from './staff/support-recipients.service';
 import { MemberContextService } from './staff/member-context.service';
 import { StaffSupportController } from './staff/staff-support.controller';
 import { StaffSupportService } from './staff/staff-support.service';
+import { SupportStatsService } from './staff/support-stats.service';
 import { SupportAutoCloseSweep } from './support-auto-close.sweep';
 
 @Module({
@@ -82,6 +85,7 @@ import { SupportAutoCloseSweep } from './support-auto-close.sweep';
     SupportTools,
     // Conversation core
     SupportChatService,
+    SupportAiTurnService,
     SupportConversationService,
     SupportMessageService,
     SupportTurnLockService,
@@ -89,10 +93,12 @@ import { SupportAutoCloseSweep } from './support-auto-close.sweep';
     ResolutionService,
     // Staff side
     StaffSupportService,
+    SupportStatsService,
     MemberContextService,
     SupportRecipientsService,
     // Knowledge / RAG
     KnowledgeService,
+    SupportAiHealthService,
     ChunkingService,
     RetrievalService,
     KnowledgeIndexJob,

@@ -5,7 +5,9 @@ import type { PrismaService, PrismaTx } from 'src/infrastructure/prisma/prisma.s
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { JobQueue } from 'src/infrastructure/queue/job-queue.service';
-import { KnowledgeService, chunkHash, hashContent } from './knowledge.service';
+import { KnowledgeService } from './knowledge.service';
+import { SupportAiHealthService } from './support-ai-health.service';
+import { chunkHash, hashContent } from './knowledge-hash';
 import type { ChunkingService } from './chunking.service';
 import type { RetrievalService } from './retrieval.service';
 
@@ -60,6 +62,7 @@ function buildService(configOverrides: Partial<AppConfig['support']> = {}) {
     queue as unknown as JobQueue,
     audit as unknown as AuditLogService,
     config,
+    new SupportAiHealthService(prisma as unknown as PrismaService, config),
   );
   return { service, prisma, tx, queue, audit };
 }

@@ -13,6 +13,7 @@ import type { SupportRecipientsService } from '../staff/support-recipients.servi
 import type { EscalationService } from './escalation.service';
 import type { ResolutionService } from './resolution.service';
 import { SupportChatService } from './support-chat.service';
+import { SupportAiTurnService } from './support-ai-turn.service';
 import type { SupportConversationService } from './support-conversation.service';
 import type { SupportMessageService } from './support-message.service';
 import type { SupportTurnLockService } from './support-turn-lock.service';
@@ -145,18 +146,26 @@ function buildChatService() {
   };
   const recipients = { notifyMemberReply: jest.fn().mockResolvedValue(undefined) };
 
+  const aiTurn = new SupportAiTurnService(
+    config,
+    conversations as unknown as SupportConversationService,
+    messages as unknown as SupportMessageService,
+    agent as unknown as SupportAgentService,
+    escalation as unknown as EscalationService,
+    retrieval as unknown as RetrievalService,
+    new SummaryService(new PromptBuilderService()),
+    settings as unknown as PlatformSettingService,
+  );
+
   const service = new SupportChatService(
     config,
     prisma,
     conversations as unknown as SupportConversationService,
     messages as unknown as SupportMessageService,
-    agent as unknown as SupportAgentService,
+    aiTurn,
     escalation as unknown as EscalationService,
     {} as ResolutionService,
     turnLock as unknown as SupportTurnLockService,
-    retrieval as unknown as RetrievalService,
-    new SummaryService(new PromptBuilderService()),
-    settings as unknown as PlatformSettingService,
     recipients as unknown as SupportRecipientsService,
     {} as AuditLogService,
   );

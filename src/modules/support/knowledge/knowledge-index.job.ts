@@ -7,7 +7,8 @@ import { EMBEDDING_CLIENT, type EmbeddingClient } from 'src/infrastructure/ai/ll
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ChunkingService, type MarkdownChunk } from './chunking.service';
-import { KNOWLEDGE_INDEX_JOB, chunkHash, hashContent } from './knowledge.service';
+import { KNOWLEDGE_INDEX_JOB } from './knowledge.service';
+import { chunkHash, hashContent } from './knowledge-hash';
 
 const SWEEP_MS = 60_000;
 const STUCK_INDEXING_MS = 10 * 60_000;

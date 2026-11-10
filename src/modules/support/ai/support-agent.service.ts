@@ -8,21 +8,25 @@ import {
   type ChatResult,
   type ChatToolCall,
 } from 'src/infrastructure/ai/llm-client';
-import { SUPPORT_QUICK_REPLY, type SupportQuickReply } from '../shared/support-status';
+import type { SupportQuickReply } from '../shared/support-status';
 import type { RetrievedKnowledge } from '../shared/support-view';
 import { SupportAiUnavailableError } from './ai-errors';
 import { GuardrailsService } from './guardrails';
 import { IntentRouterService } from './intent-router';
 import { PromptBuilderService } from './prompt-builder';
-import {
-  FINAL_ANSWER_TOOL,
-  FINAL_ANSWER_TOOL_NAME,
-  SUPPORT_TOOL_DEFINITIONS,
-  type SupportToolName,
-} from './tools/tool-definitions';
+import { FINAL_ANSWER_TOOL, FINAL_ANSWER_TOOL_NAME, SUPPORT_TOOL_DEFINITIONS } from './tools/tool-definitions';
 import { SupportTools } from './tools/support-tools.service';
+import {
+  parseAgentOutput,
+  parseToolArguments,
+  isSupportToolName,
+  type AgentOutput,
+  type SupportAgentResolution,
+} from './agent-output';
+import { agentMetadata, applyGuardrails, fallbackReply } from './agent-replies';
+import { mockReply } from './mock-agent';
 
-export type SupportAgentResolution = 'ANSWERED' | 'RESOLVED_SUGGESTED' | 'NEEDS_HUMAN' | 'UNCERTAIN';
+export type { SupportAgentResolution };
 
 export interface SupportAgentTurn {
   conversationId: string;
@@ -56,24 +60,10 @@ export interface SupportAgentReply {
   };
 }
 
-interface AgentOutput {
-  reply: string;
-  resolution: SupportAgentResolution;
-  escalationReason?: SupportEscalationReason;
-  confidence: number;
-  handoffSummary?: string;
-  quickReplies: SupportQuickReply[];
-}
-
-interface TokenUsage {
+export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
 }
-
-const RESOLUTION_SET = new Set<string>(['ANSWERED', 'RESOLVED_SUGGESTED', 'NEEDS_HUMAN', 'UNCERTAIN']);
-const ESCALATION_REASON_SET = new Set<string>(Object.values(SupportEscalationReason));
-const QUICK_REPLY_SET = new Set<string>(Object.values(SUPPORT_QUICK_REPLY));
-const SUPPORT_TOOL_NAMES = new Set<string>(SUPPORT_TOOL_DEFINITIONS.map((tool) => tool.name));
 
 const FINAL_ANSWER_INSTRUCTION = [
   '[FINAL ANSWER]',
@@ -112,7 +102,7 @@ export class SupportAgentService {
     const intent = this.intent.route(turn.message);
 
     if (this.config.support.aiMode === 'mock') {
-      return this.mockReply(turn, intent, startedAt);
+      return mockReply(turn, intent, startedAt);
     }
     // Plan §5.4: a direct staff request never waits for the model.
     if (intent === 'escalate') {
@@ -181,7 +171,7 @@ export class SupportAgentService {
       return this.toReply(finalized.output, turn, startedAt, model, usage, toolCalls);
     }
 
-    return this.fallbackReply(
+    return fallbackReply(
       turn,
       startedAt,
       model,
@@ -288,85 +278,8 @@ export class SupportAgentService {
     toolCalls: SupportAgentToolCall[],
   ): SupportAgentReply {
     return {
-      ...this.applyGuardrails(output, turn),
-      metadata: this.metadata(turn, startedAt, model, usage, toolCalls),
-    };
-  }
-
-  /** Plan §3.5: blocked or low-confidence text never reaches the member as a confident answer. */
-  private applyGuardrails(output: AgentOutput, turn: SupportAgentTurn): AgentOutput {
-    const verdict = this.guardrails.check(output.reply, output.confidence);
-    if (verdict.action === 'proceed') return output;
-
-    if (verdict.action === 'block') {
-      return {
-        reply: 'Mình không thể xử lý yêu cầu này qua trợ lý AI. Mình sẽ chuyển bạn đến nhân viên hỗ trợ.',
-        resolution: 'NEEDS_HUMAN',
-        confidence: 0,
-        escalationReason: SupportEscalationReason.STAFF_NEEDED,
-        handoffSummary: this.promptBuilder.buildEscalationSummary({
-          reason: turn.message,
-          verifiedFacts: {},
-          steps: [],
-          currentResult: `Guardrail đã chặn câu trả lời của AI (${verdict.reason ?? 'unsafe output'}).`,
-          suggestion: 'Nhân viên kiểm tra yêu cầu và phản hồi trực tiếp cho thành viên.',
-        }),
-        quickReplies: [],
-      };
-    }
-
-    return {
-      reply: 'Mình chưa chắc chắn về câu trả lời này. Mình sẽ chuyển bạn đến nhân viên hỗ trợ để kiểm tra chính xác.',
-      resolution: 'NEEDS_HUMAN',
-      confidence: output.confidence,
-      escalationReason: output.escalationReason ?? SupportEscalationReason.INSUFFICIENT_INFO,
-      handoffSummary:
-        output.handoffSummary ??
-        this.promptBuilder.buildEscalationSummary({
-          reason: turn.message,
-          verifiedFacts: {},
-          steps: [],
-          currentResult: `AI trả lời với confidence thấp (${output.confidence}).`,
-          suggestion: 'Nhân viên xác minh thông tin trước khi trả lời.',
-        }),
-      quickReplies: [],
-    };
-  }
-
-  private fallbackReply(
-    turn: SupportAgentTurn,
-    startedAt: number,
-    model: string,
-    usage: TokenUsage,
-    toolCalls: SupportAgentToolCall[],
-    reason: SupportEscalationReason,
-    handoffSummary: string,
-  ): SupportAgentReply {
-    return {
-      reply: 'Mình chưa thể trả lời chắc chắn câu hỏi này. Mình sẽ chuyển bạn đến nhân viên hỗ trợ để kiểm tra.',
-      resolution: 'NEEDS_HUMAN',
-      confidence: 0,
-      escalationReason: reason,
-      handoffSummary,
-      quickReplies: [],
-      metadata: this.metadata(turn, startedAt, model, usage, toolCalls),
-    };
-  }
-
-  private metadata(
-    turn: SupportAgentTurn,
-    startedAt: number,
-    model: string,
-    usage: TokenUsage,
-    toolCalls: SupportAgentToolCall[],
-  ): SupportAgentReply['metadata'] {
-    return {
-      model,
-      latencyMs: Date.now() - startedAt,
-      sources: turn.retrieved.map(({ articleId, title, heading }) => ({ articleId, title, heading })),
-      toolCalls,
-      promptTokens: usage.promptTokens,
-      completionTokens: usage.completionTokens,
+      ...applyGuardrails(output, turn, this.guardrails, this.promptBuilder),
+      metadata: agentMetadata(turn, startedAt, model, usage, toolCalls),
     };
   }
 
@@ -374,115 +287,4 @@ export class SupportAgentService {
     usage.promptTokens += result.promptTokens ?? 0;
     usage.completionTokens += result.completionTokens ?? 0;
   }
-
-  private mockReply(
-    turn: SupportAgentTurn,
-    intent: ReturnType<IntentRouterService['route']>,
-    startedAt: number,
-  ): SupportAgentReply {
-    const sources = turn.retrieved.map(({ articleId, title, heading }) => ({ articleId, title, heading }));
-    const metadata = {
-      model: 'mock',
-      latencyMs: Date.now() - startedAt,
-      sources,
-      toolCalls: [],
-    };
-
-    if (intent === 'escalate') {
-      return {
-        reply: 'Mình sẽ chuyển cuộc hội thoại này đến nhân viên hỗ trợ để bạn được trợ giúp trực tiếp.',
-        resolution: 'NEEDS_HUMAN',
-        confidence: 1,
-        escalationReason: SupportEscalationReason.MEMBER_REQUEST,
-        handoffSummary: 'Thành viên yêu cầu được nhân viên hỗ trợ.',
-        quickReplies: [],
-        metadata,
-      };
-    }
-    if (intent === 'resolve') {
-      return {
-        reply: 'Rất vui vì đã giúp được bạn. Bạn có thể xác nhận để đóng yêu cầu hỗ trợ này.',
-        resolution: 'RESOLVED_SUGGESTED',
-        confidence: 0.9,
-        quickReplies: [SUPPORT_QUICK_REPLY.CONFIRM_RESOLVED],
-        metadata,
-      };
-    }
-    if (intent === 'tool') {
-      return {
-        reply:
-          'Đây là môi trường mock: câu trả lời dựa trên dữ liệu mẫu. Khi AI được bật, mình sẽ kiểm tra số dư Coin, gói và quyền xem từ hệ thống trước khi trả lời.',
-        resolution: 'ANSWERED',
-        confidence: 0.6,
-        quickReplies: [SUPPORT_QUICK_REPLY.REQUEST_STAFF],
-        metadata,
-      };
-    }
-    return {
-      reply:
-        'Mình là Trợ lý AI của AI Cinema (mock). Bạn có thể hỏi về gói dịch vụ, Coin, thanh toán, quyền xem nội dung hoặc thiết bị.',
-      resolution: 'ANSWERED',
-      confidence: 0.7,
-      quickReplies: [SUPPORT_QUICK_REPLY.CONFIRM_RESOLVED, SUPPORT_QUICK_REPLY.REQUEST_STAFF],
-      metadata,
-    };
-  }
-}
-
-function isSupportToolName(name: string): name is SupportToolName {
-  return SUPPORT_TOOL_NAMES.has(name);
-}
-
-function parseToolArguments(raw: string): Record<string, unknown> {
-  const value = parseJson(raw);
-  return isRecord(value) ? value : {};
-}
-
-function parseAgentOutput(raw: string): AgentOutput | null {
-  const value = parseJson(raw);
-  if (!isRecord(value)) return null;
-
-  const reply = typeof value.reply === 'string' ? value.reply.trim() : '';
-  if (!reply) return null;
-
-  const resolution =
-    typeof value.resolution === 'string' && RESOLUTION_SET.has(value.resolution)
-      ? (value.resolution as SupportAgentResolution)
-      : null;
-  if (!resolution) return null;
-
-  const confidence = parseConfidence(value.confidence);
-  if (confidence === null) return null;
-
-  const escalationReason =
-    typeof value.escalationReason === 'string' && ESCALATION_REASON_SET.has(value.escalationReason)
-      ? (value.escalationReason as SupportEscalationReason)
-      : undefined;
-  const handoffSummary =
-    typeof value.handoffSummary === 'string' && value.handoffSummary.trim() ? value.handoffSummary.trim() : undefined;
-  const quickReplies = Array.isArray(value.quickReplies)
-    ? value.quickReplies.filter(
-        (item): item is SupportQuickReply => typeof item === 'string' && QUICK_REPLY_SET.has(item),
-      )
-    : [];
-
-  return { reply, resolution, escalationReason, confidence, handoffSummary, quickReplies };
-}
-
-function parseConfidence(value: unknown): number | null {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) return null;
-  return parsed;
-}
-
-function parseJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

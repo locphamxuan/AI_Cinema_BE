@@ -8,7 +8,6 @@ import {
   Logger,
 } from '@nestjs/common';
 import {
-  Prisma,
   SupportConversation,
   SupportEscalationReason,
   SupportMessage,
@@ -20,15 +19,11 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
-import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { SupportAgentService, type SupportAgentReply } from '../ai/support-agent.service';
-import { SupportAiUnavailableError } from '../ai/ai-errors';
-import { SummaryService } from '../ai/summary.service';
-import { RetrievalService } from '../knowledge/retrieval.service';
 import { SupportRecipientsService } from '../staff/support-recipients.service';
-import { SUPPORT_QUICK_REPLY, type SupportQuickReply } from '../shared/support-status';
 import type { SupportConversationView, SupportSendResult } from '../shared/support-view';
+import { conversationView, messageView, quickRepliesFor } from '../shared/support-presenter';
 import { EscalationService } from './escalation.service';
+import { SupportAiTurnService } from './support-ai-turn.service';
 import { ResolutionService } from './resolution.service';
 import { SupportConversationService } from './support-conversation.service';
 import { SupportMessageService } from './support-message.service';
@@ -48,13 +43,10 @@ export class SupportChatService {
     private readonly prisma: PrismaService,
     private readonly conversations: SupportConversationService,
     private readonly messages: SupportMessageService,
-    private readonly agent: SupportAgentService,
+    private readonly aiTurn: SupportAiTurnService,
     private readonly escalation: EscalationService,
     private readonly resolution: ResolutionService,
     private readonly turnLock: SupportTurnLockService,
-    private readonly retrieval: RetrievalService,
-    private readonly summary: SummaryService,
-    private readonly settings: PlatformSettingService,
     private readonly recipients: SupportRecipientsService,
     private readonly audit: AuditLogService,
   ) {}
@@ -181,110 +173,10 @@ export class SupportChatService {
     }
 
     try {
-      return await this.runAiTurn(memberId, conversationId, content, memberMessage);
+      return await this.aiTurn.run(memberId, conversationId, content, memberMessage);
     } finally {
       await this.turnLock.release(conversationId);
     }
-  }
-
-  private async runAiTurn(
-    memberId: string,
-    conversationId: string,
-    content: string,
-    memberMessage: SupportMessage,
-  ): Promise<SupportSendResult> {
-    const history = await this.messages.recentForAi(conversationId, this.config.support.aiHistoryMessages);
-    const query = history
-      .slice(-3)
-      .map((message) => message.content)
-      .join('\n');
-
-    const [retrieved, platformFacts] = await Promise.all([
-      this.retrieval.retrieve(query, {
-        topK: this.config.support.ragTopK,
-        minScore: this.config.support.ragMinScore,
-        audience: 'MEMBER',
-      }),
-      this.platformFacts(),
-    ]);
-
-    let reply: SupportAgentReply;
-    try {
-      reply = await this.agent.reply({
-        conversationId,
-        memberId,
-        message: content,
-        history: history.map(({ senderType, content: line }) => ({ senderType, content: line })),
-        platformFacts,
-        retrieved,
-      });
-    } catch (error) {
-      if (error instanceof SupportAiUnavailableError) {
-        return this.escalateAfterAiFailure(conversationId, memberMessage, history, error.cause);
-      }
-      const failures = await this.conversations.recordAiFailure(conversationId);
-      // Provider errors are logged by request shape only, never their content (plan §8.2).
-      this.logger.warn(`AI turn failed on conversation ${conversationId} (failure ${failures})`);
-      if (failures >= 2) {
-        return this.escalateAfterAiFailure(conversationId, memberMessage, history, 'PROVIDER_ERROR');
-      }
-      return {
-        conversation: conversationView(await this.conversations.findById(conversationId)),
-        memberMessage: messageView(memberMessage),
-        aiMessage: null,
-        systemMessage: null,
-        quickReplies: quickRepliesFor(await this.conversations.findById(conversationId)),
-      };
-    }
-
-    const aiMessage = await this.messages.create({
-      conversationId,
-      senderType: SupportSenderType.AI_CHATBOT,
-      senderId: null,
-      // Plan §5.5: redact secrets after guardrails inspected the raw text, before persist/send.
-      content: this.summary.redact(reply.reply),
-      replyToMessageId: memberMessage.id,
-      aiMetadata: {
-        ...reply.metadata,
-        confidence: reply.confidence,
-        resolution: reply.resolution,
-      } as unknown as Prisma.InputJsonValue,
-    });
-
-    await this.conversations.recordAiTurn(conversationId, {
-      suggestedResolution: reply.resolution === 'RESOLVED_SUGGESTED',
-    });
-
-    if (reply.resolution === 'NEEDS_HUMAN' || reply.resolution === 'UNCERTAIN') {
-      const summary = this.handoffSummary(
-        reply.handoffSummary,
-        history,
-        reply.escalationReason ?? SupportEscalationReason.STAFF_NEEDED,
-      );
-      const escalated = await this.escalation.escalate({
-        conversationId,
-        reason: reply.escalationReason ?? SupportEscalationReason.STAFF_NEEDED,
-        note: summary,
-        summary,
-        actorId: null,
-      });
-      return {
-        conversation: conversationView(escalated.conversation),
-        memberMessage: messageView(memberMessage),
-        aiMessage: messageView(aiMessage),
-        systemMessage: escalated.systemMessage ? messageView(escalated.systemMessage) : null,
-        quickReplies: reply.quickReplies,
-      };
-    }
-
-    const current = await this.conversations.findById(conversationId);
-    return {
-      conversation: conversationView(current),
-      memberMessage: messageView(memberMessage),
-      aiMessage: messageView(aiMessage),
-      systemMessage: null,
-      quickReplies: reply.quickReplies.length ? reply.quickReplies : quickRepliesFor(current),
-    };
   }
 
   /** Member tapped "Đã giải quyết": the server performs the CLOSED transition. */
@@ -311,7 +203,7 @@ export class SupportChatService {
       throw new ConflictException('This support conversation is no longer open');
     }
     const history = await this.messages.recentForAi(conversationId, this.config.support.aiHistoryMessages);
-    const summary = this.handoffSummary(undefined, history, SupportEscalationReason.MEMBER_REQUEST, note);
+    const summary = this.aiTurn.handoffSummary(undefined, history, SupportEscalationReason.MEMBER_REQUEST, note);
 
     const escalated = await this.escalation.escalate({
       conversationId,
@@ -350,63 +242,6 @@ export class SupportChatService {
     };
   }
 
-  private async escalateAfterAiFailure(
-    conversationId: string,
-    memberMessage: SupportMessage,
-    history: SupportMessage[],
-    cause: string,
-  ): Promise<SupportSendResult> {
-    await this.conversations.recordAiFailure(conversationId);
-    const note = `Trợ lý AI không thể trả lời (${cause}).`;
-    const summary = this.handoffSummary(undefined, history, SupportEscalationReason.AI_UNAVAILABLE, note);
-    const escalated = await this.escalation.escalate({
-      conversationId,
-      reason: SupportEscalationReason.AI_UNAVAILABLE,
-      note,
-      summary,
-      actorId: null,
-    });
-
-    return {
-      conversation: conversationView(escalated.conversation),
-      memberMessage: messageView(memberMessage),
-      aiMessage: null,
-      systemMessage: escalated.systemMessage ? messageView(escalated.systemMessage) : null,
-      quickReplies: [],
-    };
-  }
-
-  private handoffSummary(
-    provided: string | undefined,
-    history: SupportMessage[],
-    reason: SupportEscalationReason,
-    note?: string,
-  ): string {
-    const summary =
-      provided ??
-      this.summary.fromTranscript({
-        messages: history,
-        reason: note ?? escalationText(reason),
-        verifiedFacts: {},
-        steps: [],
-      });
-    return this.summary.redact(summary);
-  }
-
-  /** Live facts in the prompt (plan §4.6); never a value the AI can write back. */
-  private async platformFacts(): Promise<Record<string, unknown>> {
-    const settings = await this.settings.get();
-    return {
-      coinRateVnd: settings.coinRateVnd,
-      bonusCoinExpiryDays: settings.bonusCoinExpiryDays,
-      coinTopUpMinVnd: settings.coinTopUpMinVnd,
-      coinTopUpMaxVnd: settings.coinTopUpMaxVnd,
-      subscriptionCancelWindowHours: settings.subscriptionCancelWindowHours,
-      freeStarterEpisodeCount: settings.freeStarterEpisodeCount,
-      refundOnRemoval: settings.refundOnRemoval,
-    };
-  }
-
   private async assertDailyQuota(memberId: string): Promise<void> {
     const since = new Date();
     since.setHours(0, 0, 0, 0);
@@ -418,55 +253,4 @@ export class SupportChatService {
       );
     }
   }
-}
-
-export function conversationView(conversation: SupportConversation): SupportConversationView {
-  return {
-    id: conversation.id,
-    status: conversation.status,
-    priority: conversation.priority,
-    escalationReason: conversation.escalationReason,
-    aiSummary: conversation.aiSummary,
-    lastMessageAt: conversation.lastMessageAt,
-    lastMemberMessageAt: conversation.lastMemberMessageAt,
-    lastStaffMessageAt: conversation.lastStaffMessageAt,
-    escalatedAt: conversation.escalatedAt,
-    claimedAt: conversation.claimedAt,
-    resolvedAt: conversation.resolvedAt,
-    closedAt: conversation.closedAt,
-    closeReason: conversation.closeReason,
-    aiResolutionSuggestedAt: conversation.aiResolutionSuggestedAt,
-    satisfactionRating: conversation.satisfactionRating,
-    satisfactionComment: conversation.satisfactionComment,
-    createdAt: conversation.createdAt,
-    updatedAt: conversation.updatedAt,
-  };
-}
-
-export function messageView(message: SupportMessage) {
-  return {
-    id: message.id,
-    senderType: message.senderType,
-    content: message.content,
-    isInternal: message.isInternal,
-    clientMessageId: message.clientMessageId,
-    replyToMessageId: message.replyToMessageId,
-    aiMetadata: (message.aiMetadata as Record<string, unknown> | null) ?? null,
-    createdAt: message.createdAt,
-  };
-}
-
-function quickRepliesFor(conversation: SupportConversation): SupportQuickReply[] {
-  if (conversation.status !== SupportStatus.AI_HANDLING) return [];
-  return [SUPPORT_QUICK_REPLY.CONFIRM_RESOLVED, SUPPORT_QUICK_REPLY.REQUEST_STAFF];
-}
-
-function escalationText(reason: SupportEscalationReason): string {
-  return {
-    AI_UNAVAILABLE: 'Trợ lý AI tạm thời không phản hồi.',
-    INSUFFICIENT_INFO: 'Không đủ thông tin để trả lời chắc chắn.',
-    ACCOUNT_VERIFICATION: 'Cần xác minh thông tin tài khoản hoặc giao dịch.',
-    MEMBER_REQUEST: 'Thành viên yêu cầu nhân viên hỗ trợ.',
-    STAFF_NEEDED: 'Vấn đề vượt quá phạm vi tự xử lý của trợ lý AI.',
-  }[reason];
 }
