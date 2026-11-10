@@ -154,17 +154,32 @@ async function hmacHex(secret, message) {
   return [...new Uint8Array(signature)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Kept in step with contentTypeOf()/cacheControlOf() in src/infrastructure/storage/object-storage.ts,
+// so an object carries the same type and TTL whether it is served from the edge or the origin.
+const TYPES = {
+  '.m3u8': 'application/vnd.apple.mpegurl',
+  '.ts': 'video/mp2t',
+  '.m4s': 'video/iso.segment',
+  '.mp4': 'video/mp4',
+  '.vtt': 'text/vtt',
+};
+const SEGMENT_EXTENSIONS = ['.ts', '.m4s', '.mp4'];
+
+function extensionOf(pathname) {
+  const dot = pathname.lastIndexOf('.');
+  return dot >= 0 ? pathname.slice(dot).toLowerCase() : '';
+}
+
 function contentType(pathname) {
-  if (pathname.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
-  if (pathname.endsWith('.ts')) return 'video/mp2t';
-  if (pathname.endsWith('.vtt')) return 'text/vtt';
-  return 'application/octet-stream';
+  return TYPES[extensionOf(pathname)] ?? 'application/octet-stream';
 }
 
 function cacheControl(pathname) {
-  if (pathname.endsWith('.ts')) return 'public, max-age=31536000, immutable';
-  if (pathname.endsWith('.m3u8')) return 'public, max-age=10';
-  if (pathname.endsWith('.vtt')) return 'public, max-age=3600';
+  const extension = extensionOf(pathname);
+  // Segments never change once transcoded; a take-down purges them instead of waiting them out.
+  if (SEGMENT_EXTENSIONS.includes(extension)) return 'public, max-age=31536000, immutable';
+  if (extension === '.m3u8') return 'public, max-age=10';
+  if (extension === '.vtt') return 'public, max-age=3600';
   return 'public, max-age=86400';
 }
 
