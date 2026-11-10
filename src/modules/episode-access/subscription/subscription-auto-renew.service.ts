@@ -6,15 +6,21 @@ import { NotificationService } from 'src/modules/platform/notification/notificat
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { assertRunning, findOwnSubscription, SUB_REASON, windowEndOf } from './subscription-rules';
 
-const autoRenewOf = (subscription: Subscription) => ({
-  id: subscription.id,
-  status: subscription.status,
-  autoRenew: subscription.autoRenew,
-  cancelRequestedAt: subscription.cancelRequestedAt,
-  accessUntil: subscription.currentPeriodEnd,
-  currentPeriodEnd: subscription.currentPeriodEnd,
-  nextRenewalAt: subscription.nextRenewalAt,
-});
+const autoRenewOf = (subscription: Subscription) => {
+  // A plan that no longer renews has no deadline left to show (BR-05).
+  const cancelWindowEndsAt = subscription.autoRenew ? subscription.cancelWindowEndsAt : null;
+  return {
+    id: subscription.id,
+    status: subscription.status,
+    autoRenew: subscription.autoRenew,
+    cancelRequestedAt: subscription.cancelRequestedAt,
+    accessUntil: subscription.currentPeriodEnd,
+    currentPeriodEnd: subscription.currentPeriodEnd,
+    nextRenewalAt: subscription.nextRenewalAt,
+    cancelWindowEndsAt,
+    cancelDeadline: cancelWindowEndsAt,
+  };
+};
 
 /** Step 19 from the member's side: stopping auto-renew, and changing one's mind before the period ends. */
 @Injectable()
@@ -48,7 +54,9 @@ export class SubscriptionAutoRenewService {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.subscription.update({
         where: { id: subscription.id },
-        data: { autoRenew: false, cancelRequestedAt: new Date(), nextRenewalAt: null },
+        // The deadline goes with the renewal it belonged to; leaving it would show the member a
+        // cancel window that no longer means anything.
+        data: { autoRenew: false, cancelRequestedAt: new Date(), nextRenewalAt: null, cancelWindowEndsAt: null },
       });
       await this.notifications.notify(
         [userId],
