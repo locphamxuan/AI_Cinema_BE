@@ -17,6 +17,7 @@ export const PERMISSION = {
   COST_APPROVE: 'cost:approve',
   COST_ADJUST: 'cost:adjust',
   CONTRACT_MANAGE: 'contract:manage',
+  CONTRACT_DOCUMENT_READ: 'contract:document.read',
   SCRIPT_WRITE: 'script:write',
   SCRIPT_APPROVE: 'script:approve',
   STUDIO_PORTAL: 'studio:portal',
@@ -85,7 +86,11 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'cost:adjust': { area: 'movie-project', description: 'Set the production budget (VND) of a project and correct it' },
   'contract:manage': {
     area: 'movie-project',
-    description: 'Send the studio a contract template, sign it or counter-propose its cost',
+    description: 'Send the studio a contract template, upload the signed contract PDF or counter-propose its cost',
+  },
+  'contract:document.read': {
+    area: 'movie-project',
+    description: 'Download the signed contract PDFs of a project',
   },
   'script:write': { area: 'movie-project', description: 'Write and submit the script of an assigned project' },
   'script:approve': {
@@ -173,6 +178,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.COST_REQUEST,
     PERMISSION.STUDIO_MANAGE,
     PERMISSION.CONTENT_REVIEW,
+    PERMISSION.CONTRACT_DOCUMENT_READ,
     PERMISSION.EPISODE_PRICE,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
@@ -199,6 +205,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.COST_APPROVE,
     PERMISSION.COST_ADJUST,
     PERMISSION.CONTRACT_MANAGE,
+    PERMISSION.CONTRACT_DOCUMENT_READ,
     PERMISSION.PRICE_ALERT_MANAGE,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
