@@ -10,6 +10,7 @@ import type { PlatformSettingService } from 'src/modules/platform/platform-setti
 import type { ProjectLifecycleService } from 'src/modules/production/movie-project/project-lifecycle.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import type { EpisodeRevisionService } from './episode-revision.service';
+import { CdnPurgeService } from 'src/infrastructure/cdn/cdn-purge.service';
 import { PublicationService } from './publication.service';
 
 const ADMIN = { id: 'admin', role: UserRole.ADMIN };
@@ -62,6 +63,7 @@ describe('PublicationService', () => {
   const revisions = { sendBack: jest.fn(), announce: jest.fn() };
   const entitlements = { refundEpisodeRemoval: jest.fn() };
   const settings = { get: jest.fn() };
+  const cdn = { purgeAsset: jest.fn().mockResolvedValue({ purged: true }) };
   const service = new PublicationService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
@@ -71,6 +73,7 @@ describe('PublicationService', () => {
     revisions as unknown as EpisodeRevisionService,
     entitlements as unknown as EntitlementService,
     settings as unknown as PlatformSettingService,
+    cdn as unknown as CdnPurgeService,
   );
   const actions = () => auditLog.record.mock.calls.map(([event]) => (event as { action: string }).action);
 
@@ -219,6 +222,20 @@ describe('PublicationService', () => {
       access.episode.mockResolvedValue(episode({ status: EpisodeStatus.PUBLISHED }));
       await service.unpublish('pub1', { ...dto, mode: UnpublishMode.REMOVAL }, ADMIN);
       expect(entitlements.refundEpisodeRemoval).not.toHaveBeenCalled();
+    });
+
+    it('purges the asset from the CDN edge once a live episode is down', async () => {
+      db.publication.findUnique.mockResolvedValue(publication({ publishedAt: new Date() }));
+      access.episode.mockResolvedValue(episode({ status: EpisodeStatus.PUBLISHED }));
+      await service.unpublish('pub1', { ...dto, mode: UnpublishMode.REMOVAL }, ADMIN);
+      expect(cdn.purgeAsset).toHaveBeenCalledWith('m1');
+    });
+
+    it('does not purge a release that never went live: nothing was ever cached', async () => {
+      db.publication.findUnique.mockResolvedValue(publication({ scheduledAt: new Date() }));
+      access.episode.mockResolvedValue(episode({ status: EpisodeStatus.SCHEDULED }));
+      await service.unpublish('pub1', dto, ADMIN);
+      expect(cdn.purgeAsset).not.toHaveBeenCalled();
     });
 
     it('cancels a scheduled release without asking for a mode', async () => {

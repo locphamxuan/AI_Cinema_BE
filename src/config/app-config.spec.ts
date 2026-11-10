@@ -12,6 +12,32 @@ describe('loadConfig', () => {
     expect(config.redisUrl).toBeNull();
   });
 
+  it('serves HLS from the storage origin when no CDN is configured (local dev/demo)', () => {
+    const config = loadConfig(base);
+    expect(config.cdn.enabled).toBe(false);
+    expect(config.cdn.baseUrl).toBe('http://localhost:3001/media');
+    expect(config.cdn.purge).toMatchObject({ zoneId: undefined, apiToken: undefined });
+  });
+
+  it('puts the Cloudflare custom domain in front of the bucket when CDN_BASE_URL is set', () => {
+    const config = loadConfig({
+      ...base,
+      STORAGE_PUBLIC_BASE_URL: 'https://pub-r2.example',
+      CDN_BASE_URL: 'https://stream.aicinema.example/',
+      CLOUDFLARE_ZONE_ID: 'zone-1',
+      CLOUDFLARE_API_TOKEN: 'cf-token',
+    });
+    expect(config.cdn).toMatchObject({ baseUrl: 'https://stream.aicinema.example', enabled: true });
+    expect(config.cdn.purge).toMatchObject({ zoneId: 'zone-1', apiToken: 'cf-token' });
+  });
+
+  it('refuses a relative CDN_BASE_URL and half-configured purge credentials', () => {
+    expect(() => loadConfig({ ...base, CDN_BASE_URL: '/media' })).toThrow('CDN_BASE_URL must be an absolute');
+    expect(() => loadConfig({ ...base, CLOUDFLARE_ZONE_ID: 'zone-1' })).toThrow(
+      'CLOUDFLARE_ZONE_ID and CLOUDFLARE_API_TOKEN must be set together',
+    );
+  });
+
   it('lists every invalid or missing setting at once', () => {
     const failure = () => loadConfig({ PORT: 'abc', STORAGE_DRIVER: 'ftp' });
     for (const problem of [
