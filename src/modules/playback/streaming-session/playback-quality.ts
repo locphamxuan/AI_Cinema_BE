@@ -1,4 +1,4 @@
-import { HLS_LADDER, qualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
+import { HLS_LADDER, qualityRung } from 'src/common/hls/quality-ladder';
 
 /** Guests and plan-less members cap here; a plan may raise it via features.maxQuality. */
 export const DEFAULT_MAX_QUALITY = '720p';

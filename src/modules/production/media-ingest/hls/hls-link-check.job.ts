@@ -5,7 +5,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
-import { probeHls } from './hls-playlist';
+import { probeHls } from 'src/common/hls/hls-playlist';
 
 export interface HlsCheckResult {
   checked: number;

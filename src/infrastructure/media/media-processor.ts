@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
-import { HLS_LADDER } from '../hls/quality-ladder';
+import { HLS_LADDER } from 'src/common/hls/quality-ladder';
 
 const SEGMENT_SECONDS = 4;
 

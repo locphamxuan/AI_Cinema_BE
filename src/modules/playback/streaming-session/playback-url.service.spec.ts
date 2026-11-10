@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto';
 import type { AppConfig } from 'src/config/app-config';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { ObjectStorage } from 'src/infrastructure/storage/object-storage';
-import { HLS_LADDER, type QualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
+import { HLS_LADDER, type QualityRung } from 'src/common/hls/quality-ladder';
 import { PlaybackUrlService } from './playback-url.service';
 import { DEFAULT_MAX_QUALITY, maxQualityOf } from './playback-quality';
 import { isHlsPlaylist } from './playlist-rewrite';

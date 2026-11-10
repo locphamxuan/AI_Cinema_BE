@@ -8,7 +8,7 @@ import { MediaIngestController } from './media-ingest.controller';
 import { MediaIngestService } from './media-ingest.service';
 import { MediaOutcomeService } from './pipeline/media-outcome.service';
 import { MediaPipelineService } from './pipeline/media-pipeline.service';
-import { MediaProcessorModule } from './pipeline/media-processor.module';
+import { MediaProcessorModule } from 'src/infrastructure/media/media-processor.module';
 
 // Episode videos are far too large for memory: multer writes them to a temporary file.
 // Every module with a controller taking an episode upload (the studio portal too) imports this.

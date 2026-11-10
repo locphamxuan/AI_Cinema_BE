@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { HLS_LADDER } from 'src/modules/production/media-ingest/hls/quality-ladder';
+import { HLS_LADDER } from 'src/common/hls/quality-ladder';
 
 /** Most devices one plan may allow, registered or playing at once. */
 const MAX_PLAN_DEVICES = 10;

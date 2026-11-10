@@ -12,7 +12,7 @@ import { StreamingSessionStatus } from '@prisma/client';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
-import { qualityRung } from 'src/modules/production/media-ingest/hls/quality-ladder';
+import { qualityRung } from 'src/common/hls/quality-ladder';
 import { DEFAULT_MAX_QUALITY, qualityCeiling } from './playback-quality';
 import { assertPlaybackToken, playbackSignature, type PlaybackToken } from './playback-token';
 import {

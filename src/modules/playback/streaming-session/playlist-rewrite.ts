@@ -1,4 +1,4 @@
-import { parseMasterPlaylist } from 'src/modules/production/media-ingest/hls/hls-playlist';
+import { parseMasterPlaylist } from 'src/common/hls/hls-playlist';
 
 /** One `#EXT-X-STREAM-INF` entry of a master playlist that the plan may see. */
 export interface MasterVariant {

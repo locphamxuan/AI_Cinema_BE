@@ -84,9 +84,11 @@ Repository settings (*Settings → Secrets and variables → Actions*):
 ```
 src/
   common/            auth, permissions, decorators, guards, HTTP envelope, validation,
-                     security (SSRF-safe URL fetching), time (business day in Vietnam)
+                     security (SSRF-safe URL fetching), time (business day in Vietnam),
+                     hls (playlist parsing and the quality ladder shared by ingest and playback)
   config/            typed configuration, checked at start-up
-  infrastructure/    Prisma, object storage (local / S3-R2), job queue (BullMQ or in-process), mailer
+  infrastructure/    Prisma, object storage (local / S3-R2), job queue (BullMQ or in-process), mailer,
+                     media (FFmpeg/ffprobe processor used by media-ingest and ads)
   modules/
     identity/        auth, user, access-control (accounts, sessions, RBAC)
     platform/        notification, audit-log, email outbox, genre, policy, platform-setting

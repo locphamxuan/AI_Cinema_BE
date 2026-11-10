@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { MediaProcessorModule } from 'src/modules/production/media-ingest/pipeline/media-processor.module';
+import { MediaProcessorModule } from 'src/infrastructure/media/media-processor.module';
 import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { AdBreakController } from './ad-break.controller';
