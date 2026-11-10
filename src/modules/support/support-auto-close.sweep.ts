@@ -89,7 +89,7 @@ export class SupportAutoCloseSweep implements OnModuleInit {
               action: CONTENT_EVENT.SUPPORT_CASE_CLOSED,
               entityType: 'SupportConversation',
               entityId: candidate.id,
-              movieId: null,
+              projectId: null,
               actorId: null,
               payload: { closeReason: SupportCloseReason.INACTIVITY, automatic: true },
             },

@@ -108,7 +108,7 @@ export class EscalationService {
           action: CONTENT_EVENT.SUPPORT_CASE_ESCALATED,
           entityType: 'SupportConversation',
           entityId: conversation.id,
-          movieId: null,
+          projectId: null,
           actorId: input.actorId ?? null,
           payload: { reason: input.reason, priority },
         },
