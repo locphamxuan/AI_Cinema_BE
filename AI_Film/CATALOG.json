@@ -1,6 +1,31 @@
 {
   "movies": [
     {
+      "title": "Anh chàng về làng chài thập niên 80, đưa cả gia đình đổi đời",
+      "slug": "anh-chang-ve-lang-chai-thap-nien-80-dua-ca-gia-dinh-doi-doi",
+      "genres": [
+        "Trọng sinh",
+        "Hành động"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Anh chàng về làng chài thập niên 80, đưa cả gia đình đổi đời - phim AI thể loại trọng sinh, hành động, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/anh-chang-ve-lang-chai-thap-nien-80-dua-ca-gia-dinh-doi-doi.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Trọng sinh/Hành động/Anh chàng về làng chài thập niên 80, đưa cả gia đình đổi đời/Anh Chàng Về Làng Chài Thập Niên 80, Đưa Cả Gia Đình Đổi Đời [TW8BVWq0azI].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/Tr%E1%BB%8Dng%20sinh/H%C3%A0nh%20%C4%91%E1%BB%99ng/Anh%20ch%C3%A0ng%20v%E1%BB%81%20l%C3%A0ng%20ch%C3%A0i%20th%E1%BA%ADp%20ni%C3%AAn%2080%2C%20%C4%91%C6%B0a%20c%E1%BA%A3%20gia%20%C4%91%C3%ACnh%20%C4%91%E1%BB%95i%20%C4%91%E1%BB%9Di/Anh%20Ch%C3%A0ng%20V%E1%BB%81%20L%C3%A0ng%20Ch%C3%A0i%20Th%E1%BA%ADp%20Ni%C3%AAn%2080%2C%20%C4%90%C6%B0a%20C%E1%BA%A3%20Gia%20%C4%90%C3%ACnh%20%C4%90%E1%BB%95i%20%C4%90%E1%BB%9Di%20%5BTW8BVWq0azI%5D.mp4",
+          "size": 548774997,
+          "duration": 4846,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
       "title": "Bài kiểm tra thanh xuân",
       "slug": "bai-kiem-tra-thanh-xuan",
       "genres": [
@@ -43,6 +68,102 @@
           "duration": 163,
           "width": 576,
           "height": 1024,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Bị Bạn Gái Khinh Vì Lái Máy Xúc Cũ, Anh Vào Giải Đấu Khiến Hào Môn Quỳ Phục",
+      "slug": "bi-ban-gai-khinh-vi-lai-may-xuc-cu-anh-vao-giai-dau-khien-hao-mon-quy-phuc",
+      "genres": [
+        "Tâm Lý"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Bị Bạn Gái Khinh Vì Lái Máy Xúc Cũ, Anh Vào Giải Đấu Khiến Hào Môn Quỳ Phục - phim AI thể loại tâm lý, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/bi-ban-gai-khinh-vi-lai-may-xuc-cu-anh-vao-giai-dau-khien-hao-mon-quy-phuc.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Bị Bạn Gái Khinh Vì Lái Máy Xúc Cũ, Anh Vào Giải Đấu Khiến Hào Môn Quỳ Phục/Bị Bạn Gái Khinh Vì Lái Máy Xúc Cũ, Anh Vào Giải Đấu Khiến Hào Môn Quỳ Phục _ Full 50 Tập [YFK4Uj9BY6o].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/B%E1%BB%8B%20B%E1%BA%A1n%20G%C3%A1i%20Khinh%20V%C3%AC%20L%C3%A1i%20M%C3%A1y%20X%C3%BAc%20C%C5%A9%2C%20Anh%20V%C3%A0o%20Gi%E1%BA%A3i%20%C4%90%E1%BA%A5u%20Khi%E1%BA%BFn%20H%C3%A0o%20M%C3%B4n%20Qu%E1%BB%B3%20Ph%E1%BB%A5c/B%E1%BB%8B%20B%E1%BA%A1n%20G%C3%A1i%20Khinh%20V%C3%AC%20L%C3%A1i%20M%C3%A1y%20X%C3%BAc%20C%C5%A9%2C%20Anh%20V%C3%A0o%20Gi%E1%BA%A3i%20%C4%90%E1%BA%A5u%20Khi%E1%BA%BFn%20H%C3%A0o%20M%C3%B4n%20Qu%E1%BB%B3%20Ph%E1%BB%A5c%20_%20Full%2050%20T%E1%BA%ADp%20%5BYFK4Uj9BY6o%5D.mp4",
+          "size": 651634817,
+          "duration": 4298,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Bị Chê Nghèo Vì Bố Chạy Xe Ôm, Bất Ngờ Kích Hoạt Hệ Thống Thần Hào Đổi Đời Thành Tỷ Phú",
+      "slug": "bi-che-ngheo-vi-bo-chay-xe-om-bat-ngo-kich-hoat-he-thong-than-hao-doi-doi-thanh-ty-phu",
+      "genres": [
+        "Tâm Lý"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Bị Chê Nghèo Vì Bố Chạy Xe Ôm, Bất Ngờ Kích Hoạt Hệ Thống Thần Hào Đổi Đời Thành Tỷ Phú - phim AI thể loại tâm lý, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/bi-che-ngheo-vi-bo-chay-xe-om-bat-ngo-kich-hoat-he-thong-than-hao-doi-doi-thanh-ty-phu.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Bị Chê Nghèo Vì Bố Chạy Xe Ôm, Bất Ngờ Kích Hoạt Hệ Thống Thần Hào Đổi Đời Thành Tỷ Phú/Bị Chê Nghèo Vì Bố Chạy Xe Ôm, Bất Ngờ Kích Hoạt Hệ Thống Thần Hào Đổi Đời Thành Tỷ Phú.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/B%E1%BB%8B%20Ch%C3%AA%20Ngh%C3%A8o%20V%C3%AC%20B%E1%BB%91%20Ch%E1%BA%A1y%20Xe%20%C3%94m%2C%20B%E1%BA%A5t%20Ng%E1%BB%9D%20K%C3%ADch%20Ho%E1%BA%A1t%20H%E1%BB%87%20Th%E1%BB%91ng%20Th%E1%BA%A7n%20H%C3%A0o%20%C4%90%E1%BB%95i%20%C4%90%E1%BB%9Di%20Th%C3%A0nh%20T%E1%BB%B7%20Ph%C3%BA/B%E1%BB%8B%20Ch%C3%AA%20Ngh%C3%A8o%20V%C3%AC%20B%E1%BB%91%20Ch%E1%BA%A1y%20Xe%20%C3%94m%2C%20B%E1%BA%A5t%20Ng%E1%BB%9D%20K%C3%ADch%20Ho%E1%BA%A1t%20H%E1%BB%87%20Th%E1%BB%91ng%20Th%E1%BA%A7n%20H%C3%A0o%20%C4%90%E1%BB%95i%20%C4%90%E1%BB%9Di%20Th%C3%A0nh%20T%E1%BB%B7%20Ph%C3%BA.mp4",
+          "size": 622463562,
+          "duration": 7416,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Bị Ép Tăng Tiền Thuê Gấp 2,5 Lần, Ông Chủ Quán Ăn Sáng Chuyển Đi Và Làm Ăn Ngày Càng Phất Lên",
+      "slug": "bi-ep-tang-tien-thue-gap-2-5-lan-ong-chu-quan-an-sang-chuyen-di-va-lam-an-ngay-cang-phat-len",
+      "genres": [
+        "Tâm Lý"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Bị Ép Tăng Tiền Thuê Gấp 2,5 Lần, Ông Chủ Quán Ăn Sáng Chuyển Đi Và Làm Ăn Ngày Càng Phất Lên - phim AI thể loại tâm lý, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/bi-ep-tang-tien-thue-gap-2-5-lan-ong-chu-quan-an-sang-chuyen-di-va-lam-an-ngay-cang-phat-len.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Bị Ép Tăng Tiền Thuê Gấp 2,5 Lần, Ông Chủ Quán Ăn Sáng Chuyển Đi Và Làm Ăn Ngày Càng Phất Lên/Bị Ép Tăng Tiền Thuê Gấp 2,5 Lần, Ông Chủ Quán Ăn Sáng Chuyển Đi Và Làm Ăn Ngày Càng Phất Lên.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/B%E1%BB%8B%20%C3%89p%20T%C4%83ng%20Ti%E1%BB%81n%20Thu%C3%AA%20G%E1%BA%A5p%202%2C5%20L%E1%BA%A7n%2C%20%C3%94ng%20Ch%E1%BB%A7%20Qu%C3%A1n%20%C4%82n%20S%C3%A1ng%20Chuy%E1%BB%83n%20%C4%90i%20V%C3%A0%20L%C3%A0m%20%C4%82n%20Ng%C3%A0y%20C%C3%A0ng%20Ph%E1%BA%A5t%20L%C3%AAn/B%E1%BB%8B%20%C3%89p%20T%C4%83ng%20Ti%E1%BB%81n%20Thu%C3%AA%20G%E1%BA%A5p%202%2C5%20L%E1%BA%A7n%2C%20%C3%94ng%20Ch%E1%BB%A7%20Qu%C3%A1n%20%C4%82n%20S%C3%A1ng%20Chuy%E1%BB%83n%20%C4%90i%20V%C3%A0%20L%C3%A0m%20%C4%82n%20Ng%C3%A0y%20C%C3%A0ng%20Ph%E1%BA%A5t%20L%C3%AAn.mp4",
+          "size": 291538121,
+          "duration": 2651,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Chuyện chưa kể về mẹ Lang Liêu",
+      "slug": "chuyen-chua-ke-ve-me-lang-lieu",
+      "genres": [
+        "Cổ tích"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Chuyện chưa kể về mẹ Lang Liêu - phim AI thể loại cổ tích, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/chuyen-chua-ke-ve-me-lang-lieu.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Việt Nam/Cổ tích/Chuyện chưa kể về mẹ Lang Liêu/Chuyện Chưa Kể Về Mẹ Lang Liêu [sxQjmfMk4S8].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Vi%E1%BB%87t%20Nam/C%E1%BB%95%20t%C3%ADch/Chuy%E1%BB%87n%20ch%C6%B0a%20k%E1%BB%83%20v%E1%BB%81%20m%E1%BA%B9%20Lang%20Li%C3%AAu/Chuy%E1%BB%87n%20Ch%C6%B0a%20K%E1%BB%83%20V%E1%BB%81%20M%E1%BA%B9%20Lang%20Li%C3%AAu%20%5BsxQjmfMk4S8%5D.mp4",
+          "size": 189968519,
+          "duration": 1671,
+          "width": 1280,
+          "height": 720,
           "subtitles": []
         }
       ]
@@ -131,6 +252,54 @@
           "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Khoa%20h%E1%BB%8Dc%20vi%E1%BB%85n%20t%C6%B0%E1%BB%9Fng%20-%20Phi%C3%AAu%20l%C6%B0u/Hitoner/Hitoner.ep3.mp4",
           "size": 82491165,
           "duration": 697,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Họ hàng cướp nhà sau 12 năm Anh đi lính Khi trở về anh làm lại và cái kết",
+      "slug": "ho-hang-cuop-nha-sau-12-nam-anh-di-linh-khi-tro-ve-anh-lam-lai-va-cai-ket",
+      "genres": [
+        "Tâm Lý"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Họ hàng cướp nhà sau 12 năm Anh đi lính Khi trở về anh làm lại và cái kết - phim AI thể loại tâm lý, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/ho-hang-cuop-nha-sau-12-nam-anh-di-linh-khi-tro-ve-anh-lam-lai-va-cai-ket.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Họ hàng cướp nhà sau 12 năm Anh đi lính Khi trở về anh làm lại và cái kết/Họ hàng cướp nhà sau 12 năm Anh đi lính Khi trở về anh làm lại và cái kết.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/H%E1%BB%8D%20h%C3%A0ng%20c%C6%B0%E1%BB%9Bp%20nh%C3%A0%20sau%2012%20n%C4%83m%20Anh%20%C4%91i%20l%C3%ADnh%20Khi%20tr%E1%BB%9F%20v%E1%BB%81%20anh%20l%C3%A0m%20l%E1%BA%A1i%20v%C3%A0%20c%C3%A1i%20k%E1%BA%BFt/H%E1%BB%8D%20h%C3%A0ng%20c%C6%B0%E1%BB%9Bp%20nh%C3%A0%20sau%2012%20n%C4%83m%20Anh%20%C4%91i%20l%C3%ADnh%20Khi%20tr%E1%BB%9F%20v%E1%BB%81%20anh%20l%C3%A0m%20l%E1%BA%A1i%20v%C3%A0%20c%C3%A1i%20k%E1%BA%BFt.mp4",
+          "size": 715701142,
+          "duration": 6055,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Huyền sử thời Hùng Vương",
+      "slug": "huyen-su-thoi-hung-vuong",
+      "genres": [
+        "Lịch sử"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Huyền sử thời Hùng Vương - phim AI thể loại lịch sử, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/huyen-su-thoi-hung-vuong.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Việt Nam/Lịch sử/Huyền sử thời Hùng Vương/Huyền sử thời Hùng Vương [OA4QJWf_7uA].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Vi%E1%BB%87t%20Nam/L%E1%BB%8Bch%20s%E1%BB%AD/Huy%E1%BB%81n%20s%E1%BB%AD%20th%E1%BB%9Di%20H%C3%B9ng%20V%C6%B0%C6%A1ng/Huy%E1%BB%81n%20s%E1%BB%AD%20th%E1%BB%9Di%20H%C3%B9ng%20V%C6%B0%C6%A1ng%20%5BOA4QJWf_7uA%5D.mp4",
+          "size": 296628670,
+          "duration": 2395,
           "width": 1280,
           "height": 720,
           "subtitles": []
@@ -312,6 +481,76 @@
       ]
     },
     {
+      "title": "Mẹ chồng nàng dâu",
+      "slug": "me-chong-nang-dau",
+      "genres": [
+        "Tâm lý gia đình"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Mẹ chồng nàng dâu - phim AI thể loại tâm lý gia đình, 3 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/me-chong-nang-dau.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Việt Nam/Tâm lý gia đình/Mẹ chồng nàng dâu/Bán Nhà 6 Tỷ, Mẹ Còn Tiếc Giàn Thiên Lý! _ Mẹ Chồng Nàng Dâu Tập 1 [OhoQYw9P0hc].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Vi%E1%BB%87t%20Nam/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/M%E1%BA%B9%20ch%E1%BB%93ng%20n%C3%A0ng%20d%C3%A2u/B%C3%A1n%20Nh%C3%A0%206%20T%E1%BB%B7%2C%20M%E1%BA%B9%20C%C3%B2n%20Ti%E1%BA%BFc%20Gi%C3%A0n%20Thi%C3%AAn%20L%C3%BD!%20_%20M%E1%BA%B9%20Ch%E1%BB%93ng%20N%C3%A0ng%20D%C3%A2u%20T%E1%BA%ADp%201%20%5BOhoQYw9P0hc%5D.mp4",
+          "size": 10377302,
+          "duration": 64,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Movie/Việt Nam/Tâm lý gia đình/Mẹ chồng nàng dâu/Chưa Bán Được Nhà Đã Bị Giục Chuyển Phí! _ Mẹ Chồng Nàng Dâu Tập 2 [Xz3NDK37Nks].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Vi%E1%BB%87t%20Nam/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/M%E1%BA%B9%20ch%E1%BB%93ng%20n%C3%A0ng%20d%C3%A2u/Ch%C6%B0a%20B%C3%A1n%20%C4%90%C6%B0%E1%BB%A3c%20Nh%C3%A0%20%C4%90%C3%A3%20B%E1%BB%8B%20Gi%E1%BB%A5c%20Chuy%E1%BB%83n%20Ph%C3%AD!%20_%20M%E1%BA%B9%20Ch%E1%BB%93ng%20N%C3%A0ng%20D%C3%A2u%20T%E1%BA%ADp%202%20%5BXz3NDK37Nks%5D.mp4",
+          "size": 8760014,
+          "duration": 64,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Movie/Việt Nam/Tâm lý gia đình/Mẹ chồng nàng dâu/Suýt Chuyển Tiền Cho Khách Giả! Ai Kịp Ngăn Lại_ _ Mẹ Chồng Nàng Dâu Tập 3 [XBmEihEJJ4c].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Vi%E1%BB%87t%20Nam/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/M%E1%BA%B9%20ch%E1%BB%93ng%20n%C3%A0ng%20d%C3%A2u/Su%C3%BDt%20Chuy%E1%BB%83n%20Ti%E1%BB%81n%20Cho%20Kh%C3%A1ch%20Gi%E1%BA%A3!%20Ai%20K%E1%BB%8Bp%20Ng%C4%83n%20L%E1%BA%A1i_%20_%20M%E1%BA%B9%20Ch%E1%BB%93ng%20N%C3%A0ng%20D%C3%A2u%20T%E1%BA%ADp%203%20%5BXBmEihEJJ4c%5D.mp4",
+          "size": 8977646,
+          "duration": 64,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Meri Khamosh Mohabbat",
+      "slug": "meri-khamosh-mohabbat",
+      "genres": [
+        "Tình cảm"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Meri Khamosh Mohabbat - phim AI thể loại tình cảm, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/meri-khamosh-mohabbat.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Ấn Độ/Tình cảm/Meri Khamosh Mohabbat/Meri Khamosh Mohabbat - Part 1 _ Dil Ke Rishtey Aur Khamoshi _ Telefilm 2026 [ptEGo50H7HQ].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%E1%BA%A4n%20%C4%90%E1%BB%99/T%C3%ACnh%20c%E1%BA%A3m/Meri%20Khamosh%20Mohabbat/Meri%20Khamosh%20Mohabbat%20-%20Part%201%20_%20Dil%20Ke%20Rishtey%20Aur%20Khamoshi%20_%20Telefilm%202026%20%5BptEGo50H7HQ%5D.mp4",
+          "size": 252437538,
+          "duration": 1121,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
+        }
+      ]
+    },
+    {
       "title": "Nexus",
       "slug": "nexus",
       "genres": [
@@ -360,6 +599,31 @@
           "duration": 298,
           "width": 1280,
           "height": 544,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Ngày Đầu Chuyển Trường, Cô Đã Đắc Tội Với Cả Hội Con Nhà Giàu Hàn Quốc",
+      "slug": "ngay-dau-chuyen-truong-co-da-dac-toi-voi-ca-hoi-con-nha-giau-han-quoc",
+      "genres": [
+        "Học đường",
+        "Hành Động"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Ngày Đầu Chuyển Trường, Cô Đã Đắc Tội Với Cả Hội Con Nhà Giàu Hàn Quốc - phim AI thể loại học đường, hành động, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/ngay-dau-chuyen-truong-co-da-dac-toi-voi-ca-hoi-con-nha-giau-han-quoc.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Hàn Quốc/Học đường/Hành Động/Ngày Đầu Chuyển Trường, Cô Đã Đắc Tội Với Cả Hội Con Nhà Giàu Hàn Quốc/Ngày Đầu Chuyển Trường, Cô Đã Đắc Tội Với Cả Hội Con Nhà Giàu Hàn Quốc [mYgV2wwspYw].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/H%C3%A0n%20Qu%E1%BB%91c/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng/H%C3%A0nh%20%C4%90%E1%BB%99ng/Ng%C3%A0y%20%C4%90%E1%BA%A7u%20Chuy%E1%BB%83n%20Tr%C6%B0%E1%BB%9Dng%2C%20C%C3%B4%20%C4%90%C3%A3%20%C4%90%E1%BA%AFc%20T%E1%BB%99i%20V%E1%BB%9Bi%20C%E1%BA%A3%20H%E1%BB%99i%20Con%20Nh%C3%A0%20Gi%C3%A0u%20H%C3%A0n%20Qu%E1%BB%91c/Ng%C3%A0y%20%C4%90%E1%BA%A7u%20Chuy%E1%BB%83n%20Tr%C6%B0%E1%BB%9Dng%2C%20C%C3%B4%20%C4%90%C3%A3%20%C4%90%E1%BA%AFc%20T%E1%BB%99i%20V%E1%BB%9Bi%20C%E1%BA%A3%20H%E1%BB%99i%20Con%20Nh%C3%A0%20Gi%C3%A0u%20H%C3%A0n%20Qu%E1%BB%91c%20%5BmYgV2wwspYw%5D.mp4",
+          "size": 398039426,
+          "duration": 3339,
+          "width": 1280,
+          "height": 720,
           "subtitles": []
         }
       ]
@@ -586,6 +850,30 @@
       ]
     },
     {
+      "title": "Raaz E Muhabbat",
+      "slug": "raaz-e-muhabbat",
+      "genres": [
+        "Tình cảm"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Raaz E Muhabbat - phim AI thể loại tình cảm, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/raaz-e-muhabbat.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Ấn Độ/Tình cảm/Raaz E Muhabbat/Raaz E Muhabbat _ A Heart Touchig Story _ Short Film 2026 [MkNmIR9H6zY].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%E1%BA%A4n%20%C4%90%E1%BB%99/T%C3%ACnh%20c%E1%BA%A3m/Raaz%20E%20Muhabbat/Raaz%20E%20Muhabbat%20_%20A%20Heart%20Touchig%20Story%20_%20Short%20Film%202026%20%5BMkNmIR9H6zY%5D.mp4",
+          "size": 176195627,
+          "duration": 808,
+          "width": 1280,
+          "height": 704,
+          "subtitles": []
+        }
+      ]
+    },
+    {
       "title": "She Raised a Monster They Tried to Kill",
       "slug": "she-raised-a-monster-they-tried-to-kill",
       "genres": [
@@ -618,6 +906,30 @@
               "isDefault": false
             }
           ]
+        }
+      ]
+    },
+    {
+      "title": "Sự tích con muỗi",
+      "slug": "su-tich-con-muoi",
+      "genres": [
+        "Cổ tích"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Sự tích con muỗi - phim AI thể loại cổ tích, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/su-tich-con-muoi.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Việt Nam/Cổ tích/Sự tích con muỗi/NGHIỆP DUYÊN HÓA KIẾP _ Sự Tích Con Muỗi _ Phim Cổ Trang Việt Nam AI [GysFzkdIbn4].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Vi%E1%BB%87t%20Nam/C%E1%BB%95%20t%C3%ADch/S%E1%BB%B1%20t%C3%ADch%20con%20mu%E1%BB%97i/NGHI%E1%BB%86P%20DUY%C3%8AN%20H%C3%93A%20KI%E1%BA%BEP%20_%20S%E1%BB%B1%20T%C3%ADch%20Con%20Mu%E1%BB%97i%20_%20Phim%20C%E1%BB%95%20Trang%20Vi%E1%BB%87t%20Nam%20AI%20%5BGysFzkdIbn4%5D.mp4",
+          "size": 148884622,
+          "duration": 1494,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
         }
       ]
     },
@@ -939,6 +1251,142 @@
       ]
     },
     {
+      "title": "Tiểu thư ngốc nghếch lật ngược thế cờ",
+      "slug": "tieu-thu-ngoc-nghech-lat-nguoc-the-co",
+      "genres": [
+        "Tâm Lý"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Tiểu thư ngốc nghếch lật ngược thế cờ - phim AI thể loại tâm lý, 5 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/tieu-thu-ngoc-nghech-lat-nguoc-the-co.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 1 [701686278_Episode-1].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/Ti%E1%BB%83u%20th%C6%B0%20ng%E1%BB%91c%20ngh%E1%BA%BFch%20l%E1%BA%ADt%20ng%C6%B0%E1%BB%A3c%20th%E1%BA%BF%20c%E1%BB%9D/Ti%E1%BB%83u%20Th%C6%B0%20Ng%E1%BB%91c%20L%E1%BA%ADt%20Ng%C6%B0%E1%BB%A3c%20Th%E1%BA%BF%20C%E1%BB%9D%20T%E1%BA%ADp%201%20%5B701686278_Episode-1%5D.mp4",
+          "size": 8317649,
+          "duration": 106,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 2 [701686279_Episode-2].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/Ti%E1%BB%83u%20th%C6%B0%20ng%E1%BB%91c%20ngh%E1%BA%BFch%20l%E1%BA%ADt%20ng%C6%B0%E1%BB%A3c%20th%E1%BA%BF%20c%E1%BB%9D/Ti%E1%BB%83u%20Th%C6%B0%20Ng%E1%BB%91c%20L%E1%BA%ADt%20Ng%C6%B0%E1%BB%A3c%20Th%E1%BA%BF%20C%E1%BB%9D%20T%E1%BA%ADp%202%20%5B701686279_Episode-2%5D.mp4",
+          "size": 4652545,
+          "duration": 61,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 3 [701686280_Episode-3].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/Ti%E1%BB%83u%20th%C6%B0%20ng%E1%BB%91c%20ngh%E1%BA%BFch%20l%E1%BA%ADt%20ng%C6%B0%E1%BB%A3c%20th%E1%BA%BF%20c%E1%BB%9D/Ti%E1%BB%83u%20Th%C6%B0%20Ng%E1%BB%91c%20L%E1%BA%ADt%20Ng%C6%B0%E1%BB%A3c%20Th%E1%BA%BF%20C%E1%BB%9D%20T%E1%BA%ADp%203%20%5B701686280_Episode-3%5D.mp4",
+          "size": 4020318,
+          "duration": 56,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        },
+        {
+          "number": 4,
+          "title": "Tập 4",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 4 [701686281_Episode-4].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/Ti%E1%BB%83u%20th%C6%B0%20ng%E1%BB%91c%20ngh%E1%BA%BFch%20l%E1%BA%ADt%20ng%C6%B0%E1%BB%A3c%20th%E1%BA%BF%20c%E1%BB%9D/Ti%E1%BB%83u%20Th%C6%B0%20Ng%E1%BB%91c%20L%E1%BA%ADt%20Ng%C6%B0%E1%BB%A3c%20Th%E1%BA%BF%20C%E1%BB%9D%20T%E1%BA%ADp%204%20%5B701686281_Episode-4%5D.mp4",
+          "size": 5881261,
+          "duration": 59,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        },
+        {
+          "number": 5,
+          "title": "Tập 5",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Tâm Lý/Tiểu thư ngốc nghếch lật ngược thế cờ/Tiểu Thư Ngốc Lật Ngược Thế Cờ Tập 5 [701686282_Episode-5].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/T%C3%A2m%20L%C3%BD/Ti%E1%BB%83u%20th%C6%B0%20ng%E1%BB%91c%20ngh%E1%BA%BFch%20l%E1%BA%ADt%20ng%C6%B0%E1%BB%A3c%20th%E1%BA%BF%20c%E1%BB%9D/Ti%E1%BB%83u%20Th%C6%B0%20Ng%E1%BB%91c%20L%E1%BA%ADt%20Ng%C6%B0%E1%BB%A3c%20Th%E1%BA%BF%20C%E1%BB%9D%20T%E1%BA%ADp%205%20%5B701686282_Episode-5%5D.mp4",
+          "size": 5407733,
+          "duration": 55,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Tôi không làm đứa con thừa nữa",
+      "slug": "toi-khong-lam-dua-con-thua-nua",
+      "genres": [
+        "Tâm lý gia đình"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Tôi không làm đứa con thừa nữa - phim AI thể loại tâm lý gia đình, 5 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/toi-khong-lam-dua-con-thua-nua.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 1 [701922070_Episode-1].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/T%C3%B4i%20kh%C3%B4ng%20l%C3%A0m%20%C4%91%E1%BB%A9a%20con%20th%E1%BB%ABa%20n%E1%BB%AFa/(L%E1%BB%93ng%20ti%E1%BA%BFng)%20T%C3%B4i%20Kh%C3%B4ng%20L%C3%A0m%20%C4%90%E1%BB%A9a%20Con%20Th%E1%BB%ABa%20N%E1%BB%AFa!%20T%E1%BA%ADp%201%20%5B701922070_Episode-1%5D.mp4",
+          "size": 11035412,
+          "duration": 141,
+          "width": 720,
+          "height": 1282,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 2 [701922071_Episode-2].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/T%C3%B4i%20kh%C3%B4ng%20l%C3%A0m%20%C4%91%E1%BB%A9a%20con%20th%E1%BB%ABa%20n%E1%BB%AFa/(L%E1%BB%93ng%20ti%E1%BA%BFng)%20T%C3%B4i%20Kh%C3%B4ng%20L%C3%A0m%20%C4%90%E1%BB%A9a%20Con%20Th%E1%BB%ABa%20N%E1%BB%AFa!%20T%E1%BA%ADp%202%20%5B701922071_Episode-2%5D.mp4",
+          "size": 6544530,
+          "duration": 87,
+          "width": 720,
+          "height": 1282,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 3 [701922072_Episode-3].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/T%C3%B4i%20kh%C3%B4ng%20l%C3%A0m%20%C4%91%E1%BB%A9a%20con%20th%E1%BB%ABa%20n%E1%BB%AFa/(L%E1%BB%93ng%20ti%E1%BA%BFng)%20T%C3%B4i%20Kh%C3%B4ng%20L%C3%A0m%20%C4%90%E1%BB%A9a%20Con%20Th%E1%BB%ABa%20N%E1%BB%AFa!%20T%E1%BA%ADp%203%20%5B701922072_Episode-3%5D.mp4",
+          "size": 5439784,
+          "duration": 69,
+          "width": 720,
+          "height": 1282,
+          "subtitles": []
+        },
+        {
+          "number": 4,
+          "title": "Tập 4",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 4 [701922073_Episode-4].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/T%C3%B4i%20kh%C3%B4ng%20l%C3%A0m%20%C4%91%E1%BB%A9a%20con%20th%E1%BB%ABa%20n%E1%BB%AFa/(L%E1%BB%93ng%20ti%E1%BA%BFng)%20T%C3%B4i%20Kh%C3%B4ng%20L%C3%A0m%20%C4%90%E1%BB%A9a%20Con%20Th%E1%BB%ABa%20N%E1%BB%AFa!%20T%E1%BA%ADp%204%20%5B701922073_Episode-4%5D.mp4",
+          "size": 5251036,
+          "duration": 63,
+          "width": 720,
+          "height": 1282,
+          "subtitles": []
+        },
+        {
+          "number": 5,
+          "title": "Tập 5",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Tôi không làm đứa con thừa nữa/(Lồng tiếng) Tôi Không Làm Đứa Con Thừa Nữa! Tập 5 [701922074_Episode-5].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/T%C3%B4i%20kh%C3%B4ng%20l%C3%A0m%20%C4%91%E1%BB%A9a%20con%20th%E1%BB%ABa%20n%E1%BB%AFa/(L%E1%BB%93ng%20ti%E1%BA%BFng)%20T%C3%B4i%20Kh%C3%B4ng%20L%C3%A0m%20%C4%90%E1%BB%A9a%20Con%20Th%E1%BB%ABa%20N%E1%BB%AFa!%20T%E1%BA%ADp%205%20%5B701922074_Episode-5%5D.mp4",
+          "size": 4803670,
+          "duration": 78,
+          "width": 720,
+          "height": 1282,
+          "subtitles": []
+        }
+      ]
+    },
+    {
       "title": "Trò chơi ma sói",
       "slug": "tro-choi-ma-soi",
       "genres": [
@@ -960,6 +1408,99 @@
           "duration": 215,
           "width": 576,
           "height": 1024,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Trùm mafia trọng sinh chỉ muốn làm thợ bánh",
+      "slug": "trum-mafia-trong-sinh-chi-muon-lam-tho-banh",
+      "genres": [
+        "Tâm lý gia đình"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Trùm mafia trọng sinh chỉ muốn làm thợ bánh - phim AI thể loại tâm lý gia đình, 5 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/trum-mafia-trong-sinh-chi-muon-lam-tho-banh.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 1 [701822412_Episode-1].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/Tr%C3%B9m%20mafia%20tr%E1%BB%8Dng%20sinh%20ch%E1%BB%89%20mu%E1%BB%91n%20l%C3%A0m%20th%E1%BB%A3%20b%C3%A1nh/Tr%C3%B9m%20Mafia%20Tr%E1%BB%8Dng%20Sinh%20Ch%E1%BB%89%20Mu%E1%BB%91n%20L%C3%A0m%20Th%E1%BB%A3%20B%C3%A1nh%20T%E1%BA%ADp%201%20%5B701822412_Episode-1%5D.mp4",
+          "size": 14702995,
+          "duration": 182,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        },
+        {
+          "number": 2,
+          "title": "Tập 2",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 2 [701822413_Episode-2].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/Tr%C3%B9m%20mafia%20tr%E1%BB%8Dng%20sinh%20ch%E1%BB%89%20mu%E1%BB%91n%20l%C3%A0m%20th%E1%BB%A3%20b%C3%A1nh/Tr%C3%B9m%20Mafia%20Tr%E1%BB%8Dng%20Sinh%20Ch%E1%BB%89%20Mu%E1%BB%91n%20L%C3%A0m%20Th%E1%BB%A3%20B%C3%A1nh%20T%E1%BA%ADp%202%20%5B701822413_Episode-2%5D.mp4",
+          "size": 5639264,
+          "duration": 68,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        },
+        {
+          "number": 3,
+          "title": "Tập 3",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 3 [701822414_Episode-3].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/Tr%C3%B9m%20mafia%20tr%E1%BB%8Dng%20sinh%20ch%E1%BB%89%20mu%E1%BB%91n%20l%C3%A0m%20th%E1%BB%A3%20b%C3%A1nh/Tr%C3%B9m%20Mafia%20Tr%E1%BB%8Dng%20Sinh%20Ch%E1%BB%89%20Mu%E1%BB%91n%20L%C3%A0m%20Th%E1%BB%A3%20B%C3%A1nh%20T%E1%BA%ADp%203%20%5B701822414_Episode-3%5D.mp4",
+          "size": 5552992,
+          "duration": 83,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        },
+        {
+          "number": 4,
+          "title": "Tập 4",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 4 [701822415_Episode-4].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/Tr%C3%B9m%20mafia%20tr%E1%BB%8Dng%20sinh%20ch%E1%BB%89%20mu%E1%BB%91n%20l%C3%A0m%20th%E1%BB%A3%20b%C3%A1nh/Tr%C3%B9m%20Mafia%20Tr%E1%BB%8Dng%20Sinh%20Ch%E1%BB%89%20Mu%E1%BB%91n%20L%C3%A0m%20Th%E1%BB%A3%20B%C3%A1nh%20T%E1%BA%ADp%204%20%5B701822415_Episode-4%5D.mp4",
+          "size": 8403699,
+          "duration": 120,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        },
+        {
+          "number": 5,
+          "title": "Tập 5",
+          "file": "AI_Film_v2/Movie/Âu Mỹ/Tâm lý gia đình/Trùm mafia trọng sinh chỉ muốn làm thợ bánh/Trùm Mafia Trọng Sinh Chỉ Muốn Làm Thợ Bánh Tập 5 [701822416_Episode-5].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/%C3%82u%20M%E1%BB%B9/T%C3%A2m%20l%C3%BD%20gia%20%C4%91%C3%ACnh/Tr%C3%B9m%20mafia%20tr%E1%BB%8Dng%20sinh%20ch%E1%BB%89%20mu%E1%BB%91n%20l%C3%A0m%20th%E1%BB%A3%20b%C3%A1nh/Tr%C3%B9m%20Mafia%20Tr%E1%BB%8Dng%20Sinh%20Ch%E1%BB%89%20Mu%E1%BB%91n%20L%C3%A0m%20Th%E1%BB%A3%20B%C3%A1nh%20T%E1%BA%ADp%205%20%5B701822416_Episode-5%5D.mp4",
+          "size": 7630971,
+          "duration": 79,
+          "width": 720,
+          "height": 1280,
+          "subtitles": []
+        }
+      ]
+    },
+    {
+      "title": "Truy quỷ sư giả làm học sinh",
+      "slug": "truy-quy-su-gia-lam-hoc-sinh",
+      "genres": [
+        "Học đường",
+        "Gỉa tưởng"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Truy quỷ sư giả làm học sinh - phim AI thể loại học đường, gỉa tưởng, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/truy-quy-su-gia-lam-hoc-sinh.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Hàn Quốc/Học đường/Gỉa tưởng/Truy quỷ sư giả làm học sinh/Hai truy quỷ sư giả làm học sinh vào trường điều tra, không ngờ nhà thi đấu đang giấu một đại trận [cRQ9pfG1iX0].mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/H%C3%A0n%20Qu%E1%BB%91c/H%E1%BB%8Dc%20%C4%91%C6%B0%E1%BB%9Dng/G%E1%BB%89a%20t%C6%B0%E1%BB%9Fng/Truy%20qu%E1%BB%B7%20s%C6%B0%20gi%E1%BA%A3%20l%C3%A0m%20h%E1%BB%8Dc%20sinh/Hai%20truy%20qu%E1%BB%B7%20s%C6%B0%20gi%E1%BA%A3%20l%C3%A0m%20h%E1%BB%8Dc%20sinh%20v%C3%A0o%20tr%C6%B0%E1%BB%9Dng%20%C4%91i%E1%BB%81u%20tra%2C%20kh%C3%B4ng%20ng%E1%BB%9D%20nh%C3%A0%20thi%20%C4%91%E1%BA%A5u%20%C4%91ang%20gi%E1%BA%A5u%20m%E1%BB%99t%20%C4%91%E1%BA%A1i%20tr%E1%BA%ADn%20%5BcRQ9pfG1iX0%5D.mp4",
+          "size": 270490464,
+          "duration": 1845,
+          "width": 1280,
+          "height": 720,
           "subtitles": []
         }
       ]
@@ -1242,6 +1783,31 @@
               "isDefault": false
             }
           ]
+        }
+      ]
+    },
+    {
+      "title": "Xuyên Không Về Cổ Đại, Nàng Chọn Mảnh Đất Chẳng Ai Muốn Dựng Cọn Nước, Mở Trang Trại Thỏ Phát Tài",
+      "slug": "xuyen-khong-ve-co-dai-nang-chon-manh-dat-chang-ai-muon-dung-con-nuoc-mo-trang-trai-tho-phat-tai",
+      "genres": [
+        "Xuyên không",
+        "Cổ trang"
+      ],
+      "language": "vi",
+      "releaseYear": 2026,
+      "synopsis": "Xuyên Không Về Cổ Đại, Nàng Chọn Mảnh Đất Chẳng Ai Muốn Dựng Cọn Nước, Mở Trang Trại Thỏ Phát Tài - phim AI thể loại xuyên không, cổ trang, 1 tập. Hình ảnh và âm thanh được tạo bằng AI.",
+      "posterUrl": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/posters/xuyen-khong-ve-co-dai-nang-chon-manh-dat-chang-ai-muon-dung-con-nuoc-mo-trang-trai-tho-phat-tai.jpg",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Tập 1",
+          "file": "AI_Film_v2/Movie/Trung Quốc/Xuyên không/Cổ trang/Xuyên Không Về Cổ Đại, Nàng Chọn Mảnh Đất Chẳng Ai Muốn Dựng Cọn Nước, Mở Trang Trại Thỏ Phát Tài/Xuyên Không Về Cổ Đại, Nàng Chọn Mảnh Đất Chẳng Ai Muốn Dựng Cọn Nước, Mở Trang Trại Thỏ Phát Tài.mp4",
+          "url": "https://pub-a25bed12bf0f4514910fbf5cba32666f.r2.dev/ai-film/AI_Film_v2/Movie/Trung%20Qu%E1%BB%91c/Xuy%C3%AAn%20kh%C3%B4ng/C%E1%BB%95%20trang/Xuy%C3%AAn%20Kh%C3%B4ng%20V%E1%BB%81%20C%E1%BB%95%20%C4%90%E1%BA%A1i%2C%20N%C3%A0ng%20Ch%E1%BB%8Dn%20M%E1%BA%A3nh%20%C4%90%E1%BA%A5t%20Ch%E1%BA%B3ng%20Ai%20Mu%E1%BB%91n%20D%E1%BB%B1ng%20C%E1%BB%8Dn%20N%C6%B0%E1%BB%9Bc%2C%20M%E1%BB%9F%20Trang%20Tr%E1%BA%A1i%20Th%E1%BB%8F%20Ph%C3%A1t%20T%C3%A0i/Xuy%C3%AAn%20Kh%C3%B4ng%20V%E1%BB%81%20C%E1%BB%95%20%C4%90%E1%BA%A1i%2C%20N%C3%A0ng%20Ch%E1%BB%8Dn%20M%E1%BA%A3nh%20%C4%90%E1%BA%A5t%20Ch%E1%BA%B3ng%20Ai%20Mu%E1%BB%91n%20D%E1%BB%B1ng%20C%E1%BB%8Dn%20N%C6%B0%E1%BB%9Bc%2C%20M%E1%BB%9F%20Trang%20Tr%E1%BA%A1i%20Th%E1%BB%8F%20Ph%C3%A1t%20T%C3%A0i.mp4",
+          "size": 601560823,
+          "duration": 5784,
+          "width": 1280,
+          "height": 720,
+          "subtitles": []
         }
       ]
     },

@@ -40,6 +40,10 @@ AI_Film_v2/
         ├── The Fallen.ep1.en.srt          <- phụ đề (tuỳ chọn): <tên video>.<mã ngôn ngữ>.srt
         ├── The Fallen.ep2.mp4
         └── The Fallen.ep2.vi.srt          <- phụ đề "vi" là phụ đề mặc định
+
+Với phim trong thư mục `Movie/`, có thể phân loại theo nhiều cấp, ví dụ
+`Movie/Hàn Quốc/Học đường/Hành Động/<Tên phim>/<các tập>.mp4`.
+Các thư mục phân loại sau quốc gia được ghi vào `genres`; tên quốc gia không được coi là thể loại.
 ```
 
 - Video phải là **`.mp4` H.264 + AAC** (iPhone không phát được `.webm`/AV1). Đổi định dạng:

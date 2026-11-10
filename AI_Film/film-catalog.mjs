@@ -1,8 +1,9 @@
 // Builds AI_Film/CATALOG.json, the list of films `npm run seed:catalog` puts into the catalog.
 //   npm run film:catalog   (after `npm run film:push`, so every video is already on R2)
 // Only the films on this machine are rebuilt; the others keep their CATALOG.json entry, so no film:pull is needed.
-// A film is a folder "<genre> - <genre>/<title>/" of episodes "...ep1.mp4"; a video straight in AI_Film_v2 is a
-// one-episode film described in ROOT_FILMS. For each film it measures the episodes with ffmpeg, takes a poster
+// A film is a folder containing its episodes; regular folders are "<genre> - <genre>/<title>/" and Movie
+// folders are "Movie/<country>/<genre>/<title>/". A video straight in AI_Film_v2 is a one-episode film
+// described in ROOT_FILMS. For each film it measures the episodes with ffmpeg, takes a poster
 // (the .jpg beside the video, else a frame of episode 1), uploads the poster next to the videos on R2 and
 // writes the public URLs. Subtitles beside a video ("<video name>.<lang>.srt") are turned into WebVTT and uploaded too.
 // Synopsis, year and language can be set by hand in catalog-meta.json ({ "<title>": { synopsis, releaseYear, language } }).
@@ -132,15 +133,24 @@ function films() {
       found.push({ ...ROOT_FILMS[entry.name], files: [full], jpg: existsSync(jpg) ? jpg : null });
     }
     if (!entry.isDirectory()) continue;
-    const genres = entry.name.split(' - ').map((g) => g.trim()).filter(Boolean);
-    for (const movie of readdirSync(full, { withFileTypes: true }).filter((d) => d.isDirectory())) {
-      const dir = path.join(full, movie.name);
-      const files = readdirSync(dir)
-        .filter((name) => VIDEO.test(name))
+    const rootGenres = entry.name === 'Movie' ? null : entry.name.split(' - ').map((g) => g.trim()).filter(Boolean);
+    const walk = (dir, parts) => {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      const files = entries
+        .filter((item) => item.isFile() && VIDEO.test(item.name))
+        .map((item) => item.name)
         .sort((a, b) => episodeNumber(a) - episodeNumber(b) || a.localeCompare(b, 'vi'))
         .map((name) => path.join(dir, name));
-      if (files.length) found.push({ title: movie.name, genres, files, jpg: null });
-    }
+      if (files.length) {
+        const genres = rootGenres ?? parts.slice(2, -1).map((genre) => genre.trim()).filter(Boolean);
+        found.push({ title: path.basename(dir), genres, files, jpg: null });
+        return;
+      }
+      for (const child of entries.filter((item) => item.isDirectory())) {
+        walk(path.join(dir, child.name), [...parts, child.name]);
+      }
+    };
+    walk(full, [entry.name]);
   }
   return found.sort((a, b) => a.title.localeCompare(b.title, 'vi'));
 }
