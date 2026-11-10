@@ -15,6 +15,8 @@ export interface ChatToolCall {
   name: string;
   /** Raw JSON string the model produced for the arguments. */
   arguments: string;
+  /** Gemini thought signature that must be echoed back on the next turn. */
+  thoughtSignature?: string;
 }
 
 export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';

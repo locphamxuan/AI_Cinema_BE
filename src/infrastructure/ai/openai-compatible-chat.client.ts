@@ -22,6 +22,7 @@ interface OpenAiToolCall {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
+  extra_content?: { google: { thought_signature: string } };
 }
 
 interface OpenAiTool {
@@ -42,6 +43,7 @@ interface OpenAiResponseBody {
         id?: string;
         type?: string;
         function?: { name?: string; arguments?: string | Record<string, unknown> };
+        extra_content?: { google?: { thought_signature?: string } };
       }>;
     };
     finish_reason?: string;
@@ -168,10 +170,12 @@ export class OpenAiCompatibleChatClient implements ChatClient {
       const name = call.function?.name;
       if (!name) continue;
       const args = call.function?.arguments;
+      const signature = call.extra_content?.google?.thought_signature;
       toolCalls.push({
         id: call.id || `tool_call_${index}`,
         name,
         arguments: typeof args === 'string' ? args : JSON.stringify(args ?? {}),
+        ...(signature ? { thoughtSignature: signature } : {}),
       });
     }
 
@@ -202,6 +206,7 @@ function toOpenAiToolCall(call: ChatToolCall): OpenAiToolCall {
     id: call.id,
     type: 'function',
     function: { name: call.name, arguments: call.arguments },
+    ...(call.thoughtSignature ? { extra_content: { google: { thought_signature: call.thoughtSignature } } } : {}),
   };
 }
 
