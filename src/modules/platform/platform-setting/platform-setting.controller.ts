@@ -14,8 +14,9 @@ export class PlatformSettingController {
   constructor(private readonly platformSettingService: PlatformSettingService) {}
 
   @Get()
-  // Reviewers need the rates and the valid price range while funding and pricing.
-  @RequirePermission(PERMISSION.PLATFORM_SETTINGS_MANAGE, PERMISSION.EPISODE_PUBLISH)
+  // Reviewers need the rates and the valid price range while funding and pricing: since 07/11/2026 pricing
+  // is `episode:price` (Reviewer) and publishing `episode:publish` (Admin), so both open the settings.
+  @RequirePermission(PERMISSION.PLATFORM_SETTINGS_MANAGE, PERMISSION.EPISODE_PUBLISH, PERMISSION.EPISODE_PRICE)
   async get() {
     return this.platformSettingService.get();
   }
