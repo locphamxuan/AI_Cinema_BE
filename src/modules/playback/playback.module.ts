@@ -1,12 +1,16 @@
 import { Module } from '@nestjs/common';
-import { AdBreakModule } from './ad-break/ad-break.module';
-import { DeviceModule } from './device/device.module';
-import { StreamingSessionModule } from './streaming-session/streaming-session.module';
-import { WatchProgressModule } from './watch-progress/watch-progress.module';
+import { AccessDecisionModule } from 'src/modules/episode-access/access-decision/access-decision.module';
+import { RecommendationController } from './recommendation/recommendation.controller';
+import { RecommendationService } from './recommendation/recommendation.service';
+import { WatchRoomController } from './watch-room/watch-room.controller';
+import { WatchRoomGateway } from './watch-room/watch-room.gateway';
+import { WatchRoomService } from './watch-room/watch-room.service';
 
 /** Main Flow 3 (playback & viewing experience) and Main Flow 4 (devices & concurrent streams). */
 @Module({
-  imports: [StreamingSessionModule, DeviceModule, WatchProgressModule, AdBreakModule],
-  exports: [StreamingSessionModule, WatchProgressModule, AdBreakModule],
+  imports: [AccessDecisionModule],
+  controllers: [WatchRoomController, RecommendationController],
+  providers: [WatchRoomService, WatchRoomGateway, RecommendationService],
+  exports: [WatchRoomService, RecommendationService],
 })
 export class PlaybackModule {}

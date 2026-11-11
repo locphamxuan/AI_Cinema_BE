@@ -85,14 +85,17 @@ export class AccessDecisionService {
     // A published episode always carries a price (the release gate insists on one); the lowest
     // price of the platform stands in while a row predates the column.
     const coinPrice = episode.coinPrice ?? settings.episodeCoinPriceMin;
-    // BR-03: the movie's own count when its Reviewer set one, else the platform's.
-    const isFreeStarter = episode.episodeNumber <= (episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount);
+    // BR-03/BR-19: the Admin flags each episode before publish. A free-for-Guest episode is free
+    // for Members too; the movie's own count still stands in for rows that predate the flags.
+    const isFreeStarter =
+      episode.isFreeForGuest ??
+      (episode.episodeNumber <= (episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount));
     const base: DecisionBase = {
       episodeId: episode.id,
       movieId: episode.movieId,
       availability: EPISODE_AVAILABILITY.AVAILABLE,
       notice: null,
-      required: { coinPrice, isFreeStarter },
+      required: { coinPrice, isFreeForGuest: isFreeStarter, isFreeForMember: isFreeStarter },
     };
     const actor = userId ? ACTOR_TYPE.MEMBER : ACTOR_TYPE.GUEST;
 

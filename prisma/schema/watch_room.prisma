@@ -1,0 +1,96 @@
+/// Real-time watch rooms (Watch Party, MF-3/MF-4 — planned 2026-11-11).
+/// One room per shared playback session; the Host drives Play/Pause/Seek through a WebSocket
+/// gateway and every participant syncs to the Host's clock.
+model WatchRoom {
+    id                  String   @id @default(uuid()) @db.Uuid
+    /// 6–8 base32 characters, shown to members who join by code.
+    roomCode            String   @unique @map("room_code") @db.VarChar(16)
+    episodeId           String   @map("episode_id") @db.Uuid
+    hostUserId          String?  @map("host_user_id") @db.Uuid
+    /// The playback state the Host last sent: PLAYING / PAUSED / ENDED.
+    status              WatchRoomStatus @default(CREATED)
+    /// The Host's clock, in seconds from the episode start, used to sync participants.
+    currentPositionSeconds Int  @map("current_position_seconds") @db.Integer
+    /// The last time the Host sent a sync; a room whose Host is silent for 45 s is taken over.
+    lastHostPingAt      DateTime? @map("last_host_ping_at") @db.Timestamptz(6)
+    /// When the room closes on its own: 15 min after the episode ends or the Host leaves.
+    expiresAt           DateTime? @map("expires_at") @db.Timestamptz(6)
+    createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+    episode     Episode        @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+    hostUser    User?          @relation("WatchRoomHost", fields: [hostUserId], references: [id], onDelete: SetNull)
+    participants RoomParticipant[]
+
+    @@index([episodeId])
+    @@index([status])
+    @@index([expiresAt])
+    @@map("watch_rooms")
+}
+
+enum WatchRoomStatus {
+    CREATED
+    WAITING_FOR_PARTICIPANTS
+    PLAYING
+    PAUSED
+    ENDED
+    DISBANDED
+}
+
+/// One member watching in a room. Every participant is entitlement-checked independently before
+/// the room hands out its own signed stream URL (BR-69).
+model RoomParticipant {
+    id            String    @id @default(uuid()) @db.Uuid
+    roomId        String    @map("room_id") @db.Uuid
+    userId        String    @map("user_id") @db.Uuid
+    /// The role this member plays in the room.
+    role          RoomParticipantRole @default(PARTICIPANT)
+    /// When the member joined; the Host is the first.
+    joinedAt      DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+    /// The last sync the member acknowledged; used to detect drift and dead members.
+    lastPingAt    DateTime? @map("last_ping_at") @db.Timestamptz(6)
+    /// Cleared when the member's entitlement is revoked mid-session.
+    leftAt        DateTime? @map("left_at") @db.Timestamptz(6)
+
+    room     WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+    participant User      @relation("RoomParticipantUser", fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([roomId, userId])
+    @@index([roomId])
+    @@index([userId])
+    @@map("room_participants")
+}
+
+enum RoomParticipantRole {
+    HOST
+    PARTICIPANT
+}
+
+/// Friendships between members (MF-3/MF-4 — planned 2026-11-11). A Host invites online friends
+/// into a watch room through the WebSocket gateway; the invite carries a 60 s cooldown.
+model Friendship {
+    id         String          @id @default(uuid()) @db.Uuid
+    senderId   String          @map("sender_id") @db.Uuid
+    receiverId String          @map("receiver_id") @db.Uuid
+    status     FriendshipStatus @default(PENDING)
+    /// When the receiver answered; null until then.
+    respondedAt DateTime?       @map("responded_at") @db.Timestamptz(6)
+    /// The last invite the sender sent to this friend; the gateway refuses a second one within 60 s.
+    lastInviteAt DateTime?     @map("last_invite_at") @db.Timestamptz(6)
+    createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+    sender   User      @relation("FriendshipSender", fields: [senderId], references: [id], onDelete: Cascade)
+    receiver User      @relation("FriendshipReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+    @@unique([senderId, receiverId])
+    @@index([senderId, status])
+    @@index([receiverId, status])
+    @@map("friendships")
+}
+
+enum FriendshipStatus {
+    PENDING
+    ACCEPTED
+    BLOCKED
+}
