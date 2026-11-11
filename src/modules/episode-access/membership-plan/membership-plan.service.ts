@@ -83,10 +83,6 @@ export class MembershipPlanService {
       .then((plans) => plans.map(viewOf));
   }
 
-  findById(id: string): Promise<MembershipPlan> {
-    return this.prisma.membershipPlan.findUniqueOrThrow({ where: { id } });
-  }
-
   create(
     dto: {
       code: string;

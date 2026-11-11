@@ -8,7 +8,7 @@ const isPlainData = (value: unknown): value is object =>
   !(value instanceof StreamableFile) &&
   !Buffer.isBuffer(value);
 
-/** Recursively turns BigInt (Token amounts, file sizes) into numbers, which JSON can encode. */
+/** Recursively turns BigInt (VND amounts, file sizes) into numbers, which JSON can encode. */
 function withoutBigInt(value: unknown): unknown {
   if (typeof value === 'bigint') return Number(value);
   if (Array.isArray(value)) return value.map(withoutBigInt);

@@ -1,16 +1,20 @@
 /**
- * Edge gate in front of MinIO for `/public/hls/*`.
+ * Edge gate in front of the Cloudflare R2 bucket for `/public/hls/*`.
  *
  * - Verifies `?s=<sessionId>&exp=<unix>&sig=HMAC_SHA256(PLAYBACK_URL_SECRET,
  *   sessionId|assetId|exp)` where assetId is the 3rd path segment (a UUID).
- * - Proxies verified requests to ORIGIN_BASE (MinIO gateway) and caches full GETs
- *   by path: segments for a year, playlists for 10s, subtitles for an hour.
- * - Passes Range through for players (partial bodies are never cached), keeps the
- *   origin's 5xx status visible for alerting, and adds public CORS headers.
- * - Anything malformed, unsigned, expired or tampered ends here with 403/404 and
- *   never reaches MinIO.
+ * - Reads verified objects straight from the R2 binding (MEDIA_BUCKET), so the bucket
+ *   stays private: with no public r2.dev URL and no public custom domain, this Worker is
+ *   the only way in and the token can never be walked around. ORIGIN_BASE stays as an
+ *   HTTP-origin fallback for a local MinIO during development.
+ * - Caches full GETs by path: segments for a year, playlists for 10s, subtitles for an hour.
+ * - Serves Range requests as 206 (partial bodies are never cached), answers conditional
+ *   requests, and adds public CORS headers.
+ * - Anything malformed, unsigned, expired or tampered ends here with 403/404 and never
+ *   reaches the bucket.
  *
- * Deploy: `wrangler deploy` with PLAYBACK_URL_SECRET + ORIGIN_BASE set (see README.md).
+ * Deploy: `wrangler deploy` with PLAYBACK_URL_SECRET set and the r2_buckets binding
+ * pointing at the bucket (see README.md).
  */
 
 const encoder = new TextEncoder();
@@ -33,7 +37,6 @@ export default {
     }
 
     const range = request.headers.get('Range');
-    const ifRange = request.headers.get('If-Range');
     const cache = caches.default;
     const cacheKey = new Request(url.origin + url.pathname, request);
     // A range request must not hit (or fill) the full-body cache: a 206 slice served
@@ -43,19 +46,17 @@ export default {
       if (hit) return decorate(hit, url.pathname);
     }
 
-    const headers = new Headers();
-    if (range) headers.set('Range', range);
-    if (ifRange) headers.set('If-Range', ifRange);
-
     let origin;
     try {
-      origin = await fetch(env.ORIGIN_BASE + url.pathname, { method: request.method, headers });
+      origin = env.MEDIA_BUCKET
+        ? await fromBucket(env.MEDIA_BUCKET, url.pathname.slice(1), request)
+        : await fromOrigin(env.ORIGIN_BASE, url.pathname, request);
     } catch (error) {
-      // Keep fetch failures distinct from a real 404 so operators can alert on them.
+      // Keep read failures distinct from a real 404 so operators can alert on them.
       console.error('playback origin unreachable', url.pathname, error);
       return text('Bad gateway', 502);
     }
-    if (!origin.ok) {
+    if (!origin.ok && origin.status !== 206 && origin.status !== 304) {
       if (origin.status >= 500) console.error('playback origin error', origin.status, url.pathname);
       return text(origin.status === 404 ? 'Not found' : 'Origin error', origin.status);
     }
@@ -69,6 +70,55 @@ export default {
     return response;
   },
 };
+
+/**
+ * Reads the object from the private R2 bucket. `range`/`onlyIf` take the request headers
+ * directly, and R2 reports back which slice it returned so the 206 carries a correct
+ * Content-Range - a player seeking inside a segment depends on it.
+ */
+export async function fromBucket(bucket, key, request) {
+  const conditional = request.headers.get('If-None-Match') ?? request.headers.get('If-Match');
+  const object = await bucket.get(key, {
+    range: request.headers.has('Range') ? request.headers : undefined,
+    onlyIf: conditional ? request.headers : undefined,
+  });
+  if (object === null) return new Response('Not found', { status: 404 });
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('ETag', object.httpEtag);
+  headers.set('Accept-Ranges', 'bytes');
+  // R2 returns an R2Object with no body when a precondition fails.
+  if (!('body' in object)) {
+    return new Response(null, { status: request.headers.get('If-None-Match') ? 304 : 412, headers });
+  }
+  const slice = contentRange(object);
+  if (!slice) return new Response(object.body, { status: 200, headers });
+  headers.set('Content-Range', slice.header);
+  headers.set('Content-Length', String(slice.length));
+  return new Response(object.body, { status: 206, headers });
+}
+
+/** `bytes <start>-<end>/<size>` for the slice R2 actually returned, or null for a full body. */
+function contentRange(object) {
+  const range = object.range;
+  if (!range) return null;
+  const size = object.size;
+  const start = 'suffix' in range ? size - range.suffix : (range.offset ?? 0);
+  const length = 'suffix' in range ? range.suffix : (range.length ?? size - start);
+  if (start === 0 && length === size) return null;
+  return { header: `bytes ${start}-${start + length - 1}/${size}`, length };
+}
+
+/** Development fallback: a plain HTTP origin (local MinIO) instead of the R2 binding. */
+async function fromOrigin(originBase, pathname, request) {
+  const headers = new Headers();
+  for (const name of ['Range', 'If-Range', 'If-None-Match']) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return fetch(originBase + pathname, { method: request.method, headers });
+}
 
 function text(body, status) {
   return new Response(body, { status, headers: { ...CORS } });
@@ -104,17 +154,32 @@ async function hmacHex(secret, message) {
   return [...new Uint8Array(signature)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Kept in step with contentTypeOf()/cacheControlOf() in src/infrastructure/storage/object-storage.ts,
+// so an object carries the same type and TTL whether it is served from the edge or the origin.
+const TYPES = {
+  '.m3u8': 'application/vnd.apple.mpegurl',
+  '.ts': 'video/mp2t',
+  '.m4s': 'video/iso.segment',
+  '.mp4': 'video/mp4',
+  '.vtt': 'text/vtt',
+};
+const SEGMENT_EXTENSIONS = ['.ts', '.m4s', '.mp4'];
+
+function extensionOf(pathname) {
+  const dot = pathname.lastIndexOf('.');
+  return dot >= 0 ? pathname.slice(dot).toLowerCase() : '';
+}
+
 function contentType(pathname) {
-  if (pathname.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
-  if (pathname.endsWith('.ts')) return 'video/mp2t';
-  if (pathname.endsWith('.vtt')) return 'text/vtt';
-  return 'application/octet-stream';
+  return TYPES[extensionOf(pathname)] ?? 'application/octet-stream';
 }
 
 function cacheControl(pathname) {
-  if (pathname.endsWith('.ts')) return 'public, max-age=31536000, immutable';
-  if (pathname.endsWith('.m3u8')) return 'public, max-age=10';
-  if (pathname.endsWith('.vtt')) return 'public, max-age=3600';
+  const extension = extensionOf(pathname);
+  // Segments never change once transcoded; a take-down purges them instead of waiting them out.
+  if (SEGMENT_EXTENSIONS.includes(extension)) return 'public, max-age=31536000, immutable';
+  if (extension === '.m3u8') return 'public, max-age=10';
+  if (extension === '.vtt') return 'public, max-age=3600';
   return 'public, max-age=86400';
 }
 

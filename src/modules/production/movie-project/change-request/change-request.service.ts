@@ -12,13 +12,13 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
+import { removeQuietly } from 'src/infrastructure/storage/remove-quietly';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus } from 'src/modules/production/project-access/project-rules';
-import { ReviewerTokenService } from 'src/modules/production/reviewer-token/reviewer-token.service';
 import type { ProposeChangeRequestDto, ResolveChangeRequestDto } from './dto/change-request.request.dto';
 import { PROJECT_REF } from 'src/modules/production/project-access/project-relations';
 
@@ -45,8 +45,8 @@ const DETAIL = {
 
 /**
  * BR-55: the Reviewer in charge or a Creator of the team asks the Admin to change a project, giving the
- * reason and proof; only the Admin decides. A budget supplement that is approved is granted to the
- * project's Reviewer in the same step.
+ * reason and proof; only the Admin decides. More production cost is asked for with a cost request
+ * (cost-request), not here.
  */
 @Injectable()
 export class ChangeRequestService {
@@ -54,7 +54,6 @@ export class ChangeRequestService {
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
     private readonly storage: ObjectStorage,
-    private readonly budgets: ReviewerTokenService,
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
   ) {}
@@ -71,7 +70,6 @@ export class ChangeRequestService {
     }
     assertProjectStatus(project.status, LIVE_PROJECT, 'send a change request');
     const requestType = dto.requestType ?? ChangeRequestType.PROJECT_UPDATE;
-    this.assertTokens(requestType, dto.requestedTokens, proof);
     await this.assertScope(projectId, dto);
     const attachment = proof ? await this.storeProof(projectId, proof) : null;
 
@@ -86,7 +84,6 @@ export class ChangeRequestService {
             requestType,
             content: dto.content.trim(),
             reason: dto.reason.trim(),
-            requestedTokens: dto.requestedTokens === undefined ? undefined : BigInt(dto.requestedTokens),
             ...(attachment ?? {}),
           },
           include: DETAIL,
@@ -114,14 +111,14 @@ export class ChangeRequestService {
             entityId: request.id,
             projectId,
             actorId: user.id,
-            payload: { requestType, requestedTokens: dto.requestedTokens ?? null },
+            payload: { requestType },
           },
           tx,
         );
         return request;
       })
       .catch(async (error: unknown) => {
-        if (attachment) await this.storage.remove(attachment.attachmentKey, 'private').catch(() => undefined);
+        if (attachment) await removeQuietly(this.storage, attachment.attachmentKey, 'private');
         throw error;
       });
   }
@@ -175,10 +172,6 @@ export class ChangeRequestService {
         },
       });
       if (count === 0) throw new ConflictException('This change request was already answered');
-      if (approve && request.requestType === ChangeRequestType.BUDGET_SUPPLEMENT && request.requestedTokens) {
-        const reason = `Duyệt đề xuất bổ sung ngân sách cho phim "${request.project.movie.title}"`;
-        await this.budgets.grantWithin(tx, request.project.reviewerId, Number(request.requestedTokens), reason, admin);
-      }
       await this.notifications.notify(
         [...new Set([request.requestedById, request.project.reviewerId])],
         {
@@ -203,15 +196,6 @@ export class ChangeRequestService {
       );
       return tx.projectChangeRequest.findUniqueOrThrow({ where: { id: changeRequestId }, include: DETAIL });
     });
-  }
-
-  private assertTokens(type: ChangeRequestType, tokens: number | undefined, proof: Express.Multer.File | undefined) {
-    if (type === ChangeRequestType.BUDGET_SUPPLEMENT) {
-      if (!tokens) throw new BadRequestException('A budget supplement states the Token asked for (requestedTokens)');
-      if (!proof) throw new BadRequestException('A budget supplement needs proof attached (e.g. the studio quote)');
-    } else if (tokens !== undefined) {
-      throw new BadRequestException('Only a budget supplement asks for Token');
-    }
   }
 
   private async assertScope(projectId: string, dto: ProposeChangeRequestDto) {

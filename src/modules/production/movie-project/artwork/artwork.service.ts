@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
+import { removeQuietly } from 'src/infrastructure/storage/remove-quietly';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
@@ -72,7 +73,7 @@ export class ArtworkService {
   private async dropOld(url: string | null): Promise<void> {
     const prefix = this.storage.publicUrl('x').slice(0, -1);
     if (!url?.startsWith(prefix)) return;
-    await this.storage.remove(url.slice(prefix.length), 'public').catch(() => undefined);
+    await removeQuietly(this.storage, url.slice(prefix.length), 'public');
   }
 
   private record(tx: PrismaTx, projectId: string, entityId: string, actorId: string, kind: 'poster' | 'thumbnail') {

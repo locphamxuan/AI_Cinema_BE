@@ -8,15 +8,22 @@ import { UserRole } from '@prisma/client';
  */
 export const PERMISSION = {
   // MF-1 - movie projects
+  PROJECT_CREATE: 'project:create',
   PROJECT_MANAGE: 'project:manage',
-  PROJECT_FEE_ALLOCATE: 'project:fee.allocate',
   PROJECT_READ_ALL: 'project:read.all',
   PROJECT_SUGGEST: 'project:suggest',
   PROJECT_CHANGE_REVIEW: 'project:change.review',
-  STUDIO_HANDOFF: 'studio:handoff',
+  COST_REQUEST: 'cost:request',
+  COST_APPROVE: 'cost:approve',
+  COST_ADJUST: 'cost:adjust',
+  CONTRACT_MANAGE: 'contract:manage',
+  SCRIPT_WRITE: 'script:write',
+  SCRIPT_APPROVE: 'script:approve',
+  STUDIO_PORTAL: 'studio:portal',
   STUDIO_MANAGE: 'studio:manage',
   MEDIA_INGEST: 'media:ingest',
   CONTENT_REVIEW: 'content:review',
+  EPISODE_PRICE: 'episode:price',
   EPISODE_PUBLISH: 'episode:publish',
   PRICE_ALERT_MANAGE: 'price-alert:manage',
   GENRE_MANAGE: 'genre:manage',
@@ -44,20 +51,19 @@ export const PERMISSION = {
   USER_MANAGE: 'user:manage',
   ROLE_MANAGE: 'role:manage',
   PLATFORM_SETTINGS_MANAGE: 'platform:settings.manage',
-  TOKEN_BUDGET_MANAGE: 'token-budget:manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSION)[keyof typeof PERMISSION];
 
 /** Area (groups the Admin screen) and description of every permission, seeded into `permissions`. */
 export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; description: string }> = {
+  'project:create': {
+    area: 'movie-project',
+    description: 'Create a movie project, pick its Reviewer, Creator and studio, reassign the Creator',
+  },
   'project:manage': {
     area: 'movie-project',
     description: 'Create movie projects, edit their seasons, episodes and idea files, assign a Creator, cancel them',
-  },
-  'project:fee.allocate': {
-    area: 'movie-project',
-    description: 'Allocate, top up and correct production fees (Token)',
   },
   'project:read.all': { area: 'movie-project', description: "Read every movie project, not only one's own" },
   'project:suggest': {
@@ -68,17 +74,46 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
     area: 'movie-project',
     description: 'Approve or reject the change requests of Reviewers and Creators (BR-55)',
   },
-  'studio:handoff': {
+  'cost:request': {
+    area: 'movie-project',
+    description: 'Ask the Admin for more production cost (VND), with the studio quote as proof',
+  },
+  'cost:approve': {
+    area: 'movie-project',
+    description: 'Grant (in full or in part) or refuse the production cost requests of Reviewers',
+  },
+  'cost:adjust': { area: 'movie-project', description: 'Set the production budget (VND) of a project and correct it' },
+  'contract:manage': {
+    area: 'movie-project',
+    description: 'Send the studio a contract template, sign it or counter-propose its cost',
+  },
+  'script:write': { area: 'movie-project', description: 'Write and submit the script of an assigned project' },
+  'script:approve': {
+    area: 'movie-project',
+    description: 'Approve the Final Script (the system then sends the studio its contract) or send it back',
+  },
+  'studio:portal': {
     area: 'studio',
-    description: 'Hand an assigned project off to a studio, change the studio, record its milestones',
+    description: 'Studio account: negotiate and sign its contracts, read its projects, deliver films',
   },
   'studio:manage': { area: 'studio', description: 'Keep the catalog of partner studios: add, edit, deactivate' },
-  'media:ingest': { area: 'media', description: 'Upload the episodes, subtitles and artwork a studio delivers' },
+  'media:ingest': {
+    area: 'media',
+    description:
+      'Work on the episodes of an assigned project: team, delegations, episode notes (films come from the studio)',
+  },
   'content:review': {
     area: 'review',
     description: 'Review delivered episodes, apply the AI label, run the compliance check',
   },
-  'episode:publish': { area: 'publishing', description: 'Price, schedule, publish and unpublish episodes' },
+  'episode:price': {
+    area: 'publishing',
+    description: 'Set the Coin price of an episode before confirming the Final Film',
+  },
+  'episode:publish': {
+    area: 'publishing',
+    description: 'Publish, schedule and unpublish episodes once the Reviewer confirmed the Final Film',
+  },
   'price-alert:manage': { area: 'publishing', description: 'Follow out-of-range Coin prices and ask for a change' },
   'genre:manage': { area: 'catalog', description: 'Add genres' },
   'access.episode.read': {
@@ -111,10 +146,6 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
     area: 'administration',
     description: 'Change platform policies (rates, price range, free episodes)',
   },
-  'token-budget:manage': {
-    area: 'administration',
-    description: 'Grant Token to Reviewers and take back what they have not allocated',
-  },
 };
 
 export const ALL_PERMISSIONS = Object.keys(PERMISSION_CATALOG) as PermissionKey[];
@@ -135,17 +166,19 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.REWARD_CHECKIN,
     PERMISSION.SUBSCRIPTION_SELF_MANAGE,
   ],
-  CONTENT_CREATOR: [PERMISSION.PROJECT_SUGGEST, PERMISSION.STUDIO_HANDOFF, PERMISSION.MEDIA_INGEST],
+  CONTENT_CREATOR: [PERMISSION.PROJECT_SUGGEST, PERMISSION.SCRIPT_WRITE, PERMISSION.MEDIA_INGEST],
   CONTENT_REVIEWER: [
     PERMISSION.PROJECT_MANAGE,
     PERMISSION.PROJECT_SUGGEST,
-    PERMISSION.PROJECT_FEE_ALLOCATE,
+    PERMISSION.COST_REQUEST,
     PERMISSION.STUDIO_MANAGE,
     PERMISSION.CONTENT_REVIEW,
-    PERMISSION.EPISODE_PUBLISH,
+    PERMISSION.EPISODE_PRICE,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
   ],
+  // MF-1 (07/11/2026): a partner studio negotiates its contracts and delivers its films, nothing else.
+  STUDIO: [PERMISSION.STUDIO_PORTAL],
   // Billing and Coin support: read-only, changes go through the Admin.
   STAFF: [
     PERMISSION.MEMBER_OPS_READ,
@@ -155,17 +188,23 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.COIN_TRANSACTION_READ,
     PERMISSION.BILLING_SUBSCRIPTION_READ,
   ],
-  // MF-1: the Admin reads every project and decides the change requests sent to them, never edits a project (BR-55).
+  // MF-1: the Admin creates projects, approves the Final Script, publishes, reads every project, sets its production budget and decides the change and cost requests (BR-55).
   ADMIN: [
+    PERMISSION.PROJECT_CREATE,
     PERMISSION.PROJECT_READ_ALL,
+    PERMISSION.SCRIPT_APPROVE,
+    PERMISSION.STUDIO_MANAGE,
+    PERMISSION.EPISODE_PUBLISH,
     PERMISSION.PROJECT_CHANGE_REVIEW,
+    PERMISSION.COST_APPROVE,
+    PERMISSION.COST_ADJUST,
+    PERMISSION.CONTRACT_MANAGE,
     PERMISSION.PRICE_ALERT_MANAGE,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
     PERMISSION.USER_MANAGE,
     PERMISSION.ROLE_MANAGE,
     PERMISSION.PLATFORM_SETTINGS_MANAGE,
-    PERMISSION.TOKEN_BUDGET_MANAGE,
     // MF-2: the Billing Admin configures plans and prices, ends plans and reads the Coin ledger.
     PERMISSION.ACCESS_EPISODE_READ,
     PERMISSION.WALLET_READ,

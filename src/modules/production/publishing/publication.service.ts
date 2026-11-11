@@ -9,6 +9,7 @@ import {
   UnpublishMode,
 } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { CdnPurgeService } from 'src/infrastructure/cdn/cdn-purge.service';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { EntitlementService } from 'src/modules/episode-access/entitlement/entitlement.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -43,7 +44,8 @@ const COMPLIANCE_ITEMS = 4;
 type EpisodeWithMovie = Episode & { movie: Movie };
 
 /**
- * MF-1 steps 12–16: schedule or publish an episode with its reviewed version (BR-14, BR-19),
+ * MF-1 steps 12–16: the Admin schedules or publishes an episode with its reviewed version once the Reviewer
+ * confirmed it as the Final Film (BR-14, BR-19),
  * take it down, and complete the project once every episode is out (BR-38). The same gate is
  * enforced by database triggers, so no other code path can publish around it.
  */
@@ -60,10 +62,12 @@ export class PublicationService {
     private readonly revisions: EpisodeRevisionService,
     private readonly entitlements: EntitlementService,
     private readonly settings: PlatformSettingService,
+    private readonly cdn: CdnPurgeService,
   ) {}
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
-    const episode = await this.access.episode(episodeId, user, 'reviewer');
+    // MF-1 (07/11/2026): only the Admin publishes, once the Reviewer confirmed the Final Film.
+    const episode = await this.access.episode(episodeId, user, 'read');
     assertProjectStatus(episode.project.status, RELEASING_PROJECT, 'publish');
     assertEpisodeStatus(episode.status, RELEASABLE, 'publish');
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
@@ -109,7 +113,7 @@ export class PublicationService {
   async unpublish(publicationId: string, dto: UnpublishRequestDto, user: AuthenticatedUser) {
     const publication = await this.prisma.publication.findUnique({ where: { id: publicationId } });
     if (!publication) throw new NotFoundException('Publication not found');
-    const episode = await this.access.episode(publication.episodeId, user, 'reviewer');
+    const episode = await this.access.episode(publication.episodeId, user, 'read');
     if (publication.unpublishedAt) throw new ConflictException('This release was already taken down');
 
     const live = publication.publishedAt !== null;
@@ -120,6 +124,7 @@ export class PublicationService {
       );
     }
     const mode = live ? dto.mode! : null;
+    let mailId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.publication.updateMany({
         where: { id: publicationId, unpublishedAt: null, publishedAt: live ? { not: null } : null },
@@ -133,7 +138,7 @@ export class PublicationService {
       });
       if (count === 0) throw new ConflictException('The release changed meanwhile; reload it');
       if (mode === UnpublishMode.REVISION) {
-        await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
+        mailId = await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
       } else {
         // A cancelled schedule goes back to the checked state; a removed episode can be released again.
         await this.moveEpisode(tx, episode, live ? EpisodeStatus.UNPUBLISHED : EpisodeStatus.COMPLIANCE_PASSED);
@@ -155,6 +160,10 @@ export class PublicationService {
         tx,
       );
     });
+    await this.revisions.announce(mailId);
+    // The episode is down: drop its HLS objects from the edge cache, so a signed URL issued
+    // before the take-down cannot keep playing cached segments. Best effort, never blocking.
+    if (live) await this.cdn.purgeAsset(publication.mediaAssetId);
     return this.list(episode.id, user);
   }
 
@@ -208,6 +217,9 @@ export class PublicationService {
     const missing: string[] = [];
     const mediaAssetId = episode.approvedMediaAssetId;
     if (!mediaAssetId) missing.push('an approved media version');
+    if (episode.status === EpisodeStatus.COMPLIANCE_PASSED && !episode.finalConfirmedAt) {
+      missing.push('the Final Film confirmation of the Reviewer');
+    }
     if (episode.coinPrice === null) missing.push('a Coin price (BR-29)');
     if (!episode.movie.synopsis?.trim()) missing.push('the movie synopsis');
     if (!episode.movie.ageRating) missing.push('the movie age rating');

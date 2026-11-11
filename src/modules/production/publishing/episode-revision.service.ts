@@ -20,13 +20,14 @@ export class EpisodeRevisionService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  async sendBack(tx: PrismaTx, publication: Publication, reviewerId: string, reason: string): Promise<void> {
+  /** Returns the email telling the studio: pass it to announce() once the transaction committed. */
+  async sendBack(tx: PrismaTx, publication: Publication, reviewerId: string, reason: string): Promise<string | null> {
     const found = await tx.mediaAsset.findUniqueOrThrow({
       where: { id: publication.mediaAssetId },
       include: { episode: { include: WITH_PROJECT } },
     });
     const asset = { ...found, episode: liftProject(found.episode) };
-    await this.reviews.requestChanges(tx, asset, reviewerId, `Taken down to be fixed: ${reason}`);
+    const mailId = await this.reviews.requestChanges(tx, asset, reviewerId, `Taken down to be fixed: ${reason}`);
     await tx.episode.update({ where: { id: asset.episodeId }, data: { revisionStartedAt: new Date() } });
 
     const projectId = asset.episode.movieId;
@@ -47,5 +48,10 @@ export class EpisodeRevisionService {
         tx,
       );
     }
+    return mailId;
+  }
+
+  announce(mailId: string | null): Promise<void> {
+    return this.reviews.announce(mailId);
   }
 }

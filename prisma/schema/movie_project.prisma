@@ -9,8 +9,8 @@ enum ProjectStatus {
 }
 
 /// The production side of one movie (§4.1.1, §4.1.2): who orders it, from which studio, how far it
-/// got. Its catalog face is the `movies` row sharing its id. The production fee is not stored here:
-/// it is the sum of token_ledger (BR-46).
+/// got. Its catalog face is the `movies` row sharing its id. The production budget is not stored
+/// here: it is the sum of production_cost_entries (BR-46).
 model MovieProject {
   /// The id of its catalog movie (1:1).
   id              String        @id @db.Uuid
@@ -18,7 +18,7 @@ model MovieProject {
   status          ProjectStatus @default(DRAFT)
   reviewerId      String        @map("reviewer_id") @db.Uuid
   creatorId       String?       @map("creator_id") @db.Uuid
-  /// The one studio of the project (BR-59); it has no account (BR-15).
+  /// The one studio of the project (BR-59), chosen by the Admin; it logs in with STUDIO accounts.
   studioId        String?       @map("studio_id") @db.Uuid
   cancelReason    String?       @map("cancel_reason") @db.Text
   handedOffAt     DateTime?     @map("handed_off_at") @db.Timestamptz(6)
@@ -34,9 +34,11 @@ model MovieProject {
   creatorAssignments ProjectCreatorAssignment[]
   ideaFiles          MovieIdeaFile[]
   studioHandoffs     StudioHandoff[]
-  tokenEntries       TokenLedgerEntry[]
+  costEntries        ProductionCostEntry[]
   changeRequests     ProjectChangeRequest[]
-  tokenRequests      TokenRequest[]
+  costRequests       ProductionCostRequest[]
+  contracts          Contract[]
+  script             ProjectScript?
   auditLogs          AuditLog[]
 
   @@index([status])

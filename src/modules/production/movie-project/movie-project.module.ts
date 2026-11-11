@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ProductionFeeModule } from 'src/modules/production/production-fee/production-fee.module';
-import { ReviewerTokenModule } from 'src/modules/production/reviewer-token/reviewer-token.module';
+import { ProductionCostModule } from 'src/modules/production/production-cost/production-cost.module';
 import { StudioModule } from 'src/modules/production/studio/studio.module';
 import { ArtworkController } from './artwork/artwork.controller';
 import { ArtworkService } from './artwork/artwork.service';
@@ -13,13 +12,16 @@ import { IdeaFileService } from './idea-file/idea-file.service';
 import { MovieProjectController } from './movie-project.controller';
 import { MovieProjectService } from './movie-project.service';
 import { ProjectLifecycleService } from './project-lifecycle.service';
+import { ProjectPipelineService } from './project-pipeline.service';
+import { ProjectNoteController } from './project-note/project-note.controller';
+import { ProjectNoteService } from './project-note/project-note.service';
 import { ProjectStructureController } from './structure/project-structure.controller';
 import { ProjectStructureService } from './structure/project-structure.service';
 import { ProjectTeamController } from './team/project-team.controller';
 import { ProjectTeamService } from './team/project-team.service';
 
 @Module({
-  imports: [ProductionFeeModule, ReviewerTokenModule, StudioModule],
+  imports: [ProductionCostModule, StudioModule],
   controllers: [
     MovieProjectController,
     ProjectStructureController,
@@ -28,16 +30,19 @@ import { ProjectTeamService } from './team/project-team.service';
     IdeaFileController,
     ChangeRequestController,
     EpisodeNoteController,
+    ProjectNoteController,
   ],
   providers: [
     MovieProjectService,
     ProjectLifecycleService,
+    ProjectPipelineService,
     ProjectStructureService,
     ProjectTeamService,
     ArtworkService,
     IdeaFileService,
     ChangeRequestService,
     EpisodeNoteService,
+    ProjectNoteService,
   ],
   exports: [ProjectLifecycleService],
 })

@@ -1,9 +1,10 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
+import * as bcrypt from 'bcrypt';
 import { PrismaClient, UserRole } from '@prisma/client';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
-import { createAccounts, SEED_USER_PASSWORD, topUpReviewerBudgets } from './seed-accounts';
+import { createAccounts, SEED_USER_PASSWORD } from './seed-accounts';
 import { ADMIN_EMAIL, SEED_ACCOUNTS, SEED_POLICIES, SEED_REWARD_PRIZES, SEED_REWARD_RULES } from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
@@ -58,6 +59,29 @@ async function seedRewards() {
   }
 }
 
+/** MF-1 (07/11/2026): a partner studio with one STUDIO login, so the Studio Web can be demoed right away. */
+export const DEMO_STUDIO = { name: 'Lumen Studio', email: 'contact@lumenstudio.example' };
+export const DEMO_STUDIO_LOGIN = 'studio@aicinema.com';
+
+async function seedDemoStudio() {
+  const admin = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL }, select: { id: true } });
+  const studio = await prisma.studio.upsert({
+    where: { email: DEMO_STUDIO.email },
+    update: {},
+    create: { ...DEMO_STUDIO, contactName: 'Nguyễn Thị Lan', createdById: admin.id },
+  });
+  if (await prisma.user.count({ where: { email: DEMO_STUDIO_LOGIN } })) return;
+  await prisma.user.create({
+    data: {
+      email: DEMO_STUDIO_LOGIN,
+      fullName: 'Lumen Studio',
+      role: UserRole.STUDIO,
+      studioId: studio.id,
+      passwordHash: await bcrypt.hash(SEED_USER_PASSWORD, 12),
+    },
+  });
+}
+
 async function main() {
   for (const { name, description } of GENRE_CATALOG) {
     await prisma.genre.upsert({ where: { name }, update: { description }, create: { name, description } });
@@ -65,10 +89,9 @@ async function main() {
   await seedPermissions();
   await seedPolicies();
   await createAccounts(prisma, SEED_ACCOUNTS, SEED_USER_PASSWORD);
-  const reviewers = SEED_ACCOUNTS.filter((a) => a.role === UserRole.CONTENT_REVIEWER).map((a) => a.email);
-  await topUpReviewerBudgets(prisma, reviewers, ADMIN_EMAIL);
   await seedRewards();
-  console.log('Seeded genres, permissions, policies, the four platform accounts, the Reviewer budget and rewards.');
+  await seedDemoStudio();
+  console.log('Seeded genres, permissions, policies, the platform accounts, rewards and the demo studio.');
 }
 
 main()

@@ -1,0 +1,55 @@
+/// Who most recently proposed the `costVnd` of a contract round.
+enum ContractProposedBy {
+  ADMIN
+  STUDIO
+}
+
+/// SENT: template sent to the studio, no cost yet. STUDIO_SIGNED: the studio filled the cost and signed,
+/// waiting on the Admin. ADMIN_COUNTERED: the Admin proposed a new cost and signed, waiting on the studio.
+/// SIGNED: both sides signed — complete. SUPERSEDED: replaced by the next round of the same negotiation.
+enum ContractStatus {
+  SENT
+  STUDIO_SIGNED
+  ADMIN_COUNTERED
+  SIGNED
+  SUPERSEDED
+}
+
+/// One row per round of a project's production-cost negotiation with its studio (MF-1 §3–4): once Admin
+/// approves the Final Script the system sends a template with no cost, the studio fills it in and signs, then
+/// Admin and studio counter-propose until one round has both signatures. Signing hands the project off to the
+/// studio: the hand-off is created then (handoff_id), with the signed cost as its fee.
+model Contract {
+  id              String              @id @default(uuid()) @db.Uuid
+  projectId       String              @map("project_id") @db.Uuid
+  studioId        String              @map("studio_id") @db.Uuid
+  /// The hand-off the round belongs to: set when signing opens it, or from round 1 on a studio change (BR-59).
+  handoffId       String?             @map("handoff_id") @db.Uuid
+  /// 1 for the template, +1 each time either side counter-proposes.
+  round           Int                 @default(1)
+  previousId      String?             @unique @map("previous_id") @db.Uuid
+  /// Null until the studio fills it in on round 1.
+  costVnd         BigInt?             @map("cost_vnd")
+  proposedBy      ContractProposedBy? @map("proposed_by")
+  status          ContractStatus      @default(SENT)
+  terms           String              @db.Text
+  adminSignedAt   DateTime?           @map("admin_signed_at") @db.Timestamptz(6)
+  adminSignedById String?             @map("admin_signed_by_id") @db.Uuid
+  studioSignedAt  DateTime?           @map("studio_signed_at") @db.Timestamptz(6)
+  createdById     String              @map("created_by_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project       MovieProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  studio        Studio         @relation(fields: [studioId], references: [id], onDelete: Restrict)
+  handoff       StudioHandoff? @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  previous      Contract?      @relation("ContractRound", fields: [previousId], references: [id], onDelete: SetNull)
+  next          Contract?      @relation("ContractRound")
+  adminSignedBy User?          @relation("ContractAdminSignedBy", fields: [adminSignedById], references: [id], onDelete: SetNull)
+  createdBy     User           @relation("ContractCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@index([handoffId, round])
+  @@index([studioId, status])
+  @@map("contracts")
+}

@@ -7,6 +7,7 @@ import { AppConfigModule } from 'src/config/config.module';
 import { MailerModule } from 'src/infrastructure/mailer/mailer.module';
 import { PrismaModule } from 'src/infrastructure/prisma/prisma.module';
 import { QueueModule } from 'src/infrastructure/queue/queue.module';
+import { CdnModule } from 'src/infrastructure/cdn/cdn.module';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/identity/auth/auth.module';
@@ -24,8 +25,10 @@ import { PolicyModule } from 'src/modules/platform/policy/policy.module';
 import { ProjectAccessModule } from 'src/modules/production/project-access/project-access.module';
 import { StudioHandoffModule } from 'src/modules/production/studio-handoff/studio-handoff.module';
 import { StudioModule } from 'src/modules/production/studio/studio.module';
-import { ReviewerTokenModule } from 'src/modules/production/reviewer-token/reviewer-token.module';
-import { TokenRequestModule } from 'src/modules/production/token-request/token-request.module';
+import { CostRequestModule } from 'src/modules/production/cost-request/cost-request.module';
+import { ContractModule } from 'src/modules/production/contract/contract.module';
+import { ScriptModule } from 'src/modules/production/script/script.module';
+import { StudioPortalModule } from 'src/modules/production/studio-portal/studio-portal.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { UserModule } from 'src/modules/identity/user/user.module';
 import { AppController } from './app.controller';
@@ -40,6 +43,7 @@ import { AppController } from './app.controller';
     PaginationModule.forRoot({ defaultLimit: 20, maxLimit: 100 }),
     PrismaModule,
     StorageModule,
+    CdnModule,
     QueueModule,
     MailerModule,
     AuthModule,
@@ -55,8 +59,10 @@ import { AppController } from './app.controller';
     StudioHandoffModule,
     MediaIngestModule,
     StudioModule,
-    ReviewerTokenModule,
-    TokenRequestModule,
+    CostRequestModule,
+    ContractModule,
+    ScriptModule,
+    StudioPortalModule,
     ContentReviewModule,
     PublishingModule,
     CatalogModule,

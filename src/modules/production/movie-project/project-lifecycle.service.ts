@@ -6,7 +6,6 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
-import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import {
   assertProjectStatus,
@@ -23,32 +22,45 @@ export class ProjectLifecycleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly fees: ProductionFeeService,
     private readonly team: ProjectTeamService,
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
   ) {}
 
-  /** Step 2: assign the Creator once the project is complete and funded (BR-12); also reassigns later. */
-  async assignCreator(projectId: string, creatorId: string, user: AuthenticatedUser): Promise<void> {
-    const project = await this.access.project(projectId, user, 'reviewer');
-    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'assign a Content Creator');
-    const creator = await this.prisma.user.findUnique({
-      where: { id: creatorId },
+  /** Throws unless the account is active and holds the role, e.g. the Reviewer or Creator the Admin picks. */
+  async assertActive(userId: string, role: UserRole): Promise<void> {
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
       select: { role: true, isActive: true },
     });
-    if (creator?.role !== UserRole.CONTENT_CREATOR || !creator.isActive) {
-      throw new BadRequestException('Pick an active Content Creator account');
+    if (account?.role !== role || !account.isActive) {
+      throw new BadRequestException(`Pick an active ${role} account`);
     }
-    if (!(await this.fees.isFunded(projectId))) {
-      throw new ConflictException('Allocate the production fee of every season before assigning a Creator (BR-12)');
-    }
-    if (!(await this.prisma.episode.count({ where: { movieId: projectId } }))) {
-      throw new ConflictException('The project needs at least one episode');
-    }
-    if (await this.prisma.episode.count({ where: { movieId: projectId, deliveryDeadline: null } })) {
-      throw new ConflictException('Set a delivery deadline for every episode before assigning a Creator');
-    }
+  }
+
+  /** Tells the Reviewer the Admin put them in charge of a new project. */
+  async announceReviewer(projectId: string): Promise<void> {
+    const project = await this.prisma.movieProject.findUniqueOrThrow({
+      where: { id: projectId },
+      include: { movie: true },
+    });
+    await this.notifications.notify([project.reviewerId], {
+      type: NOTIFICATION_TYPE.PROJECT_ASSIGNED,
+      title: `Bạn phụ trách duyệt dự án phim "${project.movie.title}"`,
+      body: 'Admin vừa tạo dự án; lên cấu trúc mùa/tập và duyệt kịch bản Creator nộp.',
+      link: projectLink(projectId),
+      payload: { projectId },
+    });
+  }
+
+  /**
+   * MF-1 step 1 (07/11/2026): the Admin assigns (or reassigns) the lead Creator, who then aligns the idea with the
+   * Admin and writes the script; budget and episodes come later, before the studio is contracted.
+   */
+  async assignCreator(projectId: string, creatorId: string, user: AuthenticatedUser): Promise<void> {
+    const project = await this.access.project(projectId, user, 'read');
+    assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'assign a Content Creator');
+    await this.assertActive(creatorId, UserRole.CONTENT_CREATOR);
 
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.movieProject.updateMany({
@@ -88,7 +100,7 @@ export class ProjectLifecycleService {
   }
 
   /**
-   * BR-39: cancel while no episode was ever published; the Token spent stays a cost. Releases
+   * BR-39: cancel while no episode was ever published; the fees committed to studios stay a cost. Releases
    * still scheduled are withdrawn with it, so the scheduler never puts them out.
    */
   async cancel(projectId: string, reason: string, user: AuthenticatedUser): Promise<void> {

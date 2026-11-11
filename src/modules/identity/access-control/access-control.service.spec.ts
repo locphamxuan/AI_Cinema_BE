@@ -70,8 +70,12 @@ describe('default permission matrix', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.ADMIN).toEqual(expect.arrayContaining(LOCKED_ADMIN_PERMISSIONS));
   });
 
-  it('keeps the Admin out of editing projects (BR-55)', () => {
+  it('lets the Admin create projects and publish, but leaves the structure to the Reviewer (MF-1, 07/11/2026)', () => {
+    expect(DEFAULT_ROLE_PERMISSIONS.ADMIN).toEqual(
+      expect.arrayContaining([PERMISSION.PROJECT_CREATE, PERMISSION.SCRIPT_APPROVE, PERMISSION.EPISODE_PUBLISH]),
+    );
     expect(DEFAULT_ROLE_PERMISSIONS.ADMIN).not.toContain(PERMISSION.PROJECT_MANAGE);
-    expect(DEFAULT_ROLE_PERMISSIONS.ADMIN).not.toContain(PERMISSION.EPISODE_PUBLISH);
+    expect(DEFAULT_ROLE_PERMISSIONS.CONTENT_REVIEWER).not.toContain(PERMISSION.EPISODE_PUBLISH);
+    expect(DEFAULT_ROLE_PERMISSIONS.STUDIO).toEqual([PERMISSION.STUDIO_PORTAL]);
   });
 });

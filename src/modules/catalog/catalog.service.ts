@@ -22,6 +22,12 @@ const SUBTITLE_LABEL: Record<string, string> = {
 
 export const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
 
+/** A card of the movie list also counts the episodes viewers can see, the same ones `/movies/:id/episodes` lists. */
+const LISTED_CARD = {
+  ...GENRES,
+  _count: { select: { episodes: { where: VISIBLE_EPISODE } } },
+} satisfies Prisma.MovieInclude;
+
 /** How many movies the ranking tab shows. */
 const RANKING_SIZE = 20;
 
@@ -47,6 +53,7 @@ const EPISODE_DETAIL = {
 } satisfies Prisma.EpisodeInclude;
 
 type MovieRow = Prisma.MovieGetPayload<{ include: typeof GENRES }>;
+type ListedRow = Prisma.MovieGetPayload<{ include: typeof LISTED_CARD }>;
 type EpisodeRow = Prisma.EpisodeGetPayload<{ include: typeof EPISODE_DETAIL }>;
 
 /**
@@ -64,13 +71,16 @@ export class CatalogService {
   async listMovies(query: PaginateQuery, genreId?: string) {
     const page = await paginate(query, this.prisma.movie, {
       where: genreId ? { ...LISTED_MOVIE, genres: { some: { genreId } } } : LISTED_MOVIE,
-      relations: GENRES,
+      relations: LISTED_CARD,
       sortableColumns: ['title', 'releaseYear', 'createdAt'],
       defaultSortBy: [['createdAt', 'DESC']],
       searchableColumns: ['title'],
       filterableColumns: { ageRating: ['$eq', '$in'], releaseYear: ['$eq', '$gte', '$lte'] },
     });
-    return { ...page, data: (page.data as MovieRow[]).map(movieCard) };
+    return {
+      ...page,
+      data: (page.data as ListedRow[]).map((movie) => ({ ...movieCard(movie), episodeCount: movie._count.episodes })),
+    };
   }
 
   async movie(movieId: string) {

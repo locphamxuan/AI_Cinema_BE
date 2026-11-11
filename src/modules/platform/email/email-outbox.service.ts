@@ -7,7 +7,7 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 
-export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF' } as const;
+export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF', STUDIO_UPDATE: 'STUDIO_UPDATE' } as const;
 
 export interface EmailAttachment {
   /** Private storage key of the file. */
@@ -26,7 +26,7 @@ export interface NewEmail {
   notifyOnFailureId: string;
   /** Screen the failure notification opens. */
   link?: string;
-  /** Sender name shown to the recipient (the Creator for a brief). */
+  /** Sender name shown to the recipient (the Admin or Reviewer in charge). */
   fromName?: string;
   replyTo?: string;
 }
@@ -43,7 +43,7 @@ interface StoredPayload {
 const SEND_JOB = 'email.send';
 
 /**
- * Outbox of the only emails the platform sends (BR-53). The message is written with the
+ * Outbox of the emails the platform sends (BR-53): what the Admin and Reviewer tell a studio. The message is written with the
  * change that causes it, then delivered by a background job with retries; a message that
  * still fails is marked FAILED and its sender is notified in-app.
  */

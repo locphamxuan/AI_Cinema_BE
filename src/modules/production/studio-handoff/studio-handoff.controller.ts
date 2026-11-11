@@ -1,38 +1,14 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  Post,
-  UploadedFiles,
-  UseInterceptors,
-} from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { ChangeStudioRequestDto, HandOffRequestDto, UpdateMilestoneRequestDto } from './dto/studio-handoff.request.dto';
-import {
-  HandoffMaterialService,
-  MATERIAL_MAX_BYTES,
-  MATERIAL_MAX_FILES,
-  type MaterialUploads,
-} from './material/handoff-material.service';
-import { MilestoneService } from './milestone/milestone.service';
+import { ChangeStudioRequestDto } from './dto/studio-handoff.request.dto';
+import { HandoffMaterialService } from './material/handoff-material.service';
 import { StudioHandoffService } from './studio-handoff.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
-const MATERIAL_FIELDS = FileFieldsInterceptor(
-  [
-    { name: 'scripts', maxCount: MATERIAL_MAX_FILES },
-    { name: 'references', maxCount: MATERIAL_MAX_FILES },
-  ],
-  { limits: { fileSize: MATERIAL_MAX_BYTES, files: MATERIAL_MAX_FILES } },
-);
 
 @ApiTags('studio-handoff')
 @ApiBearerAuth()
@@ -40,57 +16,26 @@ const MATERIAL_FIELDS = FileFieldsInterceptor(
 export class StudioHandoffController {
   constructor(
     private readonly handoffs: StudioHandoffService,
-    private readonly milestones: MilestoneService,
     private readonly materials: HandoffMaterialService,
   ) {}
 
-  @Post('handoff')
-  @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @UseInterceptors(MATERIAL_FIELDS)
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({
-    summary:
-      'Hand the project or one season to a studio: brief PDF, scripts and references by email; IN_PRODUCTION (steps 3–4)',
-  })
-  handOff(
-    @Param('projectId', ID) projectId: string,
-    @Body() dto: HandOffRequestDto,
-    @UploadedFiles() files: MaterialUploads,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.handoffs.handOff(projectId, dto, files ?? {}, user);
-  }
-
   @Post('studio-change')
-  @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @UseInterceptors(MATERIAL_FIELDS)
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Move the project or a season to another studio, with the reason; a new brief is sent' })
+  @RequirePermission(PERMISSION.CONTRACT_MANAGE)
+  @ApiOperation({
+    summary: 'Admin: move the project or a season to another studio, with the reason; a new brief is emailed',
+  })
   changeStudio(
     @Param('projectId', ID) projectId: string,
     @Body() dto: ChangeStudioRequestDto,
-    @UploadedFiles() files: MaterialUploads,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.handoffs.changeStudio(projectId, dto, files ?? {}, user);
+    return this.handoffs.changeStudio(projectId, dto, user);
   }
 
   @Get('handoffs')
   @ApiOperation({ summary: 'Studio timeline: every hand-off with its materials and milestone events, newest first' })
   history(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.handoffs.history(projectId, user);
-  }
-
-  @Patch('handoffs/:handoffId/milestone')
-  @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @ApiOperation({ summary: 'Move the studio milestone; DELIVERED needs the uploaded Submission (BR-58)' })
-  updateMilestone(
-    @Param('projectId', ID) projectId: string,
-    @Param('handoffId', ID) handoffId: string,
-    @Body() dto: UpdateMilestoneRequestDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.milestones.update(projectId, handoffId, dto, user);
   }
 
   @Get('handoffs/:handoffId/brief')
@@ -104,7 +49,7 @@ export class StudioHandoffController {
   }
 
   @Get('handoffs/:handoffId/materials/:materialId/content')
-  @ApiOperation({ summary: 'Download a script or reference file sent with a hand-off' })
+  @ApiOperation({ summary: 'Download a file an older hand-off sent (scripts are no longer emailed)' })
   material(
     @Param('projectId', ID) projectId: string,
     @Param('handoffId', ID) handoffId: string,

@@ -8,6 +8,8 @@ import { MembershipPlanModule } from '../membership-plan/membership-plan.module'
 import { SubscriptionController } from './subscription.controller';
 import { SubscriptionRenewalService } from './subscription-renewal.service';
 import { SubscriptionRenewalSweep } from './subscription-renewal.sweep';
+import { SubscriptionAdminService } from './subscription-admin.service';
+import { SubscriptionAutoRenewService } from './subscription-auto-renew.service';
 import { SubscriptionService } from './subscription.service';
 import { AdminSubscriptionController } from 'src/modules/episode-access/subscription/admin-subscription.controller';
 import { PlanDaysGrantService } from './plan-days-grant.service';
@@ -26,7 +28,14 @@ import { PlanDaysGrantService } from './plan-days-grant.service';
     QueueModule,
   ],
   controllers: [SubscriptionController, AdminSubscriptionController],
-  providers: [SubscriptionService, SubscriptionRenewalService, SubscriptionRenewalSweep, PlanDaysGrantService],
+  providers: [
+    SubscriptionService,
+    SubscriptionAutoRenewService,
+    SubscriptionAdminService,
+    SubscriptionRenewalService,
+    SubscriptionRenewalSweep,
+    PlanDaysGrantService,
+  ],
   exports: [SubscriptionService, PlanDaysGrantService],
 })
 export class SubscriptionModule {}

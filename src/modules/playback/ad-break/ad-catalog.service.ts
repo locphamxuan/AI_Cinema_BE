@@ -4,7 +4,7 @@ import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { assertPublicUrl, UnsafeUrlError } from 'src/common/security/safe-url';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { MediaProcessor } from 'src/modules/production/media-ingest/pipeline/media-processor';
+import { MediaProcessor } from 'src/infrastructure/media/media-processor';
 import { AdViewDto } from 'src/modules/playback/ad-break/dto/ad.view.dto';
 import { CreateAdRequestDto } from 'src/modules/playback/ad-break/dto/create-ad.request.dto';
 import { UpdateAdRequestDto } from 'src/modules/playback/ad-break/dto/update-ad.request.dto';

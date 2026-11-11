@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
+import { SubscriptionAutoRenewService } from './subscription-auto-renew.service';
 import { SubscriptionService } from './subscription.service';
 import { SubscriptionView } from 'src/modules/episode-access/subscription/dto/subscription-view.dto';
 import { SubscriptionIntentView } from 'src/modules/episode-access/subscription/dto/subscription-intent-view.dto';
@@ -15,7 +16,10 @@ const ID = new ParseUUIDPipe({ version: '4' });
 @ApiBearerAuth()
 @Controller('subscriptions')
 export class SubscriptionController {
-  constructor(private readonly subscriptions: SubscriptionService) {}
+  constructor(
+    private readonly subscriptions: SubscriptionService,
+    private readonly autoRenew: SubscriptionAutoRenewService,
+  ) {}
 
   @Get('me')
   @RequirePermission(PERMISSION.SUBSCRIPTION_SELF_MANAGE)
@@ -57,13 +61,13 @@ export class SubscriptionController {
   @RequirePermission(PERMISSION.SUBSCRIPTION_SELF_MANAGE)
   @ApiOperation({ summary: 'Stop auto-renew; refused after the window, access runs on to period end' })
   cancel(@CurrentUser('id') userId: string, @Param('id', ID) subscriptionId: string) {
-    return this.subscriptions.cancelAutoRenew(userId, subscriptionId);
+    return this.autoRenew.cancelAutoRenew(userId, subscriptionId);
   }
 
   @Post(':id/resume-auto-renew')
   @RequirePermission(PERMISSION.SUBSCRIPTION_SELF_MANAGE)
   @ApiOperation({ summary: 'Change the mind before the period ends' })
   resume(@CurrentUser('id') userId: string, @Param('id', ID) subscriptionId: string) {
-    return this.subscriptions.resumeAutoRenew(userId, subscriptionId);
+    return this.autoRenew.resumeAutoRenew(userId, subscriptionId);
   }
 }

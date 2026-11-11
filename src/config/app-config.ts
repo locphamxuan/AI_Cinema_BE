@@ -2,12 +2,17 @@
  * Every setting the API reads, parsed and checked once at start-up so a bad .env fails fast
  * instead of on the first request that needs it. Read it through the APP_CONFIG provider.
  */
+import { cdnConfig, type CdnConfig } from './cdn-config';
+import { EnvReader, type Env } from './env-reader';
+
 export interface AppConfig {
   nodeEnv: string;
   isProduction: boolean;
   port: number;
   corsOrigins: string[];
   /** Web app origin, for links sent by email (the studio portal). */
+  /** Studio Web origin, for the links in the emails a studio receives. */
+  studioWebUrl: string;
   /** Where the payment return trip sends the member: the mobile app's top-up screen. */
   appReturnUrl: string;
   swaggerEnabled: boolean;
@@ -32,6 +37,8 @@ export interface AppConfig {
     publicBaseUrl: string;
     s3: { endpoint?: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string };
   };
+  /** Cloudflare R2 + CDN in front of the HLS output; falls back to the storage origin. */
+  cdn: CdnConfig;
   mail: { host: string | null; port: number; secure: boolean; user?: string; password?: string; from: string };
   media: {
     pipeline: 'ffmpeg' | 'mock';
@@ -95,8 +102,6 @@ export interface AppConfig {
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
   google: { clientIds: string[] };
-  /** The Studio Web reports the films it mails back; null leaves that channel closed. */
-  studio: { webhookToken: string | null };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -104,54 +109,6 @@ export const APP_CONFIG = Symbol('APP_CONFIG');
 const PLACEHOLDER_SECRET = 'replace-with-a-long-random-string';
 const MIN_SECRET_LENGTH = 32;
 const MB = 1024 * 1024;
-
-type Env = Record<string, string | undefined>;
-
-class EnvReader {
-  readonly errors: string[] = [];
-
-  constructor(private readonly env: Env) {}
-
-  string(key: string, fallback?: string): string {
-    const value = this.env[key]?.trim();
-    if (value) return value;
-    if (fallback !== undefined) return fallback;
-    this.errors.push(`${key} is required`);
-    return '';
-  }
-
-  optional(key: string): string | undefined {
-    return this.env[key]?.trim() || undefined;
-  }
-
-  int(key: string, fallback: number, min = 0): number {
-    const raw = this.optional(key);
-    if (raw === undefined) return fallback;
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < min) {
-      this.errors.push(`${key} must be an integer >= ${min} (got "${raw}")`);
-      return fallback;
-    }
-    return value;
-  }
-
-  bool(key: string, fallback: boolean): boolean {
-    const raw = this.optional(key)?.toLowerCase();
-    if (raw === undefined) return fallback;
-    if (raw === 'true' || raw === '1') return true;
-    if (raw === 'false' || raw === '0') return false;
-    this.errors.push(`${key} must be true or false (got "${raw}")`);
-    return fallback;
-  }
-
-  oneOf<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-    const raw = this.optional(key);
-    if (raw === undefined) return fallback;
-    if ((allowed as readonly string[]).includes(raw)) return raw as T;
-    this.errors.push(`${key} must be one of ${allowed.join(', ')} (got "${raw}")`);
-    return fallback;
-  }
-}
 
 function jwtSecret(read: EnvReader, isProduction: boolean): string {
   const secret = read.string('JWT_SECRET');
@@ -197,6 +154,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
   const nodeEnv = read.string('NODE_ENV', 'development');
   const isProduction = nodeEnv === 'production';
   const port = read.int('PORT', 3001, 1);
+  const storage = storageConfig(read, port);
 
   const config: AppConfig = {
     nodeEnv,
@@ -207,6 +165,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
+    studioWebUrl: read.string('STUDIO_WEB_URL', 'http://localhost:3100'),
     appReturnUrl: read.string('APP_RETURN_URL', 'aicinema://top-ups'),
     swaggerEnabled: read.bool('SWAGGER_ENABLED', !isProduction),
     trustProxy: read.bool('TRUST_PROXY', false),
@@ -230,7 +189,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
       playbackHeartbeatLimit: read.int('RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX', 1200, 1),
     },
     apiPublicUrl: (read.optional('API_PUBLIC_URL') ?? `http://localhost:${port}`).replace(/\/+$/, ''),
-    storage: storageConfig(read, port),
+    storage,
+    cdn: cdnConfig(read, storage.publicBaseUrl),
     mail: {
       host: read.optional('SMTP_HOST') ?? null,
       port: read.int('SMTP_PORT', 587, 1),
@@ -268,7 +228,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
-    studio: { webhookToken: read.optional('STUDIO_WEBHOOK_TOKEN') ?? null },
     google: {
       clientIds: [
         ...new Set(

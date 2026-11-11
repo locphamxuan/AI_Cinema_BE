@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, UserRole } from '@prisma/client';
-import { createAccounts, type SeedAccount, SEED_USER_PASSWORD, topUpReviewerBudgets } from '../../prisma/seed-accounts';
-import { ADMIN_EMAIL } from '../../prisma/seed-data';
+import { createAccounts, type SeedAccount, SEED_USER_PASSWORD } from '../../prisma/seed-accounts';
 
 /**
  * Accounts only the e2e suites use: a second Reviewer and Creator to prove one cannot touch another's
@@ -33,8 +32,6 @@ async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
   try {
     await createAccounts(prisma, E2E_ACCOUNTS, SEED_USER_PASSWORD);
-    const reviewers = E2E_ACCOUNTS.filter((a) => a.role === UserRole.CONTENT_REVIEWER).map((a) => a.email);
-    await topUpReviewerBudgets(prisma, reviewers, ADMIN_EMAIL);
   } finally {
     await prisma.$disconnect();
   }

@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { StudioMilestoneStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsVnd } from 'src/modules/production/production-cost/dto/vnd';
 
 const trimmed = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -37,17 +37,7 @@ class StudioChoiceDto {
   studioPhone?: string;
 }
 
-/**
- * Step 3, sent as multipart so the hand-off can carry its material: `scripts` and `references` files go
- * to the studio with the brief (BR-59). Without `seasonId` the whole project is handed off.
- */
-export class HandOffRequestDto extends StudioChoiceDto {
-  @ApiPropertyOptional({ description: 'Hand off one season only; omitted = every episode not handed off yet.' })
-  @IsUUID('4')
-  @IsOptional()
-  seasonId?: string;
-}
-
+/** Admin: move the project or a season to another studio; the new brief PDF is emailed to it. */
 export class ChangeStudioRequestDto extends StudioChoiceDto {
   @ApiPropertyOptional({ description: 'Season whose hand-off is replaced; omitted = the whole-project hand-off.' })
   @IsUUID('4')
@@ -59,29 +49,17 @@ export class ChangeStudioRequestDto extends StudioChoiceDto {
   @MinLength(5)
   @MaxLength(2000)
   reason: string;
-}
 
-/** The milestones a Creator can move a hand-off to; the rest are set by the system (BR-58). */
-export const CREATOR_MILESTONES = [
-  StudioMilestoneStatus.STUDIO_ACCEPTED,
-  StudioMilestoneStatus.IN_PROGRESS,
-  StudioMilestoneStatus.DELIVERED,
-  StudioMilestoneStatus.STUDIO_DECLINED,
-] as const;
+  @ApiProperty({ example: 150_000_000, description: 'Production fee (VND) the brief offers the new studio.' })
+  @IsVnd()
+  offeredFeeVnd: number;
 
-export class UpdateMilestoneRequestDto {
-  @ApiProperty({ enum: CREATOR_MILESTONES })
-  @IsIn(CREATOR_MILESTONES)
-  status: (typeof CREATOR_MILESTONES)[number];
-
-  @ApiPropertyOptional({ example: 'Studio gửi bản dựng qua email ngày 20/10.', description: 'Required to decline.' })
-  @IsString()
-  @MaxLength(2000)
+  @ApiPropertyOptional({
+    example: 20_000_000,
+    description:
+      'VND already spent on the replaced studio (paid, or owed as compensation); the rest of its fee returns to the budget. Defaults to 0.',
+  })
+  @IsVnd(0)
   @IsOptional()
-  note?: string;
-
-  @ApiPropertyOptional({ description: 'Required for DELIVERED: the Submission the Creator uploaded from the studio.' })
-  @IsUUID('4')
-  @IsOptional()
-  mediaAssetId?: string;
+  forfeitedVnd?: number;
 }

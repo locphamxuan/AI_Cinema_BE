@@ -20,7 +20,7 @@ export class PublishingController {
   ) {}
 
   @Patch('episodes/:episodeId/coin-price')
-  @RequirePermission(PERMISSION.EPISODE_PUBLISH)
+  @RequirePermission(PERMISSION.EPISODE_PRICE)
   @ApiOperation({ summary: 'Set the Coin price; outside the Admin range it is kept and flagged (BR-29, BR-47)' })
   setPrice(
     @Param('episodeId', ID) episodeId: string,

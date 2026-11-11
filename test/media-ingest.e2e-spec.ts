@@ -10,7 +10,14 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { HlsLinkCheckJob } from 'src/modules/production/media-ingest/hls/hls-link-check.job';
 import { type Actor, bootApp, signIn } from './support/api';
 import { DISCLOSURE, MP4 } from './support/media';
-import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
+import {
+  episodesOf,
+  newStudio,
+  projectInProduction,
+  type ProjectDetail,
+  studioAccount,
+  studioOf,
+} from './support/projects';
 
 interface MediaAsset {
   id: string;
@@ -38,6 +45,7 @@ describe('Media ingest (e2e)', () => {
   let reviewer: Actor;
   let creator: Actor;
   let otherCreator: Actor;
+  let studio: Actor;
   let project: ProjectDetail;
 
   beforeAll(async () => {
@@ -59,6 +67,7 @@ describe('Media ingest (e2e)', () => {
       signIn(app, 'creator02@aicinema.com'),
     ]);
     project = await projectInProduction(reviewer, creator, 3);
+    studio = studioOf(project.id);
   });
 
   afterAll(async () => {
@@ -78,18 +87,21 @@ describe('Media ingest (e2e)', () => {
     aiDisclosure: DISCLOSURE,
   });
 
-  it('takes deliveries only from the assigned Creator, with the full AI Disclosure (BR-41)', async () => {
-    const path = `/episodes/${episode(0).id}/media`;
-    await otherCreator.post(path, hlsLink(), 404);
+  it('takes deliveries only from the studio of the project, with the full AI Disclosure (BR-41)', async () => {
+    const path = `/studio-portal/episodes/${episode(0).id}/media`;
+    // MF-1 (08/11/2026): the Creators and the Reviewer no longer deliver; another studio sees nothing.
+    await creator.post(path, hlsLink(), 403);
     await reviewer.post(path, hlsLink(), 403);
-    await creator.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, noCopyrightedMaterial: false } }, 400);
-    await creator.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, aiGeneratedParts: [] } }, 400);
-    await creator.post(path, { ...hlsLink(), aiDisclosure: undefined }, 400);
-    await creator.post(path, { ...hlsLink(), sourceUrl: 'file:///etc/passwd' }, 400);
+    await (await studioAccount(reviewer, (await newStudio(reviewer, 'Studio khác')).id)).post(path, hlsLink(), 404);
+    await creator.post(`/episodes/${episode(0).id}/media`, hlsLink(), 404);
+    await studio.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, noCopyrightedMaterial: false } }, 400);
+    await studio.post(path, { ...hlsLink(), aiDisclosure: { ...DISCLOSURE, aiGeneratedParts: [] } }, 400);
+    await studio.post(path, { ...hlsLink(), aiDisclosure: undefined }, 400);
+    await studio.post(path, { ...hlsLink(), sourceUrl: 'file:///etc/passwd' }, 400);
   });
 
   it('validates an external HLS link and sends the episode to review (BR-17)', async () => {
-    const asset = await creator.post<MediaAsset>(`/episodes/${episode(0).id}/media`, hlsLink());
+    const asset = await studio.post<MediaAsset>(`/studio-portal/episodes/${episode(0).id}/media`, hlsLink());
 
     expect(asset).toMatchObject({
       version: 1,
@@ -109,8 +121,8 @@ describe('Media ingest (e2e)', () => {
   });
 
   it('keeps every version: a new upload supersedes the one under review (BR-14)', async () => {
-    const asset = await creator.upload<MediaAsset>(
-      `/episodes/${episode(0).id}/media/upload`,
+    const asset = await studio.upload<MediaAsset>(
+      `/studio-portal/episodes/${episode(0).id}/media/upload`,
       { field: 'file', name: 'tap-1-v2.mp4', content: MP4 },
       { aiDisclosure: JSON.stringify(DISCLOSURE), proposedLabelType: 'AI_EDITED' },
     );
@@ -133,14 +145,14 @@ describe('Media ingest (e2e)', () => {
     const uploadDir = join(tmpdir(), 'ai-cinema-uploads');
     const tempFiles = async () => (await readdir(uploadDir).catch(() => [])).length;
     const before = await tempFiles();
-    await creator.upload(
-      `/episodes/${episode(0).id}/media/upload`,
+    await studio.upload(
+      `/studio-portal/episodes/${episode(0).id}/media/upload`,
       { field: 'file', name: 'tap-1.mp4', content: Buffer.from('not a video at all') },
       { aiDisclosure: JSON.stringify(DISCLOSURE), proposedLabelType: 'AI_EDITED' },
       400,
     );
-    await creator.upload(
-      `/episodes/${episode(0).id}/media/upload`,
+    await studio.upload(
+      `/studio-portal/episodes/${episode(0).id}/media/upload`,
       { field: 'file', name: 'tap-1.mp4', content: MP4 },
       { aiDisclosure: '{"aiTools":', proposedLabelType: 'AI_EDITED' },
       400,
@@ -150,33 +162,36 @@ describe('Media ingest (e2e)', () => {
     expect(await tempFiles()).toBe(before);
   });
 
-  it('fails a live playlist, tells the Creator, and processes it again once fixed (BR-16)', async () => {
-    const failed = await creator.post<MediaAsset>(`/episodes/${episode(1).id}/media`, hlsLink('/live/master.m3u8'));
+  it('fails a live playlist, tells the studio, and lets it process it again once fixed (BR-16)', async () => {
+    const failed = await studio.post<MediaAsset>(
+      `/studio-portal/episodes/${episode(1).id}/media`,
+      hlsLink('/live/master.m3u8'),
+    );
     expect(failed.ingestStatus).toBe('FAILED');
     expect(failed.failureReason).toContain('live or unfinished');
     expect(await statusOf(1)).toBe('AWAITING_MEDIA');
 
-    const bell = await creator.get<{ data: { type: string; payload: { mediaAssetId: string } }[] }>(
+    const bell = await studio.get<{ data: { type: string; payload: { mediaAssetId: string } }[] }>(
       '/notifications?limit=100',
     );
     expect(bell.data.some((n) => n.type === 'MEDIA_FAILED' && n.payload.mediaAssetId === failed.id)).toBe(true);
 
-    await otherCreator.post(`/media-assets/${failed.id}/retry`, {}, 404);
+    await otherCreator.post(`/studio-portal/media-assets/${failed.id}/retry`, {}, 403);
     files.set('/live/master.m3u8', VOD);
-    const retried = await creator.post<MediaAsset>(`/media-assets/${failed.id}/retry`);
+    const retried = await studio.post<MediaAsset>(`/studio-portal/media-assets/${failed.id}/retry`, {}, 200);
     expect(retried).toMatchObject({ ingestStatus: 'READY', durationSeconds: 12 });
     expect(retried.ingestJobs[0]).toMatchObject({ jobType: 'VALIDATE', status: 'COMPLETED', attempts: 2 });
-    await creator.post(`/media-assets/${failed.id}/retry`, {}, 409);
+    await studio.post(`/studio-portal/media-assets/${failed.id}/retry`, {}, 409);
   });
 
   it('downloads an import URL into storage before transcoding it', async () => {
-    const rejected = await creator.post<MediaAsset>(`/episodes/${episode(2).id}/media`, {
+    const rejected = await studio.post<MediaAsset>(`/studio-portal/episodes/${episode(2).id}/media`, {
       ...hlsLink('/files/page'),
       sourceMethod: 'REMOTE_FILE',
     });
     expect(rejected).toMatchObject({ ingestStatus: 'FAILED', failureReason: expect.stringContaining('MP4 or MOV') });
 
-    const asset = await creator.post<MediaAsset>(`/episodes/${episode(2).id}/media`, {
+    const asset = await studio.post<MediaAsset>(`/studio-portal/episodes/${episode(2).id}/media`, {
       ...hlsLink('/files/ep.mp4'),
       sourceMethod: 'REMOTE_FILE',
     });
@@ -194,7 +209,7 @@ describe('Media ingest (e2e)', () => {
       data: { approvedMediaAssetId: hls.id, status: 'APPROVED' },
     });
     const deadReports = async () => {
-      const bell = await creator.get<{ data: { type: string; payload: { mediaAssetId: string } }[] }>(
+      const bell = await studio.get<{ data: { type: string; payload: { mediaAssetId: string } }[] }>(
         '/notifications?limit=100',
       );
       return bell.data.filter((n) => n.type === 'HLS_LINK_DEAD' && n.payload.mediaAssetId === hls.id).length;
