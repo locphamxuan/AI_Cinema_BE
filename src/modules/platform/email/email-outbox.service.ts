@@ -7,7 +7,7 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 
-export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF', STUDIO_UPDATE: 'STUDIO_UPDATE' } as const;
+export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF', STUDIO_UPDATE: 'STUDIO_UPDATE', OTP: 'OTP' } as const;
 
 export interface EmailAttachment {
   /** Private storage key of the file. */
@@ -131,8 +131,12 @@ export class EmailOutboxService implements OnModuleInit {
       data: { status: EmailStatus.FAILED, errorMessage: error.message },
     });
     const payload = message.payload as unknown as StoredPayload;
+    const type =
+      message.template === EMAIL_TEMPLATE.OTP
+        ? NOTIFICATION_TYPE.EMAIL_DELIVERY_FAILED
+        : NOTIFICATION_TYPE.BRIEF_EMAIL_FAILED;
     await this.notifications.notify([payload.notifyOnFailureId], {
-      type: NOTIFICATION_TYPE.BRIEF_EMAIL_FAILED,
+      type,
       title: `Không gửi được email "${message.subject}" tới ${message.toEmail}`,
       body: error.message,
       link: payload.link,
