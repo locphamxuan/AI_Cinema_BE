@@ -2,8 +2,6 @@ import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundExce
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WatchRoomResponseDto } from './dto/watch-room.dto';
 
-/** 45 s of Host silence and the room is taken over by the next participant (BR-69). */
-const HOST_SILENCE_MS = 45_000;
 /** The room closes 15 min after the episode ends or the Host leaves (BR-69). */
 const ROOM_TTL_MS = 15 * 60 * 1000;
 
@@ -13,7 +11,9 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function generateRoomCode(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).slice(0, 7).join('');
+  return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length])
+    .slice(0, 7)
+    .join('');
 }
 
 @Injectable()
@@ -24,7 +24,8 @@ export class WatchRoomService {
 
   async create(userId: string, dto: { episodeId: string }): Promise<WatchRoomResponseDto> {
     const episode = await this.prisma.episode.findUnique({ where: { id: dto.episodeId } });
-    if (!episode) throw new NotFoundException({ message: 'Episode not found', details: { reason: 'EPISODE_NOT_FOUND' } });
+    if (!episode)
+      throw new NotFoundException({ message: 'Episode not found', details: { reason: 'EPISODE_NOT_FOUND' } });
 
     const roomCode = await this.uniqueRoomCode();
     const room = await this.prisma.watchRoom.create({
@@ -53,7 +54,7 @@ export class WatchRoomService {
     throw new ConflictException({ message: 'Could not generate a room code', details: { reason: 'CODE_COLLISION' } });
   }
 
-  async join(userId: string, roomId: string, dto?: { roomCode?: string }): Promise<WatchRoomResponseDto> {
+  async join(userId: string, roomId: string): Promise<WatchRoomResponseDto> {
     const room = await this.prisma.watchRoom.findUnique({
       where: { id: roomId },
       include: { participants: true },
@@ -127,9 +128,7 @@ export class WatchRoomService {
       await this.prisma.roomParticipant.update({ where: { id: me.id }, data: { leftAt: new Date() } });
     }
     const hostLeft = me?.role === 'HOST';
-    const remainingHosts = room.participants.filter(
-      (p) => p.role === 'HOST' && p.userId !== userId && !p.leftAt,
-    );
+    const remainingHosts = room.participants.filter((p) => p.role === 'HOST' && p.userId !== userId && !p.leftAt);
     if (hostLeft && remainingHosts.length === 0) {
       await this.close(room.id);
     }

@@ -7,12 +7,23 @@ import { FriendshipResponseDto } from './dto/friendship-response.dto';
 describe('FriendshipService', () => {
   const prisma = {
     user: { findUnique: jest.fn() },
-    friendship: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn(), delete: jest.fn() },
+    friendship: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      upsert: jest.fn(),
+      delete: jest.fn(),
+    },
   };
   const service = new FriendshipService(prisma as unknown as PrismaService);
 
   const member = (overrides: Record<string, unknown> = {}) => ({
-    id: 'u2', fullName: 'B', role: 'MEMBER', isActive: true, ...overrides,
+    id: 'u2',
+    fullName: 'B',
+    role: 'MEMBER',
+    isActive: true,
+    ...overrides,
   });
 
   beforeEach(() => jest.clearAllMocks());
@@ -30,11 +41,17 @@ describe('FriendshipService', () => {
     prisma.user.findUnique.mockResolvedValue(member());
     prisma.friendship.findUnique.mockResolvedValue(null);
     prisma.friendship.create.mockResolvedValue({
-      id: 'f1', senderId: 'u1', receiverId: 'u2', status: FriendshipStatus.PENDING,
-      respondedAt: null, lastInviteAt: new Date('2026-11-11T00:00:00Z'), createdAt: new Date(), updatedAt: new Date(),
+      id: 'f1',
+      senderId: 'u1',
+      receiverId: 'u2',
+      status: FriendshipStatus.PENDING,
+      respondedAt: null,
+      lastInviteAt: new Date('2026-11-11T00:00:00Z'),
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
     const res = await service.create('u1', { receiverId: 'u2', inviteContext: { roomId: 'r1' } });
-expect(prisma.friendship.create).toHaveBeenCalledWith(
+    expect(prisma.friendship.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ senderId: 'u1', receiverId: 'u2', lastInviteAt: expect.any(Date) }),
       }),
@@ -57,8 +74,14 @@ expect(prisma.friendship.create).toHaveBeenCalledWith(
   it('accepts and marks the friendship ACCEPTED', async () => {
     prisma.friendship.findUnique.mockResolvedValue({ id: 'f1', receiverId: 'u2', status: FriendshipStatus.PENDING });
     prisma.friendship.update.mockResolvedValue({
-      id: 'f1', senderId: 'u1', receiverId: 'u2', status: FriendshipStatus.ACCEPTED,
-      respondedAt: new Date(), lastInviteAt: null, createdAt: new Date(), updatedAt: new Date(),
+      id: 'f1',
+      senderId: 'u1',
+      receiverId: 'u2',
+      status: FriendshipStatus.ACCEPTED,
+      respondedAt: new Date(),
+      lastInviteAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
     const res = await service.respond('u2', 'f1', true);
     expect(prisma.friendship.update).toHaveBeenCalledWith(
@@ -70,8 +93,14 @@ expect(prisma.friendship.create).toHaveBeenCalledWith(
   it('blocks when answered with false', async () => {
     prisma.friendship.findUnique.mockResolvedValue({ id: 'f1', receiverId: 'u2', status: FriendshipStatus.PENDING });
     prisma.friendship.update.mockResolvedValue({
-      id: 'f1', senderId: 'u1', receiverId: 'u2', status: FriendshipStatus.BLOCKED,
-      respondedAt: new Date(), lastInviteAt: null, createdAt: new Date(), updatedAt: new Date(),
+      id: 'f1',
+      senderId: 'u1',
+      receiverId: 'u2',
+      status: FriendshipStatus.BLOCKED,
+      respondedAt: new Date(),
+      lastInviteAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
     const res = await service.respond('u2', 'f1', false);
     expect(res.status).toBe('BLOCKED');

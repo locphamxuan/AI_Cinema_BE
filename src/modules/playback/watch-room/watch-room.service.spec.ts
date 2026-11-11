@@ -49,7 +49,12 @@ describe('WatchRoomService', () => {
   it('lets a member join and counts participants', async () => {
     prisma.watchRoom.findUnique.mockResolvedValueOnce(room({ participants: [room().participants[0]] }));
     prisma.watchRoom.findUnique.mockResolvedValueOnce(
-      room({ participants: [room().participants[0], { id: 'p2', roomId: 'r1', userId: 'u2', role: 'PARTICIPANT', leftAt: null }] }),
+      room({
+        participants: [
+          room().participants[0],
+          { id: 'p2', roomId: 'r1', userId: 'u2', role: 'PARTICIPANT', leftAt: null },
+        ],
+      }),
     );
     prisma.roomParticipant.create.mockResolvedValue({});
     const res = await service.join('u2', 'r1');
@@ -71,16 +76,25 @@ describe('WatchRoomService', () => {
     prisma.watchRoom.update.mockResolvedValue(room({ status: WatchRoomStatus.PLAYING, currentPositionSeconds: 120 }));
     const res = await service.hostSync('u1', 'r1', { state: 'PLAYING', positionSeconds: 120 });
     expect(prisma.watchRoom.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: WatchRoomStatus.PLAYING, currentPositionSeconds: 120 }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ status: WatchRoomStatus.PLAYING, currentPositionSeconds: 120 }),
+      }),
     );
     expect(res.status).toBe('PLAYING');
   });
 
   it('refuses a non-Host from syncing', async () => {
     prisma.watchRoom.findUnique.mockResolvedValue(
-      room({ participants: [{ id: 'p1', roomId: 'r1', userId: 'u1', role: 'HOST', leftAt: null }, { id: 'p2', roomId: 'r1', userId: 'u2', role: 'PARTICIPANT', leftAt: null }] }),
+      room({
+        participants: [
+          { id: 'p1', roomId: 'r1', userId: 'u1', role: 'HOST', leftAt: null },
+          { id: 'p2', roomId: 'r1', userId: 'u2', role: 'PARTICIPANT', leftAt: null },
+        ],
+      }),
     );
-    await expect(service.hostSync('u2', 'r1', { state: 'PLAYING', positionSeconds: 0 })).rejects.toThrow(ForbiddenException);
+    await expect(service.hostSync('u2', 'r1', { state: 'PLAYING', positionSeconds: 0 })).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('disbands the room when the Host leaves alone', async () => {

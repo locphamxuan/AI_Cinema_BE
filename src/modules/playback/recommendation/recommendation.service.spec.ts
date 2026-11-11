@@ -47,7 +47,10 @@ describe('RecommendationService', () => {
       movie({ id: 'm1', ageRating: 'P' }),
       movie({ id: 'm2', ageRating: 'T18' }),
     ]);
-    prisma.$queryRaw.mockResolvedValue([{ movieId: 'm1', total: 100n }, { movieId: 'm2', total: 50n }]);
+    prisma.$queryRaw.mockResolvedValue([
+      { movieId: 'm1', total: 100n },
+      { movieId: 'm2', total: 50n },
+    ]);
 
     const res = await service.forYou('u1');
     expect(res.map((r) => r.movieId)).toEqual(['m1']);
@@ -61,14 +64,20 @@ describe('RecommendationService', () => {
       movie({ id: 'm1', ageRating: 'P' }),
       movie({ id: 'm2', ageRating: 'T18' }),
     ]);
-    prisma.$queryRaw.mockResolvedValue([{ movieId: 'm1', total: 100n }, { movieId: 'm2', total: 50n }]);
+    prisma.$queryRaw.mockResolvedValue([
+      { movieId: 'm1', total: 100n },
+      { movieId: 'm2', total: 50n },
+    ]);
 
     const res = await service.forYou('u1');
     expect(res.map((r) => r.movieId).sort()).toEqual(['m1', 'm2']);
   });
 
   it('returns trending recommendations, age-gated for cold starts', async () => {
-    prisma.movie.findMany.mockResolvedValue([movie({ id: 'm1', ageRating: 'P' }), movie({ id: 'm2', ageRating: 'T18' })]);
+    prisma.movie.findMany.mockResolvedValue([
+      movie({ id: 'm1', ageRating: 'P' }),
+      movie({ id: 'm2', ageRating: 'T18' }),
+    ]);
     const res = await service.trending();
     expect(res.map((r) => r.movieId)).toEqual(['m1']);
     expect(res[0].source).toBe('trending');

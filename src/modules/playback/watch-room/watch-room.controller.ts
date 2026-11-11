@@ -1,14 +1,9 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { WatchRoomService } from './watch-room.service';
-import {
-  CreateWatchRoomDto,
-  JoinWatchRoomDto,
-  UpdateWatchRoomDto,
-  WatchRoomResponseDto,
-} from './dto/watch-room.dto';
+import { CreateWatchRoomDto, UpdateWatchRoomDto, WatchRoomResponseDto } from './dto/watch-room.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
@@ -25,10 +20,10 @@ export class WatchRoomController {
   }
 
   @Post(':roomId/join')
-  @ApiOperation({ summary: 'Join a room by room code; entitlement is checked before the stream is handed out' })
+  @ApiOperation({ summary: 'Join a room by id or code; entitlement is checked before the stream is handed out' })
   @ApiOkResponse({ type: WatchRoomResponseDto })
-  join(@CurrentUser() user: AuthenticatedUser, @Param('roomId', ID) roomId: string, @Body() dto?: JoinWatchRoomDto) {
-    return this.rooms.join(user.id, roomId, dto);
+  join(@CurrentUser() user: AuthenticatedUser, @Param('roomId', ID) roomId: string) {
+    return this.rooms.join(user.id, roomId);
   }
 
   @Get(':roomId')
@@ -41,11 +36,7 @@ export class WatchRoomController {
   @Put(':roomId')
   @ApiOperation({ summary: 'Host updates the playback clock and state (PLAYING / PAUSED)' })
   @ApiOkResponse({ type: WatchRoomResponseDto })
-  update(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('roomId', ID) roomId: string,
-    @Body() dto: UpdateWatchRoomDto,
-  ) {
+  update(@CurrentUser() user: AuthenticatedUser, @Param('roomId', ID) roomId: string, @Body() dto: UpdateWatchRoomDto) {
     return this.rooms.hostSync(user.id, roomId, dto);
   }
 

@@ -13,9 +13,6 @@ const WEIGHTS = {
 /** How many recommendations to return per page. */
 const PAGE_SIZE = 20;
 
-/** Cache TTL for a member's recommendation set (6 hours). */
-const CACHE_TTL_SECONDS = 6 * 3600;
-
 /** Age gate (BR-68, Điều 44 Luật Điện ảnh 134/2025/QH15). */
 const AGE_GATE_LABELS = new Set(['T18']);
 
@@ -112,10 +109,7 @@ export class RecommendationService {
     `;
     const likes = await this.prisma.movieLike.groupBy({ by: ['movieId'], _count: { _all: true } });
     const likeMap = new Map(likes.map((l) => [l.movieId, l._count._all]));
-    const values = [
-      ...rows.map((r) => Number(r.total)),
-      ...likes.map((l) => likeMap.get(l.movieId) ?? 0),
-    ];
+    const values = [...rows.map((r) => Number(r.total)), ...likes.map((l) => likeMap.get(l.movieId) ?? 0)];
     const max = Math.max(1, ...values);
     const map = new Map<string, number>();
     for (const r of rows) {

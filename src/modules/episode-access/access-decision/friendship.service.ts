@@ -18,7 +18,10 @@ export class FriendshipService {
     const receiver = await this.prisma.user.findUnique({ where: { id: dto.receiverId } });
     if (!receiver) throw new NotFoundException({ message: 'User not found', details: { reason: 'USER_NOT_FOUND' } });
     if (receiver.role !== 'MEMBER' || receiver.isActive === false) {
-      throw new ForbiddenException({ message: 'Can only befriend active members', details: { reason: 'NOT_A_MEMBER' } });
+      throw new ForbiddenException({
+        message: 'Can only befriend active members',
+        details: { reason: 'NOT_A_MEMBER' },
+      });
     }
 
     const existing = await this.prisma.friendship.findUnique({
@@ -73,7 +76,8 @@ export class FriendshipService {
   }
 
   async block(userId: string, friendId: string): Promise<FriendshipResponseDto> {
-    if (friendId === userId) throw new ForbiddenException({ message: 'Cannot block yourself', details: { reason: 'SELF_BLOCK' } });
+    if (friendId === userId)
+      throw new ForbiddenException({ message: 'Cannot block yourself', details: { reason: 'SELF_BLOCK' } });
     const row = await this.prisma.friendship.upsert({
       where: { senderId_receiverId: { senderId: userId, receiverId: friendId } },
       update: { status: FriendshipStatus.BLOCKED, respondedAt: new Date() },

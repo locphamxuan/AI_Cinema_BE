@@ -89,7 +89,7 @@ export class AccessDecisionService {
     // for Members too; the movie's own count still stands in for rows that predate the flags.
     const isFreeStarter =
       episode.isFreeForGuest ??
-      (episode.episodeNumber <= (episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount));
+      episode.episodeNumber <= (episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount);
     const base: DecisionBase = {
       episodeId: episode.id,
       movieId: episode.movieId,

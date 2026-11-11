@@ -1,4 +1,12 @@
-import { WebSocketGateway, WebSocketServer, SubscribeMessage, OnGatewayConnection, OnGatewayDisconnect, MessageBody, ConnectedSocket } from '@nestjs/websockets';
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  MessageBody,
+  ConnectedSocket,
+} from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -26,9 +34,10 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     private readonly prisma: PrismaService,
     private readonly rooms: WatchRoomService,
     private readonly friendships: FriendshipService,
+    private readonly entitlement: WatchEntitlementService,
   ) {}
 
-  async handleConnection(client: Socket) {
+  handleConnection(client: Socket): void {
     const userId = (client.handshake.auth as { userId?: string })?.userId;
     if (!userId) {
       client.disconnect(true);
@@ -37,23 +46,27 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     (client.data as { userId: string }).userId = userId;
   }
 
-  handleDisconnect(client: Socket) {
+  handleDisconnect(client: Socket): void {
     const data = client.data as { userId?: string; roomId?: string };
-    if (data.roomId) this.onHostSilent(data.roomId);
+    if (data.roomId) void this.onHostSilent(data.roomId);
   }
 
-  /** Member joins a room: entitlement is checked before the client is admitted. */
+  /** Member joins a room: entitlement is checked before the client is admitted (BR-69). */
   @SubscribeMessage('ROOM_JOIN')
-  async onJoin(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() body: { roomId: string },
-  ) {
+  async onJoin(@ConnectedSocket() client: Socket, @MessageBody() body: { roomId: string }): Promise<void> {
     const userId = (client.data as { userId: string }).userId;
     try {
       const room = await this.rooms.join(userId, body.roomId);
-      client.join(ROOM_CHANNEL(body.roomId));
+      const check = await this.entitlement.canWatch(room.episodeId, userId);
+      if (!check.allowed) {
+        this.server.to(client.id).emit('ROOM_ERROR', { reason: check.reason ?? 'ENTITLEMENT_REQUIRED' });
+        return;
+      }
+      void client.join(ROOM_CHANNEL(body.roomId));
       (client.data as { roomId: string }).roomId = body.roomId;
-      this.server.to(ROOM_CHANNEL(body.roomId)).emit('ROOM_PARTICIPANT_JOINED', { userId, count: room.participantCount });
+      this.server
+        .to(ROOM_CHANNEL(body.roomId))
+        .emit('ROOM_PARTICIPANT_JOINED', { userId, count: room.participantCount });
       this.server.to(client.id).emit('ROOM_JOINED', { room });
     } catch (e) {
       this.server.to(client.id).emit('ROOM_ERROR', { reason: (e as Error).message });
@@ -65,10 +78,10 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
   async onPlayback(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { roomId: string; state: 'PLAYING' | 'PAUSED'; positionSeconds: number },
-  ) {
+  ): Promise<void> {
     const userId = (client.data as { userId: string }).userId;
     try {
-      const room = await this.rooms.hostSync(userId, body.roomId, { state: body.state, positionSeconds: body.positionSeconds });
+      await this.rooms.hostSync(userId, body.roomId, { state: body.state, positionSeconds: body.positionSeconds });
       this.server.to(ROOM_CHANNEL(body.roomId)).emit('SYNC_PLAYBACK', {
         state: body.state,
         positionSeconds: body.positionSeconds,
@@ -86,7 +99,7 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
   async onInvite(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { roomId: string; friendId: string },
-  ) {
+  ): Promise<void> {
     const userId = (client.data as { userId: string }).userId;
     const friend = await this.prisma.user.findUnique({ where: { id: body.friendId } });
     if (!friend) {
@@ -105,21 +118,23 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     });
   }
 
-  private resetHostTimer(roomId: string) {
+  private resetHostTimer(roomId: string): void {
     this.clearHostTimer(roomId);
     this.roomTimers.set(
       roomId,
-      setTimeout(() => this.onHostSilent(roomId), HOST_SILENCE_MS),
+      setTimeout(() => {
+        void this.onHostSilent(roomId);
+      }, HOST_SILENCE_MS),
     );
   }
 
-  private clearHostTimer(roomId: string) {
+  private clearHostTimer(roomId: string): void {
     const t = this.roomTimers.get(roomId);
     if (t) clearTimeout(t);
     this.roomTimers.delete(roomId);
   }
 
-  private async onHostSilent(roomId: string) {
+  private async onHostSilent(roomId: string): Promise<void> {
     const room = await this.prisma.watchRoom.findUnique({
       where: { id: roomId },
       include: { participants: true },
