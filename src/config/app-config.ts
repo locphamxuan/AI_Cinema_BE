@@ -1,3 +1,5 @@
+import { DEFAULT_CODE_TTL_SECONDS, type OAuthConfig } from './oauth-config';
+
 /**
  * Every setting the API reads, parsed and checked once at start-up so a bad .env fails fast
  * instead of on the first request that needs it. Read it through the APP_CONFIG provider.
@@ -97,6 +99,8 @@ export interface AppConfig {
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
   google: { clientIds: string[] };
+  /** AI Cinema as an OAuth 2.0 authorization server for Studio Web (src/config/oauth-config.ts). */
+  oauth: OAuthConfig;
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -269,6 +273,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
+    oauth: { codeTtlSeconds: read.int('OAUTH_CODE_TTL_SECONDS', DEFAULT_CODE_TTL_SECONDS, 30) },
     google: {
       clientIds: [
         ...new Set(

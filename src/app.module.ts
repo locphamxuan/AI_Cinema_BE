@@ -10,6 +10,7 @@ import { QueueModule } from 'src/infrastructure/queue/queue.module';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/identity/auth/auth.module';
+import { OAuthModule } from 'src/modules/identity/oauth/oauth.module';
 import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { EpisodeAccessModule } from 'src/modules/episode-access/episode-access.module';
 import { PlaybackModule } from 'src/modules/playback/playback.module';
@@ -45,6 +46,8 @@ import { AppController } from './app.controller';
     QueueModule,
     MailerModule,
     AuthModule,
+    // After AuthModule: its scope guard must run after the JWT and permission guards.
+    OAuthModule,
     NotificationModule,
     EmailModule,
     AuditLogModule,
