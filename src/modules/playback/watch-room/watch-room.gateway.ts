@@ -16,7 +16,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RoomInviteService } from './room-invite.service';
 import { LiveRooms, PlaybackThrottle } from './room-live-state';
 import { RoomSeats } from './room-seats';
-import { handshakeTokenOf, liveStateOf, socketErrorOf } from './room-socket-utils';
+import { handshakeTokenOf, liveStateOf, socketErrorOf, assertActiveAccount } from './room-socket-utils';
 import { RoomTerminationService } from './room-termination.service';
 import { WatchRoomService } from './watch-room.service';
 import {
@@ -75,6 +75,7 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
         audience: this.config.jwt.audience,
       });
       if (payload.type !== 'access') throw new Error('not an access token');
+      await assertActiveAccount(this.prisma, payload.sub);
       (client.data as SocketData).userId = payload.sub;
       this.seats.connect(payload.sub, client);
       void client.join(USER_CHANNEL(payload.sub));
@@ -152,6 +153,7 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
   @SubscribeMessage(ROOM_EVENT.VOTE_HOST)
   async onVoteHost(@ConnectedSocket() client: Socket, @MessageBody() body: { roomId: string }): Promise<void> {
     const userId = (client.data as SocketData).userId!;
+    if (!this.seats.isSeated(body.roomId, userId)) return void client.emit(ROOM_EVENT.ERROR, { reason: 'NOT_IN_ROOM' });
     const active = await this.prisma.roomParticipant.count({
       where: { roomId: body.roomId, leftAt: null, role: 'PARTICIPANT' },
     });

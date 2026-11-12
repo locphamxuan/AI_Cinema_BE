@@ -28,3 +28,12 @@ export function handshakeTokenOf(client: {
   const header = client.handshake.headers.authorization;
   return auth?.token ?? (header?.startsWith('Bearer ') ? header.slice(7) : '');
 }
+
+/** A token outlives a lock-out: a socket checks the account like the HTTP guard does (audit 2026-11-12). */
+export async function assertActiveAccount(
+  prisma: { user: { findUnique(args: object): Promise<{ isActive: boolean } | null> } },
+  userId: string,
+): Promise<void> {
+  const account = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true } });
+  if (!account?.isActive) throw new Error('account deactivated');
+}
