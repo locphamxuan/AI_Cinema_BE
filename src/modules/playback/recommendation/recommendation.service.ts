@@ -25,6 +25,10 @@ const SHORT_LIST = 12;
 const TASTE_WINDOW_MS = 90 * 24 * 3600 * 1000;
 const CACHE_TTL_MS = 6 * 3600 * 1000;
 const AGE_GATE_LABELS = new Set(['T18']);
+/** Movies a recommendation may name: at least one published episode. */
+const LISTED = { episodes: { some: { status: 'PUBLISHED' as const } } };
+/** Members whose list stays cached; the oldest entry goes first when full. */
+const CACHE_MAX_MEMBERS = 5000;
 
 const MOVIE_TASTE = {
   select: { id: true, country: true, genres: { select: { genre: { select: { name: true } } } } },
@@ -69,6 +73,9 @@ export class RecommendationService {
       .slice(0, PAGE_SIZE)
       .map((s) => RecommendationResponseDto.from(s.movie, s.score, 'hybrid', reasonFor(s.movie, taste)));
 
+    this.cache.delete(userId);
+    const [oldest] = this.cache.keys();
+    if (this.cache.size >= CACHE_MAX_MEMBERS && oldest) this.cache.delete(oldest);
     this.cache.set(userId, { at: Date.now(), stamp, rows });
     return rows;
   }
@@ -112,8 +119,8 @@ export class RecommendationService {
    * behavior, without what they already opened.
    */
   async after(movieId: string, userId: string): Promise<RecommendationResponseDto[]> {
-    const target = await this.prisma.movie.findUnique({
-      where: { id: movieId },
+    const target = await this.prisma.movie.findFirst({
+      where: { id: movieId, ...LISTED },
       select: { ...MOVIE_TASTE.select, title: true },
     });
     if (!target) throw new NotFoundException('Movie not found');
@@ -146,8 +153,9 @@ export class RecommendationService {
       .map((s) => RecommendationResponseDto.from(s.movie, s.score, 'after', s.reason));
   }
 
+  /** Only a movie on the catalog (a published episode): an unreleased or cancelled one stays unknown. */
   private async target(movieId: string) {
-    const target = await this.prisma.movie.findUnique({ where: { id: movieId }, ...MOVIE_TASTE });
+    const target = await this.prisma.movie.findFirst({ where: { id: movieId, ...LISTED }, ...MOVIE_TASTE });
     if (!target) throw new NotFoundException('Movie not found');
     return target;
   }
@@ -164,7 +172,7 @@ export class RecommendationService {
   /** Movies with at least one published episode: the only ones a recommendation may point at. */
   private candidates(): Promise<CandidateMovie[]> {
     return this.prisma.movie.findMany({
-      where: { episodes: { some: { status: 'PUBLISHED' } } },
+      where: LISTED,
       select: {
         id: true,
         title: true,

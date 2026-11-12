@@ -6,7 +6,7 @@ describe('RecommendationService', () => {
     user: { findUnique: jest.fn() },
     movieLike: { findMany: jest.fn(), groupBy: jest.fn(), count: jest.fn() },
     watchProgress: { findMany: jest.fn(), findFirst: jest.fn() },
-    movie: { findMany: jest.fn(), findUnique: jest.fn() },
+    movie: { findMany: jest.fn(), findFirst: jest.fn() },
     $queryRaw: jest.fn(),
   };
   /** A fresh service per test: results are cached 6 h per member. */
@@ -139,7 +139,7 @@ describe('RecommendationService', () => {
 
   it('suggests after a movie ends: close to it, unseen, with the reason', async () => {
     prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
-    prisma.movie.findUnique.mockResolvedValue({
+    prisma.movie.findFirst.mockResolvedValue({
       id: 't',
       title: 'Phim A',
       country: 'VN',
@@ -155,7 +155,7 @@ describe('RecommendationService', () => {
     const rows = await newService().after('t', 'u1');
     expect(rows.map((r) => r.movieId)).toEqual(['y', 'x']);
     expect(rows[0]).toMatchObject({ source: 'after', reason: 'Vì bạn vừa xem "Phim A": cùng thể loại Drama' });
-    prisma.movie.findUnique.mockResolvedValue(null);
+    prisma.movie.findFirst.mockResolvedValue(null);
     await expect(newService().after('missing', 'u1')).rejects.toThrow('Movie not found');
   });
 
@@ -163,7 +163,7 @@ describe('RecommendationService', () => {
     const target = { id: 't', country: 'VN', genres: [{ genre: { name: 'Drama' } }, { genre: { name: 'Romance' } }] };
 
     it('ranks movies sharing genres or country, never the movie itself, T18 hidden from guests', async () => {
-      prisma.movie.findUnique.mockResolvedValue(target);
+      prisma.movie.findFirst.mockResolvedValue(target);
       prisma.movie.findMany.mockResolvedValue([
         movie({ id: 't' }),
         movie({ id: 'a', country: 'US' }),
@@ -178,11 +178,11 @@ describe('RecommendationService', () => {
     });
 
     it('shows T18 titles to an adult viewer and 404s an unknown movie', async () => {
-      prisma.movie.findUnique.mockResolvedValue(target);
+      prisma.movie.findFirst.mockResolvedValue(target);
       prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
       prisma.movie.findMany.mockResolvedValue([movie({ id: 'd', ageRating: 'T18' })]);
       await expect(newService().similar('t', 'u1')).resolves.toHaveLength(1);
-      prisma.movie.findUnique.mockResolvedValue(null);
+      prisma.movie.findFirst.mockResolvedValue(null);
       await expect(newService().similar('x')).rejects.toThrow('Movie not found');
     });
   });
