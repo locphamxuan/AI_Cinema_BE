@@ -207,10 +207,7 @@ export class WatchRoomService {
     const checks = await Promise.all(
       active.map(async (p) => ({ p, check: await this.entitlement.canWatch(next.id, p.userId) })),
     );
-    const blocked = checks.filter(({ p, check }) => !check.allowed && p.userId !== userId);
-    await Promise.all(
-      blocked.map(({ p }) => this.prisma.roomParticipant.update({ where: { id: p.id }, data: { leftAt: new Date() } })),
-    );
+    // The Host is checked first: a refused move must not have sent anyone out of the room.
     const hostCheck = checks.find(({ p }) => p.userId === userId);
     if (hostCheck && !hostCheck.check.allowed) {
       throw new ForbiddenException({
@@ -218,6 +215,10 @@ export class WatchRoomService {
         details: { reason: 'ENTITLEMENT_REQUIRED', required: hostCheck.check.required },
       });
     }
+    const blocked = checks.filter(({ p, check }) => !check.allowed && p.userId !== userId);
+    await Promise.all(
+      blocked.map(({ p }) => this.prisma.roomParticipant.update({ where: { id: p.id }, data: { leftAt: new Date() } })),
+    );
 
     const updated = await this.prisma.watchRoom.update({
       where: { id: roomId },

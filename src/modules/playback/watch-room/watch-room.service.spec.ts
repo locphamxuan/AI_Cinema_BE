@@ -174,12 +174,14 @@ describe('WatchRoomService', () => {
   });
 
   it('refuses the next episode when the Host is not entitled to it', async () => {
-    prisma.watchRoom.findUnique.mockResolvedValue(room());
+    prisma.watchRoom.findUnique.mockResolvedValue(room({ participants: [host, member] }));
     prisma.episode.findUnique.mockResolvedValue({ movieId: 'm1', episodeNumber: 1 });
     prisma.episode.findFirst.mockResolvedValue({ id: 'ep-2', episodeNumber: 2 });
     entitlement.canWatch.mockResolvedValue({ allowed: false, required: { coinPrice: 10 } });
     await expect(newService().nextEpisode('u1', 'r1')).rejects.toThrow(ForbiddenException);
     expect(prisma.watchRoom.update).not.toHaveBeenCalled();
+    // A refused move never sends a member out of the room.
+    expect(prisma.roomParticipant.update).not.toHaveBeenCalled();
   });
 
   it('terminates every open room of a taken-down episode (edge 1.4)', async () => {
