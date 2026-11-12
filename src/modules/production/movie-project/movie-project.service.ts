@@ -210,9 +210,10 @@ export class MovieProjectService {
       [...OPEN_PROJECT_STATUSES, ProjectStatus.COMPLETED, ProjectStatus.UNDER_REVISION],
       'edit the project',
     );
+    let newStudio: { id: string; name: string } | null = null;
     if (dto.studioId && dto.studioId !== project.studioId) {
       if (project.handedOffAt) throw new ConflictException('The project was handed off; change the studio there');
-      await this.studios.assertUsable(dto.studioId);
+      newStudio = await this.studios.assertUsable(dto.studioId);
     }
 
     const { genreIds, genreNames, ...fields } = dto;
@@ -233,6 +234,7 @@ export class MovieProjectService {
         },
         tx,
       );
+      if (newStudio) await this.lifecycle.announceStudio(projectId, newStudio, tx);
     });
     return this.detail(projectId, user);
   }

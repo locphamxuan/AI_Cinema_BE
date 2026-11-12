@@ -49,15 +49,35 @@ export class ProjectLifecycleService {
   async announceReviewer(projectId: string): Promise<void> {
     const project = await this.prisma.movieProject.findUniqueOrThrow({
       where: { id: projectId },
-      include: { movie: true },
+      include: { movie: true, studio: { select: { name: true } } },
     });
+    const studio = project.studio ? ` Studio sản xuất: "${project.studio.name}".` : ' Admin sẽ chọn Studio sau.';
     await this.notifications.notify([project.reviewerId], {
       type: NOTIFICATION_TYPE.PROJECT_ASSIGNED,
       title: `Bạn phụ trách duyệt dự án phim "${project.movie.title}"`,
-      body: 'Admin vừa tạo dự án; lên cấu trúc mùa/tập và duyệt kịch bản Creator nộp.',
+      body: `Admin vừa tạo dự án; lên cấu trúc mùa/tập và duyệt kịch bản Creator nộp.${studio}`,
       link: projectLink(projectId),
-      payload: { projectId },
+      payload: { projectId, studioId: project.studioId },
     });
+  }
+
+  /** The Reviewer (and the lead Creator) learn which studio they will work with whenever the Admin picks one. */
+  async announceStudio(projectId: string, studio: { id: string; name: string }, tx?: PrismaTx): Promise<void> {
+    const project = await (tx ?? this.prisma).movieProject.findUniqueOrThrow({
+      where: { id: projectId },
+      include: { movie: { select: { title: true } } },
+    });
+    await this.notifications.notify(
+      [project.reviewerId, project.creatorId],
+      {
+        type: NOTIFICATION_TYPE.STUDIO_SELECTED,
+        title: `Dự án "${project.movie.title}" làm việc với Studio "${studio.name}"`,
+        body: 'Admin đã chọn Studio sản xuất cho dự án; hợp đồng gửi Studio sau khi Kịch bản Final được duyệt.',
+        link: projectLink(projectId),
+        payload: { projectId, studioId: studio.id },
+      },
+      tx,
+    );
   }
 
   /**

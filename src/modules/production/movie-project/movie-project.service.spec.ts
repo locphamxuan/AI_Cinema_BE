@@ -37,7 +37,12 @@ describe('MovieProjectService', () => {
   const access = { project: jest.fn(), readableWhere: jest.fn() };
   const costs = { summary: jest.fn() };
   const studios = { assertUsable: jest.fn() };
-  const lifecycle = { assertActive: jest.fn(), announceReviewer: jest.fn(), assignCreator: jest.fn() };
+  const lifecycle = {
+    assertActive: jest.fn(),
+    announceReviewer: jest.fn(),
+    announceStudio: jest.fn(),
+    assignCreator: jest.fn(),
+  };
   const auditLog = { record: jest.fn(), findForProject: jest.fn() };
   const service = new MovieProjectService(
     prisma as unknown as PrismaService,
@@ -200,8 +205,10 @@ describe('MovieProjectService', () => {
     });
 
     it('checks a new studio, and refuses one once the project was handed off', async () => {
+      studios.assertUsable.mockResolvedValueOnce({ id: 'st2', name: 'Studio B' });
       await service.update('p1', { studioId: 'st2' }, ADMIN);
       expect(studios.assertUsable).toHaveBeenCalledWith('st2');
+      expect(lifecycle.announceStudio).toHaveBeenCalledWith('p1', { id: 'st2', name: 'Studio B' }, expect.anything());
 
       access.project.mockResolvedValue({ id: 'p1', status: ProjectStatus.IN_PRODUCTION, handedOffAt: new Date() });
       await expect(service.update('p1', { studioId: 'st2' }, ADMIN)).rejects.toBeInstanceOf(ConflictException);

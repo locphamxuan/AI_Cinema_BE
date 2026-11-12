@@ -59,6 +59,31 @@ describe('ProjectLifecycleService', () => {
     await expect(service.assertActive('ghost', UserRole.CONTENT_CREATOR)).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('names the studio to the Reviewer when the Admin picked one at creation', async () => {
+    db.movieProject.findUniqueOrThrow.mockResolvedValue({ ...PROJECT, studioId: 's1', studio: { name: 'Studio A' } });
+    await service.announceReviewer('p1');
+    expect(notifications.notify).toHaveBeenCalledWith(
+      ['rev'],
+      expect.objectContaining({
+        body: expect.stringContaining('Studio A') as unknown,
+        payload: { projectId: 'p1', studioId: 's1' },
+      }),
+    );
+  });
+
+  it('tells the Reviewer and the Creator which studio the Admin chose', async () => {
+    db.movieProject.findUniqueOrThrow.mockResolvedValue({ ...PROJECT, creatorId: 'cre' });
+    await service.announceStudio('p1', { id: 's2', name: 'Studio B' }, db as never);
+    expect(notifications.notify).toHaveBeenCalledWith(
+      ['rev', 'cre'],
+      expect.objectContaining({
+        type: NOTIFICATION_TYPE.STUDIO_SELECTED,
+        payload: { projectId: 'p1', studioId: 's2' },
+      }),
+      db,
+    );
+  });
+
   it('tells the Reviewer they are in charge of a new project', async () => {
     db.movieProject.findUniqueOrThrow.mockResolvedValue(PROJECT);
     await service.announceReviewer('p1');
