@@ -12,11 +12,15 @@ export class FriendshipService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateFriendshipDto): Promise<FriendshipResponseDto> {
-    if (dto.receiverId === userId) {
+    // A member adds a friend by id (from a list) or by the email the friend gave them.
+    const receiver = await this.prisma.user.findUnique({
+      where: dto.receiverId ? { id: dto.receiverId } : { email: dto.receiverEmail!.trim().toLowerCase() },
+    });
+    if (!receiver) throw new NotFoundException({ message: 'User not found', details: { reason: 'USER_NOT_FOUND' } });
+    const receiverId = receiver.id;
+    if (receiverId === userId) {
       throw new ForbiddenException({ message: 'Cannot befriend yourself', details: { reason: 'SELF_FRIEND' } });
     }
-    const receiver = await this.prisma.user.findUnique({ where: { id: dto.receiverId } });
-    if (!receiver) throw new NotFoundException({ message: 'User not found', details: { reason: 'USER_NOT_FOUND' } });
     if (receiver.role !== 'MEMBER' || receiver.isActive === false) {
       throw new ForbiddenException({
         message: 'Can only befriend active members',
@@ -28,8 +32,8 @@ export class FriendshipService {
     const pair = await this.prisma.friendship.findMany({
       where: {
         OR: [
-          { senderId: userId, receiverId: dto.receiverId },
-          { senderId: dto.receiverId, receiverId: userId },
+          { senderId: userId, receiverId },
+          { senderId: receiverId, receiverId: userId },
         ],
       },
     });
@@ -62,7 +66,7 @@ export class FriendshipService {
     }
 
     const row = await this.prisma.friendship.create({
-      data: { senderId: userId, receiverId: dto.receiverId, lastInviteAt: dto.inviteContext ? now : null },
+      data: { senderId: userId, receiverId, lastInviteAt: dto.inviteContext ? now : null },
     });
     return FriendshipResponseDto.from(row);
   }
@@ -92,7 +96,7 @@ export class FriendshipService {
       include: { sender: { select: { id: true, fullName: true } }, receiver: { select: { id: true, fullName: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    return rows.map((r) => FriendshipResponseDto.from(r));
+    return rows.map((r) => FriendshipResponseDto.from(r, userId));
   }
 
   async block(userId: string, friendId: string): Promise<FriendshipResponseDto> {

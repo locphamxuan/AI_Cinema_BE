@@ -162,8 +162,11 @@ describe('Watch party and recommendations (e2e)', () => {
     await friend.post(`/friends/${sent.id}/respond`, {}, 400);
     const accepted = await friend.post<{ status: string }>(`/friends/${sent.id}/respond`, { accept: true }, 201);
     expect(accepted.status).toBe('ACCEPTED');
-    const friends = await member.get<{ id: string }[]>('/friends');
-    expect(friends.some((f) => f.id === sent.id)).toBe(true);
+    const friends = await member.get<{ id: string; friend?: { id: string } }[]>('/friends');
+    expect(friends.find((f) => f.id === sent.id)?.friend?.id).toBe(friend.id);
+    // A friend can be added by email too (2026-11-13); an unknown email is a 404.
+    await member.post('/friends', { receiverEmail: 'khong-ton-tai@aicinema.test' }, 404);
+    await member.post('/friends', {}, 400);
     await member.post('/friends', { receiverId: member.id }, 403);
     await member.post('/friends', { receiverId: '00000000-0000-4000-8000-000000000000' }, 404);
     await member.post('/friends', { receiverId: friend.id }, 409);

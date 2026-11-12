@@ -1,6 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class FriendshipResponseDto {
+  @ApiPropertyOptional({ description: 'The other member of the friendship (in a list)' })
+  friend?: { id: string; fullName: string };
+
+  @ApiPropertyOptional({ description: 'True when the viewer received this request' })
+  incoming?: boolean;
+
   @ApiProperty({ example: '0f9c8e2a-2f1b-4a53-9d4f-6f0b6a1d2c33' })
   id: string;
 
@@ -29,17 +35,27 @@ export class FriendshipResponseDto {
     Object.assign(this, partial);
   }
 
-  static from(row: {
-    id: string;
-    senderId: string;
-    receiverId: string;
-    status: { toString(): string };
-    respondedAt: Date | null;
-    lastInviteAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }): FriendshipResponseDto {
+  static from(
+    row: {
+      id: string;
+      senderId: string;
+      receiverId: string;
+      status: { toString(): string };
+      respondedAt: Date | null;
+      lastInviteAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+      sender?: { id: string; fullName: string | null };
+      receiver?: { id: string; fullName: string | null };
+    },
+    viewerId?: string,
+  ): FriendshipResponseDto {
+    // The other person, named, for the friends list of `viewerId`.
+    const other =
+      viewerId && row.sender && row.receiver ? (row.senderId === viewerId ? row.receiver : row.sender) : null;
     return new FriendshipResponseDto({
+      friend: other ? { id: other.id, fullName: other.fullName ?? '' } : undefined,
+      incoming: viewerId ? row.receiverId === viewerId : undefined,
       id: row.id,
       senderId: row.senderId,
       receiverId: row.receiverId,

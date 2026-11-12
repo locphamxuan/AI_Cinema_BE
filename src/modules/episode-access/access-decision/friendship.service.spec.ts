@@ -28,8 +28,10 @@ describe('FriendshipService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('refuses to befriend yourself', async () => {
+  it('refuses to befriend yourself, by id or by your own email', async () => {
+    prisma.user.findUnique.mockResolvedValue(member({ id: 'u1' }));
     await expect(service.create('u1', { receiverId: 'u1' })).rejects.toThrow(ForbiddenException);
+    await expect(service.create('u1', { receiverEmail: 'me@gmail.com' })).rejects.toThrow(ForbiddenException);
   });
 
   it('refuses when the receiver is not an active member', async () => {
@@ -125,5 +127,45 @@ describe('FriendshipService', () => {
   it('returns 404 for a missing friendship', async () => {
     prisma.friendship.findUnique.mockResolvedValue(null);
     await expect(service.respond('u2', 'missing', true)).rejects.toThrow(NotFoundException);
+  });
+
+  it('finds the friend by email, lower-cased, when the member has no id (2026-11-13)', async () => {
+    prisma.user.findUnique.mockResolvedValue(member({ id: 'u2' }));
+    prisma.friendship.findMany.mockResolvedValue([]);
+    prisma.friendship.create.mockResolvedValue({
+      id: 'f9',
+      senderId: 'u1',
+      receiverId: 'u2',
+      status: FriendshipStatus.PENDING,
+      respondedAt: null,
+      lastInviteAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await service.create('u1', { receiverEmail: ' Ban@Gmail.com ' });
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'ban@gmail.com' } });
+    expect(prisma.friendship.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ receiverId: 'u2' }) }),
+    );
+  });
+
+  it('names the other member and flags incoming requests in the list', async () => {
+    const at = new Date();
+    prisma.friendship.findMany.mockResolvedValue([
+      {
+        id: 'f1',
+        senderId: 'u2',
+        receiverId: 'u1',
+        status: FriendshipStatus.PENDING,
+        respondedAt: null,
+        lastInviteAt: null,
+        createdAt: at,
+        updatedAt: at,
+        sender: { id: 'u2', fullName: 'Lan' },
+        receiver: { id: 'u1', fullName: 'Tôi' },
+      },
+    ]);
+    const [row] = await service.list('u1');
+    expect(row).toMatchObject({ friend: { id: 'u2', fullName: 'Lan' }, incoming: true });
   });
 });

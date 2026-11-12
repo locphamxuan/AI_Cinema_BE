@@ -1,3 +1,4 @@
+import { Throttle } from '@nestjs/throttler';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
@@ -18,6 +19,7 @@ export class FriendshipController {
   constructor(private readonly friendships: FriendshipService) {}
 
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Send a friend request (BR-69)' })
   @ApiOkResponse({ type: FriendshipResponseDto })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFriendshipDto) {
