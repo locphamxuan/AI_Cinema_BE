@@ -23,7 +23,7 @@ import {
   type AgentOutput,
   type SupportAgentResolution,
 } from './agent-output';
-import { agentMetadata, applyGuardrails, fallbackReply } from './agent-replies';
+import { agentMetadata, applyGuardrails, applyScopeGate, fallbackReply } from './agent-replies';
 import { mockReply } from './mock-agent';
 
 export type { SupportAgentResolution };
@@ -278,7 +278,7 @@ export class SupportAgentService {
     toolCalls: SupportAgentToolCall[],
   ): SupportAgentReply {
     return {
-      ...applyGuardrails(output, turn, this.guardrails, this.promptBuilder),
+      ...applyScopeGate(applyGuardrails(output, turn, this.guardrails, this.promptBuilder), turn, toolCalls),
       metadata: agentMetadata(turn, startedAt, model, usage, toolCalls),
     };
   }

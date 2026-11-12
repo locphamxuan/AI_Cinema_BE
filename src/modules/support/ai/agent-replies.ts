@@ -49,6 +49,30 @@ export function applyGuardrails(
   };
 }
 
+/** What the assistant says when a question is outside AI Cinema (audit 2026-11-12). */
+export const OUT_OF_SCOPE_REPLY =
+  'Mình là Trợ lý AI của AI Cinema nên chỉ hỗ trợ các câu hỏi về tài khoản, gói thành viên, Coin, thanh toán, ' +
+  'quyền xem phim, thiết bị và xem nhóm trên AI Cinema. Bạn cần hỗ trợ vấn đề nào trong số này?';
+
+/**
+ * Server-side scope gate (audit 2026-11-12): the system prompt asks the model to answer only from
+ * the knowledge base and the tools, but nothing enforced it — with no article retrieved and no
+ * tool called, a confident ANSWERED reply could only come from the model's own training data
+ * (general knowledge, other platforms, made-up policies). Such a reply is replaced by the scope
+ * message; escalations pass through untouched so Staff still sees them.
+ */
+export function applyScopeGate(
+  output: AgentOutput,
+  turn: Pick<SupportAgentTurn, 'retrieved'>,
+  toolCalls: SupportAgentToolCall[],
+): AgentOutput {
+  if (output.resolution !== 'ANSWERED' && output.resolution !== 'RESOLVED_SUGGESTED') return output;
+  const grounded =
+    turn.retrieved.length > 0 || toolCalls.some((call) => (call.result as { ok?: boolean } | null)?.ok === true);
+  if (grounded) return output;
+  return { ...output, reply: OUT_OF_SCOPE_REPLY, resolution: 'ANSWERED', handoffSummary: undefined, quickReplies: [] };
+}
+
 export function fallbackReply(
   turn: SupportAgentTurn,
   startedAt: number,
