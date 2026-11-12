@@ -34,6 +34,7 @@ import { SessionTokenService } from './session-token.service';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
-  exports: [SessionTokenService],
+  // JwtModule rides along for the WebSocket gateways, which verify the handshake token themselves.
+  exports: [SessionTokenService, JwtModule],
 })
 export class AuthModule {}
