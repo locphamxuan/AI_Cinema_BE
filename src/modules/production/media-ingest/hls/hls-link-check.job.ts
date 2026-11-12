@@ -1,5 +1,5 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
-import { MediaIngestStatus, MediaSourceMethod } from '@prisma/client';
+import { MediaIngestStatus, MediaSourceMethod, EpisodeStatus } from '@prisma/client';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
@@ -65,7 +65,9 @@ export class HlsLinkCheckJob implements OnModuleInit {
         if (reported) continue;
         const { movie } = asset.episode;
         const studio = await this.notifications.studioAccountIds(movie.project?.studioId);
-        await this.notifications.notify([...studio, movie.project?.reviewerId], {
+        // A live episode fails its viewers right now: the Admins hear of it too and may take it down.
+        const admins = asset.episode.status === EpisodeStatus.PUBLISHED ? await this.notifications.adminIds() : [];
+        await this.notifications.notify([...studio, movie.project?.reviewerId, ...admins], {
           type: NOTIFICATION_TYPE.HLS_LINK_DEAD,
           title: `Link video tập ${asset.episode.episodeNumber} của phim "${movie.title}" không còn hoạt động`,
           body: `${(error as Error).message}. Hãy nhờ studio sửa link hoặc giao lại tập.`,
