@@ -27,7 +27,8 @@ export class FinalFilmService {
   async confirm(episodeId: string, reviewer: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, reviewer, 'reviewer');
     assertEpisodeStatus(episode.status, [EpisodeStatus.COMPLIANCE_PASSED], 'confirm the Final Film');
-    if (episode.coinPrice === null) throw new ConflictException('Set the Coin price before confirming the Final Film');
+    // 2026-11-11: the Admin prices the episode after this step, so no price is asked for here; the release gate
+    // (PublicationService.missingForRelease and the publish_compliance_gate trigger) still refuses an unpriced episode.
     if (episode.finalConfirmedAt) throw new ConflictException('The Final Film is already confirmed');
     return this.prisma.$transaction(async (tx) => {
       await this.move(tx, episodeId, false, {

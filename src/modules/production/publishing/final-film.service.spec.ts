@@ -45,13 +45,16 @@ describe('FinalFilmService (MF-1 §5–6)', () => {
     expect(notifications.notify).toHaveBeenCalledWith(['admin'], expect.anything(), db);
   });
 
-  it('refuses to confirm before compliance or without a Coin price', async () => {
+  it('refuses to confirm before compliance', async () => {
     await expect(
       setup({ status: EpisodeStatus.LABELED }).service.confirm('e1', { id: 'rev', role: 'CONTENT_REVIEWER' }),
     ).rejects.toThrow(ConflictException);
-    await expect(
-      setup({ coinPrice: null }).service.confirm('e1', { id: 'rev', role: 'CONTENT_REVIEWER' }),
-    ).rejects.toThrow(/Coin price/);
+  });
+
+  it('confirms an unpriced episode: the Admin prices it afterwards, before publishing (2026-11-11)', async () => {
+    const { service, db } = setup({ coinPrice: null });
+    await service.confirm('e1', { id: 'rev', role: 'CONTENT_REVIEWER' });
+    expect(db.episode.updateMany).toHaveBeenCalled();
   });
 
   it('sends a confirmed Final Film back to the Reviewer, never to the studio', async () => {
