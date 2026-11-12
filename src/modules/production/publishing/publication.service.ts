@@ -26,6 +26,7 @@ import {
 import type { PublishEpisodeRequestDto, UnpublishRequestDto } from './dto/publishing.request.dto';
 import { EpisodeRevisionService } from './episode-revision.service';
 import { isRefusal, withdrawFailedRelease } from './failed-release';
+import { RoomTerminationService } from 'src/modules/playback/watch-room/room-termination.service';
 import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 /** A project releases episodes while the studio delivers, while it is fixed, and once complete. */
@@ -61,6 +62,7 @@ export class PublicationService {
     private readonly revisions: EpisodeRevisionService,
     private readonly entitlements: EntitlementService,
     private readonly settings: PlatformSettingService,
+    private readonly roomTermination: RoomTerminationService,
   ) {}
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
@@ -159,6 +161,8 @@ export class PublicationService {
       );
     });
     await this.revisions.announce(mailId);
+    // Edge 1.4 (BR-69): a live takedown reaches every watch room on the episode at once.
+    if (live) await this.roomTermination.episodeTakenDown(episode.id);
     return this.list(episode.id, user);
   }
 
