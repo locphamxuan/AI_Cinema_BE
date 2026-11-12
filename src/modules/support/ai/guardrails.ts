@@ -6,14 +6,20 @@ export interface GuardrailVerdict {
   action: 'proceed' | 'escalate' | 'block';
 }
 
-/** Output checks of plan §8.2: nothing sensitive or over-promising leaves the AI. */
+/**
+ * Output checks of plan §8.2: nothing sensitive or over-promising leaves the AI.
+ *
+ * Audit 2026-11-12: the refund rule used to block any reply containing "hoàn Coin", so the AI
+ * could not even explain BR-52 ("tập bị gỡ vĩnh viễn thì Coin được hoàn tự động") that the
+ * knowledge base itself documents. Only a promise in the AI's own voice is blocked now.
+ */
 @Injectable()
 export class GuardrailsService {
+  /** "mình/chúng tôi/em sẽ|đã|có thể <action>", or the action addressed to the member ("… cho bạn"). */
   private readonly forbiddenPromises = [
-    /hoàn\s*tiền/i,
-    /hoàn\s*coin/i,
-    /đổi\s*gói/i,
-    /tặng\s*coin/i,
+    /(mình|chúng\s*tôi|em|tôi|ai\s*cinema)\s+(sẽ|đã|có\s*thể|xin)\s+(hoàn|tặng|cộng|đổi|bù)/i,
+    /(hoàn|tặng|cộng|bù)\s+(lại\s+)?(tiền|coin|\d+\s*coin)[^.]{0,30}\s+cho\s+bạn/i,
+    /đổi\s*gói\s+(miễn\s*phí\s+)?cho\s+bạn/i,
     /miễn\s*phí\s*vĩnh\s*viễn/i,
   ];
 
