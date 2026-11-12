@@ -1,61 +1,22 @@
 import PDFDocument from 'pdfkit';
 import { pdfText, unicodeFontPath } from '../src/infrastructure/pdf/unicode-font';
+import { articles, LEGAL_BASES, money, type Party, type SampleContract } from './sample-contract-clauses';
 
-/** Who signs a counterpart: only that side's box carries a signature, the other stays empty. */
+export type { SampleContract } from './sample-contract-clauses';
+
+/** Who signs a counterpart: only that side's box carries a signature and stamp, the other stays empty. */
 export type SampleSide = 'ADMIN' | 'STUDIO';
 
-export interface SampleContract {
-  contractNo: string;
-  day: string;
-  movieTitle: string;
-  episodes: number;
-  costVnd: number;
-  costInWords: string;
-  studioName: string;
-  studioSigner: string;
-  adminSigner: string;
-}
-
-const money = (amount: number) => `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
-
-const CLAUSES = (contract: SampleContract): [string, string][] => [
-  [
-    'Điều 1. Nội dung công việc',
-    `Bên B sản xuất bộ phim "${contract.movieTitle}" gồm ${contract.episodes} tập, đúng Kịch bản Final đã được Bên A phê duyệt ` +
-      'và đúng hạn giao từng tập công bố trên Studio Web. Mọi thay đổi về nội dung phải được Bên A chấp thuận bằng văn bản.',
-  ],
-  [
-    'Điều 2. Chi phí sản xuất',
-    `Chi phí sản xuất trọn gói là ${money(contract.costVnd)} (${contract.costInWords}), đã bao gồm thuế, không chia doanh thu. ` +
-      'Mức chi phí này là mức hai bên thống nhất sau quá trình thương lượng trên hệ thống AI Cinema.',
-  ],
-  [
-    'Điều 3. Tiến độ và giao nhận',
-    'Bên B nộp phim của từng tập qua Studio Web trước hạn giao. Bên A nghiệm thu qua quy trình duyệt nội dung; ' +
-      'nếu có yêu cầu chỉnh sửa, Bên B sửa và nộp lại bản mới trong thời hạn được ghi trong yêu cầu.',
-  ],
-  [
-    'Điều 4. Khai báo AI và tuân thủ pháp luật',
-    'Mỗi tập phim phải kèm khai báo AI (công cụ sử dụng, phần nội dung do AI tạo). Bên B cam kết không mô phỏng người thật ' +
-      'và không sử dụng tác phẩm có bản quyền của bên thứ ba. Nhãn AI được hiển thị trên mọi màn hình phát theo quy định hiện hành.',
-  ],
-  [
-    'Điều 5. Bản quyền và bảo mật',
-    'Toàn bộ quyền tài sản đối với phim thuộc về Bên A kể từ khi nghiệm thu. Bên B không chia sẻ kịch bản, phim hoặc ' +
-      'bất kỳ tài liệu nào của dự án cho bên thứ ba khi chưa có sự đồng ý bằng văn bản của Bên A.',
-  ],
-  [
-    'Điều 6. Hiệu lực',
-    'Hợp đồng chỉ có hiệu lực khi có đủ chữ ký của cả hai bên. Mỗi bên ký bản hợp đồng này và tải bản PDF đã ký của mình ' +
-      'lên hệ thống AI Cinema; hệ thống ghép hai bản thành một văn bản duy nhất mang đủ hai chữ ký.',
-  ],
-];
+type Text = (value: string) => string;
+const LEFT = 56;
+const WIDTH = 483;
 
 /** A drawn placeholder squiggle — obviously a sample, never an imitation of a real signature. */
 function drawSignature(doc: PDFKit.PDFDocument, x: number, y: number): void {
   doc
     .save()
     .lineWidth(1.2)
+    .strokeColor('#1a3d8f')
     .moveTo(x, y + 14)
     .bezierCurveTo(x + 18, y - 6, x + 30, y + 26, x + 48, y + 6)
     .bezierCurveTo(x + 62, y - 8, x + 74, y + 20, x + 96, y + 2)
@@ -66,37 +27,127 @@ function drawSignature(doc: PDFKit.PDFDocument, x: number, y: number): void {
     .restore();
 }
 
-function signatureBoxes(doc: PDFKit.PDFDocument, contract: SampleContract, side: SampleSide, text: (v: string) => string) {
-  const top = doc.y + 16;
-  const left = 56;
-  const right = 320;
-  doc.fontSize(11);
-  doc.text(text('ĐẠI DIỆN BÊN A (AI CINEMA)'), left, top, { width: 220 });
-  doc.text(text('ĐẠI DIỆN BÊN B (STUDIO)'), right, top, { width: 220 });
-  doc.fontSize(9).fillColor('#555555');
-  doc.text(text('(Ký, ghi rõ họ tên)'), left, top + 16, { width: 220 });
-  doc.text(text('(Ký, ghi rõ họ tên)'), right, top + 16, { width: 220 });
-  doc.fillColor('#000000');
-  if (side === 'ADMIN') drawSignature(doc, left + 10, top + 42);
-  else drawSignature(doc, right + 10, top + 42);
-  doc.fontSize(11);
-  doc.text(text(contract.adminSigner), left, top + 92, { width: 220 });
-  doc.text(text(contract.studioSigner), right, top + 92, { width: 220 });
-  doc.fontSize(8).fillColor('#777777');
-  doc.text(text('Chữ ký mẫu dùng cho bản demo của đồ án, không phải chữ ký của người thật.'), left, top + 124, {
-    width: 460,
-  });
-  doc.fillColor('#000000');
+/** A round red stamp reading "MẪU DEMO": shows where the seal goes without copying any real seal. */
+function drawStamp(doc: PDFKit.PDFDocument, x: number, y: number, name: string, text: Text): void {
+  doc.save().lineWidth(1.5).strokeColor('#c0392b').fillColor('#c0392b');
+  doc.circle(x, y, 34).stroke().circle(x, y, 28).stroke();
+  // The seal shows the short trade name: "Công ty TNHH Lumen Studio (giả lập)" -> "LUMEN STUDIO".
+  const short = name
+    .replace(/^Công ty TNHH\s*/i, '')
+    .replace(/\(.*\)/, '')
+    .replace(/^Nền tảng Phim\s*/i, '')
+    .trim();
+  doc.fontSize(7).text(text(short.toUpperCase()), x - 26, y - 12, { width: 52, align: 'center' });
+  doc.fontSize(8).text(text('MẪU DEMO'), x - 26, y + 4, { width: 52, align: 'center' });
+  doc.restore();
 }
 
-/** One counterpart of the sample contract: the same document, signed by one side only. */
-export function renderSampleContract(contract: SampleContract, side: SampleSide): Promise<Buffer> {
+function party(doc: PDFKit.PDFDocument, label: string, p: Party, text: Text): void {
+  doc
+    .moveDown(0.5)
+    .fontSize(11)
+    .text(text(`${label}: ${p.name.toUpperCase()}`));
+  doc.fontSize(10);
+  for (const line of [
+    `Địa chỉ trụ sở: ${p.address}`,
+    `Mã số thuế: ${p.taxCode}`,
+    `Điện thoại: ${p.phone}     Email: ${p.email}`,
+    `Tài khoản: ${p.bankAccount}`,
+    `Đại diện: Ông/Bà ${p.representative}     Chức vụ: ${p.title}`,
+  ]) {
+    doc.text(text(line), { indent: 14 });
+  }
+}
+
+function annex(doc: PDFKit.PDFDocument, c: SampleContract, text: Text): void {
+  doc.addPage();
+  doc.fontSize(13).text(text('PHỤ LỤC 01'), { align: 'center' });
+  doc.fontSize(11).text(text(`DANH SÁCH TẬP PHIM VÀ HẠN GIAO (kèm Hợp đồng số ${c.contractNo})`), { align: 'center' });
+  doc.moveDown();
+  const cols = [LEFT, LEFT + 50, LEFT + 260, LEFT + 360];
+  const head = ['Tập', 'Tên tập', 'Thời lượng', 'Hạn giao'];
+  const row = (cells: string[], y: number) =>
+    cells.forEach((cell, i) => doc.text(text(cell), cols[i] + 4, y + 5, { width: 200 }));
+  const tableTop = doc.y;
+  let y = tableTop;
+  doc.fontSize(10);
+  doc.rect(LEFT, y, WIDTH, 22).stroke();
+  row(head, y);
+  for (const e of c.episodes) {
+    y += 22;
+    doc.rect(LEFT, y, WIDTH, 22).stroke();
+    row([String(e.number), e.title, `${e.minutes} phút`, e.dueDate], y);
+  }
+  cols.slice(1).forEach((x) =>
+    doc
+      .moveTo(x, tableTop)
+      .lineTo(x, y + 22)
+      .stroke(),
+  );
+  doc.text(text(`Tổng số tập: ${c.episodes.length}. Giá trị Hợp đồng: ${money(c.costVnd)}.`), LEFT, y + 34, {
+    width: WIDTH,
+  });
+}
+
+function signatures(doc: PDFKit.PDFDocument, c: SampleContract, side: SampleSide, text: Text): void {
+  if (doc.y > 600) doc.addPage();
+  const top = doc.y + 24;
+  const right = 320;
+  doc.fontSize(11);
+  doc.text(text('ĐẠI DIỆN BÊN A'), LEFT, top, { width: 220, align: 'center' });
+  doc.text(text('ĐẠI DIỆN BÊN B'), right, top, { width: 220, align: 'center' });
+  doc.fontSize(9).fillColor('#555555');
+  doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), LEFT, top + 15, { width: 220, align: 'center' });
+  doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), right, top + 15, { width: 220, align: 'center' });
+  doc.fillColor('#000000');
+  const x = side === 'ADMIN' ? LEFT : right;
+  const signer = side === 'ADMIN' ? c.partyA : c.partyB;
+  drawStamp(doc, x + 70, top + 70, signer.name, text);
+  drawSignature(doc, x + 90, top + 52);
+  doc.fontSize(11);
+  doc.text(text(c.partyA.representative), LEFT, top + 120, { width: 220, align: 'center' });
+  doc.text(text(c.partyB.representative), right, top + 120, { width: 220, align: 'center' });
+  doc.fontSize(9).text(text(c.partyA.title), LEFT, top + 136, { width: 220, align: 'center' });
+  doc.text(text(c.partyB.title), right, top + 136, { width: 220, align: 'center' });
+}
+
+function footers(doc: PDFKit.PDFDocument, c: SampleContract, text: Text): void {
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i += 1) {
+    doc.switchToPage(i);
+    // Writing inside the bottom margin would make pdfkit open a new page: lift the margin for the footer.
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.fontSize(8).fillColor('#777777');
+    doc.text(text(`Hợp đồng số ${c.contractNo} — Trang ${i + 1}/${range.count}`), LEFT, 800, {
+      width: WIDTH,
+      align: 'center',
+      lineBreak: false,
+    });
+    doc.text(
+      text('Văn bản mẫu phục vụ demo đồ án; tên đơn vị, mã số thuế, chữ ký và con dấu đều là dữ liệu giả lập.'),
+      LEFT,
+      812,
+      {
+        width: WIDTH,
+        align: 'center',
+        lineBreak: false,
+      },
+    );
+    doc.fillColor('#000000');
+    doc.page.margins.bottom = bottom;
+  }
+}
+
+/** One counterpart of the demo contract: the same document, signed and stamped by one side only. */
+export function renderSampleContract(c: SampleContract, side: SampleSide): Promise<Buffer> {
   const fontPath = unicodeFontPath(null);
   const text = pdfText(fontPath);
   const doc = new PDFDocument({
     size: 'A4',
-    margin: 56,
-    info: { Title: `Hop dong san xuat phim - ${contract.contractNo}` },
+    margins: { top: 56, bottom: 70, left: LEFT, right: LEFT },
+    bufferPages: true,
+    info: { Title: `Hop dong san xuat phim ${c.contractNo}` },
   });
   if (fontPath) doc.font(fontPath);
   const chunks: Buffer[] = [];
@@ -106,29 +157,33 @@ export function renderSampleContract(contract: SampleContract, side: SampleSide)
     doc.on('error', reject);
   });
 
-  doc.fontSize(13).text(text('CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM'), { align: 'center' });
+  doc.fontSize(12).text(text('CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM'), { align: 'center' });
   doc.fontSize(11).text(text('Độc lập - Tự do - Hạnh phúc'), { align: 'center' });
-  doc.moveDown().fontSize(17).text(text('HỢP ĐỒNG SẢN XUẤT PHIM'), { align: 'center' });
-  doc.fontSize(10).text(text(`Số: ${contract.contractNo} - Ngày ${contract.day}`), { align: 'center' });
-  doc.moveDown().fontSize(11);
-  doc.text(text('BÊN A (bên đặt hàng): NỀN TẢNG PHÁT HÀNH PHIM AI CINEMA'));
-  doc.text(text(`Đại diện: ${contract.adminSigner}`));
-  doc.moveDown(0.3);
-  doc.text(text(`BÊN B (bên sản xuất): ${contract.studioName.toUpperCase()}`));
-  doc.text(text(`Đại diện: ${contract.studioSigner}`));
-  doc.moveDown(0.5).fontSize(10);
-  doc.text(
-    text(
-      'Hai bên cùng thống nhất ký kết hợp đồng sản xuất phim với các điều khoản sau, trên cơ sở Kịch bản Final ' +
-        'đã được duyệt và mức chi phí sản xuất hai bên đã thương lượng trên hệ thống AI Cinema:',
-    ),
-    { align: 'justify' },
-  );
-  for (const [heading, body] of CLAUSES(contract)) {
+  doc.fontSize(10).text('-----o0o-----', { align: 'center' });
+  doc.moveDown(1.2).fontSize(16).text(text('HỢP ĐỒNG SẢN XUẤT PHIM'), { align: 'center' });
+  doc.fontSize(10).text(text(`Số: ${c.contractNo}/HĐSX-AIC`), { align: 'center' });
+  doc.moveDown(0.8).fontSize(10).text(text('Căn cứ:'));
+  for (const basis of LEGAL_BASES) doc.text(text(`- ${basis}`), { indent: 14, align: 'justify' });
+  doc.moveDown(0.5).text(text(`Hôm nay, ngày ${c.day}, tại ${c.place}, chúng tôi gồm:`));
+  party(doc, 'BÊN A (Bên đặt hàng)', c.partyA, text);
+  party(doc, 'BÊN B (Bên sản xuất)', c.partyB, text);
+  doc
+    .moveDown(0.6)
+    .fontSize(10)
+    .text(
+      text(
+        'Sau khi thương lượng trên Hệ thống AI Cinema, hai bên thống nhất ký kết Hợp đồng sản xuất phim với các điều khoản sau:',
+      ),
+      { align: 'justify' },
+    );
+  for (const [heading, paragraphs] of articles(c)) {
     doc.moveDown(0.6).fontSize(11).text(text(heading));
-    doc.fontSize(10).text(text(body), { align: 'justify' });
+    doc.fontSize(10);
+    for (const p of paragraphs) doc.text(text(p), { align: 'justify' });
   }
-  signatureBoxes(doc, contract, side, text);
+  signatures(doc, c, side, text);
+  annex(doc, c, text);
+  footers(doc, c, text);
   doc.end();
   return done;
 }
