@@ -16,6 +16,12 @@ export const SUPPORT_TOOL = {
   GET_MEMBER_DEVICES: 'get_member_devices',
   GET_RECENT_STREAMING_SESSIONS: 'get_recent_streaming_sessions',
   GET_PLATFORM_POLICY_SNAPSHOT: 'get_platform_policy_snapshot',
+  GET_TRENDING_MOVIES: 'get_trending_movies',
+  GET_MY_RECOMMENDATIONS: 'get_my_recommendations',
+  GET_WATCH_HISTORY: 'get_watch_history',
+  GET_REWARD_STATUS: 'get_reward_status',
+  GET_UNLOCKED_EPISODES: 'get_unlocked_episodes',
+  GET_UPCOMING_RELEASES: 'get_upcoming_releases',
 } as const;
 
 export type SupportToolName = (typeof SUPPORT_TOOL)[keyof typeof SUPPORT_TOOL];
@@ -34,6 +40,39 @@ export interface SupportToolDefinition {
 const noArguments = { type: 'object' as const, properties: {}, required: [] as string[] };
 
 export const SUPPORT_TOOL_DEFINITIONS: SupportToolDefinition[] = [
+  {
+    name: SUPPORT_TOOL.GET_TRENDING_MOVIES,
+    description: 'Top 10 phim đang có nhiều lượt xem nhất trên AI Cinema (bảng xếp hạng của app).',
+    parameters: noArguments,
+  },
+  {
+    name: SUPPORT_TOOL.GET_MY_RECOMMENDATIONS,
+    description:
+      'Năm phim AI đề xuất cho chính thành viên dựa trên lịch sử xem (xem hết, bỏ dở), thể loại và quốc gia, kèm lý do.',
+    parameters: noArguments,
+  },
+  {
+    name: SUPPORT_TOOL.GET_WATCH_HISTORY,
+    description: 'Mười tập thành viên xem gần nhất: phim, tập, đã xem bao nhiêu giây, đã xem xong chưa.',
+    parameters: noArguments,
+  },
+  {
+    name: SUPPORT_TOOL.GET_REWARD_STATUS,
+    description:
+      'Điểm danh hôm nay đã nhận chưa, chuỗi ngày điểm danh, phần thưởng các mốc, Coin thưởng sắp hết hạn, số lượt vòng quay còn lại.',
+    parameters: noArguments,
+  },
+  {
+    name: SUPPORT_TOOL.GET_UNLOCKED_EPISODES,
+    description:
+      'Mười tập thành viên mở khóa gần nhất: phim, tập, nguồn quyền, số Coin đã trả, đã bị thu hồi / hoàn Coin chưa.',
+    parameters: noArguments,
+  },
+  {
+    name: SUPPORT_TOOL.GET_UPCOMING_RELEASES,
+    description: 'Các tập đã lên lịch phát hành sắp tới: phim, tập, thời điểm phát hành.',
+    parameters: noArguments,
+  },
   {
     name: SUPPORT_TOOL.GET_MEMBER_WALLET,
     description: 'Số dư Coin chính và Coin thưởng, cùng hạn dùng của các lô Coin thưởng sắp hết hạn.',

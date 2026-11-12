@@ -5,6 +5,7 @@ import { AccessDecisionService } from 'src/modules/episode-access/access-decisio
 import { MembershipPlanService } from 'src/modules/episode-access/membership-plan/membership-plan.service';
 import { CatalogService } from 'src/modules/catalog/catalog.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { ActivityTools } from './activity-tools';
 import { SUPPORT_TOOL, type SupportToolName } from './tool-definitions';
 
 export type SupportToolResult = { ok: true; data: unknown } | { ok: false; error: 'NOT_FOUND' | 'UNAVAILABLE' };
@@ -22,6 +23,7 @@ export class SupportTools {
     private readonly accessDecisions: AccessDecisionService,
     private readonly plans: MembershipPlanService,
     private readonly catalog: CatalogService,
+    private readonly activity: ActivityTools,
   ) {}
 
   async execute(
@@ -53,6 +55,18 @@ export class SupportTools {
           return await this.streamingSessions(memberId);
         case SUPPORT_TOOL.GET_PLATFORM_POLICY_SNAPSHOT:
           return await this.policySnapshot();
+        case SUPPORT_TOOL.GET_TRENDING_MOVIES:
+          return await this.activity.trendingMovies();
+        case SUPPORT_TOOL.GET_MY_RECOMMENDATIONS:
+          return await this.activity.myRecommendations(memberId);
+        case SUPPORT_TOOL.GET_WATCH_HISTORY:
+          return await this.activity.watchHistory(memberId);
+        case SUPPORT_TOOL.GET_REWARD_STATUS:
+          return await this.activity.rewardStatus(memberId);
+        case SUPPORT_TOOL.GET_UNLOCKED_EPISODES:
+          return await this.activity.unlockedEpisodes(memberId);
+        case SUPPORT_TOOL.GET_UPCOMING_RELEASES:
+          return await this.activity.upcomingReleases();
         default:
           return { ok: false, error: 'UNAVAILABLE' };
       }

@@ -5,6 +5,7 @@ import type { AccessDecisionService } from 'src/modules/episode-access/access-de
 import type { MembershipPlanService } from 'src/modules/episode-access/membership-plan/membership-plan.service';
 import type { CatalogService } from 'src/modules/catalog/catalog.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { ActivityTools } from './activity-tools';
 import { SupportTools } from './support-tools.service';
 
 const MEMBER_ID = 'member-1';
@@ -57,14 +58,23 @@ function buildTools() {
   const accessDecisions = { decide: jest.fn() };
   const plans = { listPublic: jest.fn() };
   const catalog = { listMovies: jest.fn(), episodes: jest.fn() };
+  const activity = {
+    trendingMovies: jest.fn().mockResolvedValue({ ok: true, data: [] }),
+    myRecommendations: jest.fn().mockResolvedValue({ ok: true, data: [] }),
+    watchHistory: jest.fn().mockResolvedValue({ ok: true, data: [] }),
+    rewardStatus: jest.fn().mockResolvedValue({ ok: true, data: {} }),
+    unlockedEpisodes: jest.fn().mockResolvedValue({ ok: true, data: [] }),
+    upcomingReleases: jest.fn().mockResolvedValue({ ok: true, data: [] }),
+  };
   const tools = new SupportTools(
     prisma as unknown as PrismaService,
     settings as unknown as PlatformSettingService,
     accessDecisions as unknown as AccessDecisionService,
     plans as unknown as MembershipPlanService,
     catalog as unknown as CatalogService,
+    activity as unknown as ActivityTools,
   );
-  return { tools, prisma, settings, accessDecisions, plans, catalog };
+  return { tools, prisma, settings, accessDecisions, plans, catalog, activity };
 }
 
 describe('SupportTools — member scoping', () => {
@@ -267,5 +277,20 @@ describe('SupportTools — sensitive fields stay out', () => {
       );
     }
     expectNoSensitiveKeys(result);
+  });
+
+  it.each([
+    ['get_trending_movies', 'trendingMovies', []],
+    ['get_my_recommendations', 'myRecommendations', ['member-1']],
+    ['get_watch_history', 'watchHistory', ['member-1']],
+    ['get_reward_status', 'rewardStatus', ['member-1']],
+    ['get_unlocked_episodes', 'unlockedEpisodes', ['member-1']],
+    ['get_upcoming_releases', 'upcomingReleases', []],
+  ] as const)('routes %s to the activity lookups with the session member only', async (name, method, args) => {
+    const { tools, activity } = buildTools();
+    await expect(tools.execute(name, 'member-1', { memberId: 'someone-else' })).resolves.toEqual(
+      expect.objectContaining({ ok: true }),
+    );
+    expect(activity[method]).toHaveBeenCalledWith(...args);
   });
 });

@@ -13,6 +13,9 @@ import { GuardrailsService } from './ai/guardrails';
 import { IntentRouterService } from './ai/intent-router';
 import { PromptBuilderService } from './ai/prompt-builder';
 import { SummaryService } from './ai/summary.service';
+import { ActivityTools } from './ai/tools/activity-tools';
+import { RecommendationModule } from 'src/modules/playback/recommendation/recommendation.module';
+import { DailyRewardModule } from 'src/modules/episode-access/daily-reward/daily-reward.module';
 import { HandoffSummaryAiService } from './ai/handoff-summary-ai.service';
 import { SupportTools } from './ai/tools/support-tools.service';
 import { EscalationService } from './chat/escalation.service';
@@ -38,7 +41,14 @@ import { SupportStatsService } from './staff/support-stats.service';
 import { SupportAutoCloseSweep } from './support-auto-close.sweep';
 
 @Module({
-  imports: [PlatformSettingModule, AccessDecisionModule, MembershipPlanModule, CatalogModule],
+  imports: [
+    PlatformSettingModule,
+    AccessDecisionModule,
+    MembershipPlanModule,
+    CatalogModule,
+    RecommendationModule,
+    DailyRewardModule,
+  ],
   controllers: [MemberSupportController, StaffSupportController, KnowledgeController, SupportAiHealthController],
   providers: [
     // AI providers
@@ -84,6 +94,7 @@ import { SupportAutoCloseSweep } from './support-auto-close.sweep';
     IntentRouterService,
     GuardrailsService,
     SummaryService,
+    ActivityTools,
     HandoffSummaryAiService,
     SupportTools,
     // Conversation core
