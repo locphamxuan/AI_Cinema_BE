@@ -58,8 +58,13 @@ export class StudioAccountService {
   /** The studio a STUDIO caller speaks for; anyone else is refused. */
   async studioOf(user: AuthenticatedUser, tx?: PrismaTx): Promise<string> {
     if (user.role !== UserRole.STUDIO) throw new ForbiddenException('Only a studio account can do that');
-    const account = await (tx ?? this.prisma).user.findUnique({ where: { id: user.id }, select: { studioId: true } });
+    const account = await (tx ?? this.prisma).user.findUnique({
+      where: { id: user.id },
+      select: { studioId: true, studio: { select: { isActive: true } } },
+    });
     if (!account?.studioId) throw new ForbiddenException('This account is not tied to a studio');
+    // A partner the Admin deactivated keeps its login but reads nothing more: no project, script or film.
+    if (!account.studio?.isActive) throw new ForbiddenException('This studio is no longer an active partner');
     return account.studioId;
   }
 }
