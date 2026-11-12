@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { RequestActorInterceptor } from 'src/common/http/request-actor';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PaginationModule } from '@nestarc/pagination';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
@@ -70,6 +71,9 @@ import { AppController } from './app.controller';
     SupportModule,
   ],
   controllers: [AppController],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_INTERCEPTOR, useClass: RequestActorInterceptor },
+  ],
 })
 export class AppModule {}

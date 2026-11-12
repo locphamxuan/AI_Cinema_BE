@@ -30,6 +30,8 @@ export const NOTIFICATION_TYPE = {
   PRICE_CHANGE_REQUEST: 'PRICE_CHANGE_REQUEST',
   EPISODE_PUBLISHED: 'EPISODE_PUBLISHED',
   EPISODE_RELEASE_FAILED: 'EPISODE_RELEASE_FAILED',
+  AI_LABEL_APPLIED: 'AI_LABEL_APPLIED',
+  COMPLIANCE_PASSED: 'COMPLIANCE_PASSED',
   // MF-3/MF-4 - Watch Party (BR-69)
   ROOM_INVITE: 'ROOM_INVITE',
   // MF-2 - Coin, daily reward and monthly plan
@@ -55,3 +57,14 @@ export const NOTIFICATION_TYPE = {
 } as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
+
+/**
+ * MF-1 oversight (12/11/2026): every movie-project notification is also delivered to the Admins, so they can
+ * follow each project without opening it. The Admin who caused it is left out.
+ */
+export const MF1_NOTIFICATION_TYPES: ReadonlySet<NotificationType> = new Set(
+  Object.values(NOTIFICATION_TYPE).slice(
+    Object.values(NOTIFICATION_TYPE).indexOf(NOTIFICATION_TYPE.PROJECT_ASSIGNED),
+    Object.values(NOTIFICATION_TYPE).indexOf(NOTIFICATION_TYPE.ROOM_INVITE),
+  ),
+);
