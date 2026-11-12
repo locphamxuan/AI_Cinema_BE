@@ -82,6 +82,28 @@ async function seedDemoStudio() {
   });
 }
 
+/**
+ * Studio Web as an OAuth client (2026-11-12). The redirect_uris come from the same env the API reads, so a
+ * local Studio Web on :3100 works out of the box; production sets OAUTH_STUDIO_WEB_REDIRECT_URIS. With no
+ * OAUTH_STUDIO_WEB_CLIENT_SECRET the client is public and relies on PKCE alone.
+ */
+async function seedStudioWebClient() {
+  const clientId = process.env.OAUTH_STUDIO_WEB_CLIENT_ID || 'studio-web';
+  const studioWebUrl = process.env.STUDIO_WEB_URL || 'http://localhost:3100';
+  const redirectUris = (process.env.OAUTH_STUDIO_WEB_REDIRECT_URIS || `${studioWebUrl}/api/auth/callback`)
+    .split(',')
+    .map((uri) => uri.trim())
+    .filter(Boolean);
+  const secret = process.env.OAUTH_STUDIO_WEB_CLIENT_SECRET;
+  const data = {
+    name: process.env.OAUTH_STUDIO_WEB_NAME || 'Studio Web',
+    redirectUris,
+    scopes: ['studio:portal'],
+    clientSecretHash: secret ? await bcrypt.hash(secret, 12) : null,
+  };
+  await prisma.oAuthClient.upsert({ where: { clientId }, update: data, create: { clientId, ...data } });
+}
+
 async function main() {
   for (const { name, description } of GENRE_CATALOG) {
     await prisma.genre.upsert({ where: { name }, update: { description }, create: { name, description } });
@@ -91,7 +113,10 @@ async function main() {
   await createAccounts(prisma, SEED_ACCOUNTS, SEED_USER_PASSWORD);
   await seedRewards();
   await seedDemoStudio();
-  console.log('Seeded genres, permissions, policies, the platform accounts, rewards and the demo studio.');
+  await seedStudioWebClient();
+  console.log(
+    'Seeded genres, permissions, policies, the platform accounts, rewards, the demo studio and the Studio Web client.',
+  );
 }
 
 main()
