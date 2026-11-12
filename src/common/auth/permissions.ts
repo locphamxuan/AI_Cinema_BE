@@ -108,7 +108,7 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   },
   'episode:price': {
     area: 'publishing',
-    description: 'Set the Coin price of an episode before confirming the Final Film',
+    description: 'Set the Coin price and the free flags of each episode before publishing (Admin, BR-29)',
   },
   'episode:publish': {
     area: 'publishing',
@@ -167,13 +167,13 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.SUBSCRIPTION_SELF_MANAGE,
   ],
   CONTENT_CREATOR: [PERMISSION.PROJECT_SUGGEST, PERMISSION.SCRIPT_WRITE, PERMISSION.MEDIA_INGEST],
+  // 2026-11-11: the Reviewer stops at the Final Film and the AI label; pricing moved to the Admin.
   CONTENT_REVIEWER: [
     PERMISSION.PROJECT_MANAGE,
     PERMISSION.PROJECT_SUGGEST,
     PERMISSION.COST_REQUEST,
     PERMISSION.STUDIO_MANAGE,
     PERMISSION.CONTENT_REVIEW,
-    PERMISSION.EPISODE_PRICE,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
   ],
@@ -194,6 +194,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.PROJECT_READ_ALL,
     PERMISSION.SCRIPT_APPROVE,
     PERMISSION.STUDIO_MANAGE,
+    PERMISSION.EPISODE_PRICE,
     PERMISSION.EPISODE_PUBLISH,
     PERMISSION.PROJECT_CHANGE_REVIEW,
     PERMISSION.COST_APPROVE,

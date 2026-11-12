@@ -1,6 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UnpublishMode, UnpublishReason } from '@prisma/client';
-import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 /** Step 12 (BR-29): the Coin price of one episode; outside the Admin's range it is kept and flagged (BR-47). */
 export class SetCoinPriceRequestDto {
@@ -9,6 +20,19 @@ export class SetCoinPriceRequestDto {
   @Min(0)
   @Max(1_000_000)
   coinPrice: number;
+}
+
+/** BR-03/BR-19: which episodes the Admin opens before publishing; Guest-free implies Member-free. */
+export class SetAccessFlagsRequestDto {
+  @ApiPropertyOptional({ example: true })
+  @IsBoolean()
+  @IsOptional()
+  isFreeForGuest?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsBoolean()
+  @IsOptional()
+  isFreeForMember?: boolean;
 }
 
 /** Steps 12–14: release now, or at `scheduledAt` (BR-19). */
