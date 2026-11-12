@@ -4,9 +4,9 @@ import { RecommendationResponseDto } from './recommendation-response.dto';
 describe('RecommendationService', () => {
   const prisma = {
     user: { findUnique: jest.fn() },
-    movieLike: { findMany: jest.fn(), groupBy: jest.fn() },
-    watchProgress: { findMany: jest.fn() },
-    movie: { findMany: jest.fn() },
+    movieLike: { findMany: jest.fn(), groupBy: jest.fn(), count: jest.fn() },
+    watchProgress: { findMany: jest.fn(), findFirst: jest.fn() },
+    movie: { findMany: jest.fn(), findUnique: jest.fn() },
     $queryRaw: jest.fn(),
   };
   /** A fresh service per test: results are cached 6 h per member. */
@@ -29,6 +29,8 @@ describe('RecommendationService', () => {
     prisma.movieLike.groupBy.mockResolvedValue([]);
     prisma.movieLike.findMany.mockResolvedValue([]);
     prisma.watchProgress.findMany.mockResolvedValue([]);
+    prisma.movieLike.count.mockResolvedValue(0);
+    prisma.watchProgress.findFirst.mockResolvedValue(null);
   });
 
   it('returns recommendations for an adult member, age-gated', async () => {
@@ -76,7 +78,15 @@ describe('RecommendationService', () => {
     prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
     // The member watched a Vietnamese Drama; m-drama matches both, m-comedy neither.
     prisma.watchProgress.findMany.mockResolvedValue([
-      { episode: { movie: { id: 'seen', country: 'VN', genres: [{ genre: { name: 'Drama' } }] } } },
+      {
+        positionSeconds: 600,
+        durationSeconds: 600,
+        completed: true,
+        episode: {
+          targetDurationSeconds: 600,
+          movie: { id: 'seen', country: 'VN', genres: [{ genre: { name: 'Drama' } }] },
+        },
+      },
     ]);
     prisma.movie.findMany.mockResolvedValue([
       movie({ id: 'm-drama', country: 'VN', genres: [{ genre: { name: 'Drama' } }] }),
@@ -104,6 +114,77 @@ describe('RecommendationService', () => {
     await service.forYou('u1');
     await service.forYou('u1');
     expect(prisma.movie.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('rescores at once after the member likes or watches something new (audit 2026-11-12)', async () => {
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    prisma.movie.findMany.mockResolvedValue([movie()]);
+    const service = newService();
+    await service.forYou('u1');
+    prisma.movieLike.count.mockResolvedValue(1);
+    await service.forYou('u1');
+    expect(prisma.movie.findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('explains a suggestion by the genre the member watches most', async () => {
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    prisma.movieLike.findMany.mockResolvedValue([
+      { movie: { id: 'seen', country: 'KR', genres: [{ genre: { name: 'Drama' } }] } },
+    ]);
+    prisma.movie.findMany.mockResolvedValue([movie(), movie({ id: 'm2', genres: [], country: 'US' })]);
+    const [first, second] = await newService().forYou('u1');
+    expect(first.reason).toBe('Hợp gu Drama bạn hay xem hết');
+    expect(second.reason).toBe('Đang thịnh hành trên AI Cinema');
+  });
+
+  it('suggests after a movie ends: close to it, unseen, with the reason', async () => {
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    prisma.movie.findUnique.mockResolvedValue({
+      id: 't',
+      title: 'Phim A',
+      country: 'VN',
+      genres: [{ genre: { name: 'Drama' } }],
+    });
+    prisma.movieLike.findMany.mockResolvedValue([{ movie: { id: 'liked', country: null, genres: [] } }]);
+    prisma.movie.findMany.mockResolvedValue([
+      movie({ id: 't' }),
+      movie({ id: 'liked' }),
+      movie({ id: 'x', country: 'US', genres: [{ genre: { name: 'Action' } }] }),
+      movie({ id: 'y' }),
+    ]);
+    const rows = await newService().after('t', 'u1');
+    expect(rows.map((r) => r.movieId)).toEqual(['y', 'x']);
+    expect(rows[0]).toMatchObject({ source: 'after', reason: 'Vì bạn vừa xem "Phim A": cùng thể loại Drama' });
+    prisma.movie.findUnique.mockResolvedValue(null);
+    await expect(newService().after('missing', 'u1')).rejects.toThrow('Movie not found');
+  });
+
+  describe('similar', () => {
+    const target = { id: 't', country: 'VN', genres: [{ genre: { name: 'Drama' } }, { genre: { name: 'Romance' } }] };
+
+    it('ranks movies sharing genres or country, never the movie itself, T18 hidden from guests', async () => {
+      prisma.movie.findUnique.mockResolvedValue(target);
+      prisma.movie.findMany.mockResolvedValue([
+        movie({ id: 't' }),
+        movie({ id: 'a', country: 'US' }),
+        movie({ id: 'b', genres: [], country: 'VN' }),
+        movie({ id: 'c', genres: [], country: 'US' }),
+        movie({ id: 'd', ageRating: 'T18' }),
+      ]);
+      const rows = await newService().similar('t');
+      expect(rows.map((r) => r.movieId)).toEqual(['a', 'b']);
+      expect(rows[0]).toMatchObject({ source: 'similar', reason: 'Cùng thể loại Drama' });
+      expect(rows[1].reason).toBe('Cùng quốc gia VN');
+    });
+
+    it('shows T18 titles to an adult viewer and 404s an unknown movie', async () => {
+      prisma.movie.findUnique.mockResolvedValue(target);
+      prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+      prisma.movie.findMany.mockResolvedValue([movie({ id: 'd', ageRating: 'T18' })]);
+      await expect(newService().similar('t', 'u1')).resolves.toHaveLength(1);
+      prisma.movie.findUnique.mockResolvedValue(null);
+      await expect(newService().similar('x')).rejects.toThrow('Movie not found');
+    });
   });
 
   it('returns trending recommendations ranked by popularity, age-gated for cold starts', async () => {

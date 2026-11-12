@@ -16,8 +16,11 @@ export class RecommendationResponseDto {
   @ApiProperty({ example: 0.87, description: 'Hybrid score, 0..1' })
   score: number;
 
-  @ApiProperty({ enum: ['hybrid', 'trending', 'popular'] })
+  @ApiProperty({ enum: ['hybrid', 'trending', 'similar', 'after'] })
   source: string;
+
+  @ApiPropertyOptional({ example: 'Hợp gu Hành động bạn hay xem', description: 'Why the movie is suggested' })
+  reason?: string | null;
 
   constructor(partial: Partial<RecommendationResponseDto>) {
     Object.assign(this, partial);
@@ -27,6 +30,7 @@ export class RecommendationResponseDto {
     movie: { id: string; title: string; ageRating: string | null; posterUrl?: string | null },
     score: number,
     source: string,
+    reason: string | null = null,
   ): RecommendationResponseDto {
     return new RecommendationResponseDto({
       movieId: movie.id,
@@ -35,6 +39,7 @@ export class RecommendationResponseDto {
       posterUrl: movie.posterUrl ?? null,
       score: Math.round(score * 1000) / 1000,
       source,
+      reason,
     });
   }
 }
