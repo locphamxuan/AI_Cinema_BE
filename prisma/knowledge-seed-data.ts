@@ -224,10 +224,10 @@ Nếu một tập phát lỗi trên nhiều thiết bị và nhiều mạng khá
     audience: SupportAudience.MEMBER,
     source: KnowledgeSource.POLICY,
     markdown: `## Tập Free Starter là gì?
-Mỗi phim có một số tập đầu được xem miễn phí, gọi là Free Starter. Khách chưa đăng nhập và tài khoản Miễn phí đều xem được các tập này.
+Trước khi phát hành, Admin chọn riêng từng tập là miễn phí cho Khách, miễn phí cho Thành viên, hoặc trả phí. Tập miễn phí cho Khách thì Thành viên cũng xem miễn phí. Các tập này gọi chung là Free Starter.
 
 ## Số tập miễn phí
-Số tập Free Starter có thể khác nhau giữa các phim và do nền tảng hoặc nhà sản xuất quy định. Nhãn Free hiển thị trên danh sách tập.
+Tập miễn phí không nhất thiết là các tập đầu và có thể khác nhau giữa các phim. Nhãn Free hiển thị trên danh sách tập; một tập có thể chỉ miễn phí khi bạn đã đăng nhập.
 
 ## Tập giá 0 Coin
 Ngoài Free Starter, một số tập có giá 0 Coin và cũng xem được mà không cần gói trả phí.
@@ -237,5 +237,44 @@ Các tập không miễn phí cần mua lẻ bằng Coin hoặc xem bằng gói 
 
 ## Khách xem không cần tài khoản
 Khách có thể xem Free Starter nhưng không có lịch sử xem, không nhận thông báo và không đồng bộ tiến độ giữa các thiết bị. Đăng nhập để lưu tiến độ và mở khóa nội dung đã mua.`,
+  },
+  {
+    slug: 'xem-nhom-watch-party',
+    title: 'Xem phim cùng nhóm (Watch Party)',
+    category: 'Playback',
+    audience: SupportAudience.MEMBER,
+    source: KnowledgeSource.FAQ,
+    markdown: `## Tạo và vào phòng
+Trưởng phòng tạo phòng cho một tập phim và chia sẻ mã dạng XXX-XXX hoặc đường link mời. Mỗi phòng tối đa 8 người. Nhập sai mã phòng 5 lần trong 10 phút sẽ bị khóa nhập mã 15 phút.
+
+## Quyền xem khi xem nhóm
+Mỗi người trong phòng phải tự có quyền xem tập: tập miễn phí, đã mở khóa bằng Coin hoặc có gói Tháng còn hạn. Không có quyền thì ứng dụng mời bạn mở khóa bằng Coin hoặc nâng cấp gói trước khi vào phòng. Tập T18 chỉ dành cho tài khoản đủ 18 tuổi.
+
+## Điều khiển phát
+Chỉ Trưởng phòng được Phát, Tạm dừng và Tua. Thành viên tự chỉnh âm lượng, phụ đề và chat. Nếu mạng chậm, ứng dụng tự đuổi kịp Trưởng phòng.
+
+## Khi Trưởng phòng mất kết nối
+Phòng tạm dừng và chờ 45 giây. Quá thời gian, người vào phòng sớm nhất được chuyển làm Trưởng phòng. Nếu phòng bị tạm dừng quá 6 phút, các thành viên có thể bỏ phiếu chuyển quyền.
+
+## Giới hạn thiết bị
+Vào phòng cũng tính là một luồng phát. Nếu tài khoản đã đạt số thiết bị phát đồng thời của gói, hãy dừng phát trên thiết bị khác trong mục Thiết bị. Mỗi tài khoản chỉ có một kết nối trong một phòng; vào từ máy thứ hai sẽ ngắt máy thứ nhất.
+
+## Gói hết hạn giữa chừng
+Bạn được xem hết tập đang phát; sang tập tiếp theo cần gia hạn gói hoặc mở khóa tập.`,
+  },
+  {
+    slug: 'de-xuat-phim',
+    title: 'Phim đề xuất cho bạn',
+    category: 'Catalog',
+    audience: SupportAudience.MEMBER,
+    source: KnowledgeSource.FAQ,
+    markdown: `## Cách đề xuất hoạt động
+Mục Đề xuất cho bạn dựa trên thể loại và quốc gia của các phim bạn đã xem hoặc thích trong 30 ngày, cộng với độ phổ biến và độ mới của phim. Phim bạn đã xem hoặc thích sẽ không lặp lại. Danh sách được làm mới khoảng 6 giờ một lần.
+
+## Khách chưa đăng nhập
+Khách thấy danh sách phim AI thịnh hành trên AI Cinema.
+
+## Phim T18
+Phim nhãn T18 chỉ được đề xuất cho tài khoản đã xác nhận đủ 18 tuổi.`,
   },
 ];

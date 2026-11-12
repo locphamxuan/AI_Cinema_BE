@@ -2,7 +2,7 @@ import type { RagEvalCase } from './rag-eval-set';
 
 /** Questions the Knowledge Base must answer on its own; retrieval is measured with hit@k. */
 export const RAG_EVAL_ANSWER_CASES: RagEvalCase[] = [
-  // ─── answer: KB-covered questions, retrieval must hit (20) ─────────────────────────────
+  // ─── answer: KB-covered questions, retrieval must hit (23) ─────────────────────────────
   {
     id: 'rag-answers-01',
     question: 'Gói tháng có quyền lợi gì?',
@@ -151,5 +151,27 @@ export const RAG_EVAL_ANSWER_CASES: RagEvalCase[] = [
     expect: 'answer',
     expectedSlugs: ['loi-phat-video-va-chat-luong-hls'],
     notes: 'Step ordered troubleshooting; adversarial phrasing of a covered case.',
+  },
+  {
+    id: 'rag-answers-21',
+    question: 'Bạn bè chưa mua tập có vào phòng xem nhóm với tôi được không?',
+    expect: 'answer',
+    expectedSlugs: ['xem-nhom-watch-party'],
+    expectedReplyContains: ['quyền xem'],
+    notes: 'Watch Party paywall gate (edge 1.1).',
+  },
+  {
+    id: 'rag-answers-22',
+    question: 'Trưởng phòng bị mất mạng thì phòng xem chung thế nào?',
+    expect: 'answer',
+    expectedSlugs: ['xem-nhom-watch-party'],
+    notes: 'Watch Party Host grace (edge 3.1).',
+  },
+  {
+    id: 'rag-answers-23',
+    question: 'Vì sao mục đề xuất cho bạn lại gợi ý những phim này?',
+    expect: 'answer',
+    expectedSlugs: ['de-xuat-phim'],
+    notes: 'Recommendation engine (BR-68).',
   },
 ];
