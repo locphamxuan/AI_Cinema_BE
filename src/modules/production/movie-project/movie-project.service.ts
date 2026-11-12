@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ProjectStatus, Prisma, UserRole } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -210,12 +210,12 @@ export class MovieProjectService {
       [...OPEN_PROJECT_STATUSES, ProjectStatus.COMPLETED, ProjectStatus.UNDER_REVISION],
       'edit the project',
     );
-    let newStudio: { id: string; name: string } | null = null;
     if (dto.studioId && dto.studioId !== project.studioId) {
-      // MF-1: the Admin alone chooses the studio; the Reviewer only works on the project content.
-      if (user.role !== UserRole.ADMIN) throw new ForbiddenException('Only the Admin chooses the studio of a project');
-      if (project.handedOffAt) throw new ConflictException('The project was handed off; change the studio there');
-      newStudio = await this.studios.assertUsable(dto.studioId);
+      // MF-1 (12/11/2026): the Admin chooses the studio — at creation, on the Final Script, or by a studio change
+      // after the hand-off. The Reviewer edits the project content only (and the Admin never edits it, BR-55).
+      throw new ForbiddenException(
+        'Only the Admin chooses the studio: at creation, on the Final Script or by a studio change',
+      );
     }
 
     const { genreIds, genreNames, ...fields } = dto;
@@ -236,7 +236,6 @@ export class MovieProjectService {
         },
         tx,
       );
-      if (newStudio) await this.lifecycle.announceStudio(projectId, newStudio, tx);
     });
     return this.detail(projectId, user);
   }

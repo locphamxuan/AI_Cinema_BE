@@ -204,16 +204,6 @@ describe('MovieProjectService', () => {
       expect(db.movieGenre.createMany).toHaveBeenCalledWith({ data: [{ movieId: 'p1', genreId: 'g1' }] });
     });
 
-    it('checks a new studio, and refuses one once the project was handed off', async () => {
-      studios.assertUsable.mockResolvedValueOnce({ id: 'st2', name: 'Studio B' });
-      await service.update('p1', { studioId: 'st2' }, ADMIN);
-      expect(studios.assertUsable).toHaveBeenCalledWith('st2');
-      expect(lifecycle.announceStudio).toHaveBeenCalledWith('p1', { id: 'st2', name: 'Studio B' }, expect.anything());
-
-      access.project.mockResolvedValue({ id: 'p1', status: ProjectStatus.IN_PRODUCTION, handedOffAt: new Date() });
-      await expect(service.update('p1', { studioId: 'st2' }, ADMIN)).rejects.toBeInstanceOf(ConflictException);
-    });
-
     it('lets only the Admin choose the studio (MF-1, 12/11/2026)', async () => {
       const reviewer = { ...ADMIN, id: 'rev', role: UserRole.CONTENT_REVIEWER };
       await expect(service.update('p1', { studioId: 'st2' }, reviewer as never)).rejects.toBeInstanceOf(

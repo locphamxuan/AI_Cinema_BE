@@ -30,9 +30,13 @@ const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOS
 
 /** A studio of the catalog (BR-59) with a unique email; only the Admin manages studios (12/11/2026). */
 export async function newStudio(anyActor: Actor, name = 'Studio Ánh Trăng'): Promise<Row> {
-  const admin = await anyActor.signInAs(ADMIN_EMAIL);
+  admins.set(anyActor, admins.get(anyActor) ?? anyActor.signInAs(ADMIN_EMAIL));
+  const admin = await admins.get(anyActor)!;
   return admin.post('/studios', { name, email: `studio-${randomUUID()}@anhtrang.example` });
 }
+
+/** One Admin sign-in per actor: signing the Admin in again on every call would end its earlier sessions. */
+const admins = new WeakMap<Actor, Promise<Actor>>();
 
 /** The Admin opens a login for the studio (MF-1, 07/11/2026) and signs in with it. */
 export async function studioAccount(anyActor: Actor, studioId: string): Promise<Actor> {

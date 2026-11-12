@@ -131,7 +131,8 @@ export class ProjectLifecycleService {
    * still scheduled are withdrawn with it, so the scheduler never puts them out.
    */
   async cancel(projectId: string, reason: string, user: AuthenticatedUser): Promise<void> {
-    const project = await this.access.project(projectId, user, 'reviewer');
+    // Only the Admin reaches here (project:create on the route, 12/11/2026); the Admin reads every project.
+    const project = await this.access.project(projectId, user, 'read');
     assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'cancel the project');
     const published = await this.prisma.publication.count({
       where: { episode: { movieId: projectId }, publishedAt: { not: null } },

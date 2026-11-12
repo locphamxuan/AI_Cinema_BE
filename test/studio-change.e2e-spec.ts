@@ -93,7 +93,17 @@ describe('Studio change with a new contract (e2e)', () => {
   it('lets the new studio read the project but not deliver before it signs', async () => {
     await accountB.get(`/studio-portal/projects/${project.id}`);
     const [first] = project.seasons[0].episodes;
-    await accountB.upload(`/studio-portal/episodes/${first.id}/media/upload`, FILM, FILM_FIELDS, 409);
+    // A link, not a file: a server refusing an upload before reading it resets the socket under supertest.
+    await accountB.post(
+      `/studio-portal/episodes/${first.id}/media`,
+      {
+        sourceMethod: 'HLS_URL',
+        sourceUrl: 'https://cdn.example.com/ep/master.m3u8',
+        proposedLabelType: 'AI_GENERATED',
+        aiDisclosure: DISCLOSURE,
+      },
+      409,
+    );
     // The replaced studio is out of the project.
     await studioOf(project.id).get(`/studio-portal/projects/${project.id}`, 404);
   });
