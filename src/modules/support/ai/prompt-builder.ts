@@ -95,3 +95,15 @@ function safeJson(value: Record<string, unknown>): string {
 function escapeAttribute(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
+
+/** Appended to the system prompt when the AI drafts a reply for the Staff member handling a case. */
+export const STAFF_DRAFT_INSTRUCTION = [
+  '[STAFF DRAFT]',
+  'Bạn đang soạn bản nháp cho nhân viên hỗ trợ (Staff), không trả lời trực tiếp thành viên. Staff sẽ đọc, sửa rồi mới gửi.',
+  'Dùng công cụ để kiểm tra dữ liệu của thành viên trong case; nêu rõ số liệu đã kiểm tra và bước Staff cần làm nếu có.',
+  'Không tự hứa hoàn tiền, cộng Coin hay đổi gói; nếu cần thao tác đó, ghi rõ là việc Staff/Admin phải làm trong hệ thống.',
+].join('\n');
+
+export function staffSuffix(turn: { audience?: 'MEMBER' | 'STAFF' }): string {
+  return turn.audience === 'STAFF' ? `\n\n${STAFF_DRAFT_INSTRUCTION}` : '';
+}

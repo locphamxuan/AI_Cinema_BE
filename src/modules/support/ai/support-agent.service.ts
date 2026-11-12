@@ -13,7 +13,7 @@ import type { RetrievedKnowledge } from '../shared/support-view';
 import { SupportAiUnavailableError } from './ai-errors';
 import { GuardrailsService } from './guardrails';
 import { IntentRouterService } from './intent-router';
-import { PromptBuilderService } from './prompt-builder';
+import { PromptBuilderService, staffSuffix } from './prompt-builder';
 import { FINAL_ANSWER_TOOL, FINAL_ANSWER_TOOL_NAME, SUPPORT_TOOL_DEFINITIONS } from './tools/tool-definitions';
 import { SupportTools } from './tools/support-tools.service';
 import {
@@ -35,6 +35,8 @@ export interface SupportAgentTurn {
   history: Array<{ senderType: SupportSenderType; content: string }>;
   platformFacts: Record<string, unknown>;
   retrieved: RetrievedKnowledge[];
+  /** STAFF: a draft for the Staff member handling the case, never sent to the member as is. */
+  audience?: 'MEMBER' | 'STAFF';
 }
 
 export interface SupportAgentToolCall {
@@ -105,7 +107,7 @@ export class SupportAgentService {
       return mockReply(turn, intent, startedAt);
     }
     // Plan §5.4: a direct staff request never waits for the model.
-    if (intent === 'escalate') {
+    if (intent === 'escalate' && turn.audience !== 'STAFF') {
       return this.directEscalationReply(turn, startedAt);
     }
     if (!this.chatClient) {
@@ -205,7 +207,7 @@ export class SupportAgentService {
     });
 
     return [
-      { role: 'system', content: `${systemPrompt}\n\n${FINAL_ANSWER_INSTRUCTION}` },
+      { role: 'system', content: `${systemPrompt}\n\n${FINAL_ANSWER_INSTRUCTION}${staffSuffix(turn)}` },
       { role: 'user', content: turn.message },
     ];
   }

@@ -1,3 +1,4 @@
+import { staffSuffix } from './prompt-builder';
 import type { AgentOutput } from './agent-output';
 import { applyScopeGate, OUT_OF_SCOPE_REPLY } from './agent-replies';
 import { GuardrailsService } from './guardrails';
@@ -61,5 +62,13 @@ describe('GuardrailsService promises (audit 2026-11-12)', () => {
     'Tài khoản của bạn được xem miễn phí vĩnh viễn.',
   ])('blocks a promise in the AI voice: %s', (reply) => {
     expect(guardrails.check(reply, 0.9).action).toBe('block');
+  });
+});
+
+describe('staffSuffix', () => {
+  it('adds the Staff draft rules only for a Staff turn', () => {
+    expect(staffSuffix({ audience: 'STAFF' })).toContain('[STAFF DRAFT]');
+    expect(staffSuffix({ audience: 'MEMBER' })).toBe('');
+    expect(staffSuffix({})).toBe('');
   });
 });

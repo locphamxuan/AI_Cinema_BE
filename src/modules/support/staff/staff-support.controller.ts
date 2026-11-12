@@ -17,6 +17,8 @@ import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { MEMBER_CONTEXT_SECTIONS, type MemberContextSection } from './member-context.service';
+import { StaffAiAssistService } from './staff-ai-assist.service';
+import { StaffAiSuggestionRequestDto } from './dto/staff-ai-suggestion.request.dto';
 import { StaffSupportService } from './staff-support.service';
 import { AssignSupportCaseRequestDto } from 'src/modules/support/staff/dto/assign-support-case.request.dto';
 import { ResolveSupportCaseRequestDto } from 'src/modules/support/staff/dto/resolve-support-case.request.dto';
@@ -29,7 +31,10 @@ const ID = new ParseUUIDPipe({ version: '4' });
 @ApiBearerAuth()
 @Controller('admin/support')
 export class StaffSupportController {
-  constructor(private readonly staff: StaffSupportService) {}
+  constructor(
+    private readonly staff: StaffSupportService,
+    private readonly aiAssist: StaffAiAssistService,
+  ) {}
 
   @Get('conversations')
   @RequirePermission(PERMISSION.SUPPORT_CASE_READ)
@@ -78,6 +83,17 @@ export class StaffSupportController {
   @ApiOperation({ summary: 'Return a case to the queue' })
   release(@CurrentUser() user: AuthenticatedUser, @Param('id', ID) id: string) {
     return this.staff.release(id, user);
+  }
+
+  @Post('conversations/:id/ai-suggestion')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission(PERMISSION.SUPPORT_CASE_MANAGE)
+  @ApiOperation({
+    summary:
+      'AI drafts a reply for Staff from the knowledge base and the member data of the case; nothing is sent to the member',
+  })
+  aiSuggestion(@Param('id', ID) id: string, @Body() dto?: StaffAiSuggestionRequestDto) {
+    return this.aiAssist.suggest(id, dto?.question);
   }
 
   @Post('conversations/:id/messages')

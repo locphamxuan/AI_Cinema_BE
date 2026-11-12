@@ -31,6 +31,7 @@ import { RetrievalService } from './knowledge/retrieval.service';
 import { SupportRecipientsService } from './staff/support-recipients.service';
 import { MemberContextService } from './staff/member-context.service';
 import { StaffSupportController } from './staff/staff-support.controller';
+import { StaffAiAssistService } from './staff/staff-ai-assist.service';
 import { StaffSupportService } from './staff/staff-support.service';
 import { SupportStatsService } from './staff/support-stats.service';
 import { SupportAutoCloseSweep } from './support-auto-close.sweep';
@@ -93,6 +94,7 @@ import { SupportAutoCloseSweep } from './support-auto-close.sweep';
     ResolutionService,
     // Staff side
     StaffSupportService,
+    StaffAiAssistService,
     SupportStatsService,
     MemberContextService,
     SupportRecipientsService,
