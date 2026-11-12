@@ -41,7 +41,22 @@ async function main(): Promise<void> {
   for (const movie of doomed) {
     try {
       await prisma.$transaction(async (tx) => {
-        // Rows that point at the movie without a cascade go first.
+        // Rows that point at the movie with onDelete: Restrict go first, children before parents.
+        const media = { mediaAsset: { episode: { movieId: movie.id } } };
+        await tx.streamingSession.deleteMany({ where: media });
+        await tx.studioMilestoneEvent.deleteMany({ where: { OR: [media, { handoff: { projectId: movie.id } }] } });
+        await tx.publication.deleteMany({ where: { episode: { movieId: movie.id } } });
+        await tx.contentReview.deleteMany({ where: media });
+        await tx.aiContentLabel.deleteMany({ where: media });
+        await tx.complianceCheck.deleteMany({ where: media });
+        // BR-19 trigger: a released episode must keep an approved version, so the episode goes back to DRAFT first.
+        await tx.episode.updateMany({
+          where: { movieId: movie.id },
+          data: { approvedMediaAssetId: null, status: 'DRAFT' },
+        });
+        await tx.mediaAsset.deleteMany({ where: { episode: { movieId: movie.id } } });
+        await tx.productionCostEntry.deleteMany({ where: { projectId: movie.id } });
+        await tx.studioHandoff.deleteMany({ where: { projectId: movie.id } });
         await tx.auditLog.deleteMany({ where: { projectId: movie.id } });
         await tx.movie.delete({ where: { id: movie.id } });
       });
