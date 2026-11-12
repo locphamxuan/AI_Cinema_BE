@@ -1,8 +1,11 @@
 import { INestApplication } from '@nestjs/common';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode, priceEpisode, release } from './support/media';
+import { registerMember } from './support/members';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Room {
@@ -105,8 +108,75 @@ describe('Watch party and recommendations (e2e)', () => {
     expect(forYou.every((r) => r.source === 'hybrid')).toBe(true);
 
     const trending = await request(app.getHttpServer()).get('/api/recommendations/trending').expect(200);
-    const rows = trending.body as { movieId: string; ageRating: string | null; source: string }[];
-    expect(rows.some((r) => r.movieId === project.id)).toBe(true);
+    const rows = trending.body as { movieId: string; ageRating: string | null; source: string; score: number }[];
+    // Other suites publish movies too: assert the ranking, not where this project lands in it.
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r, i) => i === 0 || rows[i - 1].score >= r.score)).toBe(true);
     expect(rows.every((r) => r.ageRating !== 'T18' && r.source === 'trending')).toBe(true);
+  });
+
+  it('reads viewing behavior: a movie watched to the end leaves the list and shapes the next picks (BR-68)', async () => {
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
+    try {
+      await prisma.watchProgress.upsert({
+        where: { userId_episodeId: { userId: member.id, episodeId: episodeId(0) } },
+        create: {
+          userId: member.id,
+          episodeId: episodeId(0),
+          positionSeconds: 600,
+          durationSeconds: 600,
+          completed: true,
+        },
+        update: { positionSeconds: 600, durationSeconds: 600, completed: true },
+      });
+    } finally {
+      await prisma.$disconnect();
+    }
+    const forYou = await member.get<{ movieId: string; reason: string }[]>('/recommendations/for-you');
+    expect(forYou.some((r) => r.movieId === project.id)).toBe(false);
+    expect(forYou.every((r) => typeof r.reason === 'string')).toBe(true);
+
+    const after = await member.get<{ movieId: string; source: string }[]>(`/recommendations/after/${project.id}`);
+    expect(after.every((r) => r.movieId !== project.id && r.source === 'after')).toBe(true);
+    await member.get('/recommendations/after/00000000-0000-4000-8000-000000000000', 404);
+    await member.get('/recommendations/after/not-a-uuid', 400);
+  });
+
+  it('shows similar movies on a movie page to guests, never the movie itself', async () => {
+    const res = await request(app.getHttpServer()).get(`/api/recommendations/similar/${project.id}`).expect(200);
+    const rows = res.body as { movieId: string; source: string; ageRating: string | null }[];
+    expect(rows.every((r) => r.movieId !== project.id && r.source === 'similar' && r.ageRating !== 'T18')).toBe(true);
+    await request(app.getHttpServer())
+      .get('/api/recommendations/similar/00000000-0000-4000-8000-000000000000')
+      .expect(404);
+  });
+
+  it('adds, accepts, lists, blocks and unblocks a friend (BR-69 invites)', async () => {
+    const friend = await registerMember(app);
+    await member.post('/friends', {}, 400);
+    const sent = await member.post<{ id: string; status: string }>('/friends', { receiverId: friend.id });
+    expect(sent.status).toBe('PENDING');
+    await friend.post(`/friends/${sent.id}/respond`, {}, 400);
+    const accepted = await friend.post<{ status: string }>(`/friends/${sent.id}/respond`, { accept: true }, 201);
+    expect(accepted.status).toBe('ACCEPTED');
+    const friends = await member.get<{ id: string }[]>('/friends');
+    expect(friends.some((f) => f.id === sent.id)).toBe(true);
+    await member.post('/friends', { receiverId: member.id }, 403);
+    await member.post('/friends', { receiverId: '00000000-0000-4000-8000-000000000000' }, 404);
+    await member.post('/friends', { receiverId: friend.id }, 409);
+    await friend.post('/friends', { receiverId: member.id }, 409);
+    await member.post(`/friends/${sent.id}/respond`, { accept: true }, 403);
+    await friend.post(`/friends/${sent.id}/respond`, { accept: true }, 409);
+    await friend.post('/friends/00000000-0000-4000-8000-000000000000/respond', { accept: true }, 404);
+    await member.get('/friends?status=ACCEPTED');
+
+    const stranger = await registerMember(app);
+    const asked = await stranger.post<{ id: string }>('/friends', { receiverId: member.id });
+    const refused = await member.post<{ status: string }>(`/friends/${asked.id}/respond`, { accept: false }, 201);
+    expect(refused.status).toBe('BLOCKED');
+    await stranger.post('/friends', { receiverId: member.id }, 403);
+
+    await member.post(`/friends/${friend.id}/block`, {}, 201);
+    await member.call('delete', `/friends/${friend.id}/block`);
   });
 });
