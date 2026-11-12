@@ -44,6 +44,7 @@ model User {
   changeRequestsResolved  ProjectChangeRequest[]     @relation("ChangeRequestResolvedBy")
   contractsCreated        Contract[]                 @relation("ContractCreatedBy")
   contractsSignedAsAdmin  Contract[]                 @relation("ContractAdminSignedBy")
+  contractDocuments       ContractDocument[]         @relation("ContractDocumentUploadedBy")
   costRequestsMade        ProductionCostRequest[]    @relation("CostRequestRequestedBy")
   costRequestsResolved    ProductionCostRequest[]    @relation("CostRequestResolvedBy")
   movieLikes              MovieLike[]

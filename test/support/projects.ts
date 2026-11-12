@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { SEED_USER_PASSWORD } from '../../prisma/seed-accounts';
 import type { Actor, Row } from './api';
+import { adminSign, proposeCost } from './contracts';
 
 export interface ProjectDetail extends Row {
   status: string;
@@ -81,12 +82,15 @@ export async function finalScript(reviewer: Actor, creator: Actor, projectId: st
   await admin.post(`/projects/${projectId}/script/final-review`, { approve: true });
 }
 
-/** MF-1 §3–4: the studio quotes HANDOFF_FEE_VND and signs, the Admin countersigns: the project is handed off. */
+/**
+ * MF-1 §3–4 (10/11/2026): the studio quotes HANDOFF_FEE_VND and uploads its signed contract PDF, the Admin
+ * uploads the AI Cinema counterpart: the round carries both signatures and the project is handed off.
+ */
 export async function signContract(reviewer: Actor, projectId: string, studio: Actor): Promise<void> {
   const admin = await reviewer.signInAs(ADMIN_EMAIL);
   const [template] = await admin.get<Row[]>(`/projects/${projectId}/contracts`);
-  await studio.post(`/studio-portal/contracts/${template.id}/propose`, { costVnd: HANDOFF_FEE_VND }, 200);
-  await admin.post(`/contracts/${template.id}/sign`, {}, 200);
+  await proposeCost(studio, template.id, HANDOFF_FEE_VND);
+  await adminSign(admin, template.id);
 }
 
 /** The studio account each project of projectInProduction signed with, by project id. */
