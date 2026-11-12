@@ -1,0 +1,58 @@
+/// How a code's `code_challenge` was derived from the verifier (RFC 7636 §4.2). S256 is what the
+/// platform issues; PLAIN is kept only so a stored row can say it was never allowed.
+enum CodeChallengeMethod {
+  S256
+  PLAIN
+}
+
+/// OAuth 2.0 clients registered with AI Cinema as the authorization server (RFC 6749 §2). The only one
+/// today is the third-party Studio Web (studio.aicinema.vn): the studio signs in on our domain with its
+/// STUDIO account, approves the consent screen, and Studio Web exchanges the code for tokens server-side.
+/// `redirectUris` are compared literally — no wildcard, no prefix match (RFC 9700 §4.1).
+model OAuthClient {
+  id               String   @id @default(uuid()) @db.Uuid
+  /// Public identifier sent in the browser (`client_id`).
+  clientId         String   @unique @map("client_id") @db.VarChar(255)
+  /// Shown on the consent screen: "… muốn truy cập tài khoản AI Cinema của bạn".
+  name             String   @db.VarChar(255)
+  /// Exactly the URIs the authorization code may be sent back to.
+  redirectUris     String[] @map("redirect_uris")
+  /// Scopes this client may ask for; anything else is `invalid_scope`.
+  scopes           String[]
+  /// bcrypt hash of the client secret, or null for a public (PKCE-only) client.
+  clientSecretHash String?  @map("client_secret_hash") @db.VarChar(255)
+  isEnabled        Boolean  @default(true) @map("is_enabled")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  authorizationCodes AuthorizationCode[]
+  refreshTokens      RefreshToken[]
+
+  @@map("oauth_clients")
+}
+
+/// One-time authorization codes (RFC 6749 §4.1, RFC 7636). Only the SHA-256 hash of the code is stored,
+/// the row lives for a minute, and `usedAt` makes the exchange single-use: a second exchange of the same
+/// code is a replay, which revokes everything that code produced and is written to the audit log.
+model AuthorizationCode {
+  id                  String              @id @default(uuid()) @db.Uuid
+  codeHash            String              @unique @map("code_hash") @db.VarChar(255)
+  clientId            String              @map("client_id") @db.Uuid
+  userId              String              @map("user_id") @db.Uuid
+  /// Space-separated scopes the studio approved, frozen at consent time.
+  scope               String              @db.VarChar(500)
+  /// The redirect_uri the code was issued for; the exchange must send back the same one.
+  redirectUri         String              @map("redirect_uri") @db.VarChar(500)
+  codeChallenge       String              @map("code_challenge") @db.VarChar(255)
+  codeChallengeMethod CodeChallengeMethod @default(S256) @map("code_challenge_method")
+  expiresAt           DateTime            @map("expires_at") @db.Timestamptz(6)
+  usedAt              DateTime?           @map("used_at") @db.Timestamptz(6)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  client OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("authorization_codes")
+}
