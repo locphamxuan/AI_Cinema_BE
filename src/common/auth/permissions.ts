@@ -48,6 +48,7 @@ export const PERMISSION = {
   AD_MANAGE: 'ad.manage',
   // AI Customer Support
   SUPPORT_CHAT: 'support:chat',
+  WATCH_PARTY: 'watch-party:use',
   SUPPORT_CASE_READ: 'support:case.read',
   SUPPORT_CASE_MANAGE: 'support:case.manage',
   SUPPORT_CASE_ASSIGN: 'support:case.assign',
@@ -151,6 +152,7 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'ad.manage': { area: 'advertising', description: 'Create ads and pause or resume them' },
   // AI Customer Support
   'support:chat': { area: 'support', description: 'Member mở chat hỗ trợ' },
+  'watch-party:use': { area: 'playback', description: 'Member xem phim nhóm và kết bạn' },
   'support:case.read': { area: 'support', description: 'Staff/ADMIN đọc support case' },
   'support:case.manage': { area: 'support', description: 'Staff manage case: claim, reply, resolve, close' },
   'support:case.assign': { area: 'support', description: 'ADMIN gán case cho Staff' },
@@ -183,6 +185,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.REWARD_CHECKIN,
     PERMISSION.SUBSCRIPTION_SELF_MANAGE,
     PERMISSION.SUPPORT_CHAT,
+    PERMISSION.WATCH_PARTY,
   ],
   CONTENT_CREATOR: [PERMISSION.PROJECT_SUGGEST, PERMISSION.SCRIPT_WRITE, PERMISSION.MEDIA_INGEST],
   // 2026-11-11: the Reviewer stops at the Final Film and the AI label; pricing moved to the Admin.

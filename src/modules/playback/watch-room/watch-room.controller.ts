@@ -1,3 +1,5 @@
+import { PERMISSION } from 'src/common/auth/permissions';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -15,6 +17,8 @@ const ID = new ParseUUIDPipe({ version: '4' });
 
 @ApiTags('watch-rooms')
 @ApiBearerAuth()
+// 2026-11-13: watch rooms and friends are a Member feature only.
+@RequirePermission(PERMISSION.WATCH_PARTY)
 @Controller('watch-rooms')
 export class WatchRoomController {
   constructor(private readonly rooms: WatchRoomService) {}

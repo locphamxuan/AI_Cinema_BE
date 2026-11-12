@@ -31,9 +31,11 @@ export function handshakeTokenOf(client: {
 
 /** A token outlives a lock-out: a socket checks the account like the HTTP guard does (audit 2026-11-12). */
 export async function assertActiveAccount(
-  prisma: { user: { findUnique(args: object): Promise<{ isActive: boolean } | null> } },
+  prisma: { user: { findUnique(args: object): Promise<{ isActive: boolean; role: string } | null> } },
   userId: string,
 ): Promise<void> {
-  const account = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true } });
+  const account = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true, role: true } });
   if (!account?.isActive) throw new Error('account deactivated');
+  // 2026-11-13: watch rooms are a Member feature only.
+  if (account.role !== 'MEMBER') throw new Error('members only');
 }

@@ -62,18 +62,21 @@ describe('Watch party and recommendations (e2e)', () => {
   });
 
   it('runs a room: create, join by code, Host-only sync, next episode, transfer and disband', async () => {
+    // Watch rooms are for Members only (2026-11-13): the Admin is refused, a second Member joins.
+    await admin.post('/watch-rooms/join', { roomCode: 'ABC-DEF' }, 403);
+    const viewer = await registerMember(app);
     const room = await member.post<Room>('/watch-rooms', { episodeId: episodeId(0) }, 201);
     expect(room.roomCode).toMatch(/^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$/);
 
     // Codes are case- and dash-insensitive; a wrong one is a plain 404.
-    const joined = await admin.post<Room>('/watch-rooms/join', { roomCode: room.roomCode.toLowerCase() }, 200);
+    const joined = await viewer.post<Room>('/watch-rooms/join', { roomCode: room.roomCode.toLowerCase() }, 200);
     expect(joined.participantCount).toBe(2);
-    await admin.post('/watch-rooms/join', { roomCode: 'ZZZ-ZZZ' }, 404);
+    await viewer.post('/watch-rooms/join', { roomCode: 'ZZZ-ZZZ' }, 404);
 
     // Only the Host drives the clock; a late reader gets it extrapolated with the server time.
-    await admin.call('put', `/watch-rooms/${room.id}`, { state: 'PLAYING', positionSeconds: 5 }, 403);
+    await viewer.call('put', `/watch-rooms/${room.id}`, { state: 'PLAYING', positionSeconds: 5 }, 403);
     await member.call('put', `/watch-rooms/${room.id}`, { state: 'PLAYING', positionSeconds: 30 }, 200);
-    const snapshot = await admin.get<Room>(`/watch-rooms/${room.id}`);
+    const snapshot = await viewer.get<Room>(`/watch-rooms/${room.id}`);
     expect(snapshot.status).toBe('PLAYING');
     expect(snapshot.currentPositionSeconds).toBeGreaterThanOrEqual(30);
     expect(snapshot.serverTimestamp).toEqual(expect.any(Number));
@@ -88,7 +91,7 @@ describe('Watch party and recommendations (e2e)', () => {
       200,
     );
     expect(moved).toMatchObject({ episodeId: episodeId(1), status: 'PAUSED', blockedUserIds: [] });
-    await admin.post(`/watch-rooms/${room.id}/next-episode`, {}, 403);
+    await viewer.post(`/watch-rooms/${room.id}/next-episode`, {}, 403);
 
     // A leaving Host hands the room to the earliest member; that Host then closes it for everyone.
     const handed = await member.post<{ closed: boolean; newHostUserId: string }>(
@@ -97,7 +100,7 @@ describe('Watch party and recommendations (e2e)', () => {
       200,
     );
     expect(handed.closed).toBe(false);
-    const closed = await admin.post<{ closed: boolean }>(`/watch-rooms/${room.id}/leave`, { action: 'DISBAND' }, 200);
+    const closed = await viewer.post<{ closed: boolean }>(`/watch-rooms/${room.id}/leave`, { action: 'DISBAND' }, 200);
     expect(closed.closed).toBe(true);
     await member.post(`/watch-rooms/${room.id}/join`, {}, 409);
   });
