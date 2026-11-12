@@ -16,7 +16,7 @@ function setup(episode: Record<string, unknown>) {
       movieId: 'p1',
       episodeNumber: 1,
       movie: { title: 'Phim A' },
-      project: { reviewerId: 'rev' },
+      project: { reviewerId: 'rev', status: 'IN_PRODUCTION' },
       status: EpisodeStatus.COMPLIANCE_PASSED,
       coinPrice: 10,
       finalConfirmedAt: null,
@@ -64,5 +64,11 @@ describe('FinalFilmService (MF-1 §5–6)', () => {
       expect.objectContaining({ data: expect.objectContaining({ finalRejectionNote: 'Cảnh cuối quá tối' }) }),
     );
     expect(notifications.notify).toHaveBeenCalledWith(['rev'], expect.anything(), db);
+  });
+
+  it('refuses the Final Film of a cancelled project (audit 2026-11-12)', async () => {
+    const { service } = setup({ project: { reviewerId: 'rev', status: 'CANCELLED' } });
+    await expect(service.confirm('e1', { id: 'rev' } as never)).rejects.toThrow(/CANCELLED/);
+    await expect(service.reject('e1', 'x', { id: 'admin' } as never)).rejects.toThrow(/CANCELLED/);
   });
 });
