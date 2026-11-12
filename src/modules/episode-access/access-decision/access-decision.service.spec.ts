@@ -32,7 +32,8 @@ describe('AccessDecisionService.decide', () => {
       ingestStatus: MediaIngestStatus.READY,
       streamUrl: 'https://cdn.example/hls/ep-1/master.m3u8',
     },
-    movie: { freeEpisodeCount: null },
+    isFreeForGuest: false,
+    isFreeForMember: false,
     ...overrides,
   });
 
@@ -60,7 +61,6 @@ describe('AccessDecisionService.decide', () => {
         where: { id: 'missing', OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }] },
         include: {
           approvedMediaAsset: { select: { ingestStatus: true, streamUrl: true } },
-          movie: { select: { freeEpisodeCount: true } },
         },
       }),
     );
@@ -102,7 +102,7 @@ describe('AccessDecisionService.decide', () => {
   });
 
   it('opens a Free Starter episode before anything else (step 3)', async () => {
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1 }));
+    prisma.episode.findFirst.mockResolvedValue(episode({ isFreeForGuest: true }));
 
     await expect(service.decide('ep-1')).resolves.toMatchObject({
       accessGranted: true,
@@ -117,7 +117,7 @@ describe('AccessDecisionService.decide', () => {
   });
 
   it('hands the stream to the player only once access is granted', async () => {
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1 }));
+    prisma.episode.findFirst.mockResolvedValue(episode({ isFreeForGuest: true }));
     await expect(service.decide('ep-1')).resolves.toMatchObject({ streamUrl: 'https://cdn/ep-1.mp4' });
 
     prisma.episode.findFirst.mockResolvedValue(episode());
@@ -135,15 +135,31 @@ describe('AccessDecisionService.decide', () => {
     });
   });
 
-  it("follows the movie's own free count over the platform's (BR-03)", async () => {
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1, movie: { freeEpisodeCount: 0 } }));
+  it("follows the Admin's per-episode flags, not the episode number (BR-03)", async () => {
+    // Episode 1 is no longer free just by being first.
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1 }));
     await expect(service.decide('ep-1')).resolves.toMatchObject({ accessGranted: false });
 
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 5, movie: { freeEpisodeCount: 5 } }));
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 5, isFreeForGuest: true }));
     await expect(service.decide('ep-1')).resolves.toMatchObject({
       accessGranted: true,
       source: ACCESS_SOURCE.FREE_STARTER,
+      required: { isFreeForGuest: true, isFreeForMember: true },
     });
+  });
+
+  it('opens a members-only free episode to a member but asks a guest to sign in', async () => {
+    prisma.episode.findFirst.mockResolvedValue(episode({ isFreeForMember: true }));
+    await expect(service.decide('ep-1')).resolves.toMatchObject({
+      accessGranted: false,
+      nextAction: NEXT_ACTION.REGISTER_OR_LOGIN,
+      required: { isFreeForGuest: false, isFreeForMember: true },
+    });
+    await expect(service.decide('ep-1', 'u1')).resolves.toMatchObject({
+      accessGranted: true,
+      source: ACCESS_SOURCE.FREE_STARTER,
+    });
+    expect(prisma.episodeAccess.findFirst).not.toHaveBeenCalled();
   });
 
   it('sends a Guest to register or log in (step 4)', async () => {

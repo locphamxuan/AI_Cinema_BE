@@ -31,7 +31,14 @@ describe('EpisodePurchaseService.purchase', () => {
   );
 
   const user = { id: 'u1' } as unknown as AuthenticatedUser;
-  const episode = { id: 'ep-1', movieId: 'm1', episodeNumber: 5, coinPrice: 25, movie: { freeEpisodeCount: null } };
+  const episode = {
+    id: 'ep-1',
+    movieId: 'm1',
+    episodeNumber: 5,
+    coinPrice: 25,
+    isFreeForGuest: false,
+    isFreeForMember: false,
+  };
   const movement = { transactionId: 'tx-1', mainCoins: 10, bonusCoins: 15, mainBalance: 0, bonusBalance: 0 };
 
   beforeEach(() => {
@@ -156,7 +163,8 @@ describe('EpisodePurchaseService.purchase', () => {
   });
 
   it.each([
-    ['a Free Starter', { ...episode, episodeNumber: 1 }],
+    ['an episode free for guests', { ...episode, isFreeForGuest: true }],
+    ['an episode free for members', { ...episode, isFreeForMember: true }],
     ['priced at zero', { ...episode, coinPrice: 0 }],
   ])('refuses %s: there is nothing to buy', async (_label, row) => {
     prisma.episode.findFirst.mockResolvedValue(row);

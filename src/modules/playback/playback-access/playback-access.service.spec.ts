@@ -36,7 +36,8 @@ describe('PlaybackAccessService.verify', () => {
     episodeNumber: 5,
     coinPrice: 25,
     revisionStartedAt: null,
-    movie: { freeEpisodeCount: null },
+    isFreeForGuest: false,
+    isFreeForMember: false,
     approvedMediaAsset: media(),
     ...overrides,
   });
@@ -83,7 +84,7 @@ describe('PlaybackAccessService.verify', () => {
   });
 
   it('opens a Free Starter episode for a guest (steps 1-4)', async () => {
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1 }));
+    prisma.episode.findFirst.mockResolvedValue(episode({ isFreeForGuest: true }));
     await expect(service.verify('ep-1')).resolves.toMatchObject({
       episodeId: 'ep-1',
       accessType: PlaybackAccessType.FREE_STARTER,
@@ -92,14 +93,15 @@ describe('PlaybackAccessService.verify', () => {
     expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
   });
 
-  it("follows the movie's own free count over the platform's, like Main Flow 2 (BR-03)", async () => {
-    // The platform frees 2 episodes, this movie only 1: episode 2 is paid here.
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 2, movie: { freeEpisodeCount: 1 } }));
+  it("follows the Admin's per-episode flags like Main Flow 2, not the episode number (BR-03)", async () => {
+    // Episode 1 is paid unless the Admin freed it.
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1 }));
     await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
 
-    // This movie frees 5: episode 5 needs no account.
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 5, movie: { freeEpisodeCount: 5 } }));
-    await expect(service.verify('ep-1')).resolves.toMatchObject({ accessType: PlaybackAccessType.FREE_STARTER });
+    // Free for members only: a guest is refused, a member plays it free.
+    prisma.episode.findFirst.mockResolvedValue(episode({ isFreeForMember: true }));
+    await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
+    await expect(service.verify('ep-1', 'u-1')).resolves.toMatchObject({ accessType: PlaybackAccessType.FREE_STARTER });
   });
 
   it('sends a guest without free access back to Main Flow 2 (steps 3-4)', async () => {
@@ -175,7 +177,6 @@ describe('PlaybackAccessService.verify', () => {
     expect(prisma.episode.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: {
-          movie: { select: { freeEpisodeCount: true } },
           approvedMediaAsset: {
             select: {
               id: true,
