@@ -77,7 +77,11 @@ model User {
   episodeAdSlotsCreated   EpisodeAdSlot[]            @relation("EpisodeAdSlotCreatedBy")
   scriptVersionsSubmitted ScriptVersion[]            @relation("ScriptVersionSubmittedBy")
   scriptReviews           ScriptReview[]             @relation("ScriptReviewer")
-episodesFinalConfirmed  Episode[]                  @relation("EpisodeFinalConfirmedBy")
+  episodesFinalConfirmed  Episode[]                  @relation("EpisodeFinalConfirmedBy")
+  supportConversations    SupportConversation[]      @relation("SupportConversationMember")
+  assignedSupportCases    SupportConversation[]      @relation("SupportConversationAgent")
+  supportKnowledgeCreated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleCreatedBy")
+  supportKnowledgeUpdated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleUpdatedBy")
 
   /// Group Watch (planned 2026-11-11): rooms this member hosts and the friendships touching this account.
   watchRoomsHosted     WatchRoom[]             @relation("WatchRoomHost")

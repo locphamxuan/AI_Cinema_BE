@@ -1,0 +1,28 @@
+enum SupportSenderType {
+  MEMBER
+  AI_CHATBOT
+  SUPPORT_AGENT
+  SYSTEM
+}
+
+/// Every message of a support case. `isInternal` rows are Staff notes the member never sees.
+/// `clientMessageId` makes a member's retry idempotent; `replyToMessageId` is unique so one
+/// member message gets at most one AI reply.
+model SupportMessage {
+  id               String            @id @default(uuid()) @db.Uuid
+  conversationId   String            @map("conversation_id") @db.Uuid
+  senderType       SupportSenderType @map("sender_type")
+  senderId         String?           @map("sender_id") @db.Uuid
+  content          String            @db.Text
+  isInternal       Boolean           @default(false) @map("is_internal")
+  clientMessageId  String?           @map("client_message_id") @db.VarChar(100)
+  replyToMessageId String?           @unique @map("reply_to_message_id") @db.Uuid
+  aiMetadata       Json?             @map("ai_metadata") @db.JsonB
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, clientMessageId])
+  @@index([conversationId, createdAt])
+  @@map("support_messages")
+}

@@ -47,3 +47,4 @@ process.env.OVERDUE_SWEEP_MS = '0';
 process.env.HLS_CHECK_MS = '0';
 process.env.STREAMING_SESSION_SWEEP_MS = '0';
 process.env.STREAMING_SESSION_RETENTION_SWEEP_MS = '0';
+process.env.SUPPORT_AUTO_CLOSE_SWEEP_MS = '0';

@@ -1,0 +1,73 @@
+enum SupportStatus {
+  AI_HANDLING
+  WAITING_FOR_STAFF
+  STAFF_HANDLING
+  RESOLVED
+  CLOSED
+}
+
+enum SupportEscalationReason {
+  AI_UNAVAILABLE
+  INSUFFICIENT_INFO
+  ACCOUNT_VERIFICATION
+  MEMBER_REQUEST
+  STAFF_NEEDED
+}
+
+enum SupportPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SupportCloseReason {
+  AI_RESOLVED
+  STAFF_RESOLVED
+  INACTIVITY
+  MEMBER_CLOSED
+}
+
+/// One conversation is one support case (flow doc §5). A member keeps at most one case that is
+/// not CLOSED; the partial unique index support_conversations_member_open_idx enforces it, which
+/// Prisma cannot express, so it lives in the migration.
+model SupportConversation {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  memberId                String                   @map("member_id") @db.Uuid
+  status                  SupportStatus            @default(AI_HANDLING)
+  assignedAgentId         String?                  @map("assigned_agent_id") @db.Uuid
+  escalationReason        SupportEscalationReason? @map("escalation_reason")
+  escalationNote          String?                  @map("escalation_note") @db.Text
+  aiSummary               String?                  @map("ai_summary") @db.Text
+  priority                SupportPriority          @default(NORMAL)
+  lastMessageAt           DateTime?                @map("last_message_at") @db.Timestamptz(6)
+  lastMemberMessageAt     DateTime?                @map("last_member_message_at") @db.Timestamptz(6)
+  lastStaffMessageAt      DateTime?                @map("last_staff_message_at") @db.Timestamptz(6)
+  escalatedAt             DateTime?                @map("escalated_at") @db.Timestamptz(6)
+  claimedAt               DateTime?                @map("claimed_at") @db.Timestamptz(6)
+  firstStaffReplyAt       DateTime?                @map("first_staff_reply_at") @db.Timestamptz(6)
+  resolvedAt              DateTime?                @map("resolved_at") @db.Timestamptz(6)
+  closedAt                DateTime?                @map("closed_at") @db.Timestamptz(6)
+  closeReason             SupportCloseReason?      @map("close_reason")
+  resolutionNote          String?                  @map("resolution_note") @db.Text
+  aiTurns                 Int                      @default(0) @map("ai_turns")
+  aiResolutionSuggestedAt DateTime?                @map("ai_resolution_suggested_at") @db.Timestamptz(6)
+  aiTurnStartedAt         DateTime?                @map("ai_turn_started_at") @db.Timestamptz(6)
+  aiFailureCount          Int                      @default(0) @map("ai_failure_count")
+  contextSummary          String?                  @map("context_summary") @db.Text
+  memberLastReadAt        DateTime?                @map("member_last_read_at") @db.Timestamptz(6)
+  staffLastReadAt         DateTime?                @map("staff_last_read_at") @db.Timestamptz(6)
+  satisfactionRating      Float?                   @map("satisfaction_rating")
+  satisfactionComment     String?                  @map("satisfaction_comment") @db.Text
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member        User             @relation("SupportConversationMember", fields: [memberId], references: [id], onDelete: Restrict)
+  assignedAgent User?            @relation("SupportConversationAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  messages      SupportMessage[]
+
+  @@index([status, priority, escalatedAt])
+  @@index([memberId, status, lastMessageAt])
+  @@index([assignedAgentId, status])
+  @@map("support_conversations")
+}
