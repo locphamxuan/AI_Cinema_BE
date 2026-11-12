@@ -36,6 +36,9 @@ export interface SentTemplate {
  * in and the system merged them into one final document; completing it hands the project off to the studio.
  * The studio side of the same negotiation lives in StudioContractService.
  */
+/** The rounds the Admin may answer with a signed offer: the studio's signed cost, or the unanswered template. */
+const ADMIN_OFFER_FROM = [ContractStatus.STUDIO_SIGNED, ContractStatus.SENT];
+
 @Injectable()
 export class ContractService {
   constructor(
@@ -160,8 +163,9 @@ export class ContractService {
   }
 
   /**
-   * Admin disagrees: proposes a new cost and uploads the contract PDF for that cost carrying the Admin's
-   * signature, which opens a new round the studio answers.
+   * The Admin uploads the contract PDF for a cost, already carrying AI Cinema's signature, which opens a new
+   * round the studio answers by uploading its own signed copy. Works on the studio's offer (a counter) and,
+   * for the demo order "Admin signs first", straight on the unpriced template the studio has not answered.
    */
   async counter(
     contractId: string,
@@ -170,7 +174,7 @@ export class ContractService {
     file?: Express.Multer.File,
   ): Promise<Detailed> {
     const round = await this.readable(contractId, admin);
-    assertContractStatus(round, ContractStatus.STUDIO_SIGNED, 'counter');
+    assertContractStatus(round, ADMIN_OFFER_FROM, 'counter');
     const prepared = await this.signatures.prepare(
       { contract: round, side: ContractDocumentSide.ADMIN, completes: false, signerName: '', costVnd: BigInt(costVnd) },
       file,
@@ -178,7 +182,7 @@ export class ContractService {
     );
     return this.signing(prepared, async (tx, mailIds) => {
       const contract = await lockedContract(tx, contractId);
-      assertContractStatus(contract, ContractStatus.STUDIO_SIGNED, 'counter');
+      assertContractStatus(contract, ADMIN_OFFER_FROM, 'counter');
       await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
       const opened = await openNextRound(tx, contract, {
         costVnd: BigInt(costVnd),

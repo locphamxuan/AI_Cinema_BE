@@ -73,7 +73,8 @@ export class ContractController {
   @RequirePermission(PERMISSION.CONTRACT_MANAGE)
   @SignedPdfUpload(true)
   @ApiOperation({
-    summary: 'Admin: propose a different cost instead, with the contract PDF signed for it, opening a new round',
+    summary:
+      'Admin: send a cost with the contract PDF already signed by AI Cinema (on the template or on the studio offer); the studio then uploads its signed copy',
   })
   counter(
     @Param('contractId', ID) contractId: string,

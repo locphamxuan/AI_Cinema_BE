@@ -29,9 +29,16 @@ export const OPEN_CONTRACT_STATUSES: ContractStatus[] = [
 export const STANDARD_TERMS =
   'Studio sản xuất đúng Kịch bản Final và tiến độ đã thống nhất; nền tảng có quyền yêu cầu chỉnh sửa nội dung trước khi nghiệm thu; Studio không chia sẻ phim cho bên thứ ba.';
 
-export function assertContractStatus(contract: Detailed, expected: ContractStatus, action: string): void {
-  if (contract.status !== expected) {
-    throw new ConflictException(`Cannot ${action} a contract that is ${contract.status} (expected ${expected})`);
+export function assertContractStatus(
+  contract: Detailed,
+  expected: ContractStatus | ContractStatus[],
+  action: string,
+): void {
+  const allowed = Array.isArray(expected) ? expected : [expected];
+  if (!allowed.includes(contract.status)) {
+    throw new ConflictException(
+      `Cannot ${action} a contract that is ${contract.status} (expected ${allowed.join(' or ')})`,
+    );
   }
 }
 

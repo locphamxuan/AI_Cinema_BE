@@ -194,6 +194,33 @@ describe('ContractService', () => {
     expect(signatures.prepare).not.toHaveBeenCalled();
   });
 
+  it('lets the Admin sign first: a signed offer straight on the unanswered template (demo order)', async () => {
+    const template = contract({ status: ContractStatus.SENT, costVnd: null });
+    const offer = contract({ id: 'c2', round: 2, status: ContractStatus.ADMIN_COUNTERED });
+    db.contract.findUnique.mockResolvedValue(template);
+    db.contract.findUniqueOrThrow.mockResolvedValueOnce(template).mockResolvedValue(offer);
+    db.contract.create.mockResolvedValue(offer);
+    signatures.prepare.mockResolvedValue(prepared(ContractDocumentSide.ADMIN));
+
+    const next = await service.counter('c1', 150_000_000, ADMIN, file);
+
+    expect(db.contract.update).toHaveBeenCalledWith({
+      where: { id: 'c1' },
+      data: { status: ContractStatus.SUPERSEDED },
+    });
+    expect(db.contract.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: ContractStatus.ADMIN_COUNTERED }) }),
+    );
+    expect(next.status).toBe(ContractStatus.ADMIN_COUNTERED);
+    expect(completion.complete).not.toHaveBeenCalled();
+  });
+
+  it('refuses a signed offer on a round that is already signed by both sides', async () => {
+    db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.SIGNED }));
+    await expect(service.counter('c1', 150_000_000, ADMIN, file)).rejects.toThrow(ConflictException);
+    expect(signatures.prepare).not.toHaveBeenCalled();
+  });
+
   it('counters within the budget, opening a new round with the Admin-signed PDF on it', async () => {
     const round = contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 200_000_000n });
     db.contract.findUnique.mockResolvedValue(round);
