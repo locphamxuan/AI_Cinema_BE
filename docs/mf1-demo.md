@@ -17,11 +17,12 @@ Lệnh `seed:mf1-demo` xoá bộ demo cũ trước khi dựng lại, nên chạy
 
 | Vai trò | Email | Mật khẩu |
 |---|---|---|
-| Admin | `admin@aicinema.com` | `SEED_USER_PASSWORD` (mặc định `Aicinema@123`) |
+| Admin | `admin@gmail.com` | `SEED_USER_PASSWORD` (mặc định `Aicinema@123`) |
 | Reviewer | `reviewer@gmail.com` | như trên |
 | Creator | `creator.aicinema@gmail.com` | như trên |
 | Studio (Lumen Studio, Studio Web) | `studio@aicinema.com` | như trên |
 | Staff | `staff@gmail.com` | `Staff123456` |
+| Member (Mobile) | `abc@gmail.com` | `SEED_USER_PASSWORD` |
 
 ## 5 dự án, mỗi dự án dừng ở một mốc
 

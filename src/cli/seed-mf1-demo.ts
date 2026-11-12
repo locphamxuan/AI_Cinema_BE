@@ -44,7 +44,7 @@ import { removeMovie } from './movie-removal';
  */
 const PREFIX = '[Demo MF-1]';
 const PEOPLE = {
-  admin: 'admin@aicinema.com',
+  admin: process.env.DEMO_ADMIN_EMAIL ?? 'admin@gmail.com',
   reviewer: 'reviewer@gmail.com',
   creator: 'creator.aicinema@gmail.com',
   studio: 'studio@aicinema.com',
@@ -84,7 +84,17 @@ async function main(): Promise<void> {
     });
     return user;
   };
-  const [admin, reviewer, creator, studioUser] = await Promise.all(Object.values(PEOPLE).map(as));
+  const [reviewer, creator, studioUser] = await Promise.all([PEOPLE.reviewer, PEOPLE.creator, PEOPLE.studio].map(as));
+  // The seeded Admin is admin@gmail.com; any active Admin will do where it is named otherwise (e2e databases).
+  const admin =
+    (await prisma.user.findUnique({
+      where: { email: PEOPLE.admin },
+      select: { id: true, role: true, studioId: true },
+    })) ??
+    (await prisma.user.findFirstOrThrow({
+      where: { role: UserRole.ADMIN, isActive: true },
+      select: { id: true, role: true, studioId: true },
+    }));
   if (studioUser.role !== UserRole.STUDIO || !studioUser.studioId)
     throw new Error('Run `npx prisma db seed` first (demo studio)');
   const studio = { studioId: studioUser.studioId, userId: studioUser.id };
