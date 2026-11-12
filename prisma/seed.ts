@@ -5,7 +5,15 @@ import { PrismaClient, UserRole } from '@prisma/client';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
 import { createAccounts, SEED_USER_PASSWORD } from './seed-accounts';
-import { ADMIN_EMAIL, SEED_ACCOUNTS, SEED_POLICIES, SEED_REWARD_PRIZES, SEED_REWARD_RULES } from './seed-data';
+import {
+  ADMIN_EMAIL,
+  SEED_ACCOUNTS,
+  SEED_POLICIES,
+  SEED_REWARD_PRIZES,
+  SEED_REWARD_RULES,
+  SEED_STAFF_ACCOUNT,
+  SEED_STAFF_PASSWORD,
+} from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
@@ -82,6 +90,16 @@ async function seedDemoStudio() {
   });
 }
 
+/** The demo Staff login always ends up with SEED_STAFF_PASSWORD, even when the account existed before. */
+async function seedStaffLogin() {
+  const passwordHash = await bcrypt.hash(SEED_STAFF_PASSWORD, 12);
+  await prisma.user.upsert({
+    where: { email: SEED_STAFF_ACCOUNT.email },
+    update: { passwordHash, role: SEED_STAFF_ACCOUNT.role, isActive: true },
+    create: { ...SEED_STAFF_ACCOUNT, passwordHash },
+  });
+}
+
 async function main() {
   for (const { name, description } of GENRE_CATALOG) {
     await prisma.genre.upsert({ where: { name }, update: { description }, create: { name, description } });
@@ -89,6 +107,7 @@ async function main() {
   await seedPermissions();
   await seedPolicies();
   await createAccounts(prisma, SEED_ACCOUNTS, SEED_USER_PASSWORD);
+  await seedStaffLogin();
   await seedRewards();
   await seedDemoStudio();
   console.log('Seeded genres, permissions, policies, the platform accounts, rewards and the demo studio.');
