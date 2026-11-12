@@ -269,12 +269,66 @@ Bạn được xem hết tập đang phát; sang tập tiếp theo cần gia h�
     audience: SupportAudience.MEMBER,
     source: KnowledgeSource.FAQ,
     markdown: `## Cách đề xuất hoạt động
-Mục Đề xuất cho bạn dựa trên thể loại và quốc gia của các phim bạn đã xem hoặc thích trong 30 ngày, cộng với độ phổ biến và độ mới của phim. Phim bạn đã xem hoặc thích sẽ không lặp lại. Danh sách được làm mới khoảng 6 giờ một lần.
+AI Cinema đọc cách bạn xem trong 90 ngày: phim bạn xem hết hoặc bấm thích được tính mạnh nhất, phim xem nhiều tập được tính vừa, phim bỏ giữa chừng được tính ít, còn phim mới vào đã thoát làm giảm điểm thể loại đó. Từ đó hệ thống chấm điểm thể loại và quốc gia hợp gu bạn, cộng với độ phổ biến và độ mới của phim. Mỗi phim đề xuất có kèm lý do, ví dụ "Hợp gu Hành động bạn hay xem hết".
+
+## Sau khi xem xong một phim
+Khi bạn xem hết tập cuối, khung "AI đề xuất cho bạn" hiện các phim giống phim vừa xem (cùng thể loại, cùng quốc gia) và hợp gu bạn. Trang chi tiết phim có mục "Phim tương tự".
+
+## Cập nhật
+Phim bạn đã mở hoặc đã thích không lặp lại. Danh sách được tính lại ngay khi bạn thích phim mới hoặc xem thêm.
 
 ## Khách chưa đăng nhập
-Khách thấy danh sách phim AI thịnh hành trên AI Cinema.
+Khách thấy danh sách phim thịnh hành và phim tương tự.
 
 ## Phim T18
 Phim nhãn T18 chỉ được đề xuất cho tài khoản đã xác nhận đủ 18 tuổi.`,
+  },
+  {
+    slug: 'quang-cao-khi-xem',
+    title: 'Quảng cáo khi xem phim',
+    category: 'Playback',
+    audience: SupportAudience.MEMBER,
+    source: KnowledgeSource.FAQ,
+    markdown: `## Khi nào có quảng cáo
+Tài khoản không có gói Tháng có thể gặp quảng cáo giữa tập ở các vị trí Admin đặt sẵn. Gói Tháng xem không quảng cáo.
+
+## Bỏ qua quảng cáo
+Quảng cáo phải chạy hết mới tiếp tục tập phim. Nếu quảng cáo lỗi, hãy thoát và mở lại tập; tiến độ xem được giữ.`,
+  },
+  {
+    slug: 'nhan-noi-dung-ai',
+    title: 'Nhãn nội dung do AI tạo',
+    category: 'Playback',
+    audience: SupportAudience.MEMBER,
+    source: KnowledgeSource.FAQ,
+    markdown: `## Vì sao có nhãn AI trên video
+Phim trên AI Cinema được tạo bằng trí tuệ nhân tạo. Theo Luật Trí tuệ nhân tạo và Nghị định hướng dẫn, nội dung do AI tạo phải được gắn nhãn rõ ràng khi phát, nên nhãn AI luôn hiện trên trình phát và không thể tắt.`,
+  },
+  {
+    slug: 'do-tuoi-t18',
+    title: 'Phân loại độ tuổi và phim T18',
+    category: 'Account',
+    audience: SupportAudience.MEMBER,
+    source: KnowledgeSource.FAQ,
+    markdown: `## Nhãn độ tuổi
+Mỗi phim có nhãn P, T13, T16 hoặc T18. Phim T18 chỉ xem và chỉ được đề xuất cho tài khoản có ngày sinh đủ 18 tuổi.
+
+## Không vào được phim T18
+Kiểm tra ngày sinh trong hồ sơ. Khách chưa đăng nhập không xem được phim T18. Phòng xem nhóm cũng áp dụng quy định này cho từng người tham gia.`,
+  },
+  {
+    slug: 'diem-danh-vong-quay',
+    title: 'Điểm danh hằng ngày và vòng quay thưởng',
+    category: 'Coin',
+    audience: SupportAudience.MEMBER,
+    source: KnowledgeSource.FAQ,
+    markdown: `## Điểm danh
+Mỗi ngày (theo giờ Việt Nam) bạn điểm danh một lần để nhận Coin thưởng theo chuỗi ngày liên tiếp. Bỏ một ngày thì chuỗi bắt đầu lại từ ngày 1.
+
+## Vòng quay
+Đạt mốc chuỗi điểm danh sẽ được lượt quay. Giải thưởng là Coin thưởng, có hạn dùng; Coin thưởng được dùng sau Coin chính khi mở khóa tập.
+
+## Kiểm tra
+Trợ lý AI có thể cho bạn biết hôm nay đã điểm danh chưa, chuỗi hiện tại và số lượt quay còn lại.`,
   },
 ];

@@ -51,8 +51,9 @@ export function applyGuardrails(
 
 /** What the assistant says when a question is outside AI Cinema (audit 2026-11-12). */
 export const OUT_OF_SCOPE_REPLY =
-  'Mình là Trợ lý AI của AI Cinema nên chỉ hỗ trợ các câu hỏi về tài khoản, gói thành viên, Coin, thanh toán, ' +
-  'quyền xem phim, thiết bị và xem nhóm trên AI Cinema. Bạn cần hỗ trợ vấn đề nào trong số này?';
+  'Mình là Trợ lý AI của AI Cinema nên chỉ hỗ trợ các câu hỏi về tài khoản, ví Coin và giao dịch, gói Tháng, mở khóa tập, ' +
+  'điểm danh, thiết bị, xem phim, phim trên AI Cinema (phim nhiều lượt xem, phim đề xuất, tập sắp ra) và xem nhóm. ' +
+  'Bạn cần hỗ trợ vấn đề nào trong số này?';
 
 /**
  * Server-side scope gate (audit 2026-11-12): the system prompt asks the model to answer only from
