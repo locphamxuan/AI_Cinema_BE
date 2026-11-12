@@ -193,6 +193,10 @@ export class StaffSupportService {
     if (conversation.status === SupportStatus.CLOSED || conversation.status === SupportStatus.RESOLVED) {
       throw new ConflictException('A resolved or closed support case cannot receive new messages');
     }
+    // 2026-11-13: Staff takes over only once the member asked for a human (or the AI handed the case over).
+    if (conversation.status === SupportStatus.AI_HANDLING) {
+      throw new ConflictException('The AI assistant still handles this case; Staff replies once it is escalated');
+    }
     if (
       conversation.status === SupportStatus.STAFF_HANDLING &&
       conversation.assignedAgentId &&

@@ -292,6 +292,10 @@ describe('StaffSupportService.reply', () => {
     conversations.findById.mockResolvedValue(conversationRow({ status: SupportStatus.CLOSED }));
     await expect(service.reply(CASE_ID, STAFF, { content: 'Xin chào' })).rejects.toBeInstanceOf(ConflictException);
 
+    // 2026-11-13: the AI still handles a case the member never escalated.
+    conversations.findById.mockResolvedValue(conversationRow({ status: SupportStatus.AI_HANDLING }));
+    await expect(service.reply(CASE_ID, ADMIN, { content: 'Xin chào' })).rejects.toBeInstanceOf(ConflictException);
+
     conversations.findById.mockResolvedValue(
       conversationRow({ status: SupportStatus.STAFF_HANDLING, assignedAgentId: OTHER_STAFF.id }),
     );
