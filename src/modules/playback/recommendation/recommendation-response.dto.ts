@@ -10,6 +10,9 @@ export class RecommendationResponseDto {
   @ApiPropertyOptional({ example: 'P', description: 'Age rating after the age gate' })
   ageRating?: string | null;
 
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/posters/m1.jpg' })
+  posterUrl?: string | null;
+
   @ApiProperty({ example: 0.87, description: 'Hybrid score, 0..1' })
   score: number;
 
@@ -21,7 +24,7 @@ export class RecommendationResponseDto {
   }
 
   static from(
-    movie: { id: string; title: string; ageRating: string | null },
+    movie: { id: string; title: string; ageRating: string | null; posterUrl?: string | null },
     score: number,
     source: string,
   ): RecommendationResponseDto {
@@ -29,6 +32,7 @@ export class RecommendationResponseDto {
       movieId: movie.id,
       title: movie.title,
       ageRating: movie.ageRating,
+      posterUrl: movie.posterUrl ?? null,
       score: Math.round(score * 1000) / 1000,
       source,
     });

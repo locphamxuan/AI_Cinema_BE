@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { Public } from 'src/common/decorators/public.decorator';
 import { RecommendationService } from './recommendation.service';
 import { RecommendationResponseDto } from './recommendation-response.dto';
 
@@ -18,7 +19,8 @@ export class RecommendationController {
   }
 
   @Get('trending')
-  @ApiOperation({ summary: 'Trending AI sample films from the R2 catalog, age-gated for cold starts' })
+  @Public()
+  @ApiOperation({ summary: 'Trending AI sample films from the R2 catalog, age-gated for cold starts (Guest)' })
   @ApiOkResponse({ type: [RecommendationResponseDto] })
   trending() {
     return this.recommendations.trending();
