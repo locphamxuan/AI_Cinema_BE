@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode, deliver, release, unpublish } from './support/media';
+import { compliantEpisode, deliver, priceEpisode, release, unpublish } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail, studioOf } from './support/projects';
 
 interface Detail extends ProjectDetail {
@@ -38,7 +38,7 @@ describe('Episode taken down to be fixed (BR-56)', () => {
     });
     for (const episode of episodesOf(project)) {
       await compliantEpisode(reviewer, creator, episode.id);
-      await reviewer.patch(`/episodes/${episode.id}/coin-price`, { coinPrice: 10 });
+      await priceEpisode(reviewer, episode.id, 10);
       await release(reviewer, `/episodes/${episode.id}/publications`, {});
     }
   });
