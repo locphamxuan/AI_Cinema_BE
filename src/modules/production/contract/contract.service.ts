@@ -125,7 +125,12 @@ export class ContractService {
   /** Every negotiation round of a project, oldest first. */
   async list(projectId: string, user: AuthenticatedUser) {
     await this.access.project(projectId, user, 'read');
-    return this.prisma.contract.findMany({ where: { projectId }, orderBy: { round: 'asc' }, include: CONTRACT_DETAIL });
+    // After a studio change two studios each have a round 1: order by time first so the list is stable.
+    return this.prisma.contract.findMany({
+      where: { projectId },
+      orderBy: [{ createdAt: 'asc' }, { round: 'asc' }],
+      include: CONTRACT_DETAIL,
+    });
   }
 
   /**
