@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { AccessSource, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
+import { AccessSource, MediaIngestStatus, PlaybackAccessType, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
 import {
@@ -8,6 +8,13 @@ import {
   type RunningPlanSnapshot,
 } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+
+/** A plan in one of these states lapsed on its own, so the session it opened may finish. */
+const GRACE_STATUSES: SubscriptionStatus[] = [
+  SubscriptionStatus.ACTIVE,
+  SubscriptionStatus.PAST_DUE,
+  SubscriptionStatus.EXPIRED,
+];
 
 export interface VerifiedPlayback {
   episodeId: string;
@@ -183,17 +190,35 @@ export class PlaybackAccessService {
    * and refunds it (BR-52), and a plan can lapse mid-episode. The session row says which
    * entitlement it was opened with, so one indexed read answers it; free sessions (all guest
    * sessions among them) hold nothing that can be revoked.
+   *
+   * Grace Session (Watch Party edge 1.2, 2026-11-11): a plan whose period simply ran out after
+   * the session opened still covers the episode being watched — the member finishes it and is
+   * stopped at the next episode, when a fresh open asks verify(). A plan the Admin cancelled
+   * (CANCELLED) is not a natural lapse and ends the session at once.
    */
   async stillEntitled(session: {
     userId: string | null;
     episodeId: string;
     accessType: PlaybackAccessType;
+    startedAt?: Date;
   }): Promise<boolean> {
-    const { userId, episodeId, accessType } = session;
+    const { userId, episodeId, accessType, startedAt } = session;
     if (!userId || accessType === PlaybackAccessType.FREE_STARTER) return true;
     if (accessType === PlaybackAccessType.SUBSCRIPTION) {
       const plan = await this.prisma.subscription.findFirst({
-        where: runningPlanWhere(userId),
+        where: startedAt
+          ? {
+              OR: [
+                runningPlanWhere(userId),
+                {
+                  userId,
+                  status: { in: GRACE_STATUSES },
+                  currentPeriodStart: { lte: startedAt },
+                  currentPeriodEnd: { gt: startedAt },
+                },
+              ],
+            }
+          : runningPlanWhere(userId),
         select: { id: true },
       });
       if (plan) return true;

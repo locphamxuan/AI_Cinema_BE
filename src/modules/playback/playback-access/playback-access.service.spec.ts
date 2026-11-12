@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
+import { EpisodeStatus, MediaIngestStatus, PlaybackAccessType, SubscriptionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { PlaybackAccessService } from './playback-access.service';
@@ -255,6 +255,28 @@ describe('PlaybackAccessService.stillEntitled', () => {
     await expect(
       service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.SUBSCRIPTION }),
     ).resolves.toBe(true);
+  });
+
+  it('lets a session finish the episode when its plan lapsed after it opened (Grace Session, edge 1.2)', async () => {
+    const startedAt = new Date('2026-11-12T10:00:00Z');
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-1' });
+    await expect(
+      service.stillEntitled({
+        userId: 'u-1',
+        episodeId: 'ep-1',
+        accessType: PlaybackAccessType.SUBSCRIPTION,
+        startedAt,
+      }),
+    ).resolves.toBe(true);
+    const calls = prisma.subscription.findFirst.mock.calls as [{ where: { OR: unknown[] } }][];
+    const { where } = calls[0][0];
+    // Either a plan running now, or one that lapsed on its own (never CANCELLED) and covered the start.
+    expect(where.OR[1]).toEqual({
+      userId: 'u-1',
+      status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE, SubscriptionStatus.EXPIRED] },
+      currentPeriodStart: { lte: startedAt },
+      currentPeriodEnd: { gt: startedAt },
+    });
   });
 
   it('keeps a purchased session while the unlock stands, without reading plans', async () => {
