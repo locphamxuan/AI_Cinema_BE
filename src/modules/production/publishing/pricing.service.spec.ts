@@ -113,7 +113,7 @@ describe('PricingService', () => {
     expect(db.episode.update).not.toHaveBeenCalled();
   });
 
-  it("asks the project's Reviewer to reconsider an open alert", async () => {
+  it("asks the project's Reviewer for an opinion on an open alert", async () => {
     db.priceAlert.findUnique.mockResolvedValue(alertRow(PriceAlertStatus.OPEN));
     await expect(service.requestChange('a1', '  Giá quá cao ', ADMIN)).resolves.toEqual({ id: 'a1' });
     expect(db.priceAlert.updateMany).toHaveBeenCalledWith({
@@ -126,7 +126,10 @@ describe('PricingService', () => {
     });
     expect(notifications.notify).toHaveBeenCalledWith(
       ['rev'],
-      expect.objectContaining({ type: NOTIFICATION_TYPE.PRICE_CHANGE_REQUEST, body: 'Giá quá cao' }),
+      expect.objectContaining({
+        type: NOTIFICATION_TYPE.PRICE_CHANGE_REQUEST,
+        body: expect.stringContaining('Giá quá cao') as unknown,
+      }),
       db,
     );
   });

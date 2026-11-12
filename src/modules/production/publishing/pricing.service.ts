@@ -125,7 +125,10 @@ export class PricingService {
     });
   }
 
-  /** The Admin asks the Reviewer to reconsider the price; it stays as it is until they do. */
+  /**
+   * The Admin asks the Reviewer for an opinion on an out-of-range price. Only the Admin sets prices (audit
+   * 2026-11-12), so the Reviewer answers with a project note and the Admin re-prices or resolves the alert.
+   */
   async requestChange(alertId: string, note: string, admin: AuthenticatedUser) {
     const alert = await this.findAlert(alertId);
     if (alert.status !== PriceAlertStatus.OPEN) throw new ConflictException(`The alert is already ${alert.status}`);
@@ -145,8 +148,8 @@ export class PricingService {
         [project.reviewerId],
         {
           type: NOTIFICATION_TYPE.PRICE_CHANGE_REQUEST,
-          title: `Admin đề nghị xem lại giá tập ${alert.episode.episodeNumber} của phim "${movie.title}"`,
-          body: note.trim(),
+          title: `Admin hỏi ý kiến về giá tập ${alert.episode.episodeNumber} của phim "${movie.title}"`,
+          body: `${note.trim()} — góp ý bằng ghi chú dự án; Admin sẽ đặt lại giá.`,
           link: `/projects/${movie.id}/episodes/${alert.episodeId}`,
           payload: { projectId: movie.id, episodeId: alert.episodeId, priceAlertId: alertId },
         },
