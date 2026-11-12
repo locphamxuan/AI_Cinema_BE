@@ -1,5 +1,12 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { EpisodeStatus, ProjectStatus, UnpublishReason, UserRole } from '@prisma/client';
+import {
+  ContractStatus,
+  EpisodeStatus,
+  ProjectStatus,
+  StudioMilestoneStatus,
+  UnpublishReason,
+  UserRole,
+} from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -118,8 +125,10 @@ export class ProjectLifecycleService {
       });
       if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
       const withdrawn = await this.withdrawScheduledReleases(tx, projectId, reason, user.id);
+      const closedDeals = await this.closeOpenDeals(tx, projectId);
+      const studio = await this.notifications.studioAccountIds(project.studioId, tx);
       await this.notifications.notify(
-        [project.creatorId],
+        [project.creatorId, project.reviewerId, ...studio],
         {
           type: NOTIFICATION_TYPE.PROJECT_CANCELLED,
           title: `Dự án phim "${project.movie.title}" đã bị huỷ`,
@@ -135,11 +144,27 @@ export class ProjectLifecycleService {
           entityId: projectId,
           projectId,
           actorId: user.id,
-          payload: { reason, withdrawnReleases: withdrawn },
+          payload: { reason, withdrawnReleases: withdrawn, ...closedDeals },
         },
         tx,
       );
     });
+  }
+
+  /** The rounds still negotiated and the hand-offs not yet signed end with the project: nobody can sign them later. */
+  private async closeOpenDeals(tx: PrismaTx, projectId: string) {
+    const contracts = await tx.contract.updateMany({
+      where: {
+        projectId,
+        status: { in: [ContractStatus.SENT, ContractStatus.STUDIO_SIGNED, ContractStatus.ADMIN_COUNTERED] },
+      },
+      data: { status: ContractStatus.SUPERSEDED },
+    });
+    const handoffs = await tx.studioHandoff.updateMany({
+      where: { projectId, milestoneStatus: StudioMilestoneStatus.BRIEF_SENT },
+      data: { milestoneStatus: StudioMilestoneStatus.SUPERSEDED, statusNote: 'Dự án đã bị huỷ' },
+    });
+    return { closedContracts: contracts.count, closedHandoffs: handoffs.count };
   }
 
   /** Withdraws the scheduled releases of a cancelled project; returns how many there were. */

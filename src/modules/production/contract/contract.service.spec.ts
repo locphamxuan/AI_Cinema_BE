@@ -70,7 +70,7 @@ describe('ContractService', () => {
     mails.queue.mockResolvedValue('m1');
     notifications.studioAccountIds.mockResolvedValue(['studio-user']);
     access.project.mockResolvedValue(PROJECT);
-    db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1' });
+    db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1', project: { status: 'ASSIGNED' } });
     db.movieProject.findUniqueOrThrow.mockResolvedValue({ id: 'p1', studioId: 's1', status: ProjectStatus.ASSIGNED });
   });
 

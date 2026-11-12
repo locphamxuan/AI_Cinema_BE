@@ -24,11 +24,13 @@ describe('ProjectLifecycleService', () => {
     movieProject: { findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
     publication: { count: jest.fn(), updateMany: jest.fn() },
     episode: { count: jest.fn(), updateMany: jest.fn() },
+    contract: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    studioHandoff: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn() };
   const team = { release: jest.fn(), seat: jest.fn() };
-  const notifications = { notify: jest.fn() };
+  const notifications = { notify: jest.fn(), studioAccountIds: jest.fn().mockResolvedValue(['st1']) };
   const auditLog = { record: jest.fn() };
   const service = new ProjectLifecycleService(
     prisma as unknown as PrismaService,
@@ -123,10 +125,27 @@ describe('ProjectLifecycleService', () => {
     expect(auditLog.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: CONTENT_EVENT.PROJECT_CANCELLED,
-        payload: expect.objectContaining({ withdrawnReleases: 2 }) as unknown,
+        payload: expect.objectContaining({ withdrawnReleases: 2, closedContracts: 1, closedHandoffs: 0 }) as unknown,
       }),
       db,
     );
+  });
+
+  it('closes the open contract rounds and tells the Reviewer and the studio as well', async () => {
+    access.project.mockResolvedValue({ ...PROJECT, status: ProjectStatus.ASSIGNED, creatorId: 'cre', studioId: 's1' });
+    db.publication.count.mockResolvedValue(0);
+    db.movieProject.updateMany.mockResolvedValue({ count: 1 });
+    db.publication.updateMany.mockResolvedValue({ count: 0 });
+    await service.cancel('p1', 'Đổi kế hoạch', ADMIN);
+    expect(db.contract.updateMany).toHaveBeenCalledWith({
+      where: { projectId: 'p1', status: { in: ['SENT', 'STUDIO_SIGNED', 'ADMIN_COUNTERED'] } },
+      data: { status: 'SUPERSEDED' },
+    });
+    expect(db.studioHandoff.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { projectId: 'p1', milestoneStatus: 'BRIEF_SENT' } }),
+    );
+    expect(notifications.studioAccountIds).toHaveBeenCalledWith('s1', db);
+    expect(notifications.notify).toHaveBeenCalledWith(['cre', 'rev', 'st1'], expect.anything(), db);
   });
 
   it('refuses to cancel once an episode was published', async () => {
