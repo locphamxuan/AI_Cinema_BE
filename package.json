@@ -22,6 +22,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "seed:catalog": "tsx prisma/seed-catalog.ts",
+    "seed:prune-movies": "tsx prisma/prune-non-r2-movies.ts",
     "seed:platform-setting": "tsx prisma/seed-platform-setting.ts",
     "seed:membership-plans": "tsx prisma/seed-membership-plans.ts",
     "seed:support-knowledge": "tsx prisma/seed-support-knowledge.ts",
