@@ -204,6 +204,13 @@ export class SupportChatService {
     if (conversation.status === SupportStatus.CLOSED || conversation.status === SupportStatus.RESOLVED) {
       throw new ConflictException('This support conversation is no longer open');
     }
+    // Already with Staff: a repeated tap changes nothing, so it must not pay for another AI summary.
+    if (
+      conversation.status === SupportStatus.WAITING_FOR_STAFF ||
+      conversation.status === SupportStatus.STAFF_HANDLING
+    ) {
+      return { conversation: conversationView(conversation), systemMessage: null };
+    }
     const history = await this.messages.recentForAi(conversationId, this.config.support.aiHistoryMessages);
     const reason = note ?? 'Thành viên yêu cầu được nhân viên hỗ trợ.';
     const aiSummary = await this.handoffAi.summarize(history, reason);

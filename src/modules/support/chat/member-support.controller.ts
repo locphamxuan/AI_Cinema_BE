@@ -75,6 +75,7 @@ export class MemberSupportController {
   }
 
   @Post(':id/request-staff')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @RequirePermission(PERMISSION.SUPPORT_CHAT)
   @ApiOperation({ summary: 'Ask for a human; the case moves to WAITING_FOR_STAFF' })

@@ -1,3 +1,4 @@
+import { Throttle } from '@nestjs/throttler';
 import {
   BadRequestException,
   Body,
@@ -86,6 +87,7 @@ export class StaffSupportController {
   }
 
   @Post('conversations/:id/ai-suggestion')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @RequirePermission(PERMISSION.SUPPORT_CASE_MANAGE)
   @ApiOperation({

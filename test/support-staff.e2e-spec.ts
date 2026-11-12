@@ -37,6 +37,13 @@ describe('AI Customer Support — Staff hand-off (e2e)', () => {
       200,
     );
     expect(escalated.conversation.escalationReason).toBe('MEMBER_REQUEST');
+    // A second tap is a no-op (no second AI summary, no second hand-off).
+    const again = await member.post<{ conversation: Conversation; systemMessage: unknown }>(
+      `/support/conversations/${caseId}/request-staff`,
+      {},
+      200,
+    );
+    expect(again.systemMessage).toBeNull();
     const detail = await member.get<{ conversation: Conversation }>(`/support/conversations/${caseId}`);
     expect(detail.conversation.aiSummary).toBeTruthy();
     const list = await member.get<{ data: Row[] }>('/support/conversations');
