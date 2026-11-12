@@ -4,6 +4,8 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { SupportAgentService, type SupportAgentReply } from '../ai/support-agent.service';
 import { SupportAiUnavailableError } from '../ai/ai-errors';
+import { ESCALATION_REASON_LABEL } from '../shared/support-reason';
+import { HandoffSummaryAiService } from '../ai/handoff-summary-ai.service';
 import { SummaryService } from '../ai/summary.service';
 import { RetrievalService } from '../knowledge/retrieval.service';
 import { conversationView, escalationText, messageView, quickRepliesFor } from '../shared/support-presenter';
@@ -30,6 +32,7 @@ export class SupportAiTurnService {
     private readonly retrieval: RetrievalService,
     private readonly summary: SummaryService,
     private readonly settings: PlatformSettingService,
+    private readonly handoffAi: HandoffSummaryAiService,
   ) {}
 
   /** One AI answer for a member message, from retrieval to the stored reply. */
@@ -102,11 +105,16 @@ export class SupportAiTurnService {
     });
 
     if (reply.resolution === 'NEEDS_HUMAN' || reply.resolution === 'UNCERTAIN') {
-      const summary = this.handoffSummary(
-        reply.handoffSummary,
-        history,
-        reply.escalationReason ?? SupportEscalationReason.STAFF_NEEDED,
-      );
+      const reason = reply.escalationReason ?? SupportEscalationReason.STAFF_NEEDED;
+      // "Gặp nhân viên" typed in the chat skips the model, so the model still writes the hand-off summary.
+      const aiSummary =
+        reason === SupportEscalationReason.MEMBER_REQUEST
+          ? await this.handoffAi.summarize(
+              history.some((m) => m.id === memberMessage.id) ? history : [...history, memberMessage],
+              ESCALATION_REASON_LABEL[reason],
+            )
+          : null;
+      const summary = this.handoffSummary(aiSummary ?? reply.handoffSummary, history, reason);
       const escalated = await this.escalation.escalate({
         conversationId,
         reason: reply.escalationReason ?? SupportEscalationReason.STAFF_NEEDED,

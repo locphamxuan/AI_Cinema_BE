@@ -13,6 +13,7 @@ import { GuardrailsService } from './ai/guardrails';
 import { IntentRouterService } from './ai/intent-router';
 import { PromptBuilderService } from './ai/prompt-builder';
 import { SummaryService } from './ai/summary.service';
+import { HandoffSummaryAiService } from './ai/handoff-summary-ai.service';
 import { SupportTools } from './ai/tools/support-tools.service';
 import { EscalationService } from './chat/escalation.service';
 import { MemberSupportController } from './chat/member-support.controller';
@@ -83,6 +84,7 @@ import { SupportAutoCloseSweep } from './support-auto-close.sweep';
     IntentRouterService,
     GuardrailsService,
     SummaryService,
+    HandoffSummaryAiService,
     SupportTools,
     // Conversation core
     SupportChatService,

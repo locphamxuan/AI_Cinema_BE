@@ -7,6 +7,7 @@ import type { PlatformSettingService } from 'src/modules/platform/platform-setti
 import type { SupportAgentService, SupportAgentReply } from '../ai/support-agent.service';
 import { SupportAiUnavailableError } from '../ai/ai-errors';
 import { PromptBuilderService } from '../ai/prompt-builder';
+import { HandoffSummaryAiService } from '../ai/handoff-summary-ai.service';
 import { SummaryService } from '../ai/summary.service';
 import type { RetrievalService } from '../knowledge/retrieval.service';
 import type { SupportRecipientsService } from '../staff/support-recipients.service';
@@ -145,6 +146,7 @@ function buildChatService() {
     }),
   };
   const recipients = { notifyMemberReply: jest.fn().mockResolvedValue(undefined) };
+  const handoffAi = { summarize: jest.fn().mockResolvedValue(null) };
 
   const aiTurn = new SupportAiTurnService(
     config,
@@ -155,6 +157,7 @@ function buildChatService() {
     retrieval as unknown as RetrievalService,
     new SummaryService(new PromptBuilderService()),
     settings as unknown as PlatformSettingService,
+    handoffAi as unknown as HandoffSummaryAiService,
   );
 
   const service = new SupportChatService(
@@ -168,9 +171,11 @@ function buildChatService() {
     turnLock as unknown as SupportTurnLockService,
     recipients as unknown as SupportRecipientsService,
     {} as AuditLogService,
+    handoffAi as unknown as HandoffSummaryAiService,
   );
 
   return {
+    handoffAi,
     service,
     prisma,
     conversations,
@@ -320,7 +325,6 @@ describe('SupportChatService.send — turn lock', () => {
   it('hands the room to Staff and keeps the message when the lock is busy', async () => {
     const { service, turnLock, agent, escalation, messages } = buildChatService();
     turnLock.claim.mockResolvedValue(false);
-
     const result = await service.send(MEMBER_ID, CONVERSATION_ID, { content: 'Số dư Coin của tôi?' });
 
     expect(messages.create).toHaveBeenCalledTimes(1);
@@ -436,7 +440,6 @@ describe('SupportChatService.send — escalate rules', () => {
       expect.objectContaining({ reason: 'AI_UNAVAILABLE', actorId: null }),
     );
     const escalationCall = escalation.escalate.mock.calls[0] as [{ note: string }] | undefined;
-
     if (!escalationCall) {
       throw new Error('Expected escalation.escalate to be called');
     }
@@ -449,14 +452,12 @@ describe('SupportChatService.send — escalate rules', () => {
   it('soft-fails the first generic provider error and escalates on the second', async () => {
     const { service, agent, escalation, conversations } = buildChatService();
     agent.reply.mockRejectedValue(new Error('provider 500'));
-
     // First failure: fallback reply for the member, no escalation.
     conversations.recordAiFailure.mockResolvedValue(1);
     const first = await service.send(MEMBER_ID, CONVERSATION_ID, { content: 'Câu 1' });
     expect(escalation.escalate).not.toHaveBeenCalled();
     expect(first.aiMessage).toBeNull();
     expect(first.quickReplies).toEqual(['CONFIRM_RESOLVED', 'REQUEST_STAFF']);
-
     // Second consecutive failure: hand the case to Staff as PROVIDER_ERROR.
     escalation.escalate.mockClear();
     conversations.recordAiFailure.mockResolvedValue(2);
@@ -469,28 +470,28 @@ describe('SupportChatService.send — escalate rules', () => {
 
   it('escalates MEMBER_REQUEST straight away when the member asks for a human', async () => {
     const { service, escalation, conversations } = buildChatService();
-
     const result = await service.requestStaff(MEMBER_ID, CONVERSATION_ID, 'Tôi muốn gặp nhân viên');
-
     expect(conversations.findOwned).toHaveBeenCalledWith(CONVERSATION_ID, MEMBER_ID);
-    const escalationCall = escalation.escalate.mock.calls[0] as
-      [{ reason: string; actorId: string; note: string }] | undefined;
-
-    if (!escalationCall) {
-      throw new Error('Expected escalation.escalate to be called');
-    }
-    const input = escalationCall[0];
-    expect(input.reason).toBe('MEMBER_REQUEST');
-    expect(input.actorId).toBe(MEMBER_ID);
-    expect(input.note).toContain('Tôi muốn gặp nhân viên');
+    expect(escalation.escalate).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'MEMBER_REQUEST', actorId: MEMBER_ID, note: 'Tôi muốn gặp nhân viên' }),
+    );
     expect(result.systemMessage).toBeNull();
+  });
+
+  it('hands Staff the summary the AI wrote when the member asks for a human (audit 2026-11-12)', async () => {
+    const { service, escalation, handoffAi } = buildChatService();
+    handoffAi.summarize.mockResolvedValue('- Tập 3 không phát dù đã trả Coin.');
+    await service.requestStaff(MEMBER_ID, CONVERSATION_ID);
+    expect(handoffAi.summarize).toHaveBeenCalledWith(expect.any(Array), 'Thành viên yêu cầu được nhân viên hỗ trợ.');
+    expect(escalation.escalate).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: '- Tập 3 không phát dù đã trả Coin.' }),
+    );
   });
 
   it('refuses requestStaff on closed or resolved cases', async () => {
     const { service, conversations } = buildChatService();
     conversations.findOwned.mockResolvedValue(conversationRow({ status: SupportStatus.CLOSED }));
     await expect(service.requestStaff(MEMBER_ID, CONVERSATION_ID)).rejects.toBeInstanceOf(ConflictException);
-
     conversations.findOwned.mockResolvedValue(conversationRow({ status: SupportStatus.RESOLVED }));
     await expect(service.requestStaff(MEMBER_ID, CONVERSATION_ID)).rejects.toBeInstanceOf(ConflictException);
   });

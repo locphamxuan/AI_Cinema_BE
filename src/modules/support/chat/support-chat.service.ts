@@ -23,6 +23,7 @@ import { SupportRecipientsService } from '../staff/support-recipients.service';
 import type { SupportConversationView, SupportSendResult } from '../shared/support-view';
 import { conversationView, messageView, quickRepliesFor } from '../shared/support-presenter';
 import { EscalationService } from './escalation.service';
+import { HandoffSummaryAiService } from '../ai/handoff-summary-ai.service';
 import { SupportAiTurnService } from './support-ai-turn.service';
 import { ResolutionService } from './resolution.service';
 import { SupportConversationService } from './support-conversation.service';
@@ -49,6 +50,7 @@ export class SupportChatService {
     private readonly turnLock: SupportTurnLockService,
     private readonly recipients: SupportRecipientsService,
     private readonly audit: AuditLogService,
+    private readonly handoffAi: HandoffSummaryAiService,
   ) {}
 
   /** POST /support/conversations: reuses the member's open case. */
@@ -203,12 +205,19 @@ export class SupportChatService {
       throw new ConflictException('This support conversation is no longer open');
     }
     const history = await this.messages.recentForAi(conversationId, this.config.support.aiHistoryMessages);
-    const summary = this.aiTurn.handoffSummary(undefined, history, SupportEscalationReason.MEMBER_REQUEST, note);
+    const reason = note ?? 'Thành viên yêu cầu được nhân viên hỗ trợ.';
+    const aiSummary = await this.handoffAi.summarize(history, reason);
+    const summary = this.aiTurn.handoffSummary(
+      aiSummary ?? undefined,
+      history,
+      SupportEscalationReason.MEMBER_REQUEST,
+      note,
+    );
 
     const escalated = await this.escalation.escalate({
       conversationId,
       reason: SupportEscalationReason.MEMBER_REQUEST,
-      note: note ?? 'Thành viên yêu cầu được nhân viên hỗ trợ.',
+      note: reason,
       summary,
       actorId: memberId,
     });
