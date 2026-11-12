@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, type Studio } from '@prisma/client';
+import { Prisma, ProjectStatus, type Studio } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -7,6 +7,13 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { CreateStudioRequestDto, UpdateStudioRequestDto } from './dto/studio.request.dto';
 
 /** The catalog of partner studios (BR-59); each logs in with STUDIO accounts (StudioAccountService). */
+/** Projects that still need their studio: being contracted or in delivery. */
+const STUDIO_BUSY_STATUSES: ProjectStatus[] = [
+  ProjectStatus.ASSIGNED,
+  ProjectStatus.IN_PRODUCTION,
+  ProjectStatus.UNDER_REVISION,
+];
+
 @Injectable()
 export class StudioService {
   constructor(
@@ -40,12 +47,31 @@ export class StudioService {
   }
 
   async update(studioId: string, dto: UpdateStudioRequestDto, user: AuthenticatedUser) {
-    await this.detail(studioId);
+    const current = await this.detail(studioId);
+    if (dto.isActive === false && current.isActive) await this.assertFreeToDeactivate(studioId);
     return this.prisma.$transaction(async (tx) => {
       const studio = await this.guardEmail(() => tx.studio.update({ where: { id: studioId }, data: dto }));
       await this.record(CONTENT_EVENT.STUDIO_UPDATED, studio, user, tx, { fields: Object.keys(dto) });
       return studio;
     });
+  }
+
+  /**
+   * A studio still contracted for, or delivering, a project cannot be deactivated: it would lose its portal mid-way
+   * and the project would wait for media nobody can send. The Admin changes the studio of those projects first.
+   */
+  private async assertFreeToDeactivate(studioId: string): Promise<void> {
+    const busy = await this.prisma.movieProject.findMany({
+      where: { studioId, status: { in: STUDIO_BUSY_STATUSES } },
+      select: { id: true, movie: { select: { title: true } } },
+    });
+    if (busy.length) {
+      throw new ConflictException({
+        message: 'The studio still works on a project; change the studio of these projects first',
+        code: 'STUDIO_HAS_ACTIVE_PROJECTS',
+        projects: busy.map((p) => ({ id: p.id, title: p.movie.title })),
+      });
+    }
   }
 
   /** Only a studio never used can go; one that took a project is deactivated instead (BR-59). */

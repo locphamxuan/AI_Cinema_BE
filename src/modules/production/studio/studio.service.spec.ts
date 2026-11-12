@@ -9,10 +9,12 @@ function build(known: typeof active | null) {
   const prisma = {
     studio: {
       findUnique: jest.fn().mockResolvedValue(known),
+      update: jest.fn().mockImplementation(({ data }: { data: object }) => Promise.resolve({ ...active, ...data })),
       create: jest
         .fn()
         .mockImplementation(({ data }: { data: object }) => Promise.resolve({ id: 'new', isActive: true, ...data })),
     },
+    movieProject: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn().mockImplementation((work: (tx: unknown) => unknown) => work(prisma)),
   };
   const auditLog = { record: jest.fn().mockResolvedValue(undefined) };
@@ -55,5 +57,24 @@ describe('StudioService.resolve (studio typed by hand at hand-off)', () => {
     const { service, prisma } = build(active);
     prisma.studio.findUnique.mockResolvedValue(active);
     expect((await service.resolve({}, active.id, user)).id).toBe(active.id);
+  });
+});
+
+describe('StudioService.update (deactivation, audit 2026-11-12)', () => {
+  it('refuses to deactivate a studio that still works on a project', async () => {
+    const { service, prisma } = build(active);
+    prisma.movieProject.findMany.mockResolvedValue([{ id: 'p1', movie: { title: 'Phim A' } }]);
+    await expect(service.update(active.id, { isActive: false }, user)).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.studio.update).not.toHaveBeenCalled();
+  });
+
+  it('deactivates a studio with no project left to deliver', async () => {
+    const { service, prisma } = build(active);
+    await expect(service.update(active.id, { isActive: false }, user)).resolves.toMatchObject({ isActive: false });
+    expect(prisma.movieProject.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { studioId: active.id, status: { in: ['ASSIGNED', 'IN_PRODUCTION', 'UNDER_REVISION'] } },
+      }),
+    );
   });
 });
