@@ -27,9 +27,10 @@ export async function fundProject(anyActor: Actor, projectId: string, amountVnd 
 
 const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 
-/** A studio of the catalog (BR-59) with a unique email. */
-export function newStudio(actor: Actor, name = 'Studio Ánh Trăng'): Promise<Row> {
-  return actor.post('/studios', { name, email: `studio-${randomUUID()}@anhtrang.example` });
+/** A studio of the catalog (BR-59) with a unique email; only the Admin manages studios (12/11/2026). */
+export async function newStudio(anyActor: Actor, name = 'Studio Ánh Trăng'): Promise<Row> {
+  const admin = await anyActor.signInAs(ADMIN_EMAIL);
+  return admin.post('/studios', { name, email: `studio-${randomUUID()}@anhtrang.example` });
 }
 
 /** The Admin opens a login for the studio (MF-1, 07/11/2026) and signs in with it. */

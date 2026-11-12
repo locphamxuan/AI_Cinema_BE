@@ -55,7 +55,8 @@ describe('MF-1 integrity (e2e)', () => {
     await priceEpisode(reviewer, episodeId(0), 5);
     await releaseEpisode(reviewer, `/episodes/${episodeId(0)}/publications`, { scheduledAt: inHours(1) });
 
-    await reviewer.post(`/projects/${project.id}/cancel`, { reason: 'Nhà tài trợ rút vốn.' }, 204);
+    const admin = await reviewer.signInAs('admin@aicinema.com');
+    await admin.post(`/projects/${project.id}/cancel`, { reason: 'Nhà tài trợ rút vốn.' }, 204);
 
     const [release] = await reviewer.get<Publication[]>(`/episodes/${episodeId(0)}/publications`);
     expect(release.unpublishedAt).not.toBeNull();

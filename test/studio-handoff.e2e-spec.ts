@@ -208,7 +208,7 @@ describe('Studio contract and hand-off (e2e)', () => {
   it('changes the studio only with a reason, from the catalog, and keeps the history', async () => {
     const next = await newStudio(reviewer, 'Studio B');
     const inactive = await newStudio(reviewer, 'Studio C');
-    await reviewer.patch(`/studios/${inactive.id}`, { isActive: false });
+    await admin.patch(`/studios/${inactive.id}`, { isActive: false });
     const path = `/projects/${project.id}/studio-change`;
 
     const reason = 'Studio đầu tiên trễ hạn hai lần.';

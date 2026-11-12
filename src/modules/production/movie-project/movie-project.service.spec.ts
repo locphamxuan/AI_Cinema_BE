@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { ProjectStatus, UserRole } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -212,6 +212,14 @@ describe('MovieProjectService', () => {
 
       access.project.mockResolvedValue({ id: 'p1', status: ProjectStatus.IN_PRODUCTION, handedOffAt: new Date() });
       await expect(service.update('p1', { studioId: 'st2' }, ADMIN)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('lets only the Admin choose the studio (MF-1, 12/11/2026)', async () => {
+      const reviewer = { ...ADMIN, id: 'rev', role: UserRole.CONTENT_REVIEWER };
+      await expect(service.update('p1', { studioId: 'st2' }, reviewer as never)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(studios.assertUsable).not.toHaveBeenCalled();
     });
 
     it('refuses to edit a cancelled project', async () => {
