@@ -10,7 +10,7 @@ model WatchRoom {
     /// The playback state the Host last sent: PLAYING / PAUSED / ENDED.
     status              WatchRoomStatus @default(CREATED)
     /// The Host's clock, in seconds from the episode start, used to sync participants.
-    currentPositionSeconds Int  @map("current_position_seconds") @db.Integer
+    currentPositionSeconds Int  @default(0) @map("current_position_seconds") @db.Integer
     /// The last time the Host sent a sync; a room whose Host is silent for 45 s is taken over.
     lastHostPingAt      DateTime? @map("last_host_ping_at") @db.Timestamptz(6)
     /// When the room closes on its own: 15 min after the episode ends or the Host leaves.
