@@ -48,3 +48,10 @@ process.env.HLS_CHECK_MS = '0';
 process.env.STREAMING_SESSION_SWEEP_MS = '0';
 process.env.STREAMING_SESSION_RETENTION_SWEEP_MS = '0';
 process.env.SUPPORT_AUTO_CLOSE_SWEEP_MS = '0';
+// No real AI provider in e2e: the knowledge sweep and the assistant would call the internet with the .env keys,
+// and a dropped connection there (ECONNRESET) failed whichever suite was running. Suites may still pick a mode.
+process.env.AI_MODE = 'mock';
+process.env.AI_CHAT_BASE_URL = '';
+process.env.AI_CHAT_API_KEY = '';
+process.env.AI_EMBEDDING_BASE_URL = '';
+process.env.AI_EMBEDDING_API_KEY = '';

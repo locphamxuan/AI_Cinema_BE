@@ -59,7 +59,9 @@ describe('Studio change with a new contract (e2e)', () => {
     ]);
     project = await projectInProduction(reviewer, creator, 2);
     [studioB, studioC] = await Promise.all([newStudio(admin, 'Studio B'), newStudio(admin, 'Studio C')]);
-    [accountB, accountC] = await Promise.all([studioAccount(admin, studioB.id), studioAccount(admin, studioC.id)]);
+    // One at a time: two concurrent account creations (bcrypt + sign-in) reset the socket in a Jest worker.
+    accountB = await studioAccount(admin, studioB.id);
+    accountC = await studioAccount(admin, studioC.id);
   });
 
   afterAll(() => app.close());
