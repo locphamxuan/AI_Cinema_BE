@@ -24,9 +24,29 @@ export class FriendshipService {
       });
     }
 
-    const existing = await this.prisma.friendship.findUnique({
-      where: { senderId_receiverId: { senderId: userId, receiverId: dto.receiverId } },
+    // Either direction counts: B cannot re-ask A while A's request waits, nor reach someone who blocked them.
+    const pair = await this.prisma.friendship.findMany({
+      where: {
+        OR: [
+          { senderId: userId, receiverId: dto.receiverId },
+          { senderId: dto.receiverId, receiverId: userId },
+        ],
+      },
     });
+    if (pair.some((row) => row.status === FriendshipStatus.BLOCKED)) {
+      throw new ForbiddenException({ message: 'This member cannot be added', details: { reason: 'BLOCKED' } });
+    }
+    const existing = pair.find((row) => row.senderId === userId) ?? null;
+    const reverse = pair.find((row) => row.senderId !== userId);
+    if (reverse?.status === FriendshipStatus.ACCEPTED) {
+      throw new ConflictException({ message: 'Already friends', details: { reason: 'ALREADY_FRIENDS' } });
+    }
+    if (reverse?.status === FriendshipStatus.PENDING) {
+      throw new ConflictException({
+        message: 'This member already sent you a request; answer it instead',
+        details: { reason: 'INCOMING_PENDING', friendshipId: reverse.id },
+      });
+    }
     if (existing) {
       if (existing.status === FriendshipStatus.PENDING) {
         throw new ConflictException({ message: 'Friend request already sent', details: { reason: 'ALREADY_PENDING' } });

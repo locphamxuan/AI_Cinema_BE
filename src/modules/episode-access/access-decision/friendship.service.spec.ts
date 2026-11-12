@@ -39,7 +39,7 @@ describe('FriendshipService', () => {
 
   it('creates a pending friendship and records the invite timestamp', async () => {
     prisma.user.findUnique.mockResolvedValue(member());
-    prisma.friendship.findUnique.mockResolvedValue(null);
+    prisma.friendship.findMany.mockResolvedValue([]);
     prisma.friendship.create.mockResolvedValue({
       id: 'f1',
       senderId: 'u1',
@@ -62,8 +62,24 @@ describe('FriendshipService', () => {
 
   it('refuses a second request while one is pending', async () => {
     prisma.user.findUnique.mockResolvedValue(member());
-    prisma.friendship.findUnique.mockResolvedValue({ status: FriendshipStatus.PENDING });
+    prisma.friendship.findMany.mockResolvedValue([{ senderId: 'u1', status: FriendshipStatus.PENDING }]);
     await expect(service.create('u1', { receiverId: 'u2' })).rejects.toThrow(ConflictException);
+  });
+
+  it.each([
+    ['an incoming request waits', { senderId: 'u2', status: FriendshipStatus.PENDING }, ConflictException],
+    [
+      'they are already friends the other way',
+      { senderId: 'u2', status: FriendshipStatus.ACCEPTED },
+      ConflictException,
+    ],
+    ['either side blocked the other', { senderId: 'u2', status: FriendshipStatus.BLOCKED }, ForbiddenException],
+    ['the old request was blocked', { senderId: 'u1', status: FriendshipStatus.BLOCKED }, ForbiddenException],
+  ])('refuses a request when %s (audit 2026-11-12)', async (_case, row, error) => {
+    prisma.user.findUnique.mockResolvedValue(member());
+    prisma.friendship.findMany.mockResolvedValue([{ id: 'f0', receiverId: 'x', ...row }]);
+    await expect(service.create('u1', { receiverId: 'u2' })).rejects.toThrow(error);
+    expect(prisma.friendship.create).not.toHaveBeenCalled();
   });
 
   it('only the receiver may answer', async () => {

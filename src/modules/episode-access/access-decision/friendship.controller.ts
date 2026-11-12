@@ -3,7 +3,7 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { FriendshipService } from './friendship.service';
-import { CreateFriendshipDto } from './dto/create-friendship.dto';
+import { CreateFriendshipDto, RespondFriendshipDto } from './dto/create-friendship.dto';
 import { FriendshipResponseDto } from './dto/friendship-response.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -33,9 +33,9 @@ export class FriendshipController {
   respond(
     @CurrentUser() user: AuthenticatedUser,
     @Param('friendshipId', ID) friendshipId: string,
-    @Body('accept') accept: boolean,
+    @Body() dto: RespondFriendshipDto,
   ) {
-    return this.friendships.respond(user.id, friendshipId, accept);
+    return this.friendships.respond(user.id, friendshipId, dto.accept);
   }
 
   @Post(':friendId/block')
