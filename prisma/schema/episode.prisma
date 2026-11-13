@@ -38,6 +38,9 @@ model Episode {
     approvedMediaAssetId  String?       @unique @map("approved_media_asset_id") @db.Uuid
     /// BR-29: null until the Reviewer prices the episode.
     coinPrice             Int?          @map("coin_price")
+    /// BR-03/BR-19: set by the Admin before publish. A free-for-Guest episode is free for Members too.
+    isFreeForGuest        Boolean       @default(false) @map("is_free_for_guest")
+    isFreeForMember       Boolean       @default(false) @map("is_free_for_member")
     /// BR-56: taken down to be fixed; players show it as under maintenance. Null once released again.
     revisionStartedAt     DateTime?     @map("revision_started_at") @db.Timestamptz(6)
     /// MF-1 (07/11/2026): the Reviewer confirmed the approved, labeled and compliant version as the Final Film
@@ -64,6 +67,7 @@ model Episode {
     views              EpisodeView[]
     adSlots            EpisodeAdSlot[]
     watchStats         EpisodeWatchStat[]
+    watchRooms         WatchRoom[]
 
     @@unique([movieId, episodeNumber])
     @@index([movieId, status])

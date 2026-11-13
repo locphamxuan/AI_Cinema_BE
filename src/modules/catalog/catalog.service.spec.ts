@@ -19,6 +19,8 @@ const base = {
   dueDate: null,
   approvedMediaAssetId: 'a1',
   coinPrice: 12,
+  isFreeForGuest: true,
+  isFreeForMember: true,
   revisionStartedAt: null as Date | null,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -32,13 +34,20 @@ const base = {
 } as unknown as Parameters<typeof episodeView>[0];
 
 describe('Catalog episode view', () => {
-  it('marks the first episodes of the movie as free starters (BR-03)', () => {
-    expect(episodeView(base, 3).isFreeStarter).toBe(true);
-    expect(episodeView(base, 2).isFreeStarter).toBe(false);
+  it("shows the Admin's free flags, Guest-free implying Member-free (BR-03)", () => {
+    expect(episodeView(base)).toMatchObject({ isFreeStarter: true, isFreeForGuest: true, isFreeForMember: true });
+    const membersOnly = { ...base, isFreeForGuest: false, isFreeForMember: true } as typeof base;
+    expect(episodeView(membersOnly)).toMatchObject({
+      isFreeStarter: false,
+      isFreeForGuest: false,
+      isFreeForMember: true,
+    });
+    const locked = { ...base, isFreeForGuest: false, isFreeForMember: false } as typeof base;
+    expect(episodeView(locked)).toMatchObject({ isFreeForGuest: false, isFreeForMember: false });
   });
 
   it('shows a released episode with its label and length', () => {
-    expect(episodeView(base, 2)).toMatchObject({
+    expect(episodeView(base)).toMatchObject({
       availability: 'AVAILABLE',
       notice: null,
       durationSeconds: 600,
@@ -47,7 +56,7 @@ describe('Catalog episode view', () => {
   });
 
   it('shows an episode under revision with the notice, without the old version (BR-56)', () => {
-    const view = episodeView({ ...base, revisionStartedAt: new Date() }, 2);
+    const view = episodeView({ ...base, revisionStartedAt: new Date() });
     expect(view).toMatchObject({
       availability: 'UNDER_REVISION',
       notice: REVISION_NOTICE,

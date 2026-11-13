@@ -1,16 +1,17 @@
+import { cdnConfig, type CdnConfig } from './cdn-config';
+import { EnvReader, type Env } from './env-reader';
+import { DEFAULT_CODE_TTL_SECONDS, type OAuthConfig } from './oauth-config';
+import { supportConfig, type SupportConfig } from './support-config';
+
 /**
  * Every setting the API reads, parsed and checked once at start-up so a bad .env fails fast
  * instead of on the first request that needs it. Read it through the APP_CONFIG provider.
  */
-import { cdnConfig, type CdnConfig } from './cdn-config';
-import { EnvReader, type Env } from './env-reader';
-
 export interface AppConfig {
   nodeEnv: string;
   isProduction: boolean;
   port: number;
   corsOrigins: string[];
-  /** Web app origin, for links sent by email (the studio portal). */
   /** Studio Web origin, for the links in the emails a studio receives. */
   studioWebUrl: string;
   /** Where the payment return trip sends the member: the mobile app's top-up screen. */
@@ -102,6 +103,10 @@ export interface AppConfig {
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
   google: { clientIds: string[] };
+  /** AI customer support: provider, RAG and case-handling settings (src/config/support-config.ts). */
+  support: SupportConfig;
+  /** AI Cinema as an OAuth 2.0 authorization server for Studio Web (src/config/oauth-config.ts). */
+  oauth: OAuthConfig;
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -228,6 +233,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
+    support: supportConfig(read),
+    oauth: { codeTtlSeconds: read.int('OAUTH_CODE_TTL_SECONDS', DEFAULT_CODE_TTL_SECONDS, 30) },
     google: {
       clientIds: [
         ...new Set(

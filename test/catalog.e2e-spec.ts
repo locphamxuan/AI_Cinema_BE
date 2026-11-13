@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode, release, unpublish } from './support/media';
+import { compliantEpisode, priceEpisode, release, unpublish } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Card {
@@ -55,7 +55,8 @@ describe('Public catalog (e2e)', () => {
     });
     for (let i = 0; i < 4; i += 1) {
       await compliantEpisode(reviewer, creator, episodeId(i));
-      await reviewer.patch(`/episodes/${episodeId(i)}/coin-price`, { coinPrice: 10 + i });
+      // The Admin frees the first two episodes for everyone (BR-03).
+      await priceEpisode(reviewer, episodeId(i), 10 + i, { isFreeForGuest: i < 2 });
       // Episodes 1–3 are out, episode 4 is only scheduled.
       await release(reviewer, `/episodes/${episodeId(i)}/publications`, i < 3 ? {} : { scheduledAt: inHours(24) });
     }
@@ -101,7 +102,7 @@ describe('Public catalog (e2e)', () => {
     const episodes = await guest<(EpisodeView & Record<string, unknown>)[]>(`/movies/${listed.id}/episodes`);
 
     expect(episodes.map((e) => e.episodeNumber)).toEqual([1, 2, 3]);
-    // Two free starter episodes by default (BR-03).
+    // The Admin flagged the first two episodes free for Guests (BR-03).
     expect(episodes.map((e) => e.isFreeStarter)).toEqual([true, true, false]);
     expect(episodes[2]).toMatchObject({ availability: 'AVAILABLE', notice: null, coinPrice: 12, durationSeconds: 60 });
     expect(episodes[0].aiLabel).toMatchObject({ labelType: 'AI_GENERATED' });

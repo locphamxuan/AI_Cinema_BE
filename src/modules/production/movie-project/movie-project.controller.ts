@@ -80,8 +80,8 @@ export class MovieProjectController {
 
   @Post(':projectId/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission(PERMISSION.PROJECT_MANAGE)
-  @ApiOperation({ summary: 'Cancel a project none of whose episodes was published (BR-39)' })
+  @RequirePermission(PERMISSION.PROJECT_CREATE)
+  @ApiOperation({ summary: 'Admin: cancel a project none of whose episodes was published (BR-39)' })
   cancel(
     @Param('projectId', ID) projectId: string,
     @Body() dto: ReasonRequestDto,

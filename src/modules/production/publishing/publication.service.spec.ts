@@ -11,6 +11,7 @@ import type { ProjectLifecycleService } from 'src/modules/production/movie-proje
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import type { EpisodeRevisionService } from './episode-revision.service';
 import { CdnPurgeService } from 'src/infrastructure/cdn/cdn-purge.service';
+import type { RoomTerminationService } from 'src/modules/playback/watch-room/room-termination.service';
 import { PublicationService } from './publication.service';
 
 const ADMIN = { id: 'admin', role: UserRole.ADMIN };
@@ -64,6 +65,7 @@ describe('PublicationService', () => {
   const entitlements = { refundEpisodeRemoval: jest.fn() };
   const settings = { get: jest.fn() };
   const cdn = { purgeAsset: jest.fn().mockResolvedValue({ purged: true }) };
+  const roomTermination = { episodeTakenDown: jest.fn() };
   const service = new PublicationService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
@@ -74,6 +76,7 @@ describe('PublicationService', () => {
     entitlements as unknown as EntitlementService,
     settings as unknown as PlatformSettingService,
     cdn as unknown as CdnPurgeService,
+    roomTermination as unknown as RoomTerminationService,
   );
   const actions = () => auditLog.record.mock.calls.map(([event]) => (event as { action: string }).action);
 
@@ -214,6 +217,8 @@ describe('PublicationService', () => {
       });
       expect(entitlements.refundEpisodeRemoval).toHaveBeenCalledWith(db, 'e1', UnpublishReason.COMPLIANCE_ISSUE);
       expect(revisions.announce).toHaveBeenCalledWith(null);
+      // Edge 1.4 (BR-69): every watch room on the episode is terminated after the commit.
+      expect(roomTermination.episodeTakenDown).toHaveBeenCalledWith('e1');
     });
 
     it('skips the refund when the platform turned it off', async () => {
@@ -246,6 +251,7 @@ describe('PublicationService', () => {
         where: { id: 'e1', status: EpisodeStatus.SCHEDULED },
         data: { status: EpisodeStatus.COMPLIANCE_PASSED },
       });
+      expect(roomTermination.episodeTakenDown).not.toHaveBeenCalled();
       expect(auditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: CONTENT_EVENT.EPISODE_UNPUBLISHED,

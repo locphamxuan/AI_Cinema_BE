@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { RequestActorInterceptor } from 'src/common/http/request-actor';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PaginationModule } from '@nestarc/pagination';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
@@ -11,9 +12,11 @@ import { CdnModule } from 'src/infrastructure/cdn/cdn.module';
 import { StorageModule } from 'src/infrastructure/storage/storage.module';
 import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
 import { AuthModule } from 'src/modules/identity/auth/auth.module';
+import { OAuthModule } from 'src/modules/identity/oauth/oauth.module';
 import { CatalogModule } from 'src/modules/catalog/catalog.module';
 import { EpisodeAccessModule } from 'src/modules/episode-access/episode-access.module';
 import { PlaybackModule } from 'src/modules/playback/playback.module';
+import { SupportModule } from 'src/modules/support/support.module';
 import { ContentReviewModule } from 'src/modules/production/content-review/content-review.module';
 import { EmailModule } from 'src/modules/platform/email/email.module';
 import { GenreModule } from 'src/modules/platform/genre/genre.module';
@@ -47,6 +50,8 @@ import { AppController } from './app.controller';
     QueueModule,
     MailerModule,
     AuthModule,
+    // After AuthModule: its scope guard must run after the JWT and permission guards.
+    OAuthModule,
     NotificationModule,
     EmailModule,
     AuditLogModule,
@@ -68,8 +73,12 @@ import { AppController } from './app.controller';
     CatalogModule,
     EpisodeAccessModule,
     PlaybackModule,
+    SupportModule,
   ],
   controllers: [AppController],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_INTERCEPTOR, useClass: RequestActorInterceptor },
+  ],
 })
 export class AppModule {}

@@ -1,5 +1,12 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { EpisodeStatus, ProjectStatus, UnpublishReason, UserRole } from '@prisma/client';
+import {
+  ContractStatus,
+  EpisodeStatus,
+  ProjectStatus,
+  StudioMilestoneStatus,
+  UnpublishReason,
+  UserRole,
+} from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -42,15 +49,35 @@ export class ProjectLifecycleService {
   async announceReviewer(projectId: string): Promise<void> {
     const project = await this.prisma.movieProject.findUniqueOrThrow({
       where: { id: projectId },
-      include: { movie: true },
+      include: { movie: true, studio: { select: { name: true } } },
     });
+    const studio = project.studio ? ` Studio sản xuất: "${project.studio.name}".` : ' Admin sẽ chọn Studio sau.';
     await this.notifications.notify([project.reviewerId], {
       type: NOTIFICATION_TYPE.PROJECT_ASSIGNED,
       title: `Bạn phụ trách duyệt dự án phim "${project.movie.title}"`,
-      body: 'Admin vừa tạo dự án; lên cấu trúc mùa/tập và duyệt kịch bản Creator nộp.',
+      body: `Admin vừa tạo dự án; lên cấu trúc mùa/tập và duyệt kịch bản Creator nộp.${studio}`,
       link: projectLink(projectId),
-      payload: { projectId },
+      payload: { projectId, studioId: project.studioId },
     });
+  }
+
+  /** The Reviewer (and the lead Creator) learn which studio they will work with whenever the Admin picks one. */
+  async announceStudio(projectId: string, studio: { id: string; name: string }, tx?: PrismaTx): Promise<void> {
+    const project = await (tx ?? this.prisma).movieProject.findUniqueOrThrow({
+      where: { id: projectId },
+      include: { movie: { select: { title: true } } },
+    });
+    await this.notifications.notify(
+      [project.reviewerId, project.creatorId],
+      {
+        type: NOTIFICATION_TYPE.STUDIO_SELECTED,
+        title: `Dự án "${project.movie.title}" làm việc với Studio "${studio.name}"`,
+        body: 'Admin đã chọn Studio sản xuất cho dự án; hợp đồng gửi Studio sau khi Kịch bản Final được duyệt.',
+        link: projectLink(projectId),
+        payload: { projectId, studioId: studio.id },
+      },
+      tx,
+    );
   }
 
   /**
@@ -104,7 +131,8 @@ export class ProjectLifecycleService {
    * still scheduled are withdrawn with it, so the scheduler never puts them out.
    */
   async cancel(projectId: string, reason: string, user: AuthenticatedUser): Promise<void> {
-    const project = await this.access.project(projectId, user, 'reviewer');
+    // Only the Admin reaches here (project:create on the route, 12/11/2026); the Admin reads every project.
+    const project = await this.access.project(projectId, user, 'read');
     assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'cancel the project');
     const published = await this.prisma.publication.count({
       where: { episode: { movieId: projectId }, publishedAt: { not: null } },
@@ -118,8 +146,10 @@ export class ProjectLifecycleService {
       });
       if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
       const withdrawn = await this.withdrawScheduledReleases(tx, projectId, reason, user.id);
+      const closedDeals = await this.closeOpenDeals(tx, projectId);
+      const studio = await this.notifications.studioAccountIds(project.studioId, tx);
       await this.notifications.notify(
-        [project.creatorId],
+        [project.creatorId, project.reviewerId, ...studio],
         {
           type: NOTIFICATION_TYPE.PROJECT_CANCELLED,
           title: `Dự án phim "${project.movie.title}" đã bị huỷ`,
@@ -135,11 +165,27 @@ export class ProjectLifecycleService {
           entityId: projectId,
           projectId,
           actorId: user.id,
-          payload: { reason, withdrawnReleases: withdrawn },
+          payload: { reason, withdrawnReleases: withdrawn, ...closedDeals },
         },
         tx,
       );
     });
+  }
+
+  /** The rounds still negotiated and the hand-offs not yet signed end with the project: nobody can sign them later. */
+  private async closeOpenDeals(tx: PrismaTx, projectId: string) {
+    const contracts = await tx.contract.updateMany({
+      where: {
+        projectId,
+        status: { in: [ContractStatus.SENT, ContractStatus.STUDIO_SIGNED, ContractStatus.ADMIN_COUNTERED] },
+      },
+      data: { status: ContractStatus.SUPERSEDED },
+    });
+    const handoffs = await tx.studioHandoff.updateMany({
+      where: { projectId, milestoneStatus: StudioMilestoneStatus.BRIEF_SENT },
+      data: { milestoneStatus: StudioMilestoneStatus.SUPERSEDED, statusNote: 'Dự án đã bị huỷ' },
+    });
+    return { closedContracts: contracts.count, closedHandoffs: handoffs.count };
   }
 
   /** Withdraws the scheduled releases of a cancelled project; returns how many there were. */

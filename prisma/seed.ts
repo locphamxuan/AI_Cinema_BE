@@ -5,7 +5,15 @@ import { PrismaClient, UserRole } from '@prisma/client';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
 import { createAccounts, SEED_USER_PASSWORD } from './seed-accounts';
-import { ADMIN_EMAIL, SEED_ACCOUNTS, SEED_POLICIES, SEED_REWARD_PRIZES, SEED_REWARD_RULES } from './seed-data';
+import {
+  ADMIN_EMAIL,
+  SEED_ACCOUNTS,
+  SEED_POLICIES,
+  SEED_REWARD_PRIZES,
+  SEED_REWARD_RULES,
+  SEED_STAFF_ACCOUNT,
+  SEED_STAFF_PASSWORD,
+} from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
@@ -82,6 +90,38 @@ async function seedDemoStudio() {
   });
 }
 
+/** The demo Staff login always ends up with SEED_STAFF_PASSWORD, even when the account existed before. */
+async function seedStaffLogin() {
+  const passwordHash = await bcrypt.hash(SEED_STAFF_PASSWORD, 12);
+  await prisma.user.upsert({
+    where: { email: SEED_STAFF_ACCOUNT.email },
+    update: { passwordHash, role: SEED_STAFF_ACCOUNT.role, isActive: true },
+    create: { ...SEED_STAFF_ACCOUNT, passwordHash },
+  });
+}
+
+/**
+ * Studio Web as an OAuth client (2026-11-12). The redirect_uris come from the same env the API reads, so a
+ * local Studio Web on :3100 works out of the box; production sets OAUTH_STUDIO_WEB_REDIRECT_URIS. With no
+ * OAUTH_STUDIO_WEB_CLIENT_SECRET the client is public and relies on PKCE alone.
+ */
+async function seedStudioWebClient() {
+  const clientId = process.env.OAUTH_STUDIO_WEB_CLIENT_ID || 'studio-web';
+  const studioWebUrl = process.env.STUDIO_WEB_URL || 'http://localhost:3100';
+  const redirectUris = (process.env.OAUTH_STUDIO_WEB_REDIRECT_URIS || `${studioWebUrl}/api/auth/callback`)
+    .split(',')
+    .map((uri) => uri.trim())
+    .filter(Boolean);
+  const secret = process.env.OAUTH_STUDIO_WEB_CLIENT_SECRET;
+  const data = {
+    name: process.env.OAUTH_STUDIO_WEB_NAME || 'Studio Web',
+    redirectUris,
+    scopes: ['studio:portal'],
+    clientSecretHash: secret ? await bcrypt.hash(secret, 12) : null,
+  };
+  await prisma.oAuthClient.upsert({ where: { clientId }, update: data, create: { clientId, ...data } });
+}
+
 async function main() {
   for (const { name, description } of GENRE_CATALOG) {
     await prisma.genre.upsert({ where: { name }, update: { description }, create: { name, description } });
@@ -89,9 +129,13 @@ async function main() {
   await seedPermissions();
   await seedPolicies();
   await createAccounts(prisma, SEED_ACCOUNTS, SEED_USER_PASSWORD);
+  await seedStaffLogin();
   await seedRewards();
   await seedDemoStudio();
-  console.log('Seeded genres, permissions, policies, the platform accounts, rewards and the demo studio.');
+  await seedStudioWebClient();
+  console.log(
+    'Seeded genres, permissions, policies, the platform accounts, rewards, the demo studio and the Studio Web client.',
+  );
 }
 
 main()

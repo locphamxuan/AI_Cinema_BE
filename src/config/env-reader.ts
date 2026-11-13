@@ -1,9 +1,9 @@
-/**
- * Reads one environment variable at a time and collects every problem in `errors`, so a bad
- * .env reports all of its mistakes at once instead of one more on each restart.
- */
 export type Env = Record<string, string | undefined>;
 
+/**
+ * Reads and validates one environment variable at a time, collecting every problem so a bad
+ * .env reports all of its errors at once instead of one per restart (see app-config.ts).
+ */
 export class EnvReader {
   readonly errors: string[] = [];
 
@@ -27,6 +27,17 @@ export class EnvReader {
     const value = Number(raw);
     if (!Number.isInteger(value) || value < min) {
       this.errors.push(`${key} must be an integer >= ${min} (got "${raw}")`);
+      return fallback;
+    }
+    return value;
+  }
+
+  float(key: string, fallback: number, min = -Infinity): number {
+    const raw = this.optional(key);
+    if (raw === undefined) return fallback;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < min) {
+      this.errors.push(`${key} must be a finite number >= ${min} (got "${raw}")`);
       return fallback;
     }
     return value;

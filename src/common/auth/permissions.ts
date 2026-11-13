@@ -17,6 +17,7 @@ export const PERMISSION = {
   COST_APPROVE: 'cost:approve',
   COST_ADJUST: 'cost:adjust',
   CONTRACT_MANAGE: 'contract:manage',
+  CONTRACT_DOCUMENT_READ: 'contract:document.read',
   SCRIPT_WRITE: 'script:write',
   SCRIPT_APPROVE: 'script:approve',
   STUDIO_PORTAL: 'studio:portal',
@@ -45,6 +46,13 @@ export const PERMISSION = {
   ANALYTICS_CHURN_READ: 'analytics.churn.read',
   // MF-3 — mid-roll ads
   AD_MANAGE: 'ad.manage',
+  // AI Customer Support
+  SUPPORT_CHAT: 'support:chat',
+  WATCH_PARTY: 'watch-party:use',
+  SUPPORT_CASE_READ: 'support:case.read',
+  SUPPORT_CASE_MANAGE: 'support:case.manage',
+  SUPPORT_CASE_ASSIGN: 'support:case.assign',
+  SUPPORT_KNOWLEDGE_MANAGE: 'support:knowledge.manage',
   // Administration
   MEMBER_OPS_READ: 'member:ops.read',
   USER_READ: 'user:read',
@@ -85,7 +93,11 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'cost:adjust': { area: 'movie-project', description: 'Set the production budget (VND) of a project and correct it' },
   'contract:manage': {
     area: 'movie-project',
-    description: 'Send the studio a contract template, sign it or counter-propose its cost',
+    description: 'Send the studio a contract template, upload the signed contract PDF or counter-propose its cost',
+  },
+  'contract:document.read': {
+    area: 'movie-project',
+    description: 'Download the signed contract PDFs of a project',
   },
   'script:write': { area: 'movie-project', description: 'Write and submit the script of an assigned project' },
   'script:approve': {
@@ -108,7 +120,7 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   },
   'episode:price': {
     area: 'publishing',
-    description: 'Set the Coin price of an episode before confirming the Final Film',
+    description: 'Set the Coin price and the free flags of each episode before publishing (Admin, BR-29)',
   },
   'episode:publish': {
     area: 'publishing',
@@ -138,6 +150,13 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'analytics.revenue.read': { area: 'billing', description: 'Read the plan revenue reports' },
   'analytics.churn.read': { area: 'billing', description: 'Read the plan churn reports' },
   'ad.manage': { area: 'advertising', description: 'Create ads and pause or resume them' },
+  // AI Customer Support
+  'support:chat': { area: 'support', description: 'Member mở chat hỗ trợ' },
+  'watch-party:use': { area: 'playback', description: 'Member xem phim nhóm và kết bạn' },
+  'support:case.read': { area: 'support', description: 'Staff/ADMIN đọc support case' },
+  'support:case.manage': { area: 'support', description: 'Staff manage case: claim, reply, resolve, close' },
+  'support:case.assign': { area: 'support', description: 'ADMIN gán case cho Staff' },
+  'support:knowledge.manage': { area: 'support', description: 'Admin quản lý Knowledge Base' },
   'member:ops.read': { area: 'administration', description: 'Read member accounts (read-only, BR-20)' },
   'user:read': { area: 'administration', description: 'Read every account, staff included' },
   'user:manage': { area: 'administration', description: 'Create staff accounts, change roles, lock accounts' },
@@ -165,15 +184,17 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.WALLET_TOPUP,
     PERMISSION.REWARD_CHECKIN,
     PERMISSION.SUBSCRIPTION_SELF_MANAGE,
+    PERMISSION.SUPPORT_CHAT,
+    PERMISSION.WATCH_PARTY,
   ],
   CONTENT_CREATOR: [PERMISSION.PROJECT_SUGGEST, PERMISSION.SCRIPT_WRITE, PERMISSION.MEDIA_INGEST],
+  // 2026-11-11: the Reviewer stops at the Final Film and the AI label; pricing moved to the Admin.
   CONTENT_REVIEWER: [
     PERMISSION.PROJECT_MANAGE,
     PERMISSION.PROJECT_SUGGEST,
     PERMISSION.COST_REQUEST,
-    PERMISSION.STUDIO_MANAGE,
     PERMISSION.CONTENT_REVIEW,
-    PERMISSION.EPISODE_PRICE,
+    PERMISSION.CONTRACT_DOCUMENT_READ,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
   ],
@@ -187,6 +208,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.COIN_WALLET_READ,
     PERMISSION.COIN_TRANSACTION_READ,
     PERMISSION.BILLING_SUBSCRIPTION_READ,
+    PERMISSION.SUPPORT_CASE_READ,
+    PERMISSION.SUPPORT_CASE_MANAGE,
   ],
   // MF-1: the Admin creates projects, approves the Final Script, publishes, reads every project, sets its production budget and decides the change and cost requests (BR-55).
   ADMIN: [
@@ -194,11 +217,13 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.PROJECT_READ_ALL,
     PERMISSION.SCRIPT_APPROVE,
     PERMISSION.STUDIO_MANAGE,
+    PERMISSION.EPISODE_PRICE,
     PERMISSION.EPISODE_PUBLISH,
     PERMISSION.PROJECT_CHANGE_REVIEW,
     PERMISSION.COST_APPROVE,
     PERMISSION.COST_ADJUST,
     PERMISSION.CONTRACT_MANAGE,
+    PERMISSION.CONTRACT_DOCUMENT_READ,
     PERMISSION.PRICE_ALERT_MANAGE,
     PERMISSION.GENRE_MANAGE,
     PERMISSION.USER_READ,
@@ -220,5 +245,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.ANALYTICS_CHURN_READ,
     // MF-3: mid-roll ads shown to ad-supported plans.
     PERMISSION.AD_MANAGE,
+    // AI Customer Support
+    PERMISSION.SUPPORT_CASE_READ,
+    PERMISSION.SUPPORT_CASE_MANAGE,
+    PERMISSION.SUPPORT_CASE_ASSIGN,
+    PERMISSION.SUPPORT_KNOWLEDGE_MANAGE,
   ],
 };

@@ -3,7 +3,7 @@ import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PublicationService } from 'src/modules/production/publishing/publication.service';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode, release, unpublish } from './support/media';
+import { compliantEpisode, priceEpisode, release, unpublish } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Publication {
@@ -56,13 +56,15 @@ describe('Pricing and publishing (e2e)', () => {
   const bellOf = async (actor: Actor, type: string) =>
     (await actor.get<Bell>('/notifications?limit=100')).data.filter((n) => n.type === type);
 
-  it('prices an episode; a price outside the range is kept and flagged to the Admin (BR-47)', async () => {
+  it('lets only the Admin price an episode; a price outside the range is kept and flagged (BR-29, BR-47)', async () => {
     const path = `/episodes/${episodeId(0)}/coin-price`;
     await creator.patch(path, { coinPrice: 10 }, 403);
-    await reviewer.patch(path, { coinPrice: -1 }, 400);
+    // 2026-11-11: the Reviewer stops at the Final Film and never prices an episode.
+    await reviewer.patch(path, { coinPrice: 10 }, 403);
+    await admin.patch(path, { coinPrice: -1 }, 400);
 
-    expect(await reviewer.patch<PriceResult>(path, { coinPrice: 10 })).toMatchObject({ inRange: true, alert: null });
-    const flagged = await reviewer.patch<PriceResult>(path, { coinPrice: 120 });
+    expect(await admin.patch<PriceResult>(path, { coinPrice: 10 })).toMatchObject({ inRange: true, alert: null });
+    const flagged = await admin.patch<PriceResult>(path, { coinPrice: 120 });
     expect(flagged).toMatchObject({ coinPrice: 120, inRange: false, alert: { status: 'OPEN' } });
 
     const raised = await bellOf(admin, 'PRICE_OUT_OF_RANGE');
@@ -70,6 +72,19 @@ describe('Pricing and publishing (e2e)', () => {
     await reviewer.get('/admin/price-alerts', 403);
     const open = await admin.get<{ data: Alert[] }>('/admin/price-alerts?filter.status=$eq:OPEN&limit=100');
     expect(open.data.find((a) => a.id === flagged.alert!.id)).toMatchObject({ coinPrice: 120 });
+  });
+
+  it('lets only the Admin flag an episode free; free for Guests always means free for Members (BR-03)', async () => {
+    const path = `/episodes/${episodeId(0)}/access-flags`;
+    await reviewer.patch(path, { isFreeForGuest: true }, 403);
+    expect(await admin.patch(path, { isFreeForGuest: true, isFreeForMember: false })).toMatchObject({
+      isFreeForGuest: true,
+      isFreeForMember: true,
+    });
+    expect(await admin.patch(path, { isFreeForGuest: false, isFreeForMember: false })).toMatchObject({
+      isFreeForGuest: false,
+      isFreeForMember: false,
+    });
   });
 
   it('lets the Admin ask for a change but never edit the price; a new price settles the alert', async () => {
@@ -88,7 +103,7 @@ describe('Pricing and publishing (e2e)', () => {
       true,
     );
 
-    await reviewer.patch(`/episodes/${episodeId(0)}/coin-price`, { coinPrice: 15 });
+    await admin.patch(`/episodes/${episodeId(0)}/coin-price`, { coinPrice: 15 });
     const resolved = await admin.get<{ data: Alert[] }>('/admin/price-alerts?filter.status=$eq:RESOLVED&limit=100');
     expect(resolved.data.some((a) => a.id === alert.id)).toBe(true);
   });
@@ -168,7 +183,7 @@ describe('Pricing and publishing (e2e)', () => {
 
   it('cancels a scheduled release, and completes the project once every episode is out (BR-38)', async () => {
     await compliantEpisode(reviewer, creator, episodeId(1));
-    await reviewer.patch(`/episodes/${episodeId(1)}/coin-price`, { coinPrice: 5 });
+    await priceEpisode(reviewer, episodeId(1), 5);
     // MF-1 §5–6: only the Admin publishes, and only a Final Film the Reviewer confirmed.
     const path = `/episodes/${episodeId(1)}/publications`;
     await reviewer.post(path, {}, 403);

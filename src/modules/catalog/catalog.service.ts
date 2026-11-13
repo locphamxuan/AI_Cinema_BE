@@ -1,3 +1,4 @@
+import { freeTierOf } from './episode-free-tier';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ProjectStatus, type Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
@@ -122,16 +123,13 @@ export class CatalogService {
   }
 
   async episodes(movieId: string, seasonNumber?: number) {
-    const listed = await this.assertListed(movieId);
-    const [episodes, freeStarter] = await Promise.all([
-      this.prisma.episode.findMany({
-        where: { movieId, ...VISIBLE_EPISODE, ...(seasonNumber ? { season: { seasonNumber } } : {}) },
-        orderBy: { episodeNumber: 'asc' },
-        include: EPISODE_DETAIL,
-      }),
-      this.freeStarterCount(listed.freeEpisodeCount),
-    ]);
-    return episodes.map((episode) => episodeView(episode, freeStarter));
+    await this.assertListed(movieId);
+    const episodes = await this.prisma.episode.findMany({
+      where: { movieId, ...VISIBLE_EPISODE, ...(seasonNumber ? { season: { seasonNumber } } : {}) },
+      orderBy: { episodeNumber: 'asc' },
+      include: EPISODE_DETAIL,
+    });
+    return episodes.map((episode) => episodeView(episode));
   }
 
   async episode(episodeId: string) {
@@ -141,7 +139,7 @@ export class CatalogService {
     });
     if (!episode) throw new NotFoundException('Episode not found');
     return {
-      ...episodeView(episode, await this.freeStarterCount(episode.movie.freeEpisodeCount)),
+      ...episodeView(episode),
       movie: movieCard(episode.movie),
     };
   }
@@ -149,15 +147,10 @@ export class CatalogService {
   private async assertListed(movieId: string) {
     const movie = await this.prisma.movie.findFirst({
       where: { id: movieId, ...LISTED_MOVIE },
-      select: { freeEpisodeCount: true },
+      select: { id: true },
     });
     if (!movie) throw new NotFoundException('Movie not found');
     return movie;
-  }
-
-  /** BR-03: the Reviewer may set a movie's own count (a one-episode film free or not); else the platform's. */
-  private async freeStarterCount(movieCount: number | null): Promise<number> {
-    return movieCount ?? (await this.settings.get()).freeStarterEpisodeCount;
   }
 }
 
@@ -182,7 +175,7 @@ export function movieCard(movie: MovieRow) {
  * What a viewer sees of an episode. Under revision it shows the notice and can't be played;
  * its AI label and length come back with the fixed version (BR-56).
  */
-export function episodeView(episode: EpisodeRow, freeStarterCount: number) {
+export function episodeView(episode: EpisodeRow) {
   const underRevision = episode.revisionStartedAt !== null;
   const media = underRevision ? null : episode.approvedMediaAsset;
   return {
@@ -196,8 +189,10 @@ export function episodeView(episode: EpisodeRow, freeStarterCount: number) {
     thumbnailUrl: episode.thumbnailUrl,
     availability: underRevision ? EPISODE_AVAILABILITY.UNDER_REVISION : EPISODE_AVAILABILITY.AVAILABLE,
     notice: underRevision ? REVISION_NOTICE : null,
-    // BR-03: the first episodes of every movie, counted across seasons.
-    isFreeStarter: episode.episodeNumber <= freeStarterCount,
+    // BR-03: the Admin's per-episode flags; isFreeStarter (free without an account) is kept for older clients.
+    isFreeStarter: freeTierOf(episode).forGuest,
+    isFreeForGuest: freeTierOf(episode).forGuest,
+    isFreeForMember: freeTierOf(episode).forMember,
     coinPrice: episode.coinPrice,
     durationSeconds: media?.durationSeconds ?? null,
     qualities: media?.qualities ?? [],

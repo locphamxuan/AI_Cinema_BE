@@ -30,6 +30,7 @@ export const CONTENT_EVENT = {
   COMPLIANCE_PASSED: 'COMPLIANCE_PASSED',
   COMPLIANCE_FAILED: 'COMPLIANCE_FAILED',
   EPISODE_PRICED: 'EPISODE_PRICED',
+  EPISODE_FLAGS_SET: 'EPISODE_FLAGS_SET',
   PRICE_OUT_OF_RANGE: 'PRICE_OUT_OF_RANGE',
   PROJECT_CHANGE_REQUESTED: 'PROJECT_CHANGE_REQUESTED',
   PROJECT_CHANGE_APPROVED: 'PROJECT_CHANGE_APPROVED',
@@ -48,6 +49,9 @@ export const CONTENT_EVENT = {
   SCRIPT_FINALIZED: 'SCRIPT_FINALIZED',
   SCRIPT_REVISION_REQUESTED: 'SCRIPT_REVISION_REQUESTED',
   STUDIO_ACCOUNT_CREATED: 'STUDIO_ACCOUNT_CREATED',
+  // Studio Web OAuth (2026-11-12): a studio signed in through the authorization server, or a code was replayed.
+  OAUTH_TOKEN_ISSUED: 'OAUTH_TOKEN_ISSUED',
+  OAUTH_CODE_REPLAYED: 'OAUTH_CODE_REPLAYED',
   FINAL_FILM_CONFIRMED: 'FINAL_FILM_CONFIRMED',
   FINAL_FILM_REJECTED: 'FINAL_FILM_REJECTED',
   EPISODE_SCHEDULED: 'EPISODE_SCHEDULED',
@@ -74,6 +78,18 @@ export const CONTENT_EVENT = {
   PLAYBACK_SESSION_ENDED: 'PLAYBACK_SESSION_ENDED',
   // MF-3 — the Admin places the mid-roll ads of an episode (BR-32)
   EPISODE_AD_SLOTS_SET: 'EPISODE_AD_SLOTS_SET',
+  // AI Customer Support (plan §3.5)
+  SUPPORT_CONVERSATION_CREATED: 'SUPPORT_CONVERSATION_CREATED',
+  SUPPORT_CASE_ESCALATED: 'SUPPORT_CASE_ESCALATED',
+  SUPPORT_CASE_CLAIMED: 'SUPPORT_CASE_CLAIMED',
+  SUPPORT_CASE_RELEASED: 'SUPPORT_CASE_RELEASED',
+  SUPPORT_AGENT_REPLIED: 'SUPPORT_AGENT_REPLIED',
+  SUPPORT_CASE_RESOLVED: 'SUPPORT_CASE_RESOLVED',
+  SUPPORT_CASE_CLOSED: 'SUPPORT_CASE_CLOSED',
+  SUPPORT_KNOWLEDGE_CREATED: 'SUPPORT_KNOWLEDGE_CREATED',
+  SUPPORT_KNOWLEDGE_UPDATED: 'SUPPORT_KNOWLEDGE_UPDATED',
+  SUPPORT_KNOWLEDGE_ARCHIVED: 'SUPPORT_KNOWLEDGE_ARCHIVED',
+  SUPPORT_KNOWLEDGE_INDEXED: 'SUPPORT_KNOWLEDGE_INDEXED',
 } as const;
 
 export type ContentEvent = (typeof CONTENT_EVENT)[keyof typeof CONTENT_EVENT];
@@ -98,6 +114,7 @@ export type AuditEntity =
   | 'ProductionCostRequest'
   | 'Contract'
   | 'ProjectScript'
+  | 'OAuthClient'
   // MF-2: these live outside a movie, so their audit row has no project_id.
   | 'CoinWallet'
   | 'CoinTransaction'
@@ -109,4 +126,7 @@ export type AuditEntity =
   | 'RewardPrize'
   | 'RewardSpin'
   // MF-3: viewer traffic stays off the movie timeline, so its row has no movie_id either.
-  | 'StreamingSession';
+  | 'StreamingSession'
+  // AI Customer Support: cases live outside a movie, so their audit row has no movie_id.
+  | 'SupportConversation'
+  | 'SupportKnowledgeArticle';

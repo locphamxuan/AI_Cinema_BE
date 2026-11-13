@@ -53,6 +53,21 @@ export async function release<T = Row>(reviewer: Actor, path: string, body: obje
   return admin.post<T>(path, body, status);
 }
 
+/**
+ * 2026-11-11: only the Admin prices an episode (BR-29) and flags it free for Guests / Members (BR-03).
+ * `anyActor` only lends its app to sign the Admin in.
+ */
+export async function priceEpisode(
+  anyActor: Actor,
+  episodeId: string,
+  coinPrice: number,
+  flags?: { isFreeForGuest?: boolean; isFreeForMember?: boolean },
+): Promise<void> {
+  const admin = await anyActor.signInAs(ADMIN_EMAIL);
+  await admin.patch(`/episodes/${episodeId}/coin-price`, { coinPrice });
+  if (flags) await admin.patch(`/episodes/${episodeId}/access-flags`, flags);
+}
+
 /** Only the Admin takes a release down or cancels it. */
 export async function unpublish<T = Row>(anyActor: Actor, path: string, body: object, status?: number): Promise<T> {
   const admin = await anyActor.signInAs(ADMIN_EMAIL);

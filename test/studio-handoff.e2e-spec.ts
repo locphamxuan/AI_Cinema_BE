@@ -3,6 +3,7 @@ import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { OverdueEpisodesJob } from 'src/modules/production/studio-handoff/overdue-episodes.job';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
+import { adminCounter, adminSign, proposeCost, studioCounter } from './support/contracts';
 import { DISCLOSURE, MP4 } from './support/media';
 import {
   assignedProject,
@@ -125,20 +126,16 @@ describe('Studio contract and hand-off (e2e)', () => {
 
   it('negotiates the cost round by round until both sides signed, then hands the project off', async () => {
     const [template] = await contracts();
-    await admin.post(`/contracts/${template.id}/sign`, {}, 409);
-    await studio.post(`/studio-portal/contracts/${template.id}/propose`, { costVnd: 45_000_500 }, 400);
-    await studio.post(`/studio-portal/contracts/${template.id}/propose`, { costVnd: 45_000_000 }, 200);
+    await adminSign(admin, template.id, 409);
+    await proposeCost(studio, template.id, 45_000_500, 400);
+    await proposeCost(studio, template.id, 45_000_000);
     // The Admin's counter must fit the budget (100 000 000).
-    await admin.post(`/contracts/${template.id}/counter`, { costVnd: 100_001_000 }, 409);
-    const countered = await admin.post<Contract>(`/contracts/${template.id}/counter`, { costVnd: 35_000_000 }, 200);
+    await adminCounter(admin, template.id, 100_001_000, 409);
+    const countered = (await adminCounter(admin, template.id, 35_000_000)) as Contract;
     expect(countered).toMatchObject({ round: 2, status: 'ADMIN_COUNTERED' });
-    const again = await studio.post<Contract>(
-      `/studio-portal/contracts/${countered.id}/counter`,
-      { costVnd: HANDOFF_FEE_VND },
-      200,
-    );
+    const again = (await studioCounter(studio, countered.id, HANDOFF_FEE_VND)) as Contract;
     expect(again).toMatchObject({ round: 3, status: 'STUDIO_SIGNED' });
-    const signed = await admin.post<Contract>(`/contracts/${again.id}/sign`, {}, 200);
+    const signed = (await adminSign(admin, again.id)) as Contract;
     expect(signed.status).toBe('SIGNED');
     expect(signed.handoff).not.toBeNull();
     handoffId = signed.handoff!.id;
@@ -208,7 +205,7 @@ describe('Studio contract and hand-off (e2e)', () => {
   it('changes the studio only with a reason, from the catalog, and keeps the history', async () => {
     const next = await newStudio(reviewer, 'Studio B');
     const inactive = await newStudio(reviewer, 'Studio C');
-    await reviewer.patch(`/studios/${inactive.id}`, { isActive: false });
+    await admin.patch(`/studios/${inactive.id}`, { isActive: false });
     const path = `/projects/${project.id}/studio-change`;
 
     const reason = 'Studio đầu tiên trễ hạn hai lần.';

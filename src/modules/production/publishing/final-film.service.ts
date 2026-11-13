@@ -7,7 +7,11 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
-import { assertEpisodeStatus } from 'src/modules/production/project-access/project-rules';
+import {
+  assertEpisodeStatus,
+  assertProjectStatus,
+  DELIVERY_PROJECT_STATUSES,
+} from 'src/modules/production/project-access/project-rules';
 
 /**
  * MF-1 §5–6 (07/11/2026): once the studio's film passed review, the AI label and the four compliance checks, the
@@ -26,8 +30,10 @@ export class FinalFilmService {
 
   async confirm(episodeId: string, reviewer: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, reviewer, 'reviewer');
+    assertProjectStatus(episode.project.status, DELIVERY_PROJECT_STATUSES, 'confirm the Final Film');
     assertEpisodeStatus(episode.status, [EpisodeStatus.COMPLIANCE_PASSED], 'confirm the Final Film');
-    if (episode.coinPrice === null) throw new ConflictException('Set the Coin price before confirming the Final Film');
+    // 2026-11-11: the Admin prices the episode after this step, so no price is asked for here; the release gate
+    // (PublicationService.missingForRelease and the publish_compliance_gate trigger) still refuses an unpriced episode.
     if (episode.finalConfirmedAt) throw new ConflictException('The Final Film is already confirmed');
     return this.prisma.$transaction(async (tx) => {
       await this.move(tx, episodeId, false, {
@@ -53,6 +59,7 @@ export class FinalFilmService {
 
   async reject(episodeId: string, reason: string, admin: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, admin, 'read');
+    assertProjectStatus(episode.project.status, DELIVERY_PROJECT_STATUSES, 'send the Final Film back');
     assertEpisodeStatus(episode.status, [EpisodeStatus.COMPLIANCE_PASSED], 'send the Final Film back');
     if (!episode.finalConfirmedAt) throw new ConflictException('The Reviewer has not confirmed this Final Film');
     const note = reason.trim();

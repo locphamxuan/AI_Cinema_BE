@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { unicodeFontPath } from 'src/infrastructure/pdf/unicode-font';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import type { EmailAttachment } from 'src/modules/platform/email/email-outbox.service';
-import { briefFont, type BriefContent, formatVnd, renderBriefPdf } from './brief-pdf';
+import { type BriefContent, formatVnd, renderBriefPdf } from './brief-pdf';
 
 export interface BriefStudio {
   name: string;
@@ -44,7 +45,7 @@ export class BriefService {
     private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
-    this.fontPath = briefFont(config.briefFontPath);
+    this.fontPath = unicodeFontPath(config.briefFontPath);
     if (!this.fontPath) this.logger.warn('No font with Vietnamese glyphs found; briefs drop diacritics');
   }
 

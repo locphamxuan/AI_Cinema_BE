@@ -28,7 +28,7 @@ function setup(script: { status: ScriptStatus; currentVersion: number } | null) 
   const access = { project: jest.fn().mockResolvedValue(PROJECT) };
   const contracts = { sendTemplate: jest.fn().mockResolvedValue({ mailId: 'm1' }) };
   const mails = { dispatch: jest.fn() };
-  const studios = { assertUsable: jest.fn() };
+  const studios = { assertUsable: jest.fn().mockResolvedValue({ id: 'st1', name: 'Studio A' }) };
   const notifications = { notify: jest.fn(), adminIds: jest.fn().mockResolvedValue(['admin']) };
   const auditLog = { record: jest.fn() };
   const service = new ScriptService(

@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
+import { adminSign, proposeCost } from './support/contracts';
 import { DISCLOSURE, MP4 } from './support/media';
 import { newStudio, projectInProduction, type ProjectDetail, studioAccount, studioOf } from './support/projects';
 
@@ -58,7 +59,9 @@ describe('Studio change with a new contract (e2e)', () => {
     ]);
     project = await projectInProduction(reviewer, creator, 2);
     [studioB, studioC] = await Promise.all([newStudio(admin, 'Studio B'), newStudio(admin, 'Studio C')]);
-    [accountB, accountC] = await Promise.all([studioAccount(admin, studioB.id), studioAccount(admin, studioC.id)]);
+    // One at a time: two concurrent account creations (bcrypt + sign-in) reset the socket in a Jest worker.
+    accountB = await studioAccount(admin, studioB.id);
+    accountC = await studioAccount(admin, studioC.id);
   });
 
   afterAll(() => app.close());
@@ -92,7 +95,17 @@ describe('Studio change with a new contract (e2e)', () => {
   it('lets the new studio read the project but not deliver before it signs', async () => {
     await accountB.get(`/studio-portal/projects/${project.id}`);
     const [first] = project.seasons[0].episodes;
-    await accountB.upload(`/studio-portal/episodes/${first.id}/media/upload`, FILM, FILM_FIELDS, 409);
+    // A link, not a file: a server refusing an upload before reading it resets the socket under supertest.
+    await accountB.post(
+      `/studio-portal/episodes/${first.id}/media`,
+      {
+        sourceMethod: 'HLS_URL',
+        sourceUrl: 'https://cdn.example.com/ep/master.m3u8',
+        proposedLabelType: 'AI_GENERATED',
+        aiDisclosure: DISCLOSURE,
+      },
+      409,
+    );
     // The replaced studio is out of the project.
     await studioOf(project.id).get(`/studio-portal/projects/${project.id}`, 404);
   });
@@ -108,17 +121,17 @@ describe('Studio change with a new contract (e2e)', () => {
     ]);
     const [forB] = await accountB.get<Contract[]>('/studio-portal/contracts');
     expect(forB.status).toBe('SUPERSEDED');
-    await accountB.post(`/studio-portal/contracts/${forB.id}/propose`, { costVnd: FEE_B }, 409);
+    await proposeCost(accountB, forB.id, FEE_B, 409);
   });
 
   it('opens the hand-off once the new studio and the Admin both signed', async () => {
     const [template] = await accountC.get<Contract[]>('/studio-portal/contracts');
     expect(template).toMatchObject({ status: 'SENT', costVnd: null });
 
-    await accountC.post(`/studio-portal/contracts/${template.id}/propose`, { costVnd: FEE_C }, 200);
+    await proposeCost(accountC, template.id, FEE_C);
     let [live] = await handoffs();
     expect(live).toMatchObject({ milestoneStatus: 'BRIEF_SENT', studio: { id: studioC.id } });
-    await admin.post(`/contracts/${template.id}/sign`, {}, 200);
+    await adminSign(admin, template.id);
 
     [live] = await handoffs();
     expect(live).toMatchObject({ milestoneStatus: 'IN_PROGRESS', offeredFeeVnd: FEE_C, studio: { id: studioC.id } });

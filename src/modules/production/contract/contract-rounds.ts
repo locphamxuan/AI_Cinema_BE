@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { ContractStatus, type Prisma } from '@prisma/client';
+import { ContractStatus, ProjectStatus, type Prisma } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { PROJECT_REF } from 'src/modules/production/project-access/project-relations';
 
@@ -10,6 +10,11 @@ export const CONTRACT_DETAIL = {
   handoff: { select: { id: true, milestoneStatus: true } },
   createdBy: PERSON,
   adminSignedBy: PERSON,
+  // Metadata only: the storage keys of the signed PDFs never leave the server.
+  documents: {
+    orderBy: { side: 'asc' },
+    select: { id: true, side: true, fileName: true, sizeBytes: true, checksum: true, uploadedAt: true },
+  },
 } satisfies Prisma.ContractInclude;
 
 export type Detailed = Prisma.ContractGetPayload<{ include: typeof CONTRACT_DETAIL }>;
@@ -21,19 +26,39 @@ export const OPEN_CONTRACT_STATUSES: ContractStatus[] = [
   ContractStatus.ADMIN_COUNTERED,
 ];
 
+/** A contract is answered while the studio is being contracted (ASSIGNED) or changed during delivery. */
+export const NEGOTIATING_PROJECT_STATUSES: ProjectStatus[] = [
+  ProjectStatus.ASSIGNED,
+  ProjectStatus.IN_PRODUCTION,
+  ProjectStatus.UNDER_REVISION,
+];
+
 export const STANDARD_TERMS =
   'Studio sản xuất đúng Kịch bản Final và tiến độ đã thống nhất; nền tảng có quyền yêu cầu chỉnh sửa nội dung trước khi nghiệm thu; Studio không chia sẻ phim cho bên thứ ba.';
 
-export function assertContractStatus(contract: Detailed, expected: ContractStatus, action: string): void {
-  if (contract.status !== expected) {
-    throw new ConflictException(`Cannot ${action} a contract that is ${contract.status} (expected ${expected})`);
+export function assertContractStatus(
+  contract: Detailed,
+  expected: ContractStatus | ContractStatus[],
+  action: string,
+): void {
+  const allowed = Array.isArray(expected) ? expected : [expected];
+  if (!allowed.includes(contract.status)) {
+    throw new ConflictException(
+      `Cannot ${action} a contract that is ${contract.status} (expected ${allowed.join(' or ')})`,
+    );
   }
 }
 
 /** The contract, row-locked, so a double click cannot answer the same round twice; a studio sees only its own. */
 export async function lockedContract(tx: PrismaTx, contractId: string, studioId?: string): Promise<Detailed> {
-  const found = await tx.contract.findUnique({ where: { id: contractId }, select: { id: true, studioId: true } });
+  const found = await tx.contract.findUnique({
+    where: { id: contractId },
+    select: { id: true, studioId: true, project: { select: { status: true } } },
+  });
   if (!found || (studioId && found.studioId !== studioId)) throw new NotFoundException('Contract not found');
+  if (!NEGOTIATING_PROJECT_STATUSES.includes(found.project.status)) {
+    throw new ConflictException(`The project is ${found.project.status}; its contract can no longer be answered`);
+  }
   await tx.$queryRaw`SELECT id FROM contracts WHERE id = ${contractId}::uuid FOR UPDATE`;
   return tx.contract.findUniqueOrThrow({ where: { id: contractId }, include: CONTRACT_DETAIL });
 }

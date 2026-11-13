@@ -9,13 +9,14 @@ import type { PlatformSettingService } from 'src/modules/platform/platform-setti
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { PricingService } from './pricing.service';
 
-const REVIEWER = { id: 'rev', role: UserRole.CONTENT_REVIEWER };
 const ADMIN = { id: 'admin', role: UserRole.ADMIN };
 const EPISODE = {
   id: 'e1',
   episodeNumber: 3,
   movieId: 'p1',
   coinPrice: 10,
+  isFreeForGuest: false,
+  isFreeForMember: false,
   movie: { title: 'Phim' },
   project: { status: ProjectStatus.IN_PRODUCTION, reviewerId: 'rev' },
 };
@@ -59,7 +60,7 @@ describe('PricingService', () => {
   });
 
   it('saves a price inside the range, settles older alerts and raises none', async () => {
-    await expect(service.setPrice('e1', 20, REVIEWER)).resolves.toEqual({
+    await expect(service.setPrice('e1', 20, ADMIN)).resolves.toEqual({
       episodeId: 'e1',
       coinPrice: 20,
       inRange: true,
@@ -67,7 +68,7 @@ describe('PricingService', () => {
       rangeMax: 50,
       alert: null,
     });
-    expect(access.episode).toHaveBeenCalledWith('e1', REVIEWER, 'reviewer');
+    expect(access.episode).toHaveBeenCalledWith('e1', ADMIN, 'read');
     expect(db.episode.update).toHaveBeenCalledWith({ where: { id: 'e1' }, data: { coinPrice: 20 } });
     expect(db.priceAlert.updateMany).toHaveBeenCalledWith({
       where: { episodeId: 'e1', status: { in: [PriceAlertStatus.OPEN, PriceAlertStatus.CHANGE_REQUESTED] } },
@@ -84,11 +85,11 @@ describe('PricingService', () => {
   });
 
   it('keeps an out-of-range price but raises an alert for the Admins (BR-47)', async () => {
-    const result = await service.setPrice('e1', 80, REVIEWER);
+    const result = await service.setPrice('e1', 80, ADMIN);
     expect(result).toMatchObject({ inRange: false, alert: { id: 'a1' } });
     expect(db.episode.update).toHaveBeenCalledWith({ where: { id: 'e1' }, data: { coinPrice: 80 } });
     expect(db.priceAlert.create).toHaveBeenCalledWith({
-      data: { episodeId: 'e1', coinPrice: 80, rangeMin: 5, rangeMax: 50, setById: 'rev' },
+      data: { episodeId: 'e1', coinPrice: 80, rangeMin: 5, rangeMax: 50, setById: 'admin' },
     });
     expect(auditLog.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: CONTENT_EVENT.PRICE_OUT_OF_RANGE, entityId: 'a1' }),
@@ -102,17 +103,17 @@ describe('PricingService', () => {
   });
 
   it('accepts the bounds themselves as in range', async () => {
-    await expect(service.setPrice('e1', 5, REVIEWER)).resolves.toMatchObject({ inRange: true });
-    await expect(service.setPrice('e1', 50, REVIEWER)).resolves.toMatchObject({ inRange: true });
+    await expect(service.setPrice('e1', 5, ADMIN)).resolves.toMatchObject({ inRange: true });
+    await expect(service.setPrice('e1', 50, ADMIN)).resolves.toMatchObject({ inRange: true });
   });
 
   it('refuses to price an episode of a cancelled project', async () => {
     access.episode.mockResolvedValue({ ...EPISODE, project: { ...EPISODE.project, status: ProjectStatus.CANCELLED } });
-    await expect(service.setPrice('e1', 20, REVIEWER)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.setPrice('e1', 20, ADMIN)).rejects.toBeInstanceOf(ConflictException);
     expect(db.episode.update).not.toHaveBeenCalled();
   });
 
-  it("asks the project's Reviewer to reconsider an open alert", async () => {
+  it("asks the project's Reviewer for an opinion on an open alert", async () => {
     db.priceAlert.findUnique.mockResolvedValue(alertRow(PriceAlertStatus.OPEN));
     await expect(service.requestChange('a1', '  Giá quá cao ', ADMIN)).resolves.toEqual({ id: 'a1' });
     expect(db.priceAlert.updateMany).toHaveBeenCalledWith({
@@ -125,7 +126,10 @@ describe('PricingService', () => {
     });
     expect(notifications.notify).toHaveBeenCalledWith(
       ['rev'],
-      expect.objectContaining({ type: NOTIFICATION_TYPE.PRICE_CHANGE_REQUEST, body: 'Giá quá cao' }),
+      expect.objectContaining({
+        type: NOTIFICATION_TYPE.PRICE_CHANGE_REQUEST,
+        body: expect.stringContaining('Giá quá cao') as unknown,
+      }),
       db,
     );
   });
@@ -156,5 +160,47 @@ describe('PricingService', () => {
     await expect(service.resolve('a1', ADMIN)).rejects.toBeInstanceOf(ConflictException);
     db.priceAlert.findUnique.mockResolvedValue(null);
     await expect(service.resolve('a9', ADMIN)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('flags an episode free for Guests and raises the Member flag along (BR-03)', async () => {
+    await expect(service.setAccessFlags('e1', { isFreeForGuest: true }, ADMIN)).resolves.toEqual({
+      episodeId: 'e1',
+      isFreeForGuest: true,
+      isFreeForMember: true,
+    });
+    expect(db.episode.update).toHaveBeenCalledWith({
+      where: { id: 'e1' },
+      data: { isFreeForGuest: true, isFreeForMember: true },
+    });
+    expect(auditLog.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: CONTENT_EVENT.EPISODE_FLAGS_SET, actorId: 'admin' }),
+      db,
+    );
+  });
+
+  it('never lets the Member flag sit below the Guest flag', async () => {
+    access.episode.mockResolvedValue({ ...EPISODE, isFreeForGuest: true, isFreeForMember: true });
+    await expect(service.setAccessFlags('e1', { isFreeForMember: false }, ADMIN)).resolves.toEqual({
+      episodeId: 'e1',
+      isFreeForGuest: true,
+      isFreeForMember: true,
+    });
+  });
+
+  it('locks an episode again for Members alone while the Guest flag is off', async () => {
+    access.episode.mockResolvedValue({ ...EPISODE, isFreeForGuest: false, isFreeForMember: true });
+    await expect(service.setAccessFlags('e1', { isFreeForMember: false }, ADMIN)).resolves.toEqual({
+      episodeId: 'e1',
+      isFreeForGuest: false,
+      isFreeForMember: false,
+    });
+  });
+
+  it('refuses to flag an episode of a cancelled project', async () => {
+    access.episode.mockResolvedValue({ ...EPISODE, project: { ...EPISODE.project, status: ProjectStatus.CANCELLED } });
+    await expect(service.setAccessFlags('e1', { isFreeForGuest: true }, ADMIN)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(db.episode.update).not.toHaveBeenCalled();
   });
 });
