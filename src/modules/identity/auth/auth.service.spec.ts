@@ -5,6 +5,7 @@ import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { AuthService } from './auth.service';
+import { hashOtp } from './credentials';
 import type { GoogleTokenVerifier } from './google-token.verifier';
 import type { SessionTokenService } from './session-token.service';
 import type { EmailOutboxService } from 'src/modules/platform/email/email-outbox.service';
@@ -149,5 +150,179 @@ describe('AuthService', () => {
 
     await expect(service.refresh('old-token')).resolves.toMatchObject({ ...tokens, user: { id: profile.id } });
     expect(sessions.rotate).toHaveBeenCalledWith('old-token');
+  });
+
+  describe('requestPasswordReset', () => {
+    it('invalidates old OTPs, creates a new OTP and emails it for an existing password account', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: profile.id, email: profile.email, passwordHash });
+      passwordResetOtp.updateMany.mockResolvedValue({ count: 1 });
+      passwordResetOtp.create.mockResolvedValue({ id: 'otp-1' });
+
+      await service.requestPasswordReset('  Reviewer@AICinema.com ');
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { email: 'reviewer@aicinema.com' } }),
+      );
+      expect(passwordResetOtp.updateMany).toHaveBeenCalledWith({
+        where: { userId: profile.id, consumedAt: null },
+        data: expect.objectContaining({ consumedAt: expect.any(Date) }),
+      });
+      expect(passwordResetOtp.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ userId: profile.id }) }),
+      );
+      expect(emails.create).toHaveBeenCalled();
+      expect(emails.dispatch).toHaveBeenCalledWith('email-1');
+    });
+
+    it('does nothing for an unknown email', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await service.requestPasswordReset('nobody@aicinema.com');
+
+      expect(passwordResetOtp.create).not.toHaveBeenCalled();
+      expect(emails.create).not.toHaveBeenCalled();
+      expect(emails.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for a Google-only account', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: profile.id, email: profile.email, passwordHash: null });
+
+      await service.requestPasswordReset(profile.email);
+
+      expect(passwordResetOtp.create).not.toHaveBeenCalled();
+      expect(emails.create).not.toHaveBeenCalled();
+      expect(emails.dispatch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetPassword', () => {
+    const dto = { email: profile.email, otp: '123456', newPassword: 'Newpass123' };
+
+    it('resets the password, consumes OTP, revokes sessions and issues a new session on a valid OTP', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...profile, passwordHash });
+      passwordResetOtp.findFirst.mockResolvedValue({
+        id: 'otp-1',
+        userId: profile.id,
+        codeHash: 'hashed',
+        expiresAt: new Date(Date.now() + 60_000),
+        consumedAt: null,
+        attempts: 0,
+        createdAt: new Date(),
+      });
+      // otpEquals uses hashOtp; mock by spying is hard, so stub otpEquals via credentials? Instead rely on real hash.
+      passwordResetOtp.findFirst.mockResolvedValue({
+        id: 'otp-1',
+        userId: profile.id,
+        codeHash: hashOtp('123456'),
+        expiresAt: new Date(Date.now() + 60_000),
+        consumedAt: null,
+        attempts: 0,
+        createdAt: new Date(),
+      });
+      prisma.user.update.mockResolvedValue({ ...profile });
+      sessions.issue.mockResolvedValue(tokens);
+
+      const session = await service.resetPassword({ ...dto });
+
+      expect(passwordResetOtp.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'otp-1' },
+          data: expect.objectContaining({ consumedAt: expect.any(Date) }),
+        }),
+      );
+      expect(prisma.user.update).toHaveBeenCalled();
+      expect(sessions.revokeAll).toHaveBeenCalledWith(profile.id);
+      expect(session).toMatchObject({ ...tokens });
+    });
+
+    it('throws Unauthorized and increments attempts on a wrong OTP', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...profile, passwordHash });
+      passwordResetOtp.findFirst.mockResolvedValue({
+        id: 'otp-1',
+        userId: profile.id,
+        codeHash: hashOtp('999999'),
+        expiresAt: new Date(Date.now() + 60_000),
+        consumedAt: null,
+        attempts: 0,
+        createdAt: new Date(),
+      });
+
+      await expect(service.resetPassword({ ...dto })).rejects.toThrow(UnauthorizedException);
+      expect(passwordResetOtp.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ attempts: 1 }) }),
+      );
+    });
+
+    it('consumes OTP and throws Unauthorized when expired', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...profile, passwordHash });
+      passwordResetOtp.findFirst.mockResolvedValue({
+        id: 'otp-1',
+        userId: profile.id,
+        codeHash: hashOtp('123456'),
+        expiresAt: new Date(Date.now() - 60_000),
+        consumedAt: null,
+        attempts: 0,
+        createdAt: new Date(),
+      });
+
+      await expect(service.resetPassword({ ...dto })).rejects.toThrow(UnauthorizedException);
+      expect(passwordResetOtp.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'otp-1' },
+          data: expect.objectContaining({ consumedAt: expect.any(Date) }),
+        }),
+      );
+    });
+
+    it('consumes OTP and throws Unauthorized when max attempts reached', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...profile, passwordHash });
+      passwordResetOtp.findFirst.mockResolvedValue({
+        id: 'otp-1',
+        userId: profile.id,
+        codeHash: hashOtp('123456'),
+        expiresAt: new Date(Date.now() + 60_000),
+        consumedAt: null,
+        attempts: 5,
+        createdAt: new Date(),
+      });
+
+      await expect(service.resetPassword({ ...dto })).rejects.toThrow(UnauthorizedException);
+      expect(passwordResetOtp.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'otp-1' },
+          data: expect.objectContaining({ consumedAt: expect.any(Date) }),
+        }),
+      );
+    });
+
+    it('throws Unauthorized when no OTP exists', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...profile, passwordHash });
+      passwordResetOtp.findFirst.mockResolvedValue(null);
+
+      await expect(service.resetPassword({ ...dto })).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throws BadRequest when new password equals current password', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...profile, passwordHash });
+      passwordResetOtp.findFirst.mockResolvedValue({
+        id: 'otp-1',
+        userId: profile.id,
+        codeHash: hashOtp('123456'),
+        expiresAt: new Date(Date.now() + 60_000),
+        consumedAt: null,
+        attempts: 0,
+        createdAt: new Date(),
+      });
+
+      await expect(
+        service.resetPassword({ email: profile.email, otp: '123456', newPassword: 'Aicinema@123' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequest for a Google-only account', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...profile, passwordHash: null });
+
+      await expect(service.resetPassword({ ...dto })).rejects.toThrow(BadRequestException);
+    });
   });
 });
