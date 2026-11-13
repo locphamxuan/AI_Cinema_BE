@@ -7,6 +7,7 @@ import type { AccessControlService } from 'src/modules/identity/access-control/a
 import { AuthService } from './auth.service';
 import type { GoogleTokenVerifier } from './google-token.verifier';
 import type { SessionTokenService } from './session-token.service';
+import type { EmailOutboxService } from 'src/modules/platform/email/email-outbox.service';
 
 const profile = {
   id: 'f0f1a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b',
@@ -24,17 +25,24 @@ const tokens = { accessToken: 'access', refreshToken: 'refresh', accessTokenExpi
 
 describe('AuthService', () => {
   const user = { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), create: jest.fn(), update: jest.fn() };
-  const tx = { user };
-  const prisma = { user, $transaction: jest.fn(<T>(work: (client: typeof tx) => Promise<T>) => work(tx)) };
+  const passwordResetOtp = { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
+  const tx = { user, passwordResetOtp };
+  const prisma = {
+    user,
+    passwordResetOtp,
+    $transaction: jest.fn(<T>(work: (client: typeof tx) => Promise<T>) => work(tx)),
+  };
   const wallets = { openForNewAccount: jest.fn() };
   const sessions = { issue: jest.fn(), rotate: jest.fn(), revoke: jest.fn(), revokeAll: jest.fn() };
   const accessControl = { permissionsOf: () => Promise.resolve(new Set(['project:manage', 'content:review'])) };
+  const emails = { create: jest.fn().mockResolvedValue('email-1'), dispatch: jest.fn().mockResolvedValue(undefined) };
   const service = new AuthService(
     prisma as unknown as PrismaService,
     sessions as unknown as SessionTokenService,
     accessControl as unknown as AccessControlService,
     wallets as unknown as WalletService,
     { verify: jest.fn() } as unknown as GoogleTokenVerifier,
+    emails as unknown as EmailOutboxService,
   );
 
   beforeEach(() => {

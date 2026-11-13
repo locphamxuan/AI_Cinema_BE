@@ -11,16 +11,22 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
-import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
+import { generateOtp, hashOtp, hashPassword, isAdult, normalizeEmail, otpEquals, verifyPassword } from './credentials';
 import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
 import type { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
 import type { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
+import type { ResetPasswordRequestDto } from './dto/reset-password.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
 import { GOOGLE_REASON, GoogleTokenVerifier, type GoogleProfile } from './google-token.verifier';
 import { SessionTokenService } from './session-token.service';
+import { EmailOutboxService, EMAIL_TEMPLATE } from 'src/modules/platform/email/email-outbox.service';
 
 const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
+
+const OTP_LENGTH = 6;
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
 
 /** Only an active member may use Google; a staff account keeps its password sign-in. */
 function assertGoogleMember(user: Pick<UserProfile, 'role' | 'isActive'>): void {
@@ -41,6 +47,7 @@ export class AuthService {
     private readonly accessControl: AccessControlService,
     private readonly wallets: WalletService,
     private readonly google: GoogleTokenVerifier,
+    private readonly emails: EmailOutboxService,
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
@@ -147,6 +154,83 @@ export class AuthService {
       data: { passwordHash: await hashPassword(dto.newPassword) },
     });
     await this.tokens.revokeAll(userId);
+    return this.session(user);
+  }
+
+  async requestPasswordReset(emailInput: string): Promise<void> {
+    const email = normalizeEmail(emailInput);
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, passwordHash: true },
+    });
+    // Avoid enumeration: do not reveal whether the account exists.
+    if (!user || !user.passwordHash) return;
+    const otp = generateOtp(OTP_LENGTH);
+    const codeHash = hashOtp(otp);
+    const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+    let emailId: string;
+    await this.prisma.$transaction(async (tx) => {
+      // Invalidate any unused OTPs.
+      await tx.passwordResetOtp.updateMany({
+        where: { userId: user.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      await tx.passwordResetOtp.create({ data: { userId: user.id, codeHash, expiresAt } });
+      emailId = await this.emails.create(tx, {
+        to: user.email,
+        template: EMAIL_TEMPLATE.OTP,
+        subject: 'Mã OTP đặt lại mật khẩu AI Cinema',
+        text: `Mã OTP đặt lại mật khẩu của bạn là ${otp}. Mã có hiệu lực trong 10 phút. Không chia sẻ mã này với bất kỳ ai.`,
+        attachments: [],
+        notifyOnFailureId: user.id,
+      });
+    });
+    await this.emails.dispatch(emailId!);
+  }
+
+  async resetPassword(dto: ResetPasswordRequestDto): Promise<AuthSessionDto> {
+    const email = normalizeEmail(dto.email);
+    const found = await this.prisma.user.findUnique({
+      where: { email },
+      select: { ...USER_PROFILE_SELECT, passwordHash: true },
+    });
+    if (!found || !found.passwordHash) {
+      throw new BadRequestException('This account cannot reset its password this way');
+    }
+    const otpRow = await this.prisma.passwordResetOtp.findFirst({
+      where: { userId: found.id, consumedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    const invalidate = async () => {
+      if (otpRow) {
+        await this.prisma.passwordResetOtp.update({ where: { id: otpRow.id }, data: { consumedAt: new Date() } });
+      }
+    };
+    if (!otpRow || otpRow.expiresAt <= new Date()) {
+      await invalidate();
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+    if (otpRow.attempts >= OTP_MAX_ATTEMPTS) {
+      await invalidate();
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+    if (!otpEquals(dto.otp, otpRow.codeHash)) {
+      const nextAttempts = otpRow.attempts + 1;
+      await this.prisma.passwordResetOtp.update({
+        where: { id: otpRow.id },
+        data: { attempts: nextAttempts, ...(nextAttempts >= OTP_MAX_ATTEMPTS ? { consumedAt: new Date() } : {}) },
+      });
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+    if (await verifyPassword(dto.newPassword, found.passwordHash)) {
+      throw new BadRequestException('Choose a password different from the current one');
+    }
+    const { passwordHash: _hash, ...user } = found;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.passwordResetOtp.update({ where: { id: otpRow.id }, data: { consumedAt: new Date() } });
+      await tx.user.update({ where: { id: found.id }, data: { passwordHash: await hashPassword(dto.newPassword) } });
+    });
+    await this.tokens.revokeAll(found.id);
     return this.session(user);
   }
 
