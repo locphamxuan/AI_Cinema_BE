@@ -130,12 +130,14 @@ describe('Movie projects (e2e)', () => {
 
   it('gives a project one active studio from the catalog (BR-59)', async () => {
     const studio = await newStudio(reviewer);
-    await reviewer.patch(`/projects/${projectId}`, { studioId: '00000000-0000-4000-8000-000000000000' }, 400);
-    await reviewer.patch(`/studios/${studio.id}`, { isActive: false });
-    await reviewer.patch(`/projects/${projectId}`, { studioId: studio.id }, 409);
-    await reviewer.patch(`/studios/${studio.id}`, { isActive: true });
-    const updated = await reviewer.patch<{ studio: { id: string } }>(`/projects/${projectId}`, { studioId: studio.id });
-    expect(updated.studio.id).toBe(studio.id);
+    const admin = await reviewer.signInAs('admin@aicinema.com');
+    // Only the Admin chooses the studio (creation, Final Script, studio change) and manages the catalog (12/11/2026).
+    await reviewer.patch(`/projects/${projectId}`, { studioId: studio.id }, 403);
+    await reviewer.patch(`/studios/${studio.id}`, { isActive: false }, 403);
+    await admin.patch(`/studios/${studio.id}`, { isActive: false });
+    const inactive = await admin.get<{ isActive: boolean }>(`/studios/${studio.id}`);
+    expect(inactive.isActive).toBe(false);
+    await admin.patch(`/studios/${studio.id}`, { isActive: true });
   });
 
   it('keeps projects private to their Reviewer and away from Creators who are not assigned', async () => {
@@ -269,9 +271,11 @@ describe('Movie projects (e2e)', () => {
   });
 
   it('cancels a project with a reason, once (BR-39)', async () => {
-    await reviewer.post(`/projects/${projectId}/cancel`, { reason: '' }, 400);
-    await reviewer.post(`/projects/${projectId}/cancel`, { reason: 'Studio không nhận dự án.' }, 204);
-    await reviewer.post(`/projects/${projectId}/cancel`, { reason: 'Again please.' }, 409);
+    const admin = await reviewer.signInAs('admin@aicinema.com');
+    await reviewer.post(`/projects/${projectId}/cancel`, { reason: 'Studio không nhận dự án.' }, 403);
+    await admin.post(`/projects/${projectId}/cancel`, { reason: '' }, 400);
+    await admin.post(`/projects/${projectId}/cancel`, { reason: 'Studio không nhận dự án.' }, 204);
+    await admin.post(`/projects/${projectId}/cancel`, { reason: 'Again please.' }, 409);
     expect((await reviewer.get<Project>(`/projects/${projectId}`)).status).toBe('CANCELLED');
   });
 });

@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, MediaIngestStatus, PlaybackAccessType } from '@prisma/client';
+import { EpisodeStatus, MediaIngestStatus, PlaybackAccessType, SubscriptionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { PlaybackAccessService } from './playback-access.service';
@@ -36,7 +36,8 @@ describe('PlaybackAccessService.verify', () => {
     episodeNumber: 5,
     coinPrice: 25,
     revisionStartedAt: null,
-    movie: { freeEpisodeCount: null },
+    isFreeForGuest: false,
+    isFreeForMember: false,
     approvedMediaAsset: media(),
     ...overrides,
   });
@@ -83,7 +84,7 @@ describe('PlaybackAccessService.verify', () => {
   });
 
   it('opens a Free Starter episode for a guest (steps 1-4)', async () => {
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1 }));
+    prisma.episode.findFirst.mockResolvedValue(episode({ isFreeForGuest: true }));
     await expect(service.verify('ep-1')).resolves.toMatchObject({
       episodeId: 'ep-1',
       accessType: PlaybackAccessType.FREE_STARTER,
@@ -92,14 +93,15 @@ describe('PlaybackAccessService.verify', () => {
     expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
   });
 
-  it("follows the movie's own free count over the platform's, like Main Flow 2 (BR-03)", async () => {
-    // The platform frees 2 episodes, this movie only 1: episode 2 is paid here.
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 2, movie: { freeEpisodeCount: 1 } }));
+  it("follows the Admin's per-episode flags like Main Flow 2, not the episode number (BR-03)", async () => {
+    // Episode 1 is paid unless the Admin freed it.
+    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 1 }));
     await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
 
-    // This movie frees 5: episode 5 needs no account.
-    prisma.episode.findFirst.mockResolvedValue(episode({ episodeNumber: 5, movie: { freeEpisodeCount: 5 } }));
-    await expect(service.verify('ep-1')).resolves.toMatchObject({ accessType: PlaybackAccessType.FREE_STARTER });
+    // Free for members only: a guest is refused, a member plays it free.
+    prisma.episode.findFirst.mockResolvedValue(episode({ isFreeForMember: true }));
+    await expect(service.verify('ep-1')).rejects.toThrow(ForbiddenException);
+    await expect(service.verify('ep-1', 'u-1')).resolves.toMatchObject({ accessType: PlaybackAccessType.FREE_STARTER });
   });
 
   it('hands out no stream URL at all when access is refused (nothing to sign)', async () => {
@@ -182,7 +184,6 @@ describe('PlaybackAccessService.verify', () => {
     expect(prisma.episode.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: {
-          movie: { select: { freeEpisodeCount: true } },
           approvedMediaAsset: {
             select: {
               id: true,
@@ -262,6 +263,28 @@ describe('PlaybackAccessService.stillEntitled', () => {
     await expect(
       service.stillEntitled({ userId: 'u-1', episodeId: 'ep-1', accessType: PlaybackAccessType.SUBSCRIPTION }),
     ).resolves.toBe(true);
+  });
+
+  it('lets a session finish the episode when its plan lapsed after it opened (Grace Session, edge 1.2)', async () => {
+    const startedAt = new Date('2026-11-12T10:00:00Z');
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-1' });
+    await expect(
+      service.stillEntitled({
+        userId: 'u-1',
+        episodeId: 'ep-1',
+        accessType: PlaybackAccessType.SUBSCRIPTION,
+        startedAt,
+      }),
+    ).resolves.toBe(true);
+    const calls = prisma.subscription.findFirst.mock.calls as [{ where: { OR: unknown[] } }][];
+    const { where } = calls[0][0];
+    // Either a plan running now, or one that lapsed on its own (never CANCELLED) and covered the start.
+    expect(where.OR[1]).toEqual({
+      userId: 'u-1',
+      status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE, SubscriptionStatus.EXPIRED] },
+      currentPeriodStart: { lte: startedAt },
+      currentPeriodEnd: { gt: startedAt },
+    });
   });
 
   it('keeps a purchased session while the unlock stands, without reading plans', async () => {

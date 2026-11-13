@@ -5,7 +5,7 @@ import type { App } from 'supertest/types';
 import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
 import { REMOVED_NOTICE } from 'src/modules/catalog/episode-visibility';
 import { type Actor, bootApp, signIn } from './support/api';
-import { MP4, compliantEpisode, release, unpublish } from './support/media';
+import { MP4, compliantEpisode, priceEpisode, release, unpublish } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface SessionView {
@@ -60,7 +60,8 @@ describe('Playback viewing experience (e2e)', () => {
     });
     for (let i = 0; i < 3; i += 1) {
       await compliantEpisode(reviewer, creator, episodeId(i));
-      await reviewer.patch(`/episodes/${episodeId(i)}/coin-price`, { coinPrice: 10 });
+      // The Admin frees the first two episodes for everyone; the third stays paid (BR-03).
+      await priceEpisode(reviewer, episodeId(i), 10, { isFreeForGuest: i < 2 });
       await release(reviewer, `/episodes/${episodeId(i)}/publications`, {});
     }
   }, 120000);

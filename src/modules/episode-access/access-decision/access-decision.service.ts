@@ -7,6 +7,7 @@ import {
   VISIBLE_EPISODE,
   type EpisodeAvailability,
 } from 'src/modules/catalog/episode-visibility';
+import { freeTierOf, isFreeFor } from 'src/modules/catalog/episode-free-tier';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { WalletService } from '../coin-wallet/wallet.service';
 import { runningPlanWhere } from '../subscription/running-plan';
@@ -75,7 +76,6 @@ export class AccessDecisionService {
       where: { id: episodeId, ...VISIBLE_EPISODE },
       include: {
         approvedMediaAsset: { select: { ingestStatus: true, streamUrl: true } },
-        movie: { select: { freeEpisodeCount: true } },
       },
     });
     if (!episode) {
@@ -85,14 +85,14 @@ export class AccessDecisionService {
     // A published episode always carries a price (the release gate insists on one); the lowest
     // price of the platform stands in while a row predates the column.
     const coinPrice = episode.coinPrice ?? settings.episodeCoinPriceMin;
-    // BR-03: the movie's own count when its Reviewer set one, else the platform's.
-    const isFreeStarter = episode.episodeNumber <= (episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount);
+    // BR-03/BR-19: the Admin flags each episode before publish; free for Guests implies free for Members.
+    const tier = freeTierOf(episode);
     const base: DecisionBase = {
       episodeId: episode.id,
       movieId: episode.movieId,
       availability: EPISODE_AVAILABILITY.AVAILABLE,
       notice: null,
-      required: { coinPrice, isFreeStarter },
+      required: { coinPrice, isFreeForGuest: tier.forGuest, isFreeForMember: tier.forMember },
     };
     const actor = userId ? ACTOR_TYPE.MEMBER : ACTOR_TYPE.GUEST;
 
@@ -109,9 +109,9 @@ export class AccessDecisionService {
       return notPlayable(base, actor, EPISODE_AVAILABILITY.MEDIA_NOT_READY, MEDIA_NOT_READY_NOTICE);
     }
 
-    // The free rules need no account: anyone may watch these.
-    if (isFreeStarter) return granted(base, ACCESS_SOURCE.FREE_STARTER, actor);
-    if (coinPrice === 0) return granted(base, ACCESS_SOURCE.FREE, actor);
+    // A zero price is free for everyone; a flagged episode is free for the audience its flag names.
+    if (episode.coinPrice === 0) return granted(base, ACCESS_SOURCE.FREE, actor);
+    if (isFreeFor(episode, Boolean(userId))) return granted(base, ACCESS_SOURCE.FREE_STARTER, actor);
 
     if (!userId) {
       return {

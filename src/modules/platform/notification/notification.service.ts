@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
-import type { NotificationType } from './notification-types';
+import { currentActorId } from 'src/common/http/request-actor';
+import { MF1_NOTIFICATION_TYPES, type NotificationType } from './notification-types';
 
 export interface NotificationContent {
   type: NotificationType;
@@ -20,7 +21,8 @@ export class NotificationService {
 
   /** Sends the same notification to each recipient; pass `tx` to commit it with the change it reports. */
   async notify(userIds: (string | null | undefined)[], content: NotificationContent, tx?: PrismaTx): Promise<void> {
-    const recipients = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
+    const admins = MF1_NOTIFICATION_TYPES.has(content.type) ? await this.overseers(tx) : [];
+    const recipients = [...new Set([...userIds, ...admins].filter((id): id is string => Boolean(id)))];
     if (!recipients.length) return;
     await (tx ?? this.prisma).notification.createMany({
       data: recipients.map((userId) => ({
@@ -32,6 +34,12 @@ export class NotificationService {
         payload: content.payload as Prisma.InputJsonValue | undefined,
       })),
     });
+  }
+
+  /** The Admins who follow every movie project, without the one who just acted. */
+  private async overseers(tx?: PrismaTx): Promise<string[]> {
+    const actor = currentActorId();
+    return (await this.adminIds(tx)).filter((id) => id !== actor);
   }
 
   /** Active Admin accounts, the audience of platform-level alerts. */

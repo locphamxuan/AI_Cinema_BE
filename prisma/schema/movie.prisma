@@ -13,16 +13,18 @@ model Movie {
   aiGenerated      Boolean  @default(true) @map("ai_generated")
   posterUrl        String?  @map("poster_url") @db.VarChar(500)
   bannerUrl        String?  @map("banner_url") @db.VarChar(500)
-  trailerUrl       String?  @map("trailer_url") @db.VarChar(500)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+trailerUrl       String?       @map("trailer_url") @db.VarChar(500)
+   /// BR-68: country of origin, used by the recommendation engine's CountryAffinity score.
+   country          String?       @map("country") @db.VarChar(50)
+   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project  MovieProject?
-  genres   MovieGenre[]
-  seasons  Season[]
-  episodes Episode[]
-  likes    MovieLike[]
-  savedBy  SavedMovie[]
+   project  MovieProject?
+   genres   MovieGenre[]
+   seasons  Season[]
+   episodes Episode[]
+   likes    MovieLike[]
+   savedBy  SavedMovie[]
 
-  @@map("movies")
+   @@map("movies")
 }

@@ -101,7 +101,7 @@ export class ScriptService {
   async finalReview(projectId: string, dto: FinalReviewScriptRequestDto, admin: AuthenticatedUser) {
     const project = await this.access.project(projectId, admin, 'read');
     this.assertAssigned(project);
-    if (dto.approve) await this.assertReadyForStudio(project, dto.studioId);
+    const studioName = dto.approve ? await this.assertReadyForStudio(project, dto.studioId) : null;
     let mailId: string | null = null;
     const result = await this.prisma.$transaction(async (tx) => {
       const script = await this.locked(tx, projectId, ScriptStatus.REVIEWER_APPROVED);
@@ -131,7 +131,7 @@ export class ScriptService {
         tx,
         [project.creatorId, project.reviewerId],
         project,
-        `Admin đã duyệt Kịch bản Final (bản ${version}); hệ thống gửi hợp đồng mẫu cho Studio.`,
+        `Admin đã duyệt Kịch bản Final (bản ${version}); hệ thống gửi hợp đồng mẫu cho Studio "${studioName}".`,
       );
       ({ mailId } = await this.contracts.sendTemplate(tx, projectId, admin.id, dto.terms));
       return this.find(projectId, tx);
@@ -146,16 +146,18 @@ export class ScriptService {
     }
   }
 
-  /** The studio must be chosen and every episode planned with its deadline before the studio is contracted. */
-  private async assertReadyForStudio(project: TitledProject, studioId?: string): Promise<void> {
-    if (studioId) await this.studios.assertUsable(studioId);
-    else if (!project.studioId) throw new ConflictException('Pick the studio to send the contract to (studioId)');
+  /** The studio must be chosen (and still active) and every episode planned before it is contracted; returns its name. */
+  private async assertReadyForStudio(project: TitledProject, studioId?: string): Promise<string> {
+    const chosen = studioId ?? project.studioId;
+    if (!chosen) throw new ConflictException('Pick the studio to send the contract to (studioId)');
+    const studio = await this.studios.assertUsable(chosen);
     const [episodes, undated] = await Promise.all([
       this.prisma.episode.count({ where: { movieId: project.id } }),
       this.prisma.episode.count({ where: { movieId: project.id, deliveryDeadline: null } }),
     ]);
     if (!episodes) throw new ConflictException('The Reviewer must plan at least one episode first');
     if (undated) throw new ConflictException('Every episode needs a delivery deadline before the studio is contracted');
+    return studio.name;
   }
 
   /** The script, row-locked, in the expected status: a double click cannot review the same version twice. */

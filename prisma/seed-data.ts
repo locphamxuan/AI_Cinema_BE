@@ -76,3 +76,11 @@ export const SEED_REWARD_PRIZES: {
   { code: 'plan_1_day', name: '1 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 1, weight: 6 },
   { code: 'plan_3_days', name: '3 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 3, weight: 2 },
 ];
+
+/** The demo Staff login (support inbox): its own password, not SEED_USER_PASSWORD. */
+export const SEED_STAFF_ACCOUNT = {
+  email: 'staff@gmail.com',
+  fullName: 'Nhân viên hỗ trợ AI Cinema',
+  role: UserRole.STAFF,
+};
+export const SEED_STAFF_PASSWORD = process.env.SEED_STAFF_PASSWORD ?? 'Staff123456';

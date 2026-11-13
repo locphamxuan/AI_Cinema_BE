@@ -61,9 +61,9 @@ describe('StudioAccountService', () => {
   });
 
   it('resolves the studio a STUDIO caller speaks for, inside a transaction when given one', async () => {
-    db.user.findUnique.mockResolvedValue({ studioId: 's1' });
+    db.user.findUnique.mockResolvedValue({ studioId: 's1', studio: { isActive: true } });
     await expect(service.studioOf(STUDIO_USER)).resolves.toBe('s1');
-    const tx = { user: { findUnique: jest.fn().mockResolvedValue({ studioId: 's2' }) } };
+    const tx = { user: { findUnique: jest.fn().mockResolvedValue({ studioId: 's2', studio: { isActive: true } }) } };
     await expect(service.studioOf(STUDIO_USER, tx as never)).resolves.toBe('s2');
   });
 
@@ -72,5 +72,10 @@ describe('StudioAccountService', () => {
     expect(db.user.findUnique).not.toHaveBeenCalled();
     db.user.findUnique.mockResolvedValue({ studioId: null });
     await expect(service.studioOf(STUDIO_USER)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('locks a deactivated partner out of the portal: its login reads no project or film anymore', async () => {
+    db.user.findUnique.mockResolvedValue({ studioId: 's1', studio: { isActive: false } });
+    await expect(service.studioOf(STUDIO_USER)).rejects.toThrow('no longer an active partner');
   });
 });

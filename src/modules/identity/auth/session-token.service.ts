@@ -42,6 +42,8 @@ export class SessionTokenService {
       include: { user: { select: { id: true, role: true, isActive: true } } },
     });
     if (!stored) throw new UnauthorizedException('Invalid refresh token');
+    // A token the OAuth endpoint issued keeps its scopes; swapping it here would drop them.
+    if (stored.oauthClientId) throw new UnauthorizedException('Invalid refresh token');
     if (stored.revokedAt) {
       await this.revokeAll(stored.userId);
       throw new UnauthorizedException('This refresh token was already used; every session has been signed out');

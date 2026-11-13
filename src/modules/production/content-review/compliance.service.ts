@@ -3,6 +3,8 @@ import { ComplianceCheckType, ComplianceResult, EpisodeStatus, PolicyType } from
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
+import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
@@ -78,6 +80,7 @@ export class ComplianceService {
     private readonly access: ProjectAccessService,
     private readonly reviews: ContentReviewService,
     private readonly auditLog: AuditLogService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async run(mediaAssetId: string, dto: RunComplianceRequestDto, user: AuthenticatedUser) {
@@ -117,6 +120,18 @@ export class ComplianceService {
         data: { status: EpisodeStatus.COMPLIANCE_PASSED },
       });
       if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+      // MF-1 oversight: the Admins follow each step (fan-out in NotificationService).
+      await this.notifications.notify(
+        [],
+        {
+          type: NOTIFICATION_TYPE.COMPLIANCE_PASSED,
+          title: `Tập ${asset.episode.episodeNumber} của phim "${asset.episode.movie.title}" đạt kiểm tra tuân thủ`,
+          body: 'Reviewer xác nhận Final Film rồi Admin đặt giá, cấu hình tập khoá / mở và phát hành.',
+          link: `/projects/${asset.episode.movieId}/episodes/${asset.episodeId}`,
+          payload: { projectId: asset.episode.movieId, episodeId: asset.episodeId, mediaAssetId: asset.id },
+        },
+        tx,
+      );
     });
     await this.reviews.announce(mailId);
     return this.reviews.sheet(mediaAssetId, user);

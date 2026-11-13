@@ -23,7 +23,7 @@ describe('contract-rounds', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1' });
+    db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1', project: { status: 'ASSIGNED' } });
     db.contract.findUniqueOrThrow.mockResolvedValue(CONTRACT);
     db.contract.create.mockResolvedValue({ id: 'c2' });
   });
@@ -40,6 +40,12 @@ describe('contract-rounds', () => {
     await expect(lockedContract(tx, 'c1', 'other')).rejects.toBeInstanceOf(NotFoundException);
     db.contract.findUnique.mockResolvedValue(null);
     await expect(lockedContract(tx, 'x')).rejects.toBeInstanceOf(NotFoundException);
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it.each(['CANCELLED', 'COMPLETED', 'DRAFT'])('refuses to answer the contract of a %s project', async (status) => {
+    db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1', project: { status } });
+    await expect(lockedContract(tx, 'c1', 's1')).rejects.toBeInstanceOf(ConflictException);
     expect(db.$queryRaw).not.toHaveBeenCalled();
   });
 

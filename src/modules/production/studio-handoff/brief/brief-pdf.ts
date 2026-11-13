@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
 import PDFDocument from 'pdfkit';
+import { pdfText } from 'src/infrastructure/pdf/unicode-font';
 
 interface BriefEpisode {
   episodeNumber: number;
@@ -25,27 +25,13 @@ export interface BriefContent {
   issuedAt: Date;
 }
 
-// Fonts with Vietnamese glyphs: the Docker image ships DejaVu Sans, Windows has Arial.
-const FONT_CANDIDATES = [
-  '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-  'C:\\Windows\\Fonts\\arial.ttf',
-  '/System/Library/Fonts/Supplemental/Arial.ttf',
-];
-
-export function briefFont(configured: string | null): string | null {
-  return [configured, ...FONT_CANDIDATES].find((path): path is string => Boolean(path && existsSync(path))) ?? null;
-}
-
 export const formatVnd = (amount: number) => `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
 const minutes = (seconds: number) => `${Math.round((seconds / 60) * 10) / 10} phút`;
 const day = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : '-');
 
-// Without a Unicode font the built-in Helvetica cannot draw Vietnamese marks; drop them rather than print garbage.
-const plain = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
-
 /** The brief PDF sent to the studio (BR-13): the order, its fee in VND, and every episode deadline. */
 export function renderBriefPdf(brief: BriefContent, fontPath: string | null): Promise<Buffer> {
-  const text = fontPath ? (value: string) => value : plain;
+  const text = pdfText(fontPath);
   const doc = new PDFDocument({ size: 'A4', margin: 50, info: { Title: `Brief - ${brief.movieTitle}` } });
   if (fontPath) doc.font(fontPath);
 

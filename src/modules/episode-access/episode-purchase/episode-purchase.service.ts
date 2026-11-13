@@ -1,3 +1,4 @@
+import { type FreeTierEpisode, freeTierOf } from 'src/modules/catalog/episode-free-tier';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { AccessSource, CoinEntryType, CoinReferenceType, EpisodeStatus } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -37,7 +38,8 @@ export class EpisodePurchaseService {
         movieId: true,
         episodeNumber: true,
         coinPrice: true,
-        movie: { select: { freeEpisodeCount: true } },
+        isFreeForGuest: true,
+        isFreeForMember: true,
       },
     });
     if (!episode) {
@@ -52,7 +54,7 @@ export class EpisodePurchaseService {
         details: { reason: 'EPISODE_NOT_PRICED' },
       });
     }
-    await this.assertNotFree(episode);
+    this.assertNotFree(episode);
 
     const wallet = await this.wallets.walletOf(user.id);
     const { coinRateVnd } = await this.settings.get();
@@ -107,16 +109,9 @@ export class EpisodePurchaseService {
     });
   }
 
-  /** A Free Starter episode and an episode priced at zero need no purchase at all. */
-  private async assertNotFree(episode: {
-    id: string;
-    episodeNumber: number;
-    coinPrice: number | null;
-    movie: { freeEpisodeCount: number | null };
-  }) {
-    const settings = await this.settings.get();
-    const freeCount = episode.movie.freeEpisodeCount ?? settings.freeStarterEpisodeCount;
-    if (episode.episodeNumber <= freeCount || episode.coinPrice === 0) {
+  /** An episode free for members (BR-03 flags) or priced at zero needs no purchase at all. */
+  private assertNotFree(episode: FreeTierEpisode) {
+    if (freeTierOf(episode).forMember) {
       throw new ConflictException({
         message: 'The episode is free, it needs no purchase',
         details: { reason: 'ACCESS_ALREADY_OWNED' },

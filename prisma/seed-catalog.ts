@@ -147,6 +147,9 @@ async function seedMovie(
   );
 }
 
+/** How many first episodes of each seeded movie are free for everyone. */
+const SEED_FREE_EPISODES = 2;
+
 async function seedEpisode(
   tx: Tx,
   at: { movieId: string; seasonId: string; source: CatalogMovie; today: Date; now: Date },
@@ -166,6 +169,9 @@ async function seedEpisode(
       deliveryDeadline: at.today,
       dueDate: at.today,
       status: EpisodeStatus.COMPLIANCE_PASSED,
+      // BR-03 (2026-11-11): the demo frees the first episodes the way the Admin would flag them.
+      isFreeForGuest: source.number <= SEED_FREE_EPISODES,
+      isFreeForMember: source.number <= SEED_FREE_EPISODES,
     },
   });
   const asset = await tx.mediaAsset.create({

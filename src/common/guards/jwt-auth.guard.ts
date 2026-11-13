@@ -41,7 +41,13 @@ export class JwtAuthGuard implements CanActivate {
     }
     if (payload.type !== 'access') throw new UnauthorizedException('This token cannot be used to call the API');
 
-    request.user = { id: payload.sub, role: payload.role };
+    request.user = {
+      id: payload.sub,
+      role: payload.role,
+      // Kept as given: OAuthScopeGuard decides which routes these scopes open.
+      scopes: payload.scope ? payload.scope.split(' ').filter(Boolean) : undefined,
+      studioId: payload.studio_id,
+    };
     return true;
   }
 }
