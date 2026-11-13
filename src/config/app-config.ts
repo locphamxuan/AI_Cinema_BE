@@ -1,5 +1,6 @@
 import { EnvReader, type Env } from './env-reader';
 import { supportConfig, type SupportConfig } from './support-config';
+import { DEFAULT_CODE_TTL_SECONDS, type OAuthConfig } from './oauth-config';
 
 /**
  * Every setting the API reads, parsed and checked once at start-up so a bad .env fails fast
@@ -102,6 +103,8 @@ export interface AppConfig {
   google: { clientIds: string[] };
   /** AI customer support: provider, RAG and case-handling settings (src/config/support-config.ts). */
   support: SupportConfig;
+  /** AI Cinema as an OAuth 2.0 authorization server for Studio Web (src/config/oauth-config.ts). */
+  oauth: OAuthConfig;
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -227,6 +230,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
     },
     support: supportConfig(read),
+    oauth: { codeTtlSeconds: read.int('OAUTH_CODE_TTL_SECONDS', DEFAULT_CODE_TTL_SECONDS, 30) },
     google: {
       clientIds: [
         ...new Set(

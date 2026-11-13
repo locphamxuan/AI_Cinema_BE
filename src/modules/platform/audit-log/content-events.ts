@@ -49,6 +49,9 @@ export const CONTENT_EVENT = {
   SCRIPT_FINALIZED: 'SCRIPT_FINALIZED',
   SCRIPT_REVISION_REQUESTED: 'SCRIPT_REVISION_REQUESTED',
   STUDIO_ACCOUNT_CREATED: 'STUDIO_ACCOUNT_CREATED',
+  // Studio Web OAuth (2026-11-12): a studio signed in through the authorization server, or a code was replayed.
+  OAUTH_TOKEN_ISSUED: 'OAUTH_TOKEN_ISSUED',
+  OAUTH_CODE_REPLAYED: 'OAUTH_CODE_REPLAYED',
   FINAL_FILM_CONFIRMED: 'FINAL_FILM_CONFIRMED',
   FINAL_FILM_REJECTED: 'FINAL_FILM_REJECTED',
   EPISODE_SCHEDULED: 'EPISODE_SCHEDULED',
@@ -111,6 +114,7 @@ export type AuditEntity =
   | 'ProductionCostRequest'
   | 'Contract'
   | 'ProjectScript'
+  | 'OAuthClient'
   // MF-2: these live outside a movie, so their audit row has no project_id.
   | 'CoinWallet'
   | 'CoinTransaction'

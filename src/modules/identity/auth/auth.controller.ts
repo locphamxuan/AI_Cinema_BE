@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
+import { OAuthOpen } from 'src/modules/identity/oauth/oauth-scope.guard';
 import { appConfig } from 'src/config/config.module';
 import { AuthService } from './auth.service';
 import { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
@@ -70,6 +71,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @OAuthOpen()
   @ApiBearerAuth()
   @ApiOkResponse({ type: AuthProfileDto })
   me(@CurrentUser() user: AuthenticatedUser) {

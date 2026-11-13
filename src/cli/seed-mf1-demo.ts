@@ -77,24 +77,26 @@ const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOS
 async function main(): Promise<void> {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   const prisma = app.get(PrismaService);
-  const as = async (email: string): Promise<AuthenticatedUser & { studioId: string | null }> => {
-    const user = await prisma.user.findUniqueOrThrow({
-      where: { email },
-      select: { id: true, role: true, studioId: true },
-    });
-    return user;
-  };
+  /** The signed-in shape the services expect (studioId only for a studio account). */
+  const asUser = (u: { id: string; role: UserRole; studioId: string | null }): AuthenticatedUser => ({
+    id: u.id,
+    role: u.role,
+    studioId: u.studioId ?? undefined,
+  });
+  const as = async (email: string): Promise<AuthenticatedUser> =>
+    asUser(await prisma.user.findUniqueOrThrow({ where: { email }, select: { id: true, role: true, studioId: true } }));
   const [reviewer, creator, studioUser] = await Promise.all([PEOPLE.reviewer, PEOPLE.creator, PEOPLE.studio].map(as));
   // The seeded Admin is admin@gmail.com; any active Admin will do where it is named otherwise (e2e databases).
-  const admin =
+  const admin = asUser(
     (await prisma.user.findUnique({
       where: { email: PEOPLE.admin },
       select: { id: true, role: true, studioId: true },
     })) ??
-    (await prisma.user.findFirstOrThrow({
-      where: { role: UserRole.ADMIN, isActive: true },
-      select: { id: true, role: true, studioId: true },
-    }));
+      (await prisma.user.findFirstOrThrow({
+        where: { role: UserRole.ADMIN, isActive: true },
+        select: { id: true, role: true, studioId: true },
+      })),
+  );
   if (studioUser.role !== UserRole.STUDIO || !studioUser.studioId)
     throw new Error('Run `npx prisma db seed` first (demo studio)');
   const studio = { studioId: studioUser.studioId, userId: studioUser.id };
