@@ -7,6 +7,7 @@ import { RoomInviteService } from './room-invite.service';
 import { RoomJoinGuard } from './room-join.guard';
 import { RoomTerminationService } from './room-termination.service';
 import { WatchRoomController } from './watch-room.controller';
+import { WatchRoomScreenGateway } from './watch-room-screen.gateway';
 import { WatchRoomGateway } from './watch-room.gateway';
 import { WatchRoomService } from './watch-room.service';
 
@@ -17,7 +18,14 @@ import { WatchRoomService } from './watch-room.service';
 @Module({
   imports: [AccessDecisionModule, PlaybackAccessModule, PlatformSettingModule, NotificationModule],
   controllers: [WatchRoomController],
-  providers: [WatchRoomService, WatchRoomGateway, RoomJoinGuard, RoomTerminationService, RoomInviteService],
+  providers: [
+    WatchRoomService,
+    WatchRoomGateway,
+    WatchRoomScreenGateway,
+    RoomJoinGuard,
+    RoomTerminationService,
+    RoomInviteService,
+  ],
   exports: [WatchRoomService, RoomTerminationService],
 })
 export class WatchRoomModule {}
