@@ -1,81 +1,163 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseEnumPipe,
+  ParseUUIDPipe,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { LabelType } from '@prisma/client';
-import { Public } from 'src/common/decorators/public.decorator';
+import { ContractDocumentSide } from '@prisma/client';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { PERMISSION } from 'src/common/auth/permissions';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { RemoveTempUploadInterceptor } from 'src/common/http/remove-temp-upload.interceptor';
+import { ContractDocumentService } from 'src/modules/production/contract/contract-document.service';
+import { StudioContractService, type StudioActor } from 'src/modules/production/contract/contract-studio.service';
+import { ContractCostRequestDto } from 'src/modules/production/contract/dto/contract.request.dto';
+import { SignedPdfUpload } from 'src/modules/production/contract/signed-pdf-upload';
 import {
   parseAiDisclosure,
   SubmitMediaLinkRequestDto,
   SubmitMediaUploadRequestDto,
 } from 'src/modules/production/media-ingest/dto/submit-media.request.dto';
-import { RespondToHandoffRequestDto } from './dto/studio-portal.request.dto';
+import { MediaIngestService } from 'src/modules/production/media-ingest/media-ingest.service';
 import { StudioPortalService } from './studio-portal.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
+const SIDE = new ParseEnumPipe(ContractDocumentSide);
 
-/** The outside studio's side of MF-1: no account, the link from the brief email is the credential. */
+/**
+ * MF-1 (07/11/2026): the API the Studio Web calls once a studio logged in with its STUDIO account — its
+ * contracts (fill in the cost, sign, counter-propose), its projects and the films it delivers to the Reviewer.
+ */
 @ApiTags('studio-portal')
-@Public()
-@Controller('studio-portal/:token')
+@ApiBearerAuth()
+@Controller('studio-portal')
+@RequirePermission(PERMISSION.STUDIO_PORTAL)
 export class StudioPortalController {
-  constructor(private readonly portal: StudioPortalService) {}
+  constructor(
+    private readonly portal: StudioPortalService,
+    private readonly contracts: StudioContractService,
+    private readonly documents: ContractDocumentService,
+    private readonly media: MediaIngestService,
+  ) {}
 
-  @Get()
-  @ApiOperation({ summary: 'The hand-off as the studio sees it: brief, episodes, deliveries, changes asked' })
-  overview(@Param('token') token: string) {
-    return this.portal.overview(token);
+  @Get('me')
+  @ApiOperation({ summary: 'The studio this account speaks for' })
+  me(@CurrentUser() user: AuthenticatedUser) {
+    return this.portal.me(user);
   }
 
-  @Post('response')
-  @ApiOperation({ summary: 'Accept (agreeing to the brief, due dates and terms) or decline with a reason; once' })
-  respond(@Param('token') token: string, @Body() dto: RespondToHandoffRequestDto) {
-    return this.portal.respond(token, dto);
+  @Get('contracts')
+  @ApiOperation({ summary: 'Every contract round sent to this studio, newest first' })
+  async listContracts(@CurrentUser() user: AuthenticatedUser) {
+    return this.contracts.forStudio(await this.portal.studioOf(user));
   }
 
-  @Get('brief')
-  @ApiOperation({ summary: 'The brief PDF of this hand-off' })
-  brief(@Param('token') token: string) {
-    return this.portal.brief(token);
+  @Get('contracts/:contractId/documents/:side/content')
+  @ApiOperation({ summary: 'Download the Admin-signed, the studio-signed or the merged FINAL contract PDF' })
+  async downloadContract(
+    @Param('contractId', ID) contractId: string,
+    @Param('side', SIDE) side: ContractDocumentSide,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.documents.downloadForStudio(contractId, side, await this.portal.studioOf(user));
   }
 
-  @Get('idea-files/:fileId')
-  ideaFile(@Param('token') token: string, @Param('fileId', ID) fileId: string) {
-    return this.portal.ideaFile(token, fileId);
+  @Post('contracts/:contractId/propose')
+  @HttpCode(200)
+  @SignedPdfUpload(true)
+  @ApiOperation({
+    summary: 'Fill the production cost into the template and upload the contract PDF signed by the studio',
+  })
+  async propose(
+    @Param('contractId', ID) contractId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() dto: ContractCostRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.contracts.propose(contractId, dto.costVnd, await this.actor(user), file);
+  }
+
+  @Post('contracts/:contractId/sign')
+  @HttpCode(200)
+  @SignedPdfUpload()
+  @ApiOperation({
+    summary:
+      "Agree with the Admin's cost by uploading the contract PDF signed by the studio: both signatures complete the contract and production starts",
+  })
+  async sign(
+    @Param('contractId', ID) contractId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.contracts.studioSign(contractId, await this.actor(user), file);
+  }
+
+  @Post('contracts/:contractId/counter')
+  @HttpCode(200)
+  @SignedPdfUpload(true)
+  @ApiOperation({ summary: "Disagree with the Admin's cost: propose another one with the contract PDF signed for it" })
+  async counter(
+    @Param('contractId', ID) contractId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() dto: ContractCostRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.contracts.studioCounter(contractId, dto.costVnd, await this.actor(user), file);
+  }
+
+  @Get('projects')
+  @ApiOperation({ summary: 'Projects this studio was sent a contract for' })
+  projects(@CurrentUser() user: AuthenticatedUser) {
+    return this.portal.projects(user);
+  }
+
+  @Get('projects/:projectId')
+  @ApiOperation({ summary: 'A project: Final Script, episodes with deadlines, deliveries and change requests' })
+  project(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.portal.project(projectId, user);
   }
 
   @Post('episodes/:episodeId/media')
-  @ApiOperation({ summary: 'Deliver an episode by HLS link or import URL, with the studio’s AI Disclosure' })
+  @ApiOperation({ summary: 'Send the film of an episode to the Reviewer by link, with the AI Disclosure' })
   submitLink(
-    @Param('token') token: string,
     @Param('episodeId', ID) episodeId: string,
     @Body() dto: SubmitMediaLinkRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.portal.submitLink(token, episodeId, dto);
+    return this.media.submitLink(episodeId, dto, user);
   }
 
   @Post('episodes/:episodeId/media/upload')
   @UseInterceptors(FileInterceptor('file'), RemoveTempUploadInterceptor)
   @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['file', 'aiDisclosure', 'proposedLabelType'],
-      properties: {
-        file: { type: 'string', format: 'binary', description: 'MP4 or MOV' },
-        aiDisclosure: { type: 'string', description: 'JSON of the AI Disclosure (BR-41)' },
-        proposedLabelType: { type: 'string', enum: Object.values(LabelType) },
-        submissionNote: { type: 'string' },
-      },
-    },
-  })
-  @ApiOperation({ summary: 'Deliver an episode as an MP4/MOV file, with the studio’s AI Disclosure' })
+  @ApiOperation({ summary: 'Send the film of an episode to the Reviewer as an MP4/MOV file' })
   submitUpload(
-    @Param('token') token: string,
     @Param('episodeId', ID) episodeId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() dto: SubmitMediaUploadRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.portal.submitUpload(token, episodeId, file, dto, parseAiDisclosure(dto.aiDisclosure));
+    return this.media.submitUpload(episodeId, file, dto, parseAiDisclosure(dto.aiDisclosure), user);
+  }
+
+  @Post('media-assets/:mediaAssetId/retry')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Process a failed delivery again, e.g. once the link is fixed (latest version only)' })
+  retry(@Param('mediaAssetId', ID) mediaAssetId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.media.retry(mediaAssetId, user);
+  }
+
+  /** The studio this account speaks for, plus the account itself: an upload is recorded against both. */
+  private async actor(user: AuthenticatedUser): Promise<StudioActor> {
+    return { studioId: await this.portal.studioOf(user), userId: user.id };
   }
 }

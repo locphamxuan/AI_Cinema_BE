@@ -1,8 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, PlanPeriod, SubscriptionStatus } from '@prisma/client';
+import { MediaIngestStatus, PlanPeriod } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import {
+  EPISODE_AVAILABILITY,
+  REVISION_NOTICE,
+  VISIBLE_EPISODE,
+  type EpisodeAvailability,
+} from 'src/modules/catalog/episode-visibility';
+import { freeTierOf, isFreeFor } from 'src/modules/catalog/episode-free-tier';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { runningPlanWhere } from '../subscription/running-plan';
 import {
   AccessMethod,
   ACCESS_METHOD,
@@ -10,20 +18,32 @@ import {
   ACTOR_TYPE,
   NEXT_ACTION,
   AccessSourceName,
+  ActorType,
 } from 'src/modules/episode-access/access-decision/constants/access.constants';
 import { AccessDecisionDto } from 'src/modules/episode-access/access-decision/dto/access-decision.dto';
 import { AccessRequired } from 'src/modules/episode-access/access-decision/dto/access-required.dto';
 
-/** A plan still gives access while its grace period runs, up to the end of the paid period. */
-const RUNNING_PLAN: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
-
 /** Methods a Guest may still take, in the order the flow offers them. */
 const GUEST_METHODS: AccessMethod[] = [ACCESS_METHOD.REGISTER_OR_LOGIN];
 
+/** A listed episode whose approved version does not stream yet; rare, but it must not hand off. */
+const MEDIA_NOT_READY_NOTICE = 'Tập chưa sẵn sàng để phát, vui lòng thử lại sau';
+
+/** What every decision says about the episode itself, before the rules on who may watch it. */
+interface DecisionBase {
+  episodeId: string;
+  movieId: string;
+  availability: EpisodeAvailability;
+  notice: string | null;
+  required: AccessRequired;
+}
+
 /**
  * Step 6 and 7 of the flow: may this caller watch this episode, and if not, what is left to do.
- * The order of the checks is the order of the flow — Free Starter episode, an episode priced at
- * zero, a running plan, the episode bought, the series bought, and only then the ways left.
+ * The order of the checks is the order of the flow — whether the episode can be played at all
+ * (BR-56 maintenance, an approved version that still streams), Free Starter episode, an episode
+ * priced at zero, a running plan (the whole movie, BR-02), the episode bought, and only then the
+ * ways left.
  *
  * A running plan grants every episode without writing a row per episode, which is what keeps
  * episode_accesses small; the bought rights are the rows this service reads here.
@@ -36,10 +56,27 @@ export class AccessDecisionService {
     private readonly wallets: WalletService,
   ) {}
 
+  /**
+   * The decision, plus the stream to hand to the player once access is granted. `streamUrl` is
+   * deprecated: it bypasses Main Flow 3 and stays only until the clients open playback sessions.
+   */
   async decide(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
+    const decision = await this.evaluate(episodeId, userId);
+    if (!decision.accessGranted) return decision;
+    const released = await this.prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: { approvedMediaAsset: { select: { streamUrl: true } } },
+    });
+    const streamUrl = released?.approvedMediaAsset?.streamUrl;
+    return streamUrl ? { ...decision, streamUrl } : decision;
+  }
+
+  private async evaluate(episodeId: string, userId?: string): Promise<AccessDecisionDto> {
     const episode = await this.prisma.episode.findFirst({
-      where: { id: episodeId, status: EpisodeStatus.PUBLISHED },
-      include: { movie: { select: { id: true, title: true, seriesCoinPrice: true } } },
+      where: { id: episodeId, ...VISIBLE_EPISODE },
+      include: {
+        approvedMediaAsset: { select: { ingestStatus: true, streamUrl: true } },
+      },
     });
     if (!episode) {
       throw new NotFoundException({ message: 'Episode not found', details: { reason: 'EPISODE_NOT_FOUND' } });
@@ -48,16 +85,33 @@ export class AccessDecisionService {
     // A published episode always carries a price (the release gate insists on one); the lowest
     // price of the platform stands in while a row predates the column.
     const coinPrice = episode.coinPrice ?? settings.episodeCoinPriceMin;
-    const isFreeStarter = episode.episodeNumber <= settings.freeStarterEpisodeCount;
-    const base = {
+    // BR-03/BR-19: the Admin flags each episode before publish; free for Guests implies free for Members.
+    const tier = freeTierOf(episode);
+    const base: DecisionBase = {
       episodeId: episode.id,
       movieId: episode.movieId,
-      required: { coinPrice, isFreeStarter, seriesCoinPrice: episode.movie.seriesCoinPrice },
+      availability: EPISODE_AVAILABILITY.AVAILABLE,
+      notice: null,
+      required: { coinPrice, isFreeForGuest: tier.forGuest, isFreeForMember: tier.forMember },
     };
+    const actor = userId ? ACTOR_TYPE.MEMBER : ACTOR_TYPE.GUEST;
 
-    // The free rules need no account: anyone may watch these.
-    if (isFreeStarter) return granted(base, ACCESS_SOURCE.FREE_STARTER);
-    if (coinPrice === 0) return granted(base, ACCESS_SOURCE.FREE);
+    // Playability comes before any rule about who may watch: an episode under maintenance (BR-56)
+    // or without a streamable version cannot be handed off (Main Flow 3 re-checks and answers 409),
+    // so saying it here keeps the caller out of that dead end, and nothing unplayable goes on sale.
+    // The entitlement — a running plan or a bought row — is untouched and answers again once the
+    // episode plays.
+    if (episode.revisionStartedAt !== null) {
+      return notPlayable(base, actor, EPISODE_AVAILABILITY.UNDER_REVISION, REVISION_NOTICE);
+    }
+    const media = episode.approvedMediaAsset;
+    if (!media || media.ingestStatus !== MediaIngestStatus.READY || !media.streamUrl) {
+      return notPlayable(base, actor, EPISODE_AVAILABILITY.MEDIA_NOT_READY, MEDIA_NOT_READY_NOTICE);
+    }
+
+    // A zero price is free for everyone; a flagged episode is free for the audience its flag names.
+    if (episode.coinPrice === 0) return granted(base, ACCESS_SOURCE.FREE, actor);
+    if (isFreeFor(episode, Boolean(userId))) return granted(base, ACCESS_SOURCE.FREE_STARTER, actor);
 
     if (!userId) {
       return {
@@ -73,19 +127,14 @@ export class AccessDecisionService {
   }
 
   /** Everything a signed-in member needs: the plan, the bought rights, the balances, the gap. */
-  private async forMember(
-    episodeId: string,
-    userId: string,
-    base: { episodeId: string; movieId: string; required: AccessDecisionDto['required'] },
-  ): Promise<AccessDecisionDto> {
-    const [plan, episodeAccess, seriesAccess, planPrice] = await Promise.all([
+  private async forMember(episodeId: string, userId: string, base: DecisionBase): Promise<AccessDecisionDto> {
+    const [plan, episodeAccess, planPrice] = await Promise.all([
       this.prisma.subscription.findFirst({
-        where: { userId, status: { in: RUNNING_PLAN } },
+        where: runningPlanWhere(userId),
         orderBy: { currentPeriodEnd: 'desc' },
         include: { plan: { select: { code: true, isActive: true } } },
       }),
       this.prisma.episodeAccess.findFirst({ where: { userId, episodeId, revokedAt: null } }),
-      this.prisma.seriesAccess.findFirst({ where: { userId, movieId: base.movieId, revokedAt: null } }),
       this.cheapestPlanPrice(),
     ]);
     // A plan whose entries are hidden still keeps the access its members already paid for.
@@ -100,27 +149,18 @@ export class AccessDecisionService {
         nextAction: NEXT_ACTION.HANDOFF_TO_PLAYBACK,
       };
     }
-    if (episodeAccess) {
-      return granted(base, episodeAccess.source, ACTOR_TYPE.MEMBER, { seriesOwned: Boolean(seriesAccess) });
-    }
-    if (seriesAccess) return granted(base, ACCESS_SOURCE.SERIES_PURCHASE, ACTOR_TYPE.MEMBER, { seriesOwned: true });
+    if (episodeAccess) return granted(base, episodeAccess.source, ACTOR_TYPE.MEMBER);
 
     return this.refused(userId, base, planPrice);
   }
 
   /** Access is refused: list what is left, cheapest way first, and what the wallet is short of. */
-  private async refused(
-    userId: string,
-    base: { episodeId: string; movieId: string; required: AccessDecisionDto['required'] },
-    planPrice: number | null,
-  ): Promise<AccessDecisionDto> {
+  private async refused(userId: string, base: DecisionBase, planPrice: number | null): Promise<AccessDecisionDto> {
     const coinPrice = base.required.coinPrice;
     const wallet = await this.wallets.affordability(userId, coinPrice);
-    const seriesPrice = base.required.seriesCoinPrice ?? null;
     const accessMethods: AccessMethod[] = [];
     if (planPrice !== null) accessMethods.push(ACCESS_METHOD.MONTHLY_PLAN);
     accessMethods.push(ACCESS_METHOD.UNLOCK_EPISODE);
-    if (seriesPrice !== null) accessMethods.push(ACCESS_METHOD.UNLOCK_SERIES);
     if (!wallet.enoughCoins) accessMethods.push(ACCESS_METHOD.OBTAIN_COIN);
 
     return {
@@ -131,7 +171,6 @@ export class AccessDecisionService {
       accessMethods,
       required: {
         ...base.required,
-        seriesOwned: false,
         monthlyPlanCoinPrice: planPrice,
         mainBalance: wallet.mainBalance,
         bonusBalance: wallet.bonusBalance,
@@ -139,11 +178,7 @@ export class AccessDecisionService {
         missingCoins: wallet.missingCoins,
         enoughForPlan: planPrice !== null && wallet.mainBalance + wallet.bonusBalance >= planPrice,
       },
-      nextAction: !wallet.enoughCoins
-        ? NEXT_ACTION.OBTAIN_COIN
-        : seriesPrice !== null && seriesPrice <= coinPrice
-          ? NEXT_ACTION.UNLOCK_SERIES
-          : NEXT_ACTION.UNLOCK_EPISODE,
+      nextAction: wallet.enoughCoins ? NEXT_ACTION.UNLOCK_EPISODE : NEXT_ACTION.OBTAIN_COIN,
     };
   }
 
@@ -167,19 +202,37 @@ export class AccessDecisionService {
  * library screen shows what the caller paid for; only the fields about what is still owed are left
  * out, since nothing is.
  */
-function granted(
-  base: { episodeId: string; movieId: string; required: AccessRequired },
-  source: AccessSourceName,
-  actorType: AccessDecisionDto['actorType'] = ACTOR_TYPE.MEMBER,
-  extra: Partial<AccessRequired> = {},
-): AccessDecisionDto {
+function granted(base: DecisionBase, source: AccessSourceName, actorType: ActorType): AccessDecisionDto {
   return {
     ...base,
     accessGranted: true,
     source,
     actorType,
     accessMethods: [],
-    required: { ...base.required, ...extra },
+    required: base.required,
     nextAction: NEXT_ACTION.HANDOFF_TO_PLAYBACK,
+  };
+}
+
+/**
+ * The episode is listed but cannot be played right now. Nothing is offered and nothing changes
+ * hands: the caller sees the reason here instead of walking into a 409 at the playback handoff,
+ * and nothing that cannot be watched stays on sale.
+ */
+function notPlayable(
+  base: DecisionBase,
+  actorType: ActorType,
+  availability: EpisodeAvailability,
+  notice: string,
+): AccessDecisionDto {
+  return {
+    ...base,
+    availability,
+    notice,
+    accessGranted: false,
+    source: ACCESS_SOURCE.NONE,
+    actorType,
+    accessMethods: [],
+    nextAction: NEXT_ACTION.NOT_PLAYABLE,
   };
 }

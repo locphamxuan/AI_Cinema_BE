@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { AppConfig } from 'src/config/app-config';
-import { assertSafeKey, ObjectStorage, type Visibility } from './object-storage';
+import { assertSafeKey, cacheControlOf, ObjectStorage, type Visibility } from './object-storage';
 
 /**
  * S3-compatible bucket (Cloudflare R2, AWS S3, MinIO). Public objects sit under "public/",
@@ -33,6 +33,7 @@ export class S3ObjectStorage extends ObjectStorage {
         Key: this.objectKey(key, visibility),
         Body: body,
         ContentType: contentType,
+        CacheControl: cacheControlOf(key),
       }),
     );
   }
@@ -46,6 +47,7 @@ export class S3ObjectStorage extends ObjectStorage {
         Body: createReadStream(localPath),
         ContentLength: size,
         ContentType: contentType,
+        CacheControl: cacheControlOf(key),
       }),
     );
   }

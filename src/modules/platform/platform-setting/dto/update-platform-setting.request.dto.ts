@@ -13,12 +13,6 @@ export class UpdatePlatformSettingRequestDto {
   @IsOptional()
   freeStarterEpisodeCount?: number;
 
-  @ApiPropertyOptional({ example: 1000, description: 'VND value of one Token, the unit of production fees (BR-45).' })
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  tokenRateVnd?: number;
-
   @ApiPropertyOptional({ example: 1000, description: 'VND value of one main Coin, the unit of revenue (BR-45).' })
   @IsInt()
   @Min(1)
@@ -64,7 +58,7 @@ export class UpdatePlatformSettingRequestDto {
 
   @ApiPropertyOptional({
     example: 48,
-    description: 'Hours auto-renew keeps retrying a cycle the wallet could not cover before the plan ends.',
+    description: 'Hours a failed renewal is retried automatically before the plan ends; 0 = ends at once (BR-30).',
   })
   @IsInt()
   @Min(0)

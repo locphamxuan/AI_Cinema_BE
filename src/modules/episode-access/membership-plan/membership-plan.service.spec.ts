@@ -1,13 +1,19 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
 import { PlanPeriod } from '@prisma/client';
 import type { PrismaService, PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
-import { currentPrice, MembershipPlanService, PLAN_REASON, purchasablePlan } from './membership-plan.service';
+import {
+  assertPlanFeatures,
+  currentPrice,
+  MembershipPlanService,
+  PLAN_REASON,
+  purchasablePlan,
+} from './membership-plan.service';
 
 describe('purchasablePlan', () => {
   const tx = { membershipPlan: { findUnique: jest.fn() }, membershipPlanPrice: { findFirst: jest.fn() } };
-  const plan = { id: 'p1', code: 'MONTHLY', isActive: true, isFree: false };
+  const plan = { id: 'p1', code: 'MONTHLY', period: PlanPeriod.MONTHLY, isActive: true, isFree: false };
   const price = { id: 'price-1', priceCoins: 900 };
 
   beforeEach(() => {
@@ -24,8 +30,8 @@ describe('purchasablePlan', () => {
     tx.membershipPlan.findUnique.mockResolvedValue(null);
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: 'PLAN_NOT_FOUND',
         },
@@ -40,8 +46,8 @@ describe('purchasablePlan', () => {
     });
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_ACTIVE,
         },
@@ -61,13 +67,23 @@ describe('purchasablePlan', () => {
     tx.membershipPlanPrice.findFirst.mockResolvedValue(null);
 
     await expect(purchasablePlan(tx as unknown as PrismaTx, 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_PRICED,
         },
       },
     });
+  });
+
+  it('does not sell a paid non-monthly plan', async () => {
+    tx.membershipPlan.findUnique.mockResolvedValue({ ...plan, period: PlanPeriod.WEEKLY });
+
+    await expect(purchasablePlan(tx as unknown as PrismaTx, 'p1')).rejects.toMatchObject({
+      status: 422,
+      response: { details: { reason: PLAN_REASON.UNSUPPORTED_PERIOD, period: PlanPeriod.WEEKLY } },
+    });
+    expect(tx.membershipPlanPrice.findFirst).not.toHaveBeenCalled();
   });
 });
 
@@ -113,6 +129,8 @@ describe('MembershipPlanService.setPrice', () => {
     features: null,
   };
   const current = { id: 'price-1', priceCoins: 900, effectiveFrom: new Date('2026-09-01T00:00:00.000Z') };
+  // A start that stays in the future whenever the suite runs.
+  const nextMonth = () => new Date(Date.now() + 30 * 24 * 3600 * 1000);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -126,7 +144,7 @@ describe('MembershipPlanService.setPrice', () => {
   });
 
   it('closes the price in force and opens the new one, keeping history', async () => {
-    const effectiveFrom = new Date('2026-11-01T00:00:00.000Z');
+    const effectiveFrom = nextMonth();
     const result = await service.setPrice('p1', 950, effectiveFrom, 'admin-1');
 
     expect(tx.membershipPlanPrice.update).toHaveBeenCalledWith({
@@ -156,6 +174,17 @@ describe('MembershipPlanService.setPrice', () => {
     expect(tx.membershipPlanPrice.create).not.toHaveBeenCalled();
   });
 
+  it('refuses a new price that would have started in the past', async () => {
+    const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    await expect(service.setPrice('p1', 1200, lastWeek, 'admin-1')).rejects.toMatchObject({
+      status: 400,
+      response: { details: { reason: PLAN_REASON.PRICE_IN_PAST } },
+    });
+    expect(tx.membershipPlanPrice.update).not.toHaveBeenCalled();
+    expect(tx.membershipPlanPrice.create).not.toHaveBeenCalled();
+  });
+
   it('refuses to price the free plan', async () => {
     tx.membershipPlan.findUniqueOrThrow.mockResolvedValue({
       ...plan,
@@ -163,8 +192,8 @@ describe('MembershipPlanService.setPrice', () => {
     });
 
     await expect(service.setPrice('p1', 100, new Date(), 'admin-1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: PLAN_REASON.NOT_PRICED,
         },
@@ -175,7 +204,7 @@ describe('MembershipPlanService.setPrice', () => {
   it('opens the first price when the plan never had one', async () => {
     tx.membershipPlanPrice.findFirst.mockResolvedValue(null);
 
-    await service.setPrice('p1', 900, new Date('2026-11-01T00:00:00.000Z'), 'admin-1');
+    await service.setPrice('p1', 900, nextMonth(), 'admin-1');
 
     expect(tx.membershipPlanPrice.update).not.toHaveBeenCalled();
     expect(tx.membershipPlanPrice.create).toHaveBeenCalled();
@@ -207,7 +236,10 @@ describe('MembershipPlanService lists', () => {
     const plans = await service.listPublic();
 
     expect(prisma.membershipPlan.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { isActive: true }, select: expect.anything() }),
+      expect.objectContaining({
+        where: { isActive: true, OR: [{ isFree: true }, { period: PlanPeriod.MONTHLY }] },
+        select: expect.anything(),
+      }),
     );
     expect(plans).toEqual([{ ...row, prices: undefined, priceCoins: 900, priceId: 'price-1' }]);
   });
@@ -215,5 +247,27 @@ describe('MembershipPlanService lists', () => {
   it('listAll keeps the hidden ones for the Admin screen', async () => {
     await service.listAll();
     expect(prisma.membershipPlan.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.anything() }));
+  });
+});
+
+describe('assertPlanFeatures (BR-34)', () => {
+  it('lets a plan stream on as many devices as it registers, or fewer', () => {
+    expect(() => assertPlanFeatures({ maxRegisteredDevices: 4, maxConcurrentStreams: 2 })).not.toThrow();
+    expect(() => assertPlanFeatures({ maxRegisteredDevices: 2, maxConcurrentStreams: 2 })).not.toThrow();
+    expect(() => assertPlanFeatures({ adFree: true })).not.toThrow();
+    expect(() => assertPlanFeatures(undefined)).not.toThrow();
+  });
+
+  it('refuses more streams than devices', () => {
+    let error: unknown;
+    try {
+      assertPlanFeatures({ maxRegisteredDevices: 1, maxConcurrentStreams: 2 });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      details: { reason: PLAN_REASON.STREAMS_OVER_DEVICES, maxRegisteredDevices: 1, maxConcurrentStreams: 2 },
+    });
   });
 });

@@ -1,4 +1,18 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseEnumPipe,
+  Post,
+  ParseUUIDPipe,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { IdeaFilePurpose } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
@@ -11,7 +25,7 @@ const ID = new ParseUUIDPipe({ version: '4' });
 
 @ApiTags('movie-projects')
 @ApiBearerAuth()
-@Controller('projects/:movieId/idea-files')
+@Controller('projects/:projectId/idea-files')
 export class IdeaFileController {
   constructor(private readonly ideaFiles: IdeaFileService) {}
 
@@ -20,27 +34,43 @@ export class IdeaFileController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: IDEA_FILE_MAX_BYTES, files: 1 } }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
-  @ApiOperation({ summary: 'Upload an idea file (PDF, DOCX, PNG, JPEG, WebP; ≤ 20 MB); same name = new version' })
+  @ApiOperation({
+    summary:
+      'Upload an idea or synopsis file (?purpose=IDEA|SYNOPSIS; documents, TXT, images, video; ≤ 100 MB); same name = new version',
+  })
   upload(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Query('purpose', new ParseEnumPipe(IdeaFilePurpose, { optional: true })) purpose?: IdeaFilePurpose,
   ) {
-    return this.ideaFiles.upload(movieId, file, user);
+    return this.ideaFiles.upload(projectId, file, user, purpose);
   }
 
   @Get()
-  list(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.ideaFiles.list(movieId, user);
+  list(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.ideaFiles.list(projectId, user);
+  }
+
+  @Delete(':fileId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission(PERMISSION.PROJECT_MANAGE)
+  @ApiOperation({ summary: 'Remove an idea or synopsis file version while the project is open' })
+  remove(
+    @Param('projectId', ID) projectId: string,
+    @Param('fileId', ID) fileId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ideaFiles.remove(projectId, fileId, user);
   }
 
   @Get(':fileId/content')
   @ApiOperation({ summary: 'Download an idea file' })
   download(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Param('fileId', ID) fileId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.ideaFiles.download(movieId, fileId, user);
+    return this.ideaFiles.download(projectId, fileId, user);
   }
 }

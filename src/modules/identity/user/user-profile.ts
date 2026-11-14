@@ -6,6 +6,7 @@ export const USER_PROFILE_SELECT = {
   email: true,
   fullName: true,
   dateOfBirth: true,
+  phoneNumber: true,
   role: true,
   isActive: true,
   createdAt: true,

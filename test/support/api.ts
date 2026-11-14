@@ -1,15 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from 'src/app.module';
 import { configureApp } from 'src/app.setup';
+import { SEED_USER_PASSWORD } from '../../prisma/seed-accounts';
 
 /** The fields of an API response the suite reads. */
 export type Row = Record<string, unknown> & { id: string };
-
-/** Password of every seeded account (prisma/seed.ts). */
-export const SEED_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';
 
 export async function bootApp(): Promise<INestApplication<App>> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -19,12 +18,23 @@ export async function bootApp(): Promise<INestApplication<App>> {
   return app;
 }
 
+export interface UploadFile {
+  field: string;
+  name: string;
+  content: Buffer;
+}
+
 type Method = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
 const DEFAULT_STATUS: Record<Method, number> = { get: 200, post: 201, patch: 200, put: 200, delete: 200 };
 
-/** A signed-in actor: every call goes to /api with its bearer token and expects `status`. */
+/**
+ * A signed-in actor: every call goes to /api with its bearer token and expects `status`. It plays
+ * from one device of its own, sent as X-Device-Id like the apps do (MF-4).
+ */
 export class Actor {
+  readonly deviceId = randomUUID();
+
   constructor(
     private readonly app: INestApplication<App>,
     private readonly token: string,
@@ -35,6 +45,7 @@ export class Actor {
     const res = await request(this.app.getHttpServer())
       [method](`/api${path}`)
       .set('Authorization', `Bearer ${this.token}`)
+      .set('X-Device-Id', this.deviceId)
       .send(body);
     return this.expect<T>(res, `${method.toUpperCase()} ${path}`, status);
   }
@@ -55,17 +66,15 @@ export class Actor {
     return this.call<T>('put', path, body, status);
   }
 
-  /** multipart/form-data upload of one file plus text fields. */
+  /** multipart/form-data upload of one or more files plus text fields. */
   async upload<T = Row>(
     path: string,
-    file: { field: string; name: string; content: Buffer },
+    file: UploadFile | UploadFile[],
     fields: Record<string, string> = {},
     status = 201,
   ): Promise<T> {
-    let req = request(this.app.getHttpServer())
-      .post(`/api${path}`)
-      .set('Authorization', `Bearer ${this.token}`)
-      .attach(file.field, file.content, file.name);
+    let req = request(this.app.getHttpServer()).post(`/api${path}`).set('Authorization', `Bearer ${this.token}`);
+    for (const { field, content, name } of [file].flat()) req = req.attach(field, content, name);
     for (const [key, value] of Object.entries(fields)) req = req.field(key, value);
     return this.expect<T>(await req, `UPLOAD ${path}`, status);
   }
@@ -85,6 +94,20 @@ export class Actor {
     return { body: res.body as Buffer, type: String(res.headers['content-type']) };
   }
 
+  /** The status code of a POST, without failing on it (a step that may already be done). */
+  async attempt(path: string, body: object = {}): Promise<number> {
+    const res = await request(this.app.getHttpServer())
+      .post(`/api${path}`)
+      .set('Authorization', `Bearer ${this.token}`)
+      .send(body);
+    return res.status;
+  }
+
+  /** Another account on the same app, e.g. the Admin who funds a project. */
+  signInAs(email: string): Promise<Actor> {
+    return signIn(this.app, email);
+  }
+
   private expect<T>(res: request.Response, what: string, status: number): T {
     if (res.status !== status) {
       throw new Error(`${what} -> ${res.status} (expected ${status}): ${JSON.stringify(res.body)}`);
@@ -93,7 +116,7 @@ export class Actor {
   }
 }
 
-export async function signIn(app: INestApplication<App>, email: string, password = SEED_PASSWORD): Promise<Actor> {
+export async function signIn(app: INestApplication<App>, email: string, password = SEED_USER_PASSWORD): Promise<Actor> {
   const res = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password });
   if (res.status !== 200) throw new Error(`Login of ${email} failed with ${res.status}`);
   const body = res.body as { accessToken: string; user: { id: string } };

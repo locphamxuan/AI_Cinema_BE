@@ -9,9 +9,9 @@ const BATCH = 50;
 
 /**
  * `subscription-renewal.sweep`: every ACTIVE plan whose renewal date has passed is charged Coins,
- * main before bonus, and every plan still unpaid after its grace period ends. Both passes are
- * guarded on the status, so a plan a renewal just moved forward is not picked up again in the same
- * run and the loop always ends.
+ * main before bonus; PAST_DUE plans are retried and ended once their grace period is over; plans
+ * whose auto-renew was stopped end with their period. Every pass is guarded on the status (or walks
+ * a cursor), so a plan a renewal just moved forward is not picked up again and the loops always end.
  */
 @Injectable()
 export class SubscriptionRenewalSweep implements OnModuleInit {
@@ -47,22 +47,41 @@ export class SubscriptionRenewalSweep implements OnModuleInit {
       if (due.length < BATCH) break;
     }
 
+    // Plans in their grace period: retry each one, and end those still unpaid once the grace is over.
     let expired = 0;
+    let cursor: string | undefined;
     for (;;) {
-      const unpaid = await this.prisma.subscription.findMany({
-        where: { status: SubscriptionStatus.PAST_DUE, nextRenewalAt: { lte: now } },
-        orderBy: { nextRenewalAt: 'asc' },
+      const pastDue = await this.prisma.subscription.findMany({
+        where: { status: SubscriptionStatus.PAST_DUE, ...(cursor ? { id: { gt: cursor } } : {}) },
+        orderBy: { id: 'asc' },
         select: { id: true },
         take: BATCH,
       });
-      if (!unpaid.length) break;
-      for (const { id } of unpaid) {
-        if (await this.renewals.expire(id, now)) expired += 1;
+      if (!pastDue.length) break;
+      for (const { id } of pastDue) {
+        if ((await this.renewals.renew(id, now)).renewed) renewed += 1;
+        else if (await this.renewals.expire(id, now)) expired += 1;
       }
-      if (unpaid.length < BATCH) break;
+      cursor = pastDue[pastDue.length - 1].id;
+      if (pastDue.length < BATCH) break;
     }
 
-    if (renewed || expired) this.logger.log(`Renewed ${renewed} plan(s), ended ${expired} unpaid one(s)`);
+    // Plans whose auto-renew was stopped end with their paid period (BR-11).
+    for (;;) {
+      const over = await this.prisma.subscription.findMany({
+        where: { status: SubscriptionStatus.ACTIVE, autoRenew: false, currentPeriodEnd: { lte: now } },
+        orderBy: { currentPeriodEnd: 'asc' },
+        select: { id: true },
+        take: BATCH,
+      });
+      if (!over.length) break;
+      for (const { id } of over) {
+        if (await this.renewals.lapse(id, now)) expired += 1;
+      }
+      if (over.length < BATCH) break;
+    }
+
+    if (renewed || expired) this.logger.log(`Renewed ${renewed} plan(s), ended ${expired} plan(s)`);
     return { renewed, expired };
   }
 }

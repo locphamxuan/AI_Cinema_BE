@@ -24,6 +24,8 @@ assertLocalDatabase(E2E_DATABASE_URL);
 assertLocalDatabase(E2E_REDIS_URL);
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = E2E_DATABASE_URL;
+// prisma.config.ts prefers it: a DIRECT_DATABASE_URL left in .env must never point the suite at a real database.
+process.env.DIRECT_DATABASE_URL = E2E_DATABASE_URL;
 process.env.JWT_SECRET ??= 'e2e-secret';
 // Jobs run inside the request and media is not really transcoded, so each step is done when it returns.
 process.env.REDIS_URL = '';
@@ -37,7 +39,19 @@ process.env.SWAGGER_ENABLED = 'false';
 // The suite signs in many times a minute.
 process.env.RATE_LIMIT_MAX = '10000';
 process.env.RATE_LIMIT_AUTH_MAX = '10000';
+process.env.RATE_LIMIT_PLAYBACK_SESSION_MAX = '10000';
+process.env.RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX = '10000';
 // Schedulers are driven by the tests, never by timers.
 process.env.PUBLICATION_SWEEP_MS = '0';
 process.env.OVERDUE_SWEEP_MS = '0';
 process.env.HLS_CHECK_MS = '0';
+process.env.STREAMING_SESSION_SWEEP_MS = '0';
+process.env.STREAMING_SESSION_RETENTION_SWEEP_MS = '0';
+process.env.SUPPORT_AUTO_CLOSE_SWEEP_MS = '0';
+// No real AI provider in e2e: the knowledge sweep and the assistant would call the internet with the .env keys,
+// and a dropped connection there (ECONNRESET) failed whichever suite was running. Suites may still pick a mode.
+process.env.AI_MODE = 'mock';
+process.env.AI_CHAT_BASE_URL = '';
+process.env.AI_CHAT_API_KEY = '';
+process.env.AI_EMBEDDING_BASE_URL = '';
+process.env.AI_EMBEDDING_API_KEY = '';

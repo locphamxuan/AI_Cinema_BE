@@ -10,13 +10,14 @@ import { AssignCreatorRequestDto, ReasonRequestDto } from './dto/project-actions
 import { MovieProjectSummaryDto } from './dto/movie-project-summary.dto';
 import { UpdateMovieProjectRequestDto } from './dto/update-movie-project.request.dto';
 import { MovieProjectService } from './movie-project.service';
+import { ProjectPipelineService } from './project-pipeline.service';
 import { ProjectLifecycleService } from './project-lifecycle.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
 /**
- * Movie projects (MF-1 steps 1–2, §4.1.2). Reviewers see their own projects, Creators the
- * ones assigned to them and the Admin every project (read-only, BR-55).
+ * Movie projects (MF-1 step 1, §4.1.2). The Admin creates them and assigns the lead Creator; Reviewers see
+ * their own projects, Creators the ones assigned to them and the Admin every project.
  */
 @ApiTags('movie-projects')
 @ApiBearerAuth()
@@ -25,11 +26,12 @@ export class MovieProjectController {
   constructor(
     private readonly projects: MovieProjectService,
     private readonly lifecycle: ProjectLifecycleService,
+    private readonly pipelines: ProjectPipelineService,
   ) {}
 
   @Post()
-  @RequirePermission(PERMISSION.PROJECT_MANAGE)
-  @ApiOperation({ summary: 'Create a movie project with its seasons and episodes (step 1)' })
+  @RequirePermission(PERMISSION.PROJECT_CREATE)
+  @ApiOperation({ summary: 'Admin: create a movie project, pick its Reviewer and assign the lead Creator (step 1)' })
   create(@Body() dto: CreateMovieProjectRequestDto, @CurrentUser() user: AuthenticatedUser) {
     return this.projects.create(dto, user);
   }
@@ -41,45 +43,56 @@ export class MovieProjectController {
     return this.projects.list(query, user);
   }
 
-  @Get(':movieId')
-  detail(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.projects.detail(movieId, user);
+  // Declared before :projectId so "pipeline" is not read as an id.
+  @Get('pipeline')
+  @ApiOperation({ summary: 'The projects of GET /projects, each with its script, episodes and open contract round' })
+  pipeline(@Paginate() query: PaginateQuery, @CurrentUser() user: AuthenticatedUser) {
+    return this.pipelines.list(query, user);
   }
 
-  @Patch(':movieId')
+  @Get(':projectId')
+  detail(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.detail(projectId, user);
+  }
+
+  @Patch(':projectId')
   @RequirePermission(PERMISSION.PROJECT_MANAGE)
   @ApiOperation({ summary: 'Edit the project and its catalog metadata (synopsis, age rating)' })
   update(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: UpdateMovieProjectRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.projects.update(movieId, dto, user);
+    return this.projects.update(projectId, dto, user);
   }
 
-  @Post(':movieId/assign')
+  @Post(':projectId/assign')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission(PERMISSION.PROJECT_MANAGE)
-  @ApiOperation({ summary: 'Assign (or reassign) the Content Creator; needs a production fee (step 2, BR-12)' })
+  @RequirePermission(PERMISSION.PROJECT_CREATE)
+  @ApiOperation({ summary: 'Admin: assign (or reassign) the lead Content Creator (step 1)' })
   assign(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: AssignCreatorRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.lifecycle.assignCreator(movieId, dto.creatorId, user);
+    return this.lifecycle.assignCreator(projectId, dto.creatorId, user);
   }
 
-  @Post(':movieId/cancel')
+  @Post(':projectId/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission(PERMISSION.PROJECT_MANAGE)
-  @ApiOperation({ summary: 'Cancel a project none of whose episodes was published (BR-39)' })
-  cancel(@Param('movieId', ID) movieId: string, @Body() dto: ReasonRequestDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.lifecycle.cancel(movieId, dto.reason, user);
+  @RequirePermission(PERMISSION.PROJECT_CREATE)
+  @ApiOperation({ summary: 'Admin: cancel a project none of whose episodes was published (BR-39)' })
+  cancel(
+    @Param('projectId', ID) projectId: string,
+    @Body() dto: ReasonRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.lifecycle.cancel(projectId, dto.reason, user);
   }
 
-  @Get(':movieId/events')
+  @Get(':projectId/events')
   @ApiOperation({ summary: 'Content events of the project (§4.1.6), newest first' })
-  events(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.projects.events(movieId, user);
+  events(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.events(projectId, user);
   }
 }

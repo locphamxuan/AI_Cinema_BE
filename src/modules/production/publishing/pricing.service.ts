@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { MovieStatus, PriceAlertStatus } from '@prisma/client';
+import { ProjectStatus, PriceAlertStatus } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -10,12 +10,15 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 const UNRESOLVED: PriceAlertStatus[] = [PriceAlertStatus.OPEN, PriceAlertStatus.CHANGE_REQUESTED];
 
 /**
- * MF-1 steps 12–13: the Reviewer prices each episode (BR-29). A price outside the Admin's range
- * is saved anyway and raises a price alert for the Admin, who can only ask for a change (BR-47).
+ * MF-1 steps 12–13 (2026-11-11): the Admin alone prices each episode and flags which ones are
+ * free before publishing (BR-29, BR-03/BR-19); the Reviewer stops at the Final Film. A price
+ * outside the platform range is saved anyway and raises a price alert as a validation warning on
+ * the Admin portal (BR-47). A free-for-Guest episode is always free for Members too.
  */
 @Injectable()
 export class PricingService {
@@ -28,10 +31,10 @@ export class PricingService {
   ) {}
 
   async setPrice(episodeId: string, coinPrice: number, user: AuthenticatedUser) {
-    const episode = await this.access.episode(episodeId, user, 'reviewer');
+    const episode = await this.access.episode(episodeId, user, 'read');
     assertProjectStatus(
-      episode.movie.status,
-      [...OPEN_PROJECT_STATUSES, MovieStatus.COMPLETED, MovieStatus.UNDER_REVISION],
+      episode.project.status,
+      [...OPEN_PROJECT_STATUSES, ProjectStatus.COMPLETED, ProjectStatus.UNDER_REVISION],
       'price an episode',
     );
     const { episodeCoinPriceMin: rangeMin, episodeCoinPriceMax: rangeMax } = await this.settings.get();
@@ -49,7 +52,7 @@ export class PricingService {
           action: CONTENT_EVENT.EPISODE_PRICED,
           entityType: 'Episode',
           entityId: episodeId,
-          movieId: episode.movieId,
+          projectId: episode.movieId,
           actorId: user.id,
           payload: { previousPrice: episode.coinPrice, coinPrice, rangeMin, rangeMax },
         },
@@ -59,6 +62,45 @@ export class PricingService {
       return this.raiseAlert(tx, { ...episode, coinPrice }, rangeMin, rangeMax, user.id);
     });
     return { episodeId, coinPrice, inRange, rangeMin, rangeMax, alert };
+  }
+
+  /**
+   * BR-03/BR-19 — before publishing, the Admin says which episodes are open: free for Guests,
+   * free for Members, or paid. A free-for-Guest episode is free for Members too (the inheritance
+   * rule), so `isFreeForMember` is raised along with `isFreeForGuest` and can never sit below it.
+   */
+  async setAccessFlags(
+    episodeId: string,
+    flags: { isFreeForGuest?: boolean; isFreeForMember?: boolean },
+    user: AuthenticatedUser,
+  ) {
+    const episode = await this.access.episode(episodeId, user, 'read');
+    assertProjectStatus(
+      episode.project.status,
+      [...OPEN_PROJECT_STATUSES, ProjectStatus.COMPLETED, ProjectStatus.UNDER_REVISION],
+      'flag an episode',
+    );
+    const isFreeForGuest = flags.isFreeForGuest ?? episode.isFreeForGuest;
+    const isFreeForMember = isFreeForGuest || (flags.isFreeForMember ?? episode.isFreeForMember);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.episode.update({ where: { id: episodeId }, data: { isFreeForGuest, isFreeForMember } });
+      await this.auditLog.record(
+        {
+          action: CONTENT_EVENT.EPISODE_FLAGS_SET,
+          entityType: 'Episode',
+          entityId: episodeId,
+          projectId: episode.movieId,
+          actorId: user.id,
+          payload: {
+            previous: { isFreeForGuest: episode.isFreeForGuest, isFreeForMember: episode.isFreeForMember },
+            isFreeForGuest,
+            isFreeForMember,
+          },
+        },
+        tx,
+      );
+    });
+    return { episodeId, isFreeForGuest, isFreeForMember };
   }
 
   /** Price alerts for the Admin dashboard, open ones first by default. */
@@ -83,11 +125,14 @@ export class PricingService {
     });
   }
 
-  /** The Admin asks the Reviewer to reconsider the price; it stays as it is until they do. */
+  /**
+   * The Admin asks the Reviewer for an opinion on an out-of-range price. Only the Admin sets prices (audit
+   * 2026-11-12), so the Reviewer answers with a project note and the Admin re-prices or resolves the alert.
+   */
   async requestChange(alertId: string, note: string, admin: AuthenticatedUser) {
     const alert = await this.findAlert(alertId);
     if (alert.status !== PriceAlertStatus.OPEN) throw new ConflictException(`The alert is already ${alert.status}`);
-    const { movie } = alert.episode;
+    const { movie, project } = alert.episode;
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.priceAlert.updateMany({
         where: { id: alertId, status: PriceAlertStatus.OPEN },
@@ -100,13 +145,13 @@ export class PricingService {
       });
       if (count === 0) throw new ConflictException('The alert changed meanwhile; reload it');
       await this.notifications.notify(
-        [movie.reviewerId],
+        [project.reviewerId],
         {
           type: NOTIFICATION_TYPE.PRICE_CHANGE_REQUEST,
-          title: `Admin đề nghị xem lại giá tập ${alert.episode.episodeNumber} của phim "${movie.title}"`,
-          body: note.trim(),
+          title: `Admin hỏi ý kiến về giá tập ${alert.episode.episodeNumber} của phim "${movie.title}"`,
+          body: `${note.trim()} — góp ý bằng ghi chú dự án; Admin sẽ đặt lại giá.`,
           link: `/projects/${movie.id}/episodes/${alert.episodeId}`,
-          payload: { movieId: movie.id, episodeId: alert.episodeId, priceAlertId: alertId },
+          payload: { projectId: movie.id, episodeId: alert.episodeId, priceAlertId: alertId },
         },
         tx,
       );
@@ -141,7 +186,7 @@ export class PricingService {
         action: CONTENT_EVENT.PRICE_OUT_OF_RANGE,
         entityType: 'PriceAlert',
         entityId: alert.id,
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         actorId: reviewerId,
         payload: { episodeId: episode.id, coinPrice: episode.coinPrice, rangeMin, rangeMax },
       },
@@ -154,7 +199,7 @@ export class PricingService {
         title: `Giá tập ${episode.episodeNumber} của phim "${episode.movie.title}" nằm ngoài khoảng cho phép`,
         body: `${episode.coinPrice} Coin, khoảng cho phép ${rangeMin}–${rangeMax} Coin.`,
         link: `/admin/price-alerts`,
-        payload: { movieId: episode.movieId, episodeId: episode.id, priceAlertId: alert.id },
+        payload: { projectId: episode.movieId, episodeId: episode.id, priceAlertId: alert.id },
       },
       tx,
     );
@@ -164,9 +209,9 @@ export class PricingService {
   private async findAlert(alertId: string) {
     const alert = await this.prisma.priceAlert.findUnique({
       where: { id: alertId },
-      include: { episode: { include: { movie: true } } },
+      include: { episode: { include: WITH_PROJECT } },
     });
     if (!alert) throw new NotFoundException('Price alert not found');
-    return alert;
+    return { ...alert, episode: liftProject(alert.episode) };
   }
 }

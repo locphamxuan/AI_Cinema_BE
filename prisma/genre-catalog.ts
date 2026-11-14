@@ -1,5 +1,5 @@
 /**
- * Full genre catalog — TMDB/IMDb standard genres plus the ones Vietnamese
+ * Full genre catalog - TMDB/IMDb standard genres plus the ones Vietnamese
  * streaming platforms list separately (Võ thuật, Cổ trang, Thần thoại, Học đường).
  * Biography is intentionally absent: it requires depicting real people,
  * which BR-43 forbids for AI-generated content.

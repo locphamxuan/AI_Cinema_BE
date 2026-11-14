@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { PaymentProvider, PaymentStatus, Prisma, TopUpStatus } from '@prisma/client';
 import type { PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -6,25 +13,25 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { WalletService } from '../coin-wallet/wallet.service';
 import { TOPUP_REASON } from './constants/topup-reason';
 import { ORDER_VIEW, orderView, PAYMENT_VIEW } from './utils/order-view';
-import { normalizeCallback, type GatewayCallback } from './utils/payment-callback.util';
+import { normalizeCallback } from './utils/payment-callback.util';
 import { PaymentGatewayService } from './gateways/payment-gateway.service';
 import { VNPAY_RSP } from './gateways/vnpay-signing';
 import { TopUpLookupService } from './topup-lookup.service';
 import { TopUpSettlementService } from './topup-settlement.service';
 
 export { TOPUP_REASON };
-export type { GatewayCallback };
-
 /** How long a pending order may sit before the sweeper gives up on it. */
 const ORDER_TTL_MINUTES = 15;
 
 /**
- * Step 12: Coins bought with a gateway. This service owns the flow — quoting the order,
- * handing the member to the gateway, and routing webhooks — while `TopUpLookupService`
+ * Step 12: Coins bought with a gateway. This service owns the flow - quoting the order,
+ * handing the member to the gateway, and routing webhooks - while `TopUpLookupService`
  * answers reads and `TopUpSettlementService` moves the money.
  */
 @Injectable()
 export class CoinTopUpService {
+  private readonly logger = new Logger(CoinTopUpService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly wallets: WalletService,
@@ -34,9 +41,15 @@ export class CoinTopUpService {
     private readonly settlement: TopUpSettlementService,
   ) {}
 
+  /** What the top-up screen needs to quote Coins: the rate and the accepted VND range. */
+  async options() {
+    const { coinTopUpMinVnd, coinTopUpMaxVnd, coinRateVnd } = await this.settings.get();
+    return { rateVnd: coinRateVnd, minVnd: coinTopUpMinVnd, maxVnd: coinTopUpMaxVnd };
+  }
+
   /**
    * Creates the order with its first payment attempt and hands back where to send the member.
-   * `clientIp` ends up in the VNPay order; MoMo does not need it.
+   * `clientIp` ends up in the VNPay order.
    */
   async create(userId: string, provider: PaymentProvider, amountVnd: number, clientIp?: string) {
     const { coinTopUpMinVnd, coinTopUpMaxVnd, coinRateVnd } = await this.settings.get();
@@ -50,7 +63,7 @@ export class CoinTopUpService {
     // Round down: the gateway charges the VND amount, so the Coins promised cannot exceed it.
     const coinsGranted = Math.floor(amountVnd / coinRateVnd);
     // Unique per provider, so a replayed callback finds its attempt and cannot credit twice.
-    const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
+    const stamp = `${Date.now().toString(36)}${randomBytes(5).toString('hex')}`.toUpperCase();
     const providerTxnId = `${provider}-${stamp}`;
     const expiresAt = new Date(Date.now() + ORDER_TTL_MINUTES * 60_000);
     const created = await this.prisma.$transaction(async (tx) => {
@@ -68,11 +81,10 @@ export class CoinTopUpService {
     // outage must never hold database locks. A failed link fails the attempt outright.
     let redirectUrl: string;
     try {
-      redirectUrl = await this.gateways.createPaymentUrl({
+      redirectUrl = this.gateways.createPaymentUrl({
         provider,
         providerTxnId,
         amountVnd,
-        topUpId: created.topUp.id,
         clientIp,
         expiresAt,
       });
@@ -131,18 +143,9 @@ export class CoinTopUpService {
   async handleCallback(provider: PaymentProvider, raw: Record<string, unknown>) {
     const callback = normalizeCallback(raw);
     if (!this.gateways.verifyCallbackSignature(provider, raw)) {
-      await this.prisma.paymentCallback.upsert({
-        where: { provider_eventId: { provider, eventId: callback.eventId } },
-        update: { errorMessage: 'Invalid gateway signature', handledAt: new Date() },
-        create: {
-          provider,
-          eventId: callback.eventId,
-          signature: callback.signature,
-          payload: raw as Prisma.InputJsonValue,
-          errorMessage: 'Invalid gateway signature',
-          handledAt: new Date(),
-        },
-      });
+      // Never stored: the endpoint is public and the event id is the sender's, so recording a forged
+      // delivery would mark the real one as handled before it arrives, and its Coins would never land.
+      this.logger.warn(`Rejected a ${provider} callback with a bad signature (event ${callback.eventId})`);
       throw new BadRequestException({
         message: 'The callback signature does not check out',
         details: { reason: TOPUP_REASON.INVALID_SIGNATURE, provider },
@@ -198,26 +201,6 @@ export class CoinTopUpService {
       );
       await handled({ handledAt: new Date() });
       return this.lookups.topUpView(topUp.id);
-    }
-    if (callback.amountVnd !== payment.amountVnd) {
-      const failureReason = `The gateway reported ${callback.amountVnd} VND instead of ${payment.amountVnd} VND`;
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.FAILED, failureReason },
-      });
-      await this.prisma.coinTopUp.update({
-        where: { id: topUp.id },
-        data: { status: TopUpStatus.FAILED, failureReason },
-      });
-      await handled({ handledAt: new Date(), errorMessage: failureReason });
-      throw new UnprocessableEntityException({
-        message: 'The settled amount does not match the order',
-        details: {
-          reason: TOPUP_REASON.AMOUNT_MISMATCH,
-          expectedVnd: payment.amountVnd,
-          settledVnd: callback.amountVnd,
-        },
-      });
     }
     try {
       const settled = await this.settlement.settle({

@@ -13,7 +13,7 @@ export class AuthSessionDto {
   @ApiProperty({ description: 'Access JWT, sent as `Authorization: Bearer <token>`.' })
   accessToken: string;
 
-  @ApiProperty({ example: 900, description: 'Seconds until the access token expires.' })
+  @ApiProperty({ example: 1800, description: 'Seconds until the access token expires.' })
   accessTokenExpiresIn: number;
 
   @ApiProperty({ description: 'Single-use refresh token; every refresh returns a new one.' })

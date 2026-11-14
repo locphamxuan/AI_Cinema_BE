@@ -1,0 +1,94 @@
+/// Who most recently proposed the `costVnd` of a contract round.
+enum ContractProposedBy {
+  ADMIN
+  STUDIO
+}
+
+/// SENT: template sent to the studio, no cost yet. STUDIO_SIGNED: the studio filled the cost and uploaded its
+/// signed PDF, waiting on the Admin. ADMIN_COUNTERED: the Admin proposed a new cost and uploaded its signed PDF,
+/// waiting on the studio. SIGNED: both counterparts are in and merged — complete. SUPERSEDED: replaced by the
+/// next round of the same negotiation.
+enum ContractStatus {
+  SENT
+  STUDIO_SIGNED
+  ADMIN_COUNTERED
+  SIGNED
+  SUPERSEDED
+}
+
+/// One row per round of a project's production-cost negotiation with its studio (MF-1 §3–4): once Admin
+/// approves the Final Script the system sends a template with no cost, the studio fills it in and signs, then
+/// Admin and studio counter-propose until one round has both signatures. Signing hands the project off to the
+/// studio: the hand-off is created then (handoff_id), with the signed cost as its fee.
+model Contract {
+  id              String              @id @default(uuid()) @db.Uuid
+  projectId       String              @map("project_id") @db.Uuid
+  studioId        String              @map("studio_id") @db.Uuid
+  /// The hand-off the round belongs to: set when signing opens it, or from round 1 on a studio change (BR-59).
+  handoffId       String?             @map("handoff_id") @db.Uuid
+  /// 1 for the template, +1 each time either side counter-proposes.
+  round           Int                 @default(1)
+  previousId      String?             @unique @map("previous_id") @db.Uuid
+  /// Null until the studio fills it in on round 1.
+  costVnd         BigInt?             @map("cost_vnd")
+  proposedBy      ContractProposedBy? @map("proposed_by")
+  status          ContractStatus      @default(SENT)
+  terms           String              @db.Text
+  /// When the Admin uploaded its signed PDF of this round (no click-to-sign since 10/11/2026).
+  adminSignedAt   DateTime?           @map("admin_signed_at") @db.Timestamptz(6)
+  adminSignedById String?             @map("admin_signed_by_id") @db.Uuid
+  /// When the studio uploaded its signed PDF of this round.
+  studioSignedAt  DateTime?           @map("studio_signed_at") @db.Timestamptz(6)
+  createdById     String              @map("created_by_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project       MovieProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  studio        Studio         @relation(fields: [studioId], references: [id], onDelete: Restrict)
+  handoff       StudioHandoff? @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  previous      Contract?      @relation("ContractRound", fields: [previousId], references: [id], onDelete: SetNull)
+  next          Contract?      @relation("ContractRound")
+  adminSignedBy User?          @relation("ContractAdminSignedBy", fields: [adminSignedById], references: [id], onDelete: SetNull)
+  createdBy     User               @relation("ContractCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  documents     ContractDocument[]
+
+  @@index([projectId, createdAt])
+  @@index([handoffId, round])
+  @@index([studioId, status])
+  @@map("contracts")
+}
+
+/// Which signed counterpart a stored PDF is: the Admin's, the studio's, or the FINAL document the system
+/// merged out of both once the round was complete.
+enum ContractDocumentSide {
+  ADMIN
+  STUDIO
+  FINAL
+}
+
+/// MF-1 (10/11/2026): a contract is no longer signed by clicking. Each side uploads a PDF of the contract
+/// carrying its own signature; once both counterparts of the agreed cost are in, the system merges them into
+/// one FINAL document holding both signatures. One row per side per round; the objects are private and only
+/// streamed to the Admin, the Reviewer of the project and the studio of the contract.
+model ContractDocument {
+  id           String               @id @default(uuid()) @db.Uuid
+  contractId   String               @map("contract_id") @db.Uuid
+  side         ContractDocumentSide
+  /// Private object key, unguessable: contracts/<contractId>/<side>-<uuid>.pdf
+  storageKey   String               @map("storage_key")
+  /// Sanitised name the uploader sent, shown on download.
+  fileName     String               @map("file_name")
+  mimeType     String               @default("application/pdf") @map("mime_type")
+  sizeBytes    BigInt               @map("size_bytes")
+  /// SHA-256 of the stored bytes, so a counterpart can be checked against what was signed.
+  checksum     String
+  /// The account that uploaded it; null for the FINAL document, which the system builds.
+  uploadedById String?              @map("uploaded_by_id") @db.Uuid
+  uploadedAt   DateTime             @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation("ContractDocumentUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@unique([contractId, side])
+  @@map("contract_documents")
+}

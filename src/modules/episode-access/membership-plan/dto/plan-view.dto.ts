@@ -33,7 +33,7 @@ export class PlanView {
   isFeatured: boolean;
 
   @ApiPropertyOptional({
-    example: { maxDevices: 2, adFree: true },
+    example: { maxRegisteredDevices: 4, maxConcurrentStreams: 2, adFree: true },
   })
   features: unknown;
 

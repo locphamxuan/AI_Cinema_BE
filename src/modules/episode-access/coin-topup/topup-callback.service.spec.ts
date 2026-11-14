@@ -127,7 +127,7 @@ describe('CoinTopUpService.handleCallback', () => {
     };
 
     gateways.verifyCallbackSignature.mockReturnValue(false);
-    const error = await catchError(service.handleCallback(PaymentProvider.MOMO, { ...delivery }));
+    const error = await catchError(service.handleCallback(PaymentProvider.VNPAY, { ...delivery }));
 
     expect(error).toBeInstanceOf(BadRequestException);
 
@@ -136,25 +136,10 @@ describe('CoinTopUpService.handleCallback', () => {
     }
 
     expect(error.getResponse()).toMatchObject({ details: { reason: TOPUP_REASON.INVALID_SIGNATURE } });
-    expect(prisma.paymentCallback.upsert).toHaveBeenCalledWith({
-      where: { provider_eventId: { provider: PaymentProvider.MOMO, eventId: 'evt-1' } },
-      update: expect.objectContaining({ errorMessage: 'Invalid gateway signature' }),
-      create: expect.objectContaining({ provider: PaymentProvider.MOMO, eventId: 'evt-1' }),
-    });
+    // A forged delivery leaves no trace in the idempotency table, so the real one still credits.
+    expect(prisma.paymentCallback.upsert).not.toHaveBeenCalled();
+    expect(prisma.paymentCallback.create).not.toHaveBeenCalled();
     expect(deps.coins.credit).not.toHaveBeenCalled();
-  });
-
-  it('recovers the order id from MoMo extraData when topUpId is missing', async () => {
-    const { topUpId: _dropped, ...withoutId } = delivery;
-    const extraData = Buffer.from(JSON.stringify({ topUpId })).toString('base64');
-
-    const settled = await service.handleCallback(PaymentProvider.MOMO, {
-      ...withoutId,
-      providerTxnId: 'VNPAY-ABC',
-      extraData,
-    });
-
-    expect(settled).toMatchObject({ topUpId, status: TopUpStatus.PAID });
   });
 
   it('reads VNPay IPN fields, down to the amount times 100', async () => {
@@ -311,6 +296,16 @@ describe('CoinTopUpService.handleVnpayIpn', () => {
     await expect(service.handleVnpayIpn(vnpQuery('4000000'))).resolves.toEqual({
       RspCode: '04',
       Message: 'Invalid amount',
+    });
+
+    // Both failure states are committed through the settlement transaction before IPN answers.
+    expect(tx.payment.update).toHaveBeenCalledWith({
+      where: { id: 'pay-1' },
+      data: expect.objectContaining({ status: PaymentStatus.FAILED }),
+    });
+    expect(tx.coinTopUp.update).toHaveBeenCalledWith({
+      where: { id: topUpId },
+      data: expect.objectContaining({ status: TopUpStatus.FAILED }),
     });
     expect(deps.coins.credit).not.toHaveBeenCalled();
   });

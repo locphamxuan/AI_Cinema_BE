@@ -1,27 +1,36 @@
+import { freeTierOf } from './episode-free-tier';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { EpisodeStatus, MovieStatus, type Prisma } from '@prisma/client';
+import { ProjectStatus, type Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-
-/** Shown on an episode taken down to be fixed (BR-56). */
-export const REVISION_NOTICE = 'Tập đang được bảo trì / sửa đổi nội dung';
-
-/**
- * Episodes viewers see: released ones, and the ones taken down to be fixed, which stay listed
- * with a maintenance notice (BR-56). Scheduled, removed and unfinished episodes stay hidden.
- */
-const VISIBLE_EPISODE: Prisma.EpisodeWhereInput = {
-  OR: [{ status: EpisodeStatus.PUBLISHED }, { revisionStartedAt: { not: null } }],
-};
+import { EPISODE_AVAILABILITY, REVISION_NOTICE, VISIBLE_EPISODE } from './episode-visibility';
 
 /** A movie is listed once one of its episodes is out (MF-1 step 14), never once cancelled. */
-const LISTED_MOVIE: Prisma.MovieWhereInput = {
-  status: { not: MovieStatus.CANCELLED },
+export const LISTED_MOVIE: Prisma.MovieWhereInput = {
+  project: { status: { not: ProjectStatus.CANCELLED } },
   episodes: { some: VISIBLE_EPISODE },
 };
 
-const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
+/** Names of subtitle languages as the player lists them. */
+const SUBTITLE_LABEL: Record<string, string> = {
+  vi: 'Tiếng Việt',
+  en: 'English',
+  zh: '中文',
+  ko: '한국어',
+  ja: '日本語',
+};
+
+export const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
+
+/** A card of the movie list also counts the episodes viewers can see, the same ones `/movies/:id/episodes` lists. */
+const LISTED_CARD = {
+  ...GENRES,
+  _count: { select: { episodes: { where: VISIBLE_EPISODE } } },
+} satisfies Prisma.MovieInclude;
+
+/** How many movies the ranking tab shows. */
+const RANKING_SIZE = 20;
 
 const EPISODE_DETAIL = {
   season: { select: { seasonNumber: true, title: true } },
@@ -29,6 +38,10 @@ const EPISODE_DETAIL = {
     select: {
       durationSeconds: true,
       qualities: true,
+      subtitles: {
+        orderBy: [{ isDefault: 'desc' }, { language: 'asc' }],
+        select: { id: true, language: true, isDefault: true },
+      },
       aiContentLabel: { select: { labelType: true, labelText: true, displayLocation: true } },
     },
   },
@@ -41,6 +54,7 @@ const EPISODE_DETAIL = {
 } satisfies Prisma.EpisodeInclude;
 
 type MovieRow = Prisma.MovieGetPayload<{ include: typeof GENRES }>;
+type ListedRow = Prisma.MovieGetPayload<{ include: typeof LISTED_CARD }>;
 type EpisodeRow = Prisma.EpisodeGetPayload<{ include: typeof EPISODE_DETAIL }>;
 
 /**
@@ -58,13 +72,16 @@ export class CatalogService {
   async listMovies(query: PaginateQuery, genreId?: string) {
     const page = await paginate(query, this.prisma.movie, {
       where: genreId ? { ...LISTED_MOVIE, genres: { some: { genreId } } } : LISTED_MOVIE,
-      relations: GENRES,
+      relations: LISTED_CARD,
       sortableColumns: ['title', 'releaseYear', 'createdAt'],
       defaultSortBy: [['createdAt', 'DESC']],
       searchableColumns: ['title'],
       filterableColumns: { ageRating: ['$eq', '$in'], releaseYear: ['$eq', '$gte', '$lte'] },
     });
-    return { ...page, data: (page.data as MovieRow[]).map(movieCard) };
+    return {
+      ...page,
+      data: (page.data as ListedRow[]).map((movie) => ({ ...movieCard(movie), episodeCount: movie._count.episodes })),
+    };
   }
 
   async movie(movieId: string) {
@@ -76,6 +93,22 @@ export class CatalogService {
       seasons,
       episodeCount: seasons.reduce((sum, season) => sum + season.episodeCount, 0),
     };
+  }
+
+  /**
+   * The ranking tab: listed movies by plays of their episodes (the viewCount viewers see under a
+   * movie), most first. Ties keep the newer movie first.
+   */
+  async ranking(limit = RANKING_SIZE) {
+    const movies = await this.prisma.movie.findMany({
+      where: LISTED_MOVIE,
+      orderBy: { createdAt: 'desc' },
+      include: { ...GENRES, episodes: { select: { _count: { select: { views: true } } } } },
+    });
+    return movies
+      .map((movie) => ({ ...movieCard(movie), viewCount: movie.episodes.reduce((sum, e) => sum + e._count.views, 0) }))
+      .sort((a, b) => b.viewCount - a.viewCount)
+      .slice(0, limit);
   }
 
   /** Seasons that have something to show, with how many episodes they show. */
@@ -91,15 +124,12 @@ export class CatalogService {
 
   async episodes(movieId: string, seasonNumber?: number) {
     await this.assertListed(movieId);
-    const [episodes, freeStarter] = await Promise.all([
-      this.prisma.episode.findMany({
-        where: { movieId, ...VISIBLE_EPISODE, ...(seasonNumber ? { season: { seasonNumber } } : {}) },
-        orderBy: { episodeNumber: 'asc' },
-        include: EPISODE_DETAIL,
-      }),
-      this.freeStarterCount(),
-    ]);
-    return episodes.map((episode) => episodeView(episode, freeStarter));
+    const episodes = await this.prisma.episode.findMany({
+      where: { movieId, ...VISIBLE_EPISODE, ...(seasonNumber ? { season: { seasonNumber } } : {}) },
+      orderBy: { episodeNumber: 'asc' },
+      include: EPISODE_DETAIL,
+    });
+    return episodes.map((episode) => episodeView(episode));
   }
 
   async episode(episodeId: string) {
@@ -108,21 +138,23 @@ export class CatalogService {
       include: { ...EPISODE_DETAIL, movie: { include: GENRES } },
     });
     if (!episode) throw new NotFoundException('Episode not found');
-    return { ...episodeView(episode, await this.freeStarterCount()), movie: movieCard(episode.movie) };
+    return {
+      ...episodeView(episode),
+      movie: movieCard(episode.movie),
+    };
   }
 
   private async assertListed(movieId: string) {
-    if (!(await this.prisma.movie.count({ where: { id: movieId, ...LISTED_MOVIE } }))) {
-      throw new NotFoundException('Movie not found');
-    }
-  }
-
-  private async freeStarterCount(): Promise<number> {
-    return (await this.settings.get()).freeStarterEpisodeCount;
+    const movie = await this.prisma.movie.findFirst({
+      where: { id: movieId, ...LISTED_MOVIE },
+      select: { id: true },
+    });
+    if (!movie) throw new NotFoundException('Movie not found');
+    return movie;
   }
 }
 
-function movieCard(movie: MovieRow) {
+export function movieCard(movie: MovieRow) {
   return {
     id: movie.id,
     title: movie.title,
@@ -143,7 +175,7 @@ function movieCard(movie: MovieRow) {
  * What a viewer sees of an episode. Under revision it shows the notice and can't be played;
  * its AI label and length come back with the fixed version (BR-56).
  */
-export function episodeView(episode: EpisodeRow, freeStarterCount: number) {
+export function episodeView(episode: EpisodeRow) {
   const underRevision = episode.revisionStartedAt !== null;
   const media = underRevision ? null : episode.approvedMediaAsset;
   return {
@@ -155,14 +187,23 @@ export function episodeView(episode: EpisodeRow, freeStarterCount: number) {
     title: episode.title,
     synopsis: episode.synopsis,
     thumbnailUrl: episode.thumbnailUrl,
-    availability: underRevision ? 'UNDER_REVISION' : 'AVAILABLE',
+    availability: underRevision ? EPISODE_AVAILABILITY.UNDER_REVISION : EPISODE_AVAILABILITY.AVAILABLE,
     notice: underRevision ? REVISION_NOTICE : null,
-    // BR-03: the first episodes of every movie, counted across seasons.
-    isFreeStarter: episode.episodeNumber <= freeStarterCount,
+    // BR-03: the Admin's per-episode flags; isFreeStarter (free without an account) is kept for older clients.
+    isFreeStarter: freeTierOf(episode).forGuest,
+    isFreeForGuest: freeTierOf(episode).forGuest,
+    isFreeForMember: freeTierOf(episode).forMember,
     coinPrice: episode.coinPrice,
     durationSeconds: media?.durationSeconds ?? null,
     qualities: media?.qualities ?? [],
     aiLabel: media?.aiContentLabel ?? null,
+    // Served through the API (GET /subtitles/:id) so the web player gets them without storage CORS.
+    subtitles: (media?.subtitles ?? []).map((s) => ({
+      id: s.id,
+      language: s.language,
+      label: SUBTITLE_LABEL[s.language] ?? s.language,
+      isDefault: s.isDefault,
+    })),
     publishedAt: episode.publications[0]?.publishedAt ?? null,
   };
 }

@@ -7,7 +7,7 @@ import { RequirePermission } from 'src/common/decorators/require-permission.deco
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AdminSubscriptionQueryDto } from 'src/modules/episode-access/subscription/dto/admin-subscription.query.dto';
 import { CancelSubscriptionRequestDto } from 'src/modules/episode-access/subscription/dto/cancel-subscription.request.dto';
-import { SubscriptionService } from 'src/modules/episode-access/subscription/subscription.service';
+import { SubscriptionAdminService } from 'src/modules/episode-access/subscription/subscription-admin.service';
 
 /** The Admin list shows which plan and which member a row belongs to. */
 const PLAN_OF_SUBSCRIPTION = { id: true, code: true, name: true };
@@ -21,7 +21,7 @@ const ID = new ParseUUIDPipe({ version: '4' });
 export class AdminSubscriptionController {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly subscriptions: SubscriptionService,
+    private readonly subscriptions: SubscriptionAdminService,
   ) {}
 
   @Get()

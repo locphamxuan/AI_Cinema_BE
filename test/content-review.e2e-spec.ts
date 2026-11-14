@@ -2,13 +2,13 @@ import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
 import { deliver } from './support/media';
-import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
+import { episodesOf, projectInProduction, type ProjectDetail, studioOf } from './support/projects';
 
 interface Sheet {
   id: string;
   version: number;
   proposedLabelType: string;
-  aiDisclosure: { aiTools: string[] };
+  aiDisclosure: { aiGeneratedParts: string[] };
   isApprovedVersion: boolean;
   episode: { status: string };
   durationCheck: { targetSeconds: number; actualSeconds: number; warning: boolean };
@@ -46,14 +46,15 @@ describe('Content review, AI label and compliance (e2e)', () => {
   afterAll(() => app.close());
 
   const episodeId = (i: number) => episodesOf(project)[i].id;
-  const creatorBell = async () => (await creator.get<Bell>('/notifications?limit=100')).data;
+  // MF-1 §5: the Reviewer works with the studio directly; its account hears about every decision.
+  const studioBell = async () => (await studioOf(project.id).get<Bell>('/notifications?limit=100')).data;
 
   it('shows the Reviewer the disclosure and how far the length is from the target (BR-31)', async () => {
     const v1 = await deliver(creator, episodeId(0));
     const sheet = await reviewer.get<Sheet>(`/media-assets/${v1.id}/review-sheet`);
 
     expect(sheet).toMatchObject({ version: 1, proposedLabelType: 'AI_GENERATED', isApprovedVersion: false });
-    expect(sheet.aiDisclosure.aiTools).toEqual(['Kling', 'ElevenLabs']);
+    expect(sheet.aiDisclosure.aiGeneratedParts).toEqual(['video', 'voice']);
     // The mocked pipeline reports 60 s against a 15-minute target.
     expect(sheet.durationCheck).toEqual({
       targetSeconds: 900,
@@ -78,7 +79,7 @@ describe('Content review, AI label and compliance (e2e)', () => {
     );
     expect(sheet.episode.status).toBe('CHANGES_REQUESTED');
     expect(sheet.contentReviews[0]).toMatchObject({ decision: 'CHANGES_REQUESTED' });
-    const notice = (await creatorBell()).find(
+    const notice = (await studioBell()).find(
       (n) => n.type === 'CONTENT_CHANGES_REQUESTED' && n.payload.mediaAssetId === v1.id,
     );
     expect(notice?.body).toContain('mặt nhân vật bị méo');
@@ -97,7 +98,7 @@ describe('Content review, AI label and compliance (e2e)', () => {
     await reviewer.post(`/media-assets/${v2.id}/ai-content-labels`, LABEL, 409);
     const sheet = await reviewer.post<Sheet>(`/media-assets/${v2.id}/reviews`, { decision: 'APPROVED' }, 200);
     expect(sheet).toMatchObject({ isApprovedVersion: true, episode: { status: 'APPROVED' } });
-    expect((await creatorBell()).some((n) => n.type === 'CONTENT_APPROVED' && n.payload.mediaAssetId === v2.id)).toBe(
+    expect((await studioBell()).some((n) => n.type === 'CONTENT_APPROVED' && n.payload.mediaAssetId === v2.id)).toBe(
       true,
     );
   });

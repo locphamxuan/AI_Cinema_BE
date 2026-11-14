@@ -1,16 +1,24 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient, ReviewerTokenEntryType, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { PrismaClient, UserRole } from '@prisma/client';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
-import { SEED_POLICIES, SEED_TEST_USERS, SEED_USERS } from './seed-data';
+import { createAccounts, SEED_USER_PASSWORD } from './seed-accounts';
+import {
+  ADMIN_EMAIL,
+  SEED_ACCOUNTS,
+  SEED_POLICIES,
+  SEED_REWARD_PRIZES,
+  SEED_REWARD_RULES,
+  SEED_STAFF_ACCOUNT,
+  SEED_STAFF_PASSWORD,
+} from './seed-data';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
-const SEED_USER_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'Aicinema@123';
 
 /** Permission catalog from code; a role gets the default matrix only while it has no permission at all. */
 async function seedPermissions() {
@@ -38,55 +46,80 @@ async function seedPolicies() {
   }
 }
 
-/** Creates missing accounts; a password someone already changed is kept. */
-async function seedUsers() {
-  const passwordHash = await bcrypt.hash(SEED_USER_PASSWORD, 12);
-  for (const user of SEED_USERS) {
-    await prisma.user.upsert({
-      where: { email: user.email },
-      update: { fullName: user.fullName, role: user.role },
-      create: { ...user, passwordHash },
+/** The default ladder and wheel; rows the Admin already has (by code) are left as they are. */
+async function seedRewards() {
+  const admin = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL }, select: { id: true } });
+  for (const rule of SEED_REWARD_RULES) {
+    const taken = await prisma.rewardRule.count({ where: { streakDay: rule.streakDay, isActive: true } });
+    if (taken) continue;
+    await prisma.rewardRule.upsert({
+      where: { code: rule.code },
+      update: {},
+      create: { ...rule, createdById: admin.id },
     });
   }
-  for (const { password, ...user } of SEED_TEST_USERS) {
-    const hash = await bcrypt.hash(password, 12);
-    await prisma.user.upsert({
-      where: { email: user.email },
-      update: { fullName: user.fullName, role: user.role, passwordHash: hash, isActive: true },
-      create: { ...user, passwordHash: hash },
+  for (const prize of SEED_REWARD_PRIZES) {
+    await prisma.rewardPrize.upsert({
+      where: { code: prize.code },
+      update: {},
+      create: { ...prize, createdById: admin.id },
     });
   }
 }
 
-/** Development Reviewers always have at least this many Token to allocate as production fees. */
-const DEV_REVIEWER_BUDGET = 1_000_000;
+/** MF-1 (07/11/2026): a partner studio with one STUDIO login, so the Studio Web can be demoed right away. */
+export const DEMO_STUDIO = { name: 'Lumen Studio', email: 'contact@lumenstudio.example' };
+export const DEMO_STUDIO_LOGIN = 'studio@aicinema.com';
 
-/** Tops every seeded Reviewer's budget back up to DEV_REVIEWER_BUDGET, granted by the seeded Admin. */
-async function seedReviewerBudgets() {
-  const emails = [...SEED_USERS, ...SEED_TEST_USERS]
-    .filter((u) => u.role === UserRole.CONTENT_REVIEWER)
-    .map((u) => u.email);
-  const reviewers = await prisma.user.findMany({ where: { email: { in: emails } }, select: { id: true } });
-  const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@aicinema.com' }, select: { id: true } });
-  const settings = await prisma.platformSetting.findUnique({ where: { id: 'default' } });
-  for (const { id } of reviewers) {
-    const [granted, allocated] = await Promise.all([
-      prisma.reviewerTokenEntry.aggregate({ where: { reviewerId: id }, _sum: { amountTokens: true } }),
-      prisma.tokenLedgerEntry.aggregate({ where: { createdById: id }, _sum: { amountTokens: true } }),
-    ]);
-    const balance = Number(granted._sum.amountTokens ?? 0n) - Number(allocated._sum.amountTokens ?? 0n);
-    if (balance >= DEV_REVIEWER_BUDGET) continue;
-    await prisma.reviewerTokenEntry.create({
-      data: {
-        reviewerId: id,
-        entryType: ReviewerTokenEntryType.GRANT,
-        amountTokens: BigInt(DEV_REVIEWER_BUDGET - balance),
-        rateVnd: settings?.tokenRateVnd ?? 1000,
-        reason: 'Ngân sách Token cho môi trường phát triển',
-        createdById: admin.id,
-      },
-    });
-  }
+async function seedDemoStudio() {
+  const admin = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL }, select: { id: true } });
+  const studio = await prisma.studio.upsert({
+    where: { email: DEMO_STUDIO.email },
+    update: {},
+    create: { ...DEMO_STUDIO, contactName: 'Nguyễn Thị Lan', createdById: admin.id },
+  });
+  if (await prisma.user.count({ where: { email: DEMO_STUDIO_LOGIN } })) return;
+  await prisma.user.create({
+    data: {
+      email: DEMO_STUDIO_LOGIN,
+      fullName: 'Lumen Studio',
+      role: UserRole.STUDIO,
+      studioId: studio.id,
+      passwordHash: await bcrypt.hash(SEED_USER_PASSWORD, 12),
+    },
+  });
+}
+
+/** The demo Staff login always ends up with SEED_STAFF_PASSWORD, even when the account existed before. */
+async function seedStaffLogin() {
+  const passwordHash = await bcrypt.hash(SEED_STAFF_PASSWORD, 12);
+  await prisma.user.upsert({
+    where: { email: SEED_STAFF_ACCOUNT.email },
+    update: { passwordHash, role: SEED_STAFF_ACCOUNT.role, isActive: true },
+    create: { ...SEED_STAFF_ACCOUNT, passwordHash },
+  });
+}
+
+/**
+ * Studio Web as an OAuth client (2026-11-12). The redirect_uris come from the same env the API reads, so a
+ * local Studio Web on :3100 works out of the box; production sets OAUTH_STUDIO_WEB_REDIRECT_URIS. With no
+ * OAUTH_STUDIO_WEB_CLIENT_SECRET the client is public and relies on PKCE alone.
+ */
+async function seedStudioWebClient() {
+  const clientId = process.env.OAUTH_STUDIO_WEB_CLIENT_ID || 'studio-web';
+  const studioWebUrl = process.env.STUDIO_WEB_URL || 'http://localhost:3100';
+  const redirectUris = (process.env.OAUTH_STUDIO_WEB_REDIRECT_URIS || `${studioWebUrl}/api/auth/callback`)
+    .split(',')
+    .map((uri) => uri.trim())
+    .filter(Boolean);
+  const secret = process.env.OAUTH_STUDIO_WEB_CLIENT_SECRET;
+  const data = {
+    name: process.env.OAUTH_STUDIO_WEB_NAME || 'Studio Web',
+    redirectUris,
+    scopes: ['studio:portal'],
+    clientSecretHash: secret ? await bcrypt.hash(secret, 12) : null,
+  };
+  await prisma.oAuthClient.upsert({ where: { clientId }, update: data, create: { clientId, ...data } });
 }
 
 async function main() {
@@ -95,9 +128,14 @@ async function main() {
   }
   await seedPermissions();
   await seedPolicies();
-  await seedUsers();
-  await seedReviewerBudgets();
-  console.log('Seeded genres, permissions, policies, development accounts and Reviewer budgets.');
+  await createAccounts(prisma, SEED_ACCOUNTS, SEED_USER_PASSWORD);
+  await seedStaffLogin();
+  await seedRewards();
+  await seedDemoStudio();
+  await seedStudioWebClient();
+  console.log(
+    'Seeded genres, permissions, policies, the platform accounts, rewards, the demo studio and the Studio Web client.',
+  );
 }
 
 main()

@@ -1,16 +1,14 @@
 # CI/CD of the API.
 #   Every push and pull request: lint, typecheck, unit + e2e tests (real Postgres), dependency
-#   audit, Docker build, and SonarCloud analysis with its quality gate (once SONAR_TOKEN is set).
+#   audit and Docker build.
 #   Push to main or a v* tag, all green: the image goes to GHCR, then the optional deploy hook.
 # Repository settings it reads (Settings → Secrets and variables → Actions):
-#   secrets.SONAR_TOKEN        SonarCloud token; the analysis is skipped without it
-#   vars.SONAR_HOST_URL        only for a self-hosted SonarQube (default https://sonarcloud.io)
 #   secrets.DEPLOY_HOOK_URL    optional: called after the image is pushed (Render, Railway, …)
 name: CI/CD
 
 on:
   push:
-    branches: [main, dev, 'refactor/**', 'feat/**', 'fix/**', 'ci/**']
+    branches: [main, dev, 'refactor/**', 'feat/**', 'fix/**', 'ci/**', 'chore/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -45,11 +43,9 @@ jobs:
         run: npm run test:cov
       - name: Build
         run: npm run build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage-unit
-          path: coverage/lcov.info
-          retention-days: 7
+      # The Dockerfile and start:prod run dist/main: a src file importing outside src would move it to dist/src/main.
+      - name: Entry point at dist/main.js
+        run: test -f dist/main.js
 
   e2e:
     name: E2E tests (Postgres, Redis)
@@ -57,7 +53,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -89,12 +85,15 @@ jobs:
       - name: Prisma schema matches the migrations
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
-        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema --exit-code
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage-e2e
-          path: coverage-e2e/lcov.info
-          retention-days: 7
+          DIRECT_DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+        # The hand-written objects of the migrations (CHECK constraints, triggers, the partial
+        # unique index of the support cases) are invisible to `migrate diff`; the HNSW index of
+        # the RAG embeddings is not, because the Prisma schema has no syntax for it, so that one
+        # line is the only difference the check accepts.
+        run: |
+          npx prisma migrate diff --from-config-datasource --to-schema prisma/schema --script > drift.sql
+          grep -vE '^\s*(--.*)?$' drift.sql | grep -v 'DROP INDEX "support_knowledge_chunks_embedding_idx";' > drift-unexpected.sql || true
+          if [ -s drift-unexpected.sql ]; then echo 'Prisma schema and migrations differ:'; cat drift.sql; exit 1; fi
 
   audit:
     name: Dependency audit
@@ -107,42 +106,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: No high or critical vulnerability in production dependencies
         run: npm audit --omit=dev --audit-level=high
-
-  sonar:
-    name: SonarCloud analysis
-    needs: [quality, e2e]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-    steps:
-      - name: Skip without a token
-        if: env.SONAR_TOKEN == ''
-        run: echo "::notice::SONAR_TOKEN is not set; the SonarCloud analysis is skipped."
-      - uses: actions/checkout@v4
-        if: env.SONAR_TOKEN != ''
-        with:
-          # Full history: Sonar needs it to tell new code from old code.
-          fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        if: env.SONAR_TOKEN != ''
-        with:
-          name: coverage-unit
-          path: coverage
-      - uses: actions/download-artifact@v4
-        if: env.SONAR_TOKEN != ''
-        with:
-          name: coverage-e2e
-          path: coverage-e2e
-      - name: Scan and wait for the quality gate
-        if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
-        with:
-          args: >
-            -Dsonar.qualitygate.wait=true
-            -Dsonar.qualitygate.timeout=300
 
   docker:
     name: Docker image

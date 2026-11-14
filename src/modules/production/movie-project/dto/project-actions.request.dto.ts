@@ -39,9 +39,36 @@ export class UpdateEpisodeRequestDto {
 
   @ApiPropertyOptional({
     example: '2026-11-30',
-    description: 'Moves the milestone; not into the past nor before the studio due date already set.',
+    description: 'Moves the delivery deadline (and the studio due date once handed off); not into the past.',
   })
   @IsDateString({ strict: true })
   @IsOptional()
-  milestoneDate?: string;
+  deliveryDeadline?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-12-10',
+    nullable: true,
+    description: "Expected release day within the season's window, not before the deadline; null clears it.",
+  })
+  @IsDateString({ strict: true })
+  @IsOptional()
+  expectedReleaseDate?: string | null;
+}
+
+export class UpdateSeasonRequestDto {
+  @ApiPropertyOptional({ example: 'Mùa 1' })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  title?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-01', nullable: true, description: 'null clears it (BR-60).' })
+  @IsDateString({ strict: true })
+  @IsOptional()
+  releaseStartDate?: string | null;
+
+  @ApiPropertyOptional({ example: '2026-12-31', nullable: true, description: 'null clears it (BR-60).' })
+  @IsDateString({ strict: true })
+  @IsOptional()
+  releaseEndDate?: string | null;
 }

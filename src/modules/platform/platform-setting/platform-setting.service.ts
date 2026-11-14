@@ -5,14 +5,35 @@ import { UpdatePlatformSettingRequestDto } from './dto/update-platform-setting.r
 
 const SETTING_ID = 'default';
 
+/**
+ * Hot-path shield: settings change rarely but are read on every session creation
+ * and every heartbeat. Without this, each read is a write (upsert) on a single row.
+ */
+export const SETTINGS_CACHE_TTL_MS = 30_000;
+
 /** Platform policies only the Admin configures (one row; the column defaults are the initial values). */
 @Injectable()
 export class PlatformSettingService {
+  private cached: { at: number; row: PlatformSetting } | null = null;
+  private inflight: Promise<PlatformSetting> | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
-  /** The settings row, created with its defaults the first time it is read. */
+  /** The settings row, created with its defaults the first time it is read. Cached briefly. */
   get(): Promise<PlatformSetting> {
-    return this.prisma.platformSetting.upsert({ where: { id: SETTING_ID }, create: { id: SETTING_ID }, update: {} });
+    const hit = this.cached;
+    if (hit && Date.now() - hit.at < SETTINGS_CACHE_TTL_MS) return Promise.resolve(hit.row);
+    if (this.inflight) return this.inflight;
+    this.inflight = this.prisma.platformSetting
+      .upsert({ where: { id: SETTING_ID }, create: { id: SETTING_ID }, update: {} })
+      .then((row) => {
+        this.cached = { at: Date.now(), row };
+        return row;
+      })
+      .finally(() => {
+        this.inflight = null;
+      });
+    return this.inflight;
   }
 
   async update(dto: UpdatePlatformSettingRequestDto, updatedById: string): Promise<PlatformSetting> {
@@ -27,6 +48,8 @@ export class PlatformSettingService {
     if (topUpMin > topUpMax) {
       throw new BadRequestException(`The lowest top-up amount (${topUpMin}) cannot exceed the highest (${topUpMax})`);
     }
-    return this.prisma.platformSetting.update({ where: { id: SETTING_ID }, data: { ...dto, updatedById } });
+    const row = await this.prisma.platformSetting.update({ where: { id: SETTING_ID }, data: { ...dto, updatedById } });
+    this.cached = { at: Date.now(), row };
+    return row;
   }
 }

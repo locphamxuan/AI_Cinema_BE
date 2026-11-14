@@ -2,13 +2,14 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import {
   ComplianceResult,
   EpisodeStatus,
-  MovieStatus,
+  ProjectStatus,
   type Episode,
   type Movie,
   type Publication,
   UnpublishMode,
 } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { CdnPurgeService } from 'src/infrastructure/cdn/cdn-purge.service';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { EntitlementService } from 'src/modules/episode-access/entitlement/entitlement.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -25,9 +26,12 @@ import {
 } from 'src/modules/production/project-access/project-rules';
 import type { PublishEpisodeRequestDto, UnpublishRequestDto } from './dto/publishing.request.dto';
 import { EpisodeRevisionService } from './episode-revision.service';
+import { isRefusal, withdrawFailedRelease } from './failed-release';
+import { RoomTerminationService } from 'src/modules/playback/watch-room/room-termination.service';
+import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 /** A project releases episodes while the studio delivers, while it is fixed, and once complete. */
-const RELEASING_PROJECT: MovieStatus[] = [...DELIVERY_PROJECT_STATUSES, MovieStatus.COMPLETED];
+const RELEASING_PROJECT: ProjectStatus[] = [...DELIVERY_PROJECT_STATUSES, ProjectStatus.COMPLETED];
 
 /** Releasable: checked and never released, taken down earlier, or already scheduled (reschedule). */
 const RELEASABLE: EpisodeStatus[] = [
@@ -41,7 +45,8 @@ const COMPLIANCE_ITEMS = 4;
 type EpisodeWithMovie = Episode & { movie: Movie };
 
 /**
- * MF-1 steps 12–16: schedule or publish an episode with its reviewed version (BR-14, BR-19),
+ * MF-1 steps 12–16: the Admin schedules or publishes an episode with its reviewed version once the Reviewer
+ * confirmed it as the Final Film (BR-14, BR-19),
  * take it down, and complete the project once every episode is out (BR-38). The same gate is
  * enforced by database triggers, so no other code path can publish around it.
  */
@@ -58,11 +63,14 @@ export class PublicationService {
     private readonly revisions: EpisodeRevisionService,
     private readonly entitlements: EntitlementService,
     private readonly settings: PlatformSettingService,
+    private readonly cdn: CdnPurgeService,
+    private readonly roomTermination: RoomTerminationService,
   ) {}
 
   async publish(episodeId: string, dto: PublishEpisodeRequestDto, user: AuthenticatedUser) {
-    const episode = await this.access.episode(episodeId, user, 'reviewer');
-    assertProjectStatus(episode.movie.status, RELEASING_PROJECT, 'publish');
+    // MF-1 (07/11/2026): only the Admin publishes, once the Reviewer confirmed the Final Film.
+    const episode = await this.access.episode(episodeId, user, 'read');
+    assertProjectStatus(episode.project.status, RELEASING_PROJECT, 'publish');
     assertEpisodeStatus(episode.status, RELEASABLE, 'publish');
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
     if (scheduledAt && scheduledAt <= new Date()) {
@@ -87,7 +95,7 @@ export class PublicationService {
             action: CONTENT_EVENT.EPISODE_SCHEDULED,
             entityType: 'Publication',
             entityId: publication.id,
-            movieId: episode.movieId,
+            projectId: episode.movieId,
             actorId: user.id,
             payload: { episodeId, scheduledAt: scheduledAt.toISOString(), rescheduled: Boolean(pending) },
           },
@@ -107,7 +115,7 @@ export class PublicationService {
   async unpublish(publicationId: string, dto: UnpublishRequestDto, user: AuthenticatedUser) {
     const publication = await this.prisma.publication.findUnique({ where: { id: publicationId } });
     if (!publication) throw new NotFoundException('Publication not found');
-    const episode = await this.access.episode(publication.episodeId, user, 'reviewer');
+    const episode = await this.access.episode(publication.episodeId, user, 'read');
     if (publication.unpublishedAt) throw new ConflictException('This release was already taken down');
 
     const live = publication.publishedAt !== null;
@@ -118,6 +126,7 @@ export class PublicationService {
       );
     }
     const mode = live ? dto.mode! : null;
+    let mailId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.publication.updateMany({
         where: { id: publicationId, unpublishedAt: null, publishedAt: live ? { not: null } : null },
@@ -131,7 +140,7 @@ export class PublicationService {
       });
       if (count === 0) throw new ConflictException('The release changed meanwhile; reload it');
       if (mode === UnpublishMode.REVISION) {
-        await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
+        mailId = await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
       } else {
         // A cancelled schedule goes back to the checked state; a removed episode can be released again.
         await this.moveEpisode(tx, episode, live ? EpisodeStatus.UNPUBLISHED : EpisodeStatus.COMPLIANCE_PASSED);
@@ -146,13 +155,19 @@ export class PublicationService {
           action: CONTENT_EVENT.EPISODE_UNPUBLISHED,
           entityType: 'Publication',
           entityId: publicationId,
-          movieId: episode.movieId,
+          projectId: episode.movieId,
           actorId: user.id,
           payload: { episodeId: episode.id, mode, reason: dto.reason, note: dto.note.trim(), cancelledSchedule: !live },
         },
         tx,
       );
     });
+    await this.revisions.announce(mailId);
+    // The episode is down: drop its HLS objects from the edge cache, so a signed URL issued
+    // before the take-down cannot keep playing cached segments. Best effort, never blocking.
+    if (live) await this.cdn.purgeAsset(publication.mediaAssetId);
+    // Edge 1.4 (BR-69): a live takedown reaches every watch room on the episode at once.
+    if (live) await this.roomTermination.episodeTakenDown(episode.id);
     return this.list(episode.id, user);
   }
 
@@ -182,9 +197,23 @@ export class PublicationService {
         released += 1;
       } catch (error) {
         this.logger.error(`Scheduled release ${publication.id} failed: ${(error as Error).message}`);
+        // A refusal (business rule, database gate) would fail every later sweep the same way:
+        // the schedule is withdrawn and the Reviewer told, instead of retrying it forever.
+        // An outage is left due, so the next sweep tries again.
+        if (isRefusal(error)) await this.withdraw(publication, (error as Error).message);
       }
     }
     return released;
+  }
+
+  private async withdraw(publication: Publication, cause: string): Promise<void> {
+    try {
+      await this.prisma.$transaction((tx) =>
+        withdrawFailedRelease(tx, publication, cause, { auditLog: this.auditLog, notifications: this.notifications }),
+      );
+    } catch (error) {
+      this.logger.error(`Withdrawing scheduled release ${publication.id} failed: ${(error as Error).message}`);
+    }
   }
 
   /** What still blocks the release (BR-19, step 12); empty when it can go out. */
@@ -192,9 +221,12 @@ export class PublicationService {
     const missing: string[] = [];
     const mediaAssetId = episode.approvedMediaAssetId;
     if (!mediaAssetId) missing.push('an approved media version');
+    if (episode.status === EpisodeStatus.COMPLIANCE_PASSED && !episode.finalConfirmedAt) {
+      missing.push('the Final Film confirmation of the Reviewer');
+    }
     if (episode.coinPrice === null) missing.push('a Coin price (BR-29)');
     if (!episode.movie.synopsis?.trim()) missing.push('the movie synopsis');
-    if (!episode.movie.ageRating) missing.push('the movie age rating (BR-54)');
+    if (!episode.movie.ageRating) missing.push('the movie age rating');
     if (mediaAssetId) {
       const [label, passed] = await Promise.all([
         this.prisma.aiContentLabel.count({ where: { mediaAssetId } }),
@@ -214,12 +246,11 @@ export class PublicationService {
       data: { publishedAt: now },
     });
     if (count === 0) throw new ConflictException('The release changed meanwhile; reload it');
-    const episode = await tx.episode.findUniqueOrThrow({
-      where: { id: publication.episodeId },
-      include: { movie: true },
-    });
+    const episode = liftProject(
+      await tx.episode.findUniqueOrThrow({ where: { id: publication.episodeId }, include: WITH_PROJECT }),
+    );
     // A scheduled release of a project cancelled meanwhile never goes out (BR-39).
-    assertProjectStatus(episode.movie.status, RELEASING_PROJECT, 'publish');
+    assertProjectStatus(episode.project.status, RELEASING_PROJECT, 'publish');
     await this.moveEpisode(tx, episode, EpisodeStatus.PUBLISHED);
     if (episode.revisionStartedAt) {
       // The fixed version is out: no longer shown as under maintenance (BR-56).
@@ -230,7 +261,7 @@ export class PublicationService {
         action: CONTENT_EVENT.EPISODE_PUBLISHED,
         entityType: 'Publication',
         entityId: publication.id,
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         actorId,
         payload: {
           episodeId: episode.id,
@@ -242,12 +273,12 @@ export class PublicationService {
       tx,
     );
     await this.notifications.notify(
-      [episode.movie.reviewerId, episode.movie.creatorId],
+      [episode.project.reviewerId, episode.project.creatorId],
       {
         type: NOTIFICATION_TYPE.EPISODE_PUBLISHED,
         title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã phát hành`,
         link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-        payload: { movieId: episode.movieId, episodeId: episode.id, publicationId: publication.id },
+        payload: { projectId: episode.movieId, episodeId: episode.id, publicationId: publication.id },
       },
       tx,
     );

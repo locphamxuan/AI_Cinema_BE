@@ -64,7 +64,7 @@ export class AdminWalletService {
           action: CONTENT_EVENT.COIN_ADJUSTED,
           entityType: 'CoinWallet',
           entityId: wallet.id,
-          movieId: null,
+          projectId: null,
           actorId: admin.id,
           payload: {
             userId: dto.userId,

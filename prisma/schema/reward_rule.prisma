@@ -1,14 +1,16 @@
 /// What one day of a check-in streak pays; the Admin edits the ladder and switches days on and
-/// off. Exactly one row per streak day is in force at a time.
+/// off. At most one active row per streak day (partial unique index in the migration). Check-in
+/// rewards are bonus Coins only (BR-05): main Coins come from real money alone.
 model RewardRule {
   id          String   @id @default(uuid()) @db.Uuid
   code        String   @unique @db.VarChar(50)
   name        String   @db.VarChar(255)
   /// 1 = the first day of a streak.
   streakDay   Int      @map("streak_day")
-  coins       Int
-  /// Coins paid on top of `coins`, on this streak day only (day 7 = the milestone).
-  bonusCoins  Int      @default(0) @map("bonus_coins")
+  /// Bonus Coins this streak day pays; they land in a lot that expires (BR-28).
+  bonusCoins  Int      @map("bonus_coins")
+  /// The milestone day: checking in on it also grants one reward spin (BR-09).
+  grantsSpin  Boolean  @default(false) @map("grants_spin")
   isActive    Boolean  @default(true) @map("is_active")
   createdById String   @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

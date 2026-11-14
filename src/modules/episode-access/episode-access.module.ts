@@ -6,13 +6,13 @@ import { DailyRewardModule } from './daily-reward/daily-reward.module';
 import { EntitlementModule } from './entitlement/entitlement.module';
 import { EpisodePurchaseModule } from './episode-purchase/episode-purchase.module';
 import { MembershipPlanModule } from './membership-plan/membership-plan.module';
-import { SeriesPurchaseModule } from './series-purchase/series-purchase.module';
+import { RewardSpinModule } from './reward-spin/reward-spin.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { BillingReportModule } from 'src/modules/episode-access/billing-reports/billing-report.module';
 
 /**
- * Main Flow 2 in one place: the Coin wallet, the access decision, buying an episode or a series,
- * topping Coins up, the daily check-in, the monthly plans and the reports Billing reads.
+ * Main Flow 2 in one place: the Coin wallet, the access decision, buying an episode,
+ * topping Coins up, the daily check-in and its reward wheel, the monthly plans and the reports Billing reads.
  * Publishing calls EntitlementService when content is taken down for good.
  */
 @Module({
@@ -20,10 +20,10 @@ import { BillingReportModule } from 'src/modules/episode-access/billing-reports/
     CoinWalletModule,
     AccessDecisionModule,
     EpisodePurchaseModule,
-    SeriesPurchaseModule,
     EntitlementModule,
     CoinTopUpModule,
     DailyRewardModule,
+    RewardSpinModule,
     MembershipPlanModule,
     SubscriptionModule,
     BillingReportModule,

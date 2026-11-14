@@ -3,8 +3,7 @@ model PlatformSetting {
   id                              String   @id @default("default") @db.VarChar(32)
   /// BR-03
   freeStarterEpisodeCount         Int      @default(2) @map("free_starter_episode_count")
-  /// BR-45: VND value of one Token (production fee) and of one main Coin (revenue).
-  tokenRateVnd                    Int      @default(1000) @map("token_rate_vnd")
+  /// BR-45: VND value of one main Coin (revenue).
   coinRateVnd                     Int      @default(1000) @map("coin_rate_vnd")
   /// BR-47: valid Coin price of one episode; a price outside it alerts the Admin.
   episodeCoinPriceMin             Int      @default(1) @map("episode_coin_price_min")
@@ -16,8 +15,8 @@ model PlatformSetting {
   /// Hours before the renewal date a member may still stop auto-renew; a later request is
   /// refused and the renewal goes through.
   subscriptionCancelWindowHours   Int      @default(24) @map("subscription_cancel_window_hours")
-  /// Hours auto-renew keeps retrying a cycle the wallet could not cover before the membership
-  /// ends. Access runs on until the end of the period already paid for.
+  /// Hours a failed renewal stays PAST_DUE while the sweeper retries it automatically; no access
+  /// meanwhile. 0 = no grace, the plan ends at once (BR-30).
   planRenewalGraceHours           Int      @default(48) @map("plan_renewal_grace_hours")
   /// Bonus Coins a new account is given; 0 = none.
   newMemberBonusCoins             Int      @default(0) @map("new_member_bonus_coins")
@@ -26,6 +25,11 @@ model PlatformSetting {
   coinTopUpMaxVnd                 Int      @default(2000000) @map("coin_top_up_max_vnd")
   /// A purchase of an episode taken down for good is refunded in main Coins.
   refundOnRemoval                 Boolean  @default(true) @map("refund_on_removal")
+  /// MF-3 step 18: position/duration percent that counts as completed.
+  episodeCompletionPercent        Int      @default(90) @map("episode_completion_percent")
+  /// MF-3 step 13: how many random mid-roll cues an episode gets when the Admin has not placed
+  /// its cues by hand (episode_ad_slots).
+  adMaxBreaksPerEpisode           Int      @default(2) @map("ad_max_breaks_per_episode")
   updatedById                     String?  @map("updated_by") @db.Uuid
   updatedAt                       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

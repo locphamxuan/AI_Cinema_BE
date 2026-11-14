@@ -1,6 +1,5 @@
 enum PaymentProvider {
   VNPAY
-  MOMO
 }
 
 enum PaymentStatus {

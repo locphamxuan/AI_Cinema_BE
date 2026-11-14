@@ -10,7 +10,4 @@ test
 .codegraph
 *.log
 coverage-e2e
-.scannerwork
-sonar-project.properties
 .github
-docker-compose.sonar.yml

@@ -1,11 +1,11 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
-import { MediaIngestStatus, MediaSourceMethod } from '@prisma/client';
+import { MediaIngestStatus, MediaSourceMethod, EpisodeStatus } from '@prisma/client';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JobQueue } from 'src/infrastructure/queue/job-queue.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
-import { probeHls } from './hls-playlist';
+import { probeHls } from 'src/common/hls/hls-playlist';
 
 export interface HlsCheckResult {
   checked: number;
@@ -40,7 +40,11 @@ export class HlsLinkCheckJob implements OnModuleInit {
         approvedInEpisode: { isNot: null },
       },
       include: {
-        episode: { include: { movie: { select: { id: true, title: true, reviewerId: true, creatorId: true } } } },
+        episode: {
+          include: {
+            movie: { select: { id: true, title: true, project: { select: { reviewerId: true, studioId: true } } } },
+          },
+        },
       },
     });
 
@@ -60,12 +64,15 @@ export class HlsLinkCheckJob implements OnModuleInit {
         });
         if (reported) continue;
         const { movie } = asset.episode;
-        await this.notifications.notify([movie.creatorId, movie.reviewerId], {
+        const studio = await this.notifications.studioAccountIds(movie.project?.studioId);
+        // A live episode fails its viewers right now: the Admins hear of it too and may take it down.
+        const admins = asset.episode.status === EpisodeStatus.PUBLISHED ? await this.notifications.adminIds() : [];
+        await this.notifications.notify([...studio, movie.project?.reviewerId, ...admins], {
           type: NOTIFICATION_TYPE.HLS_LINK_DEAD,
           title: `Link video tập ${asset.episode.episodeNumber} của phim "${movie.title}" không còn hoạt động`,
           body: `${(error as Error).message}. Hãy nhờ studio sửa link hoặc giao lại tập.`,
           link: `/projects/${movie.id}/episodes/${asset.episodeId}`,
-          payload: { movieId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
+          payload: { projectId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
         });
       }
     }

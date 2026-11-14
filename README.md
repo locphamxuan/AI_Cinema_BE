@@ -1,7 +1,6 @@
 # AI Cinema — Backend
 
 [![CI/CD](https://github.com/locphamxuan/AI_Cinema_BE/actions/workflows/ci.yml/badge.svg)](https://github.com/locphamxuan/AI_Cinema_BE/actions/workflows/ci.yml)
-[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=locphamxuan_AI_Cinema_BE&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=locphamxuan_AI_Cinema_BE)
 
 NestJS 11 + Prisma 7 (PostgreSQL) API of AI Cinema. MF-1 — *Movie Project Management &
 Publishing* — is implemented end to end: movies are commissioned from studios outside the
@@ -9,9 +8,12 @@ platform, delivered, reviewed, labeled as AI content, checked for compliance, pr
 released and browsed in the public catalog. The business rules (BR-xx) live in the root
 `docs/PROJECT_OVERVIEW.md`.
 
+Phát HLS qua CDN (Cloudflare R2 + Cloudflare CDN, URL có chữ ký, purge cache khi gỡ tập):
+xem [`docs/cdn-cloudflare-r2.md`](docs/cdn-cloudflare-r2.md).
+
 ## Run it
 
-Requires Node.js 20.19+. Pick one of the two ways.
+Requires Node.js 24.9+ (as in `engines`, CI and the Dockerfile). Pick one of the two ways.
 
 ### A. Docker (Postgres + Redis + API, nothing else to install)
 
@@ -31,13 +33,18 @@ The database is published on `localhost:54320` (`postgres` / `postgres`, db `ai_
 npm ci                      # also generates the Prisma client (postinstall)
 cp .env.example .env        # set DATABASE_URL and JWT_SECRET
 npx prisma migrate deploy   # create or update the schema
-npx prisma db seed          # genres, permissions, legal policies, demo accounts
+npx prisma db seed          # genres, permissions, legal policies, the four platform accounts
 npm run start:local         # http://localhost:3001/api, Swagger on /api/docs
 ```
 
-The seed creates `creator01`..`08`, `reviewer01`..`06`, `staff01`, `admin` and `member01`
-`@aicinema.com`, all signing in with `SEED_USER_PASSWORD` (default `Aicinema@123`). Existing
-accounts keep their password. Public registration always creates a `MEMBER` (18+, BR-54).
+The seed creates the platform's four accounts only: `admin@gmail.com` (Admin), `reviewer@gmail.com`
+(Reviewer), `creator.aicinema@gmail.com` (Creator) and `abc@gmail.com` (Member). A new one signs in
+with `SEED_USER_PASSWORD` (default `Aicinema@123`); an existing account keeps its password. Public
+registration always creates a `MEMBER` (18+, BR-54). The e2e suites add their own extra accounts in
+their own database (`test/support/e2e-accounts.ts`).
+
+With a pooled `DATABASE_URL` (Neon's `-pooler` host), set `DIRECT_DATABASE_URL` to the direct host: the
+Prisma CLI uses it, since a pooler cannot hold the lock `migrate deploy` takes (error P1002).
 
 The baseline migration of 2026-10-01 expects an **empty** database: a database still holding the
 old self-production schema has to be reset once (`npx prisma migrate reset`, development only).
@@ -67,44 +74,24 @@ media pipeline as a mock, so FFmpeg is not needed for tests.
 | Lint, typecheck, unit tests, build | ESLint + Prettier without autofix, `tsc`, unit tests with coverage, `nest build` |
 | E2E tests (Postgres) | the e2e suite with coverage against a Postgres service, then that `prisma/schema` matches the migrations |
 | Dependency audit | no high or critical vulnerability in production dependencies |
-| SonarCloud analysis | bugs, vulnerabilities, code smells, duplication and the merged unit + e2e coverage; fails when the quality gate fails |
 | Docker image | builds the `runtime` image; on `main` or a `v*` tag, once everything above is green, pushes it to `ghcr.io/locphamxuan/ai_cinema_be` and calls the deploy hook |
 
 Repository settings (*Settings → Secrets and variables → Actions*):
 
-- `SONAR_TOKEN` (secret) — without it the analysis is skipped, everything else still runs.
-- `SONAR_HOST_URL` (variable) — only for a self-hosted SonarQube; defaults to SonarCloud.
 - `DEPLOY_HOOK_URL` (secret, optional) — e.g. a Render or Railway deploy hook, called after the
   image is pushed. The deployed container runs `npx prisma migrate deploy` first if the host
   allows a release command; otherwise run the `migrate` target of the Dockerfile.
-
-### Set up SonarCloud (once)
-
-1. Sign in to https://sonarcloud.io with GitHub and import `locphamxuan/AI_Cinema_BE`.
-2. In the project, *Administration → Analysis Method*: turn **Automatic Analysis off** (the CI
-   analysis carries the coverage).
-3. *My Account → Security*: generate a token, save it as the `SONAR_TOKEN` repository secret.
-4. If the organization or project key differ from `sonar-project.properties`, change them there.
-
-### Analyse locally (self-hosted SonarQube)
-
-```bash
-docker compose -f docker-compose.sonar.yml up -d     # http://localhost:9000, admin / admin
-# create a project "locphamxuan_AI_Cinema_BE" and a token in the UI, then:
-npm run test:cov && npm run test:e2e:db && npm run test:e2e:cov
-npx @sonar/scan -Dsonar.host.url=http://localhost:9000 -Dsonar.token=<token>
-```
-
-`@sonar/scan` is SonarSource's scanner on npm; it downloads its own Java runtime the first time.
 
 ## Code layout
 
 ```
 src/
   common/            auth, permissions, decorators, guards, HTTP envelope, validation,
-                     security (SSRF-safe URL fetching), time (business day in Vietnam)
+                     security (SSRF-safe URL fetching), time (business day in Vietnam),
+                     hls (playlist parsing and the quality ladder shared by ingest and playback)
   config/            typed configuration, checked at start-up
-  infrastructure/    Prisma, object storage (local / S3-R2), job queue (BullMQ or in-process), mailer
+  infrastructure/    Prisma, object storage (local / S3-R2), job queue (BullMQ or in-process), mailer,
+                     media (FFmpeg/ffprobe processor used by media-ingest and ads)
   modules/
     identity/        auth, user, access-control (accounts, sessions, RBAC)
     platform/        notification, audit-log, email outbox, genre, policy, platform-setting
@@ -127,8 +114,8 @@ All under `src/modules/production/` except `catalog`.
 
 | Module | Steps | What it does |
 | --- | --- | --- |
-| `movie-project`, `production-fee` | 1–2 | projects, seasons, episodes, idea files, Token production fee, Admin change proposals (BR-55) |
-| `studio-handoff` | 3–4 | hand-off to a studio with a brief PDF by email, studio changes, deadlines and overdue alerts |
+| `movie-project`, `production-cost`, `cost-request` | 1–2 | projects, seasons, episodes, idea files, production budget in VND set by the Admin, Reviewer requests for more cost, Admin change proposals (BR-55) |
+| `studio-handoff` | 3–4 | hand-off to a studio with a brief PDF by email offering a fixed VND fee within the budget left, studio changes, deadlines and overdue alerts |
 | `media-ingest` | 5–7 | deliveries by upload, HLS link or import URL (SSRF-safe), FFmpeg HLS ladder, link checks |
 | `content-review` | 8–11 | review, AI label (BR-40) and the four compliance items (BR-42) |
 | `publishing` | 12–16 | Coin price and price alerts (BR-47), scheduling, releases, take-downs to fix or for good (BR-56) |

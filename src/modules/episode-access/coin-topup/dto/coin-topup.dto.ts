@@ -35,3 +35,14 @@ export class CoinTopUpView {
   @ApiProperty({ nullable: true })
   expiresAt: Date | null;
 }
+
+export class TopUpOptionsView {
+  @ApiProperty({ example: 1000, description: 'VND per Coin; Coins granted = floor(amountVnd / rateVnd)' })
+  rateVnd: number;
+
+  @ApiProperty({ example: 10000 })
+  minVnd: number;
+
+  @ApiProperty({ example: 2000000 })
+  maxVnd: number;
+}

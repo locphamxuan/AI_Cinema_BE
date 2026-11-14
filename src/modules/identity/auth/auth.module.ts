@@ -9,6 +9,8 @@ import { AccessControlModule } from 'src/modules/identity/access-control/access-
 import { PermissionsGuard } from 'src/modules/identity/access-control/permissions.guard';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { GoogleTokenVerifier } from './google-token.verifier';
+import { PasswordResetService } from './password-reset.service';
 import { SessionTokenService } from './session-token.service';
 
 @Global()
@@ -29,9 +31,12 @@ import { SessionTokenService } from './session-token.service';
   providers: [
     AuthService,
     SessionTokenService,
+    GoogleTokenVerifier,
+    PasswordResetService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
-  exports: [SessionTokenService],
+  // JwtModule rides along for the WebSocket gateways (handshake) and the OAuth token endpoint (scoped tokens).
+  exports: [SessionTokenService, JwtModule],
 })
 export class AuthModule {}

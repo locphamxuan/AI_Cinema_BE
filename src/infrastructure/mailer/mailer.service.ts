@@ -8,6 +8,15 @@ export interface OutgoingMail {
   text: string;
   html?: string;
   attachments?: { filename: string; content: Buffer; contentType?: string }[];
+  /** Display name shown instead of the platform's; the address stays the SMTP account's (Gmail rewrites others). */
+  fromName?: string;
+  /** Where the recipient's reply goes, e.g. the Creator who sent the brief. */
+  replyTo?: string;
+}
+
+/** The bare address of a `Name <address>` string. */
+function addressOf(from: string): string {
+  return /<([^>]+)>/.exec(from)?.[1] ?? from;
 }
 
 /** SMTP sender (Mailtrap during development). Without SMTP_HOST mails are only logged. */
@@ -31,8 +40,9 @@ export class MailerService {
       : createTransport({ jsonTransport: true });
   }
 
-  async send(mail: OutgoingMail): Promise<void> {
-    await this.transport.sendMail({ from: this.from, ...mail });
+  async send({ fromName, ...mail }: OutgoingMail): Promise<void> {
+    const from = fromName ? { name: fromName, address: addressOf(this.from) } : this.from;
+    await this.transport.sendMail({ from, ...mail });
     if (!this.delivers) {
       this.logger.log(`SMTP is not configured; "${mail.subject}" to ${mail.to} was not delivered`);
     }

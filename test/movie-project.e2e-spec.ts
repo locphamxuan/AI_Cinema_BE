@@ -1,19 +1,29 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
-import { inDays } from './support/projects';
+import { fundProject, inDays, newStudio } from './support/projects';
 
 interface Project extends Row {
   status: string;
-  productionFeeTokens: number;
+  cost: { budgetVnd: number; committedVnd: number; remainingVnd: number };
   openChangeRequests: number;
   seasons: {
+    id: string;
     seasonNumber: number;
-    episodes: { id: string; episodeNumber: number; status: string; milestoneDate: string | null }[];
+    releaseStartDate: string | null;
+    releaseEndDate: string | null;
+    episodes: {
+      id: string;
+      episodeNumber: number;
+      status: string;
+      deliveryDeadline: string | null;
+      expectedReleaseDate: string | null;
+    }[];
   }[];
 }
 
 const PDF = Buffer.from('%PDF-1.7\n1 0 obj\n<<>>\nendobj\n');
+const PROOF = { field: 'proof', name: 'bao-gia.pdf', content: PDF };
 
 describe('Movie projects (e2e)', () => {
   let app: INestApplication<App>;
@@ -41,70 +51,130 @@ describe('Movie projects (e2e)', () => {
     title: 'Căn Hộ Số 13',
     ideaDescription: 'Phim kinh dị tâm lý về một căn hộ không ai dám thuê.',
     genreIds: [genreId],
-    seasons: [{ title: 'Mùa 1', episodes: episodes.slice(0, 2) }, { episodes: episodes.slice(2) }],
+    reviewerId: reviewer.id,
+    seasons: [
+      {
+        title: 'Mùa 1',
+        releaseStartDate: inDays(40),
+        releaseEndDate: inDays(80),
+        episodes: episodes.slice(0, 2),
+      },
+      { episodes: episodes.slice(2) },
+    ],
   });
 
   it('creates a project whose episodes are numbered across seasons (BR-37)', async () => {
-    const project = await reviewer.post<Project>(
+    const project = await admin.post<Project>(
       '/projects',
       newProject([
-        { title: 'Tập 1', targetDurationSeconds: 900, milestoneDate: inDays(20) },
-        { title: 'Tập 2', targetDurationSeconds: 2700, milestoneDate: inDays(27) },
-        { title: 'Tập 3', targetDurationSeconds: 600, milestoneDate: inDays(34) },
+        { title: 'Tập 1', targetDurationSeconds: 900, deliveryDeadline: inDays(20), expectedReleaseDate: inDays(45) },
+        { title: 'Tập 2', targetDurationSeconds: 2700, deliveryDeadline: inDays(27) },
+        { title: 'Tập 3', targetDurationSeconds: 600, deliveryDeadline: inDays(34) },
       ]),
     );
     projectId = project.id;
     expect(project.status).toBe('DRAFT');
     expect(project.seasons.map((s) => s.episodes.map((e) => e.episodeNumber))).toEqual([[1, 2], [3]]);
-    expect(project.seasons[0].episodes[0].milestoneDate).toContain(inDays(20));
+    expect(project.seasons[0].episodes[0].deliveryDeadline).toContain(inDays(20));
+    expect(project.seasons[0].releaseEndDate).toContain(inDays(80));
   });
 
-  it('needs a milestone, today or later, for every episode', async () => {
+  it('adds a genre the list does not have yet when the project names it', async () => {
+    const name = `Thể loại mới ${Date.now()}`;
+    const project = await admin.post<Project & { genres: Row[]; synopsis: string; releaseYear: number }>('/projects', {
+      ...newProject(
+        [1, 2, 3].map((n) => ({ title: `Tập ${n}`, targetDurationSeconds: 900, deliveryDeadline: inDays(20 + n) })),
+      ),
+      genreNames: [name],
+      synopsis: 'Tóm tắt cho người xem.',
+      releaseYear: 2026,
+      ageRating: 'T16',
+    });
+    expect(project.genres.map((g) => g.name)).toContain(name);
+    expect(project).toMatchObject({ synopsis: 'Tóm tắt cho người xem.', releaseYear: 2026, ageRating: 'T16' });
+    const listed = await reviewer.get<{ data: Row[] }>(`/genres?search=${encodeURIComponent(name)}`);
+    expect(listed.data).toHaveLength(1);
+  });
+
+  it('needs a delivery deadline, today or later, for every episode', async () => {
     const episode = { title: 'Tập 1', targetDurationSeconds: 900 };
-    await reviewer.post('/projects', newProject([episode]), 400);
-    await reviewer.post('/projects', newProject([{ ...episode, milestoneDate: '2020-01-01' }]), 400);
+    await admin.post('/projects', newProject([episode]), 400);
+    await admin.post('/projects', newProject([{ ...episode, deliveryDeadline: '2020-01-01' }]), 400);
     await reviewer.post(`/projects/${projectId}/seasons`, { episodes: [episode] }, 400);
 
     const [first] = (await reviewer.get<Project>(`/projects/${projectId}`)).seasons[0].episodes;
-    await reviewer.patch(`/episodes/${first.id}`, { milestoneDate: '2020-01-01' }, 400);
-    const moved = await reviewer.patch<{ milestoneDate: string }>(`/episodes/${first.id}`, {
-      milestoneDate: inDays(21),
+    await reviewer.patch(`/episodes/${first.id}`, { deliveryDeadline: '2020-01-01' }, 400);
+    const moved = await reviewer.patch<{ deliveryDeadline: string }>(`/episodes/${first.id}`, {
+      deliveryDeadline: inDays(21),
     });
-    expect(moved.milestoneDate).toContain(inDays(21));
-    await creator.patch(`/episodes/${first.id}`, { milestoneDate: inDays(40) }, 403);
+    expect(moved.deliveryDeadline).toContain(inDays(21));
+    await creator.patch(`/episodes/${first.id}`, { deliveryDeadline: inDays(40) }, 403);
+  });
+
+  it('keeps the expected release date inside the season window and after the deadline (BR-60)', async () => {
+    const [season] = (await reviewer.get<Project>(`/projects/${projectId}`)).seasons;
+    const [first, second] = season.episodes;
+    await reviewer.patch(`/episodes/${first.id}`, { expectedReleaseDate: inDays(10) }, 400);
+    await reviewer.patch(`/episodes/${first.id}`, { expectedReleaseDate: inDays(100) }, 400);
+    await reviewer.patch(`/episodes/${first.id}`, { expectedReleaseDate: inDays(50) });
+    await reviewer.patch(`/episodes/${second.id}`, { expectedReleaseDate: inDays(55) });
+
+    await reviewer.patch(`/seasons/${season.id}`, { releaseEndDate: inDays(52) }, 400);
+    await reviewer.patch(`/episodes/${second.id}`, { expectedReleaseDate: null });
+    const shorter = await reviewer.patch<{ releaseEndDate: string }>(`/seasons/${season.id}`, {
+      releaseEndDate: inDays(52),
+    });
+    expect(shorter.releaseEndDate).toContain(inDays(52));
+    await reviewer.patch(`/seasons/${season.id}`, { releaseStartDate: inDays(60) }, 400);
+  });
+
+  it('gives a project one active studio from the catalog (BR-59)', async () => {
+    const studio = await newStudio(reviewer);
+    const admin = await reviewer.signInAs('admin@aicinema.com');
+    // Only the Admin chooses the studio (creation, Final Script, studio change) and manages the catalog (12/11/2026).
+    await reviewer.patch(`/projects/${projectId}`, { studioId: studio.id }, 403);
+    await reviewer.patch(`/studios/${studio.id}`, { isActive: false }, 403);
+    await admin.patch(`/studios/${studio.id}`, { isActive: false });
+    const inactive = await admin.get<{ isActive: boolean }>(`/studios/${studio.id}`);
+    expect(inactive.isActive).toBe(false);
+    await admin.patch(`/studios/${studio.id}`, { isActive: true });
   });
 
   it('keeps projects private to their Reviewer and away from Creators who are not assigned', async () => {
     await creator.post('/projects', { title: 'x' }, 403);
+    // MF-1 (07/11/2026): only the Admin creates projects now.
+    await reviewer.post('/projects', newProject([]), 403);
     await otherReviewer.get(`/projects/${projectId}`, 404);
     await creator.get(`/projects/${projectId}`, 404);
-    await otherReviewer.post(`/projects/${projectId}/fee/entries`, { entryType: 'INITIAL', amountTokens: 1 }, 404);
+    await otherReviewer.get(`/projects/${projectId}/costs`, 404);
   });
 
-  it('assigns the Creator only once the production fee is allocated (BR-12)', async () => {
-    await reviewer.post(`/projects/${projectId}/assign`, { creatorId: creator.id }, 409);
-    await reviewer.post(`/projects/${projectId}/fee/entries`, { entryType: 'INITIAL', amountTokens: 50000 });
-    await reviewer.post(`/projects/${projectId}/fee/entries`, { entryType: 'INITIAL', amountTokens: 10 }, 409);
-    await reviewer.post(`/projects/${projectId}/fee/entries`, { entryType: 'TOP_UP', amountTokens: 5000 }, 400);
-    await reviewer.post(
-      `/projects/${projectId}/fee/entries`,
-      { entryType: 'CORRECTION', amountTokens: -50000, reason: 'typo' },
-      400,
-    );
-    const fee = await reviewer.post<{ totalTokens: number }>(`/projects/${projectId}/fee/entries`, {
-      entryType: 'TOP_UP',
-      amountTokens: 5000,
-      reason: 'Extra VFX',
-    });
-    expect(fee.totalTokens).toBe(55000);
+  it('lets the Admin assign the lead Creator and set the budget in VND (MF-1 step 1, BR-46)', async () => {
+    // The budget is the Admin's: a Reviewer cannot set it, nor a Creator.
+    await reviewer.post(`/projects/${projectId}/costs/entries`, { entryType: 'BUDGET', amountVnd: 1000 }, 403);
+    await fundProject(reviewer, projectId, 120_000_000);
 
-    await reviewer.post(`/projects/${projectId}/assign`, { creatorId: otherReviewer.id }, 400);
-    await reviewer.post(`/projects/${projectId}/assign`, { creatorId: creator.id }, 204);
+    await reviewer.post(`/projects/${projectId}/assign`, { creatorId: creator.id }, 403);
+    await admin.post(`/projects/${projectId}/assign`, { creatorId: otherReviewer.id }, 400);
+    await admin.post(`/projects/${projectId}/assign`, { creatorId: creator.id }, 204);
     const project = await creator.get<Project>(`/projects/${projectId}`);
-    expect(project).toMatchObject({ status: 'ASSIGNED', productionFeeTokens: 55000 });
+    expect(project).toMatchObject({
+      status: 'ASSIGNED',
+      cost: { budgetVnd: 120_000_000, committedVnd: 0, remainingVnd: 120_000_000 },
+    });
 
     const bell = await creator.get<{ data: { type: string }[] }>('/notifications');
     expect(bell.data.map((n) => n.type)).toContain('PROJECT_ASSIGNED');
+  });
+
+  it('lets the Admin and the lead Creator align on the idea, the Reviewer following (MF-1 §1)', async () => {
+    await admin.post(`/projects/${projectId}/notes`, { message: 'Giữ không khí u tối, kết mở.' });
+    const notes = await creator.post<{ message: string; author: { id: string } }[]>(`/projects/${projectId}/notes`, {
+      message: 'Đồng ý, em sẽ viết kịch bản theo hướng đó.',
+    });
+    expect(notes.map((n) => n.author.id)).toEqual([admin.id, creator.id]);
+    expect((await reviewer.get<Row[]>(`/projects/${projectId}/notes`)).length).toBe(2);
+    await otherReviewer.post(`/projects/${projectId}/notes`, { message: 'Xin chào' }, 404);
   });
 
   it('versions idea files and checks their content, not their name', async () => {
@@ -119,42 +189,93 @@ describe('Movie projects (e2e)', () => {
     const download = await creator.download(`/projects/${projectId}/idea-files/${second.id}/content`);
     expect(download.body.equals(PDF)).toBe(true);
     expect(download.type).toContain('application/pdf');
+
+    const script = Buffer.from('Cảnh 1: Nhân vật bước vào rạp phim.\n', 'utf8');
+    const textFile = await reviewer.upload<{ id: string; mimeType: string }>(`/projects/${projectId}/idea-files`, {
+      field: 'file',
+      name: 'kich-ban.txt',
+      content: script,
+    });
+    expect(textFile.mimeType).toBe('text/plain');
+    const textDownload = await creator.download(`/projects/${projectId}/idea-files/${textFile.id}/content`);
+    expect(textDownload.body.equals(script)).toBe(true);
+    expect(textDownload.type).toContain('text/plain');
+
+    await reviewer.upload(
+      `/projects/${projectId}/idea-files`,
+      { field: 'file', name: 'binary.txt', content: Buffer.from([0x4d, 0x5a, 0x00, 0x01]) },
+      {},
+      400,
+    );
   });
 
-  it('lets the Admin read and propose but never edit (BR-55)', async () => {
-    const all = await admin.get<{ data: Row[] }>('/projects?limit=100');
+  it('lets the Admin read every project but never edit one (BR-55)', async () => {
+    const all = await admin.get<{ data: (Row & { lastActivityAt: string })[] }>('/projects?limit=100');
     expect(all.data.map((p) => p.id)).toContain(projectId);
+    // "Cập nhật lần cuối" follows the content events, which are newer than the project row itself.
+    const mine = all.data.find((p) => p.id === projectId)!;
+    expect(new Date(mine.lastActivityAt).getTime()).toBeGreaterThan(Date.parse(mine.updatedAt as string));
     await admin.patch(`/projects/${projectId}`, { title: 'Hijacked' }, 403);
+    await admin.post(
+      `/projects/${projectId}/change-requests`,
+      { content: 'Tập 2 nên ngắn lại.', reason: 'x'.repeat(8) },
+      403,
+    );
+  });
 
-    const proposal = await admin.post(`/projects/${projectId}/change-requests`, {
-      content: 'Tập 2 nên ngắn lại 15 phút.',
+  it('sends a change request to the Admin, with its proof, who approves or rejects it', async () => {
+    const path = `/projects/${projectId}/change-requests`;
+    const body = { content: 'Tập 2 nên ngắn lại 15 phút.', reason: 'Khán giả thích tập ngắn.' };
+    const plain = await reviewer.post<Row & { status: string }>(path, body);
+    expect(plain.status).toBe('OPEN');
+    const detail = await reviewer.get<Project & { title: string }>(`/projects/${projectId}`);
+    expect(detail.openChangeRequests).toBe(1);
+    // The list searches the catalog title and counts what still waits for the Admin.
+    const listed = await reviewer.get<{ data: (Row & { openChangeRequests: number })[] }>(
+      `/projects?search=${encodeURIComponent(detail.title)}`,
+    );
+    expect(listed.data.find((p) => p.id === projectId)).toMatchObject({ openChangeRequests: 1 });
+    await otherReviewer.post(path, body, 404);
+
+    // More production cost is a cost request of the Reviewer, never a change request.
+    await creator.upload(path, PROOF, { ...body, requestType: 'BUDGET_SUPPLEMENT' }, 400);
+    const supplement = await creator.upload<Row>(path, PROOF, {
+      ...body,
+      content: 'Lùi hạn giao tập 2 thêm một tuần.',
+      requestType: 'DEADLINE_EXTENSION',
     });
-    expect((await reviewer.get<Project>(`/projects/${projectId}`)).openChangeRequests).toBe(1);
 
-    await reviewer.post(`/change-requests/${proposal.id}/reject`, {}, 400);
-    await reviewer.post(`/change-requests/${proposal.id}/reject`, { response: 'Studio đã quay xong.' });
-    await reviewer.post(`/change-requests/${proposal.id}/accept`, {}, 409);
-    const answers = await admin.get<{ data: { type: string }[] }>('/notifications');
+    const inbox = await admin.get<{ id: string }[]>('/change-requests?status=OPEN');
+    expect(inbox.map((r) => r.id)).toEqual(expect.arrayContaining([plain.id, supplement.id]));
+    await reviewer.get('/change-requests', 403);
+    const proof = await admin.download(`/change-requests/${supplement.id}/proof`);
+    expect(proof.body.equals(PDF)).toBe(true);
+
+    await admin.post(`/change-requests/${plain.id}/reject`, {}, 400);
+    await reviewer.post(`/change-requests/${plain.id}/reject`, { response: 'Không phải việc của tôi.' }, 403);
+    await admin.post(`/change-requests/${plain.id}/reject`, { response: 'Studio đã quay xong.' });
+    await admin.post(`/change-requests/${plain.id}/approve`, {}, 409);
+
+    const approved = await admin.post<{ status: string }>(`/change-requests/${supplement.id}/approve`, {});
+    expect(approved.status).toBe('APPROVED');
+
+    const answers = await creator.get<{ data: { type: string }[] }>('/notifications');
     expect(answers.data.map((n) => n.type)).toContain('PROJECT_CHANGE_RESOLVED');
   });
 
   it('records every step as a content event', async () => {
     const events = await reviewer.get<{ action: string }[]>(`/projects/${projectId}/events`);
     expect(events.map((e) => e.action)).toEqual(
-      expect.arrayContaining([
-        'PROJECT_CREATED',
-        'FEE_ALLOCATED',
-        'FEE_TOPPED_UP',
-        'PROJECT_ASSIGNED',
-        'IDEA_FILE_UPLOADED',
-      ]),
+      expect.arrayContaining(['PROJECT_CREATED', 'COST_BUDGET_SET', 'PROJECT_ASSIGNED', 'IDEA_FILE_UPLOADED']),
     );
   });
 
   it('cancels a project with a reason, once (BR-39)', async () => {
-    await reviewer.post(`/projects/${projectId}/cancel`, { reason: '' }, 400);
-    await reviewer.post(`/projects/${projectId}/cancel`, { reason: 'Studio không nhận dự án.' }, 204);
-    await reviewer.post(`/projects/${projectId}/cancel`, { reason: 'Again please.' }, 409);
+    const admin = await reviewer.signInAs('admin@aicinema.com');
+    await reviewer.post(`/projects/${projectId}/cancel`, { reason: 'Studio không nhận dự án.' }, 403);
+    await admin.post(`/projects/${projectId}/cancel`, { reason: '' }, 400);
+    await admin.post(`/projects/${projectId}/cancel`, { reason: 'Studio không nhận dự án.' }, 204);
+    await admin.post(`/projects/${projectId}/cancel`, { reason: 'Again please.' }, 409);
     expect((await reviewer.get<Project>(`/projects/${projectId}`)).status).toBe('CANCELLED');
   });
 });

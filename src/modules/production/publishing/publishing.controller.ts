@@ -4,7 +4,12 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { PublishEpisodeRequestDto, SetCoinPriceRequestDto, UnpublishRequestDto } from './dto/publishing.request.dto';
+import {
+  PublishEpisodeRequestDto,
+  SetAccessFlagsRequestDto,
+  SetCoinPriceRequestDto,
+  UnpublishRequestDto,
+} from './dto/publishing.request.dto';
 import { PricingService } from './pricing.service';
 import { PublicationService } from './publication.service';
 
@@ -20,7 +25,7 @@ export class PublishingController {
   ) {}
 
   @Patch('episodes/:episodeId/coin-price')
-  @RequirePermission(PERMISSION.EPISODE_PUBLISH)
+  @RequirePermission(PERMISSION.EPISODE_PRICE)
   @ApiOperation({ summary: 'Set the Coin price; outside the Admin range it is kept and flagged (BR-29, BR-47)' })
   setPrice(
     @Param('episodeId', ID) episodeId: string,
@@ -28,6 +33,17 @@ export class PublishingController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.pricing.setPrice(episodeId, dto.coinPrice, user);
+  }
+
+  @Patch('episodes/:episodeId/access-flags')
+  @RequirePermission(PERMISSION.EPISODE_PRICE)
+  @ApiOperation({ summary: 'Admin opens or locks an episode before publish; Guest-free implies Member-free (BR-03)' })
+  setAccessFlags(
+    @Param('episodeId', ID) episodeId: string,
+    @Body() dto: SetAccessFlagsRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.pricing.setAccessFlags(episodeId, dto, user);
   }
 
   @Get('episodes/:episodeId/publications')

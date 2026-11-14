@@ -1,18 +1,27 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Movie, Prisma } from '@prisma/client';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ContractStatus, StudioMilestoneStatus, type MovieProject, type Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
+import { liftProject, WITH_PROJECT } from './project-relations';
+
+/** A project with the title of its catalog movie, which every message about it names. */
+const WITH_TITLE = { movie: { select: { title: true } } } satisfies Prisma.MovieProjectInclude;
+export type TitledProject = Prisma.MovieProjectGetPayload<{ include: typeof WITH_TITLE }>;
 
 /**
  * Who may touch a movie project, on top of the endpoint permission:
- * - read: its Reviewer, its assigned Creator, or anyone holding project:read.all (Admin);
+ * - read: its Reviewer, a Creator of its team, or anyone holding project:read.all (Admin);
  * - reviewer: only the Reviewer who owns it;
- * - creator: only the Creator it is assigned to (BR-15).
+ * - creator: its lead Creator or a Creator holding an active assignment (BR-13); an episode is worked on by
+ *   the Creator it was given to or the lead, and one not given to anyone belongs to the lead;
+ * - lead: only the lead Creator, who speaks for the team to the studio (hand-off, studio change,
+ *   milestones). The other Creators never mail the studio: each answers for the episodes given to them
+ *   (checks and submits the film, answers change requests) and writes to the lead through episode notes.
  * Someone who may not read a project gets 404, so ids of other projects reveal nothing.
  */
-export type ProjectRole = 'read' | 'reviewer' | 'creator';
+export type ProjectRole = 'read' | 'reviewer' | 'creator' | 'lead';
 
 @Injectable()
 export class ProjectAccessService {
@@ -22,53 +31,126 @@ export class ProjectAccessService {
   ) {}
 
   /** Projects the caller may list. */
-  async readableWhere(user: AuthenticatedUser): Promise<Prisma.MovieWhereInput> {
+  async readableWhere(user: AuthenticatedUser): Promise<Prisma.MovieProjectWhereInput> {
     if (await this.readsAll(user)) return {};
-    return { OR: [{ reviewerId: user.id }, { creatorId: user.id }] };
+    return {
+      OR: [
+        { reviewerId: user.id },
+        { creatorId: user.id },
+        { creatorAssignments: { some: { creatorId: user.id, isActive: true } } },
+      ],
+    };
   }
 
-  async movie(movieId: string, user: AuthenticatedUser, role: ProjectRole, tx?: PrismaTx): Promise<Movie> {
-    const movie = await (tx ?? this.prisma).movie.findUnique({ where: { id: movieId } });
-    if (!movie || !(await this.canRead(movie, user))) throw new NotFoundException('Movie project not found');
-    this.assertRole(movie, user, role);
-    return movie;
-  }
-
-  /** The episode with its movie, checked the same way as the movie. */
-  async episode(episodeId: string, user: AuthenticatedUser, role: ProjectRole, tx?: PrismaTx) {
-    const episode = await (tx ?? this.prisma).episode.findUnique({
-      where: { id: episodeId },
-      include: { movie: true },
+  async project(projectId: string, user: AuthenticatedUser, role: ProjectRole, tx?: PrismaTx): Promise<TitledProject> {
+    const project = await (tx ?? this.prisma).movieProject.findUnique({
+      where: { id: projectId },
+      include: WITH_TITLE,
     });
-    if (!episode || !(await this.canRead(episode.movie, user))) throw new NotFoundException('Episode not found');
-    this.assertRole(episode.movie, user, role);
+    if (!project || !(await this.canRead(project, user, tx))) throw new NotFoundException('Movie project not found');
+    await this.assertRole(project, user, role, tx);
+    return project;
+  }
+
+  /** The episode with its movie and project, checked the same way as the project. */
+  async episode(episodeId: string, user: AuthenticatedUser, role: ProjectRole, tx?: PrismaTx) {
+    const found = await (tx ?? this.prisma).episode.findUnique({ where: { id: episodeId }, include: WITH_PROJECT });
+    const episode = found && liftProject(found);
+    if (!episode || !(await this.canRead(episode.project, user, tx))) throw new NotFoundException('Episode not found');
+    await this.assertRole(episode.project, user, role, tx);
+    this.assertEpisodeOwner(episode, user, role);
     return episode;
   }
 
   async mediaAsset(mediaAssetId: string, user: AuthenticatedUser, role: ProjectRole, tx?: PrismaTx) {
-    const asset = await (tx ?? this.prisma).mediaAsset.findUnique({
+    const found = await (tx ?? this.prisma).mediaAsset.findUnique({
       where: { id: mediaAssetId },
-      include: { episode: { include: { movie: true } } },
+      include: { episode: { include: WITH_PROJECT } },
     });
-    if (!asset || !(await this.canRead(asset.episode.movie, user))) throw new NotFoundException('Media not found');
-    this.assertRole(asset.episode.movie, user, role);
+    const asset = found && { ...found, episode: liftProject(found.episode) };
+    if (!asset || !(await this.canRead(asset.episode.project, user, tx)))
+      throw new NotFoundException('Media not found');
+    await this.assertRole(asset.episode.project, user, role, tx);
+    this.assertEpisodeOwner(asset.episode, user, role);
     return asset;
   }
 
-  private async canRead(movie: Movie, user: AuthenticatedUser): Promise<boolean> {
-    return movie.reviewerId === user.id || movie.creatorId === user.id || this.readsAll(user);
+  /**
+   * A STUDIO account reaches only the projects of its own studio (MF-1, 07/11/2026); with `delivering`, only once
+   * the contract is signed and the project handed off to it — the studio never films before both signatures.
+   */
+  async studioProject(projectId: string, studioId: string, delivering = false, tx?: PrismaTx): Promise<TitledProject> {
+    const db = tx ?? this.prisma;
+    const project = await db.movieProject.findUnique({ where: { id: projectId }, include: WITH_TITLE });
+    const sent = project && (await db.contract.count({ where: { projectId, studioId } }));
+    if (!project || !sent || project.studioId !== studioId) throw new NotFoundException('Movie project not found');
+    if (delivering) {
+      const live = await db.studioHandoff.count({
+        where: {
+          projectId,
+          studioId,
+          milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED },
+          contracts: { some: { status: ContractStatus.SIGNED } },
+        },
+      });
+      if (!live) throw new ConflictException('The contract of this project is not signed by both sides yet');
+    }
+    return project;
+  }
+
+  /** The episode of a studio's project, checked as studioProject. */
+  async studioEpisode(episodeId: string, studioId: string, delivering = false, tx?: PrismaTx) {
+    const found = await (tx ?? this.prisma).episode.findUnique({ where: { id: episodeId }, include: WITH_PROJECT });
+    if (!found) throw new NotFoundException('Episode not found');
+    const episode = liftProject(found);
+    await this.studioProject(episode.project.id, studioId, delivering, tx);
+    return episode;
+  }
+
+  /** The lead Creator or a Creator with an active assignment on the project. */
+  async isOnTeam(project: Pick<MovieProject, 'id' | 'creatorId'>, userId: string, tx?: PrismaTx): Promise<boolean> {
+    if (project.creatorId === userId) return true;
+    const seat = await (tx ?? this.prisma).projectCreatorAssignment.count({
+      where: { projectId: project.id, creatorId: userId, isActive: true },
+    });
+    return seat > 0;
+  }
+
+  private async canRead(project: MovieProject, user: AuthenticatedUser, tx?: PrismaTx): Promise<boolean> {
+    return project.reviewerId === user.id || (await this.isOnTeam(project, user.id, tx)) || this.readsAll(user);
   }
 
   private async readsAll(user: AuthenticatedUser): Promise<boolean> {
     return (await this.accessControl.permissionsOf(user.role)).has(PERMISSION.PROJECT_READ_ALL);
   }
 
-  private assertRole(movie: Movie, user: AuthenticatedUser, role: ProjectRole): void {
-    if (role === 'reviewer' && movie.reviewerId !== user.id) {
+  private async assertRole(
+    project: MovieProject,
+    user: AuthenticatedUser,
+    role: ProjectRole,
+    tx?: PrismaTx,
+  ): Promise<void> {
+    if (role === 'reviewer' && project.reviewerId !== user.id) {
       throw new ForbiddenException('Only the Content Reviewer in charge of this project can do that');
     }
-    if (role === 'creator' && movie.creatorId !== user.id) {
+    if (role === 'creator' && !(await this.isOnTeam(project, user.id, tx))) {
       throw new ForbiddenException('This project is not assigned to you');
+    }
+    if (role === 'lead' && project.creatorId !== user.id) {
+      throw new ForbiddenException('Only the lead Creator of this project can do that');
+    }
+  }
+
+  private assertEpisodeOwner(
+    episode: { assignedCreatorId: string | null; project: Pick<MovieProject, 'creatorId'> },
+    user: AuthenticatedUser,
+    role: ProjectRole,
+  ): void {
+    const { assignedCreatorId, project } = episode;
+    if (role === 'creator' && assignedCreatorId !== user.id && project.creatorId !== user.id) {
+      throw new ForbiddenException(
+        assignedCreatorId ? 'This episode is assigned to another Creator' : 'This episode belongs to the lead Creator',
+      );
     }
   }
 }

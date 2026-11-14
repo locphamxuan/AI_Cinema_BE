@@ -2,29 +2,38 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { unicodeFontPath } from 'src/infrastructure/pdf/unicode-font';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import type { EmailAttachment } from 'src/modules/platform/email/email-outbox.service';
-import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
-import { briefFont, type BriefContent, renderBriefPdf } from './brief-pdf';
+import { type BriefContent, formatVnd, renderBriefPdf } from './brief-pdf';
 
-export interface StudioInfo {
-  studioName: string;
-  studioEmail: string;
-  studioContact?: string | null;
+export interface BriefStudio {
+  name: string;
+  contactName: string | null;
+}
+
+/** Who the brief comes from and the fee it offers. */
+export interface BriefContext {
+  /** The Admin changing the studio: named in the PDF as the studio's contact. */
+  senderId: string;
+  /** Production fee (VND) offered to the studio, already checked against the budget left. */
+  offeredFeeVnd: number;
 }
 
 export interface PreparedBrief {
   briefKey: string;
-  productionFeeTokens: number;
+  offeredFeeVnd: number;
   subject: string;
-  text: string;
+  /** Body of the email; StudioMailService adds the greeting, the Studio Web link and the contact. */
+  lines: string[];
+  /** The brief PDF alone. */
   attachments: EmailAttachment[];
 }
 
 /**
- * Builds the brief a studio receives (BR-13): the PDF is generated from the project as it is
- * now, stored privately, and sent with the latest version of every idea file.
+ * Builds the brief a new studio receives when the Admin changes the studio: the Admin is its contact. The PDF is
+ * generated from the project as it is now, stored privately and is the only attachment: scripts, idea files and
+ * films never leave the platform by email (MF-1, 08/11/2026).
  */
 @Injectable()
 export class BriefService {
@@ -34,76 +43,74 @@ export class BriefService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: ObjectStorage,
-    private readonly fees: ProductionFeeService,
-    private readonly settings: PlatformSettingService,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
-    this.fontPath = briefFont(config.briefFontPath);
+    this.fontPath = unicodeFontPath(config.briefFontPath);
     if (!this.fontPath) this.logger.warn('No font with Vietnamese glyphs found; briefs drop diacritics');
   }
 
-  /** `dueDates` overrides the stored deadlines (the hand-off sets them in the same request). */
-  async prepare(movieId: string, studio: StudioInfo, dueDates: Map<string, Date> = new Map()): Promise<PreparedBrief> {
-    const movie = await this.prisma.movie.findUniqueOrThrow({
-      where: { id: movieId },
+  /** `seasonId` limits the brief to one season; null briefs every episode of the project. */
+  async prepare(
+    projectId: string,
+    studio: BriefStudio,
+    seasonId: string | null,
+    context: BriefContext,
+  ): Promise<PreparedBrief> {
+    const sender = await this.prisma.user.findUniqueOrThrow({
+      where: { id: context.senderId },
+      select: { fullName: true, email: true },
+    });
+    const project = await this.prisma.movieProject.findUniqueOrThrow({
+      where: { id: projectId },
       include: {
-        creator: { select: { fullName: true, email: true } },
-        genres: { include: { genre: { select: { name: true } } } },
-        episodes: { orderBy: { episodeNumber: 'asc' }, include: { season: { select: { seasonNumber: true } } } },
-        ideaFiles: { orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
+        movie: {
+          include: {
+            genres: { include: { genre: { select: { name: true } } } },
+            episodes: {
+              where: seasonId ? { seasonId } : {},
+              orderBy: { episodeNumber: 'asc' },
+              include: { season: { select: { seasonNumber: true } } },
+            },
+          },
+        },
       },
     });
-    const latestIdeaFiles = movie.ideaFiles.filter(
-      (file, i, all) => all.findIndex((other) => other.fileName === file.fileName) === i,
-    );
-    const productionFeeTokens = await this.fees.totalTokens(movieId);
-    const { tokenRateVnd } = await this.settings.get();
+    const { movie } = project;
 
     const content: BriefContent = {
       movieTitle: movie.title,
-      studioName: studio.studioName,
-      studioContact: studio.studioContact ?? null,
-      creatorName: movie.creator?.fullName ?? '',
-      creatorEmail: movie.creator?.email ?? '',
-      ideaDescription: movie.ideaDescription,
+      scope: seasonId ? `Mùa ${movie.episodes[0]?.season.seasonNumber ?? ''}` : 'Toàn bộ dự án',
+      studioName: studio.name,
+      studioContact: studio.contactName,
+      contactName: sender.fullName,
+      contactEmail: sender.email,
+      ideaDescription: project.ideaDescription,
       genres: movie.genres.map(({ genre }) => genre.name),
-      productionFeeTokens,
-      tokenRateVnd,
+      offeredFeeVnd: context.offeredFeeVnd,
       episodes: movie.episodes.map((episode) => ({
         episodeNumber: episode.episodeNumber,
         seasonNumber: episode.season.seasonNumber,
         title: episode.title,
         targetDurationSeconds: episode.targetDurationSeconds,
-        dueDate: dueDates.get(episode.id) ?? episode.dueDate,
+        dueDate: episode.deliveryDeadline,
       })),
-      ideaFiles: latestIdeaFiles.map((file) => file.fileName),
       issuedAt: new Date(),
     };
 
-    const briefKey = `movies/${movieId}/briefs/${randomUUID()}.pdf`;
+    const briefKey = `movies/${projectId}/briefs/${randomUUID()}.pdf`;
     await this.storage.putBuffer(briefKey, await renderBriefPdf(content, this.fontPath), 'application/pdf', 'private');
 
     return {
       briefKey,
-      productionFeeTokens,
-      subject: `[AI Cinema] Đơn đặt hàng sản xuất phim "${movie.title}"`,
-      text: [
-        `Kính gửi ${studio.studioName},`,
-        '',
-        `AI Cinema gửi đơn đặt hàng sản xuất phim "${movie.title}" gồm ${movie.episodes.length} tập.`,
-        `Phí sản xuất: ${productionFeeTokens} Token (= ${productionFeeTokens * tokenRateVnd} VND).`,
+      offeredFeeVnd: context.offeredFeeVnd,
+      subject: `[AI Cinema] Đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope})`,
+      lines: [
+        `AI Cinema gửi đơn đặt hàng sản xuất phim "${movie.title}" (${content.scope}) gồm ${movie.episodes.length} tập.`,
+        `Phí sản xuất đề xuất: ${formatVnd(context.offeredFeeVnd)} (trọn gói, không chia doanh thu).`,
         'Chi tiết từng tập và hạn giao nằm trong brief PDF đính kèm.',
-        '',
-        `Đầu mối: ${content.creatorName} — ${content.creatorEmail}`,
-      ].join('\n'),
-      attachments: [
-        { key: briefKey, fileName: `brief-${movieId}.pdf`, contentType: 'application/pdf' },
-        ...latestIdeaFiles.map((file) => ({
-          key: file.storageKey,
-          fileName: file.fileName,
-          contentType: file.mimeType,
-        })),
+        'Kịch bản và việc nộp phim được thực hiện trên Studio Web sau khi hai bên thống nhất hợp đồng.',
       ],
+      attachments: [{ key: briefKey, fileName: `brief-${projectId}.pdf`, contentType: 'application/pdf' }],
     };
   }
 }

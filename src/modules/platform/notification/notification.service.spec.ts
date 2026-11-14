@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { runAsActor } from 'src/common/http/request-actor';
 import { NotificationService } from './notification.service';
 import { NOTIFICATION_TYPE } from './notification-types';
 
@@ -10,7 +11,10 @@ describe('NotificationService', () => {
   };
   const service = new NotificationService(prisma as unknown as PrismaService);
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.user.findMany.mockResolvedValue([]);
+  });
 
   it('notifies every distinct recipient once and skips empty ids', async () => {
     await service.notify(['a', null, 'b', 'a', undefined], {
@@ -28,7 +32,7 @@ describe('NotificationService', () => {
   });
 
   it('writes inside the given transaction', async () => {
-    const tx = { notification: { createMany: jest.fn() } };
+    const tx = { notification: { createMany: jest.fn() }, user: { findMany: jest.fn().mockResolvedValue([]) } };
     await service.notify(['a'], { type: NOTIFICATION_TYPE.MEDIA_READY, title: 'x' }, tx as never);
     expect(tx.notification.createMany).toHaveBeenCalled();
     expect(prisma.notification.createMany).not.toHaveBeenCalled();
@@ -51,5 +55,23 @@ describe('NotificationService', () => {
   it('lists the active admins', async () => {
     prisma.user.findMany.mockResolvedValue([{ id: 'admin-1' }]);
     await expect(service.adminIds()).resolves.toEqual(['admin-1']);
+  });
+
+  it('copies every MF-1 notification to the Admins except the one who acted (MF-1 oversight)', async () => {
+    prisma.user.findMany.mockResolvedValue([{ id: 'admin-1' }, { id: 'admin-2' }]);
+    await runAsActor('admin-1', () =>
+      service.notify(['rev'], { type: NOTIFICATION_TYPE.MEDIA_SUBMITTED, title: 'Studio giao tập 1' }),
+    );
+    const [{ data }] = prisma.notification.createMany.mock.calls[0] as [{ data: { userId: string }[] }];
+    expect(data.map((row) => row.userId)).toEqual(['rev', 'admin-2']);
+  });
+
+  it('reaches the Admins even with no other recipient, and leaves non-MF-1 notifications alone', async () => {
+    prisma.user.findMany.mockResolvedValue([{ id: 'admin-1' }]);
+    await service.notify([], { type: NOTIFICATION_TYPE.COMPLIANCE_PASSED, title: 'Đạt tuân thủ' });
+    await service.notify(['m1'], { type: NOTIFICATION_TYPE.COIN_SPENT, title: 'Trừ Coin' });
+    const calls = prisma.notification.createMany.mock.calls as [{ data: { userId: string }[] }][];
+    expect(calls[0][0].data.map((row) => row.userId)).toEqual(['admin-1']);
+    expect(calls[1][0].data.map((row) => row.userId)).toEqual(['m1']);
   });
 });

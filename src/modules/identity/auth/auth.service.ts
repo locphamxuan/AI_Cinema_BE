@@ -1,14 +1,39 @@
-import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
 import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
 import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
+import type { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
+import type { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
+import type { ResetPasswordRequestDto } from './dto/reset-password.request.dto';
+import { GOOGLE_REASON, GoogleTokenVerifier, type GoogleProfile } from './google-token.verifier';
+import { PasswordResetService } from './password-reset.service';
 import { SessionTokenService } from './session-token.service';
+
+const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
+
+/** Only an active member may use Google; a staff account keeps its password sign-in. */
+function assertGoogleMember(user: Pick<UserProfile, 'role' | 'isActive'>): void {
+  if (user.role !== UserRole.MEMBER) {
+    throw new ForbiddenException({
+      message: 'Google sign-in is for member accounts; sign in with your password',
+      details: { reason: GOOGLE_REASON.STAFF_ACCOUNT },
+    });
+  }
+  if (!user.isActive) throw new ForbiddenException('This account has been deactivated');
+}
 
 @Injectable()
 export class AuthService {
@@ -17,13 +42,13 @@ export class AuthService {
     private readonly tokens: SessionTokenService,
     private readonly accessControl: AccessControlService,
     private readonly wallets: WalletService,
+    private readonly google: GoogleTokenVerifier,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
     const dateOfBirth = new Date(dto.dateOfBirth);
-    if (!isAdult(dateOfBirth)) {
-      throw new ForbiddenException('AI Cinema is only for viewers aged 18 or older');
-    }
+    if (!isAdult(dateOfBirth)) throw new ForbiddenException(ADULTS_ONLY);
     const email = normalizeEmail(dto.email);
     if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
       throw new ConflictException('An account with this email already exists');
@@ -48,12 +73,29 @@ export class AuthService {
       where: { email: normalizeEmail(dto.email) },
       select: { ...USER_PROFILE_SELECT, passwordHash: true },
     });
+    if (found && !found.passwordHash) {
+      throw new UnauthorizedException('This account uses Google sign-in; sign in with Google instead');
+    }
     // The hash is always compared so an unknown email takes as long as a wrong password.
     const passwordMatches = await verifyPassword(dto.password, found?.passwordHash);
     if (!found || !passwordMatches) throw new UnauthorizedException('Incorrect email or password');
     if (!found.isActive) throw new ForbiddenException('This account has been deactivated');
 
     const { passwordHash: _hash, ...user } = found;
+    return this.session(user);
+  }
+
+  /**
+   * Google sign-in is for members only, in one tap: a linked member signs in, a member account with
+   * that verified email is linked, and a new email opens a member account under the Google name.
+   * Staff accounts (Admin, Reviewer, Creator, Staff) sign in with their password and are never linked.
+   */
+  async googleLogin(dto: GoogleLoginRequestDto): Promise<AuthSessionDto> {
+    const profile = await this.google.verify(dto.idToken);
+    const user =
+      (await this.prisma.user.findUnique({ where: { googleId: profile.sub }, select: USER_PROFILE_SELECT })) ??
+      (await this.openForGuest(profile));
+    assertGoogleMember(user);
     return this.session(user);
   }
 
@@ -71,6 +113,94 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: USER_PROFILE_SELECT });
     if (!user) throw new UnauthorizedException('Account no longer available');
     return this.withPermissions(user);
+  }
+
+  async updateMe(caller: AuthenticatedUser, dto: UpdateMyProfileRequestDto): Promise<AuthProfileDto> {
+    const dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined;
+    if (dateOfBirth && dateOfBirth.getTime() > Date.now())
+      throw new BadRequestException('Birthday cannot be in the future');
+    if (dateOfBirth && caller.role === UserRole.MEMBER && !isAdult(dateOfBirth)) {
+      throw new ForbiddenException(ADULTS_ONLY);
+    }
+    const user = await this.prisma.user.update({
+      where: { id: caller.id },
+      data: { fullName: dto.fullName, phoneNumber: dto.phoneNumber, dateOfBirth },
+      select: USER_PROFILE_SELECT,
+    });
+    return this.withPermissions(user);
+  }
+
+  async changePassword(userId: string, dto: ChangeMyPasswordRequestDto): Promise<AuthSessionDto> {
+    const found = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { ...USER_PROFILE_SELECT, passwordHash: true },
+    });
+    if (!found) throw new UnauthorizedException('The current password is incorrect');
+    if (!found.passwordHash) {
+      throw new BadRequestException('This account has no password; it uses Google sign-in');
+    }
+    if (!(await verifyPassword(dto.currentPassword, found.passwordHash))) {
+      throw new UnauthorizedException('The current password is incorrect');
+    }
+    if (dto.currentPassword === dto.newPassword)
+      throw new BadRequestException('Choose a password different from the current one');
+    const { passwordHash: _hash, ...user } = found;
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: await hashPassword(dto.newPassword) },
+    });
+    await this.tokens.revokeAll(userId);
+    return this.session(user);
+  }
+
+  /** Forgot password: the e-mailed code sets the new password, then only the new session stays signed in. */
+  async resetPassword(dto: ResetPasswordRequestDto): Promise<AuthSessionDto> {
+    const user = await this.passwordReset.reset(dto);
+    await this.tokens.revokeAll(user.id);
+    return this.session(user);
+  }
+
+  /** Google is how a guest signs up: an email that already has an account signs in with its password instead. */
+  private async openForGuest(profile: GoogleProfile): Promise<UserProfile> {
+    const email = normalizeEmail(profile.email);
+    const existing = await this.prisma.user.findUnique({
+      where: { email },
+      select: { ...USER_PROFILE_SELECT, googleId: true },
+    });
+    if (!existing) return this.openGoogleMember(profile, email);
+    const { googleId, ...user } = existing;
+    if (googleId) {
+      throw new ConflictException({
+        message: 'This email is linked to another Google account',
+        details: { reason: GOOGLE_REASON.ACCOUNT_MISMATCH },
+      });
+    }
+    assertGoogleMember(user);
+    throw new ConflictException({
+      message: 'This email already has an account; sign in with your password',
+      details: { reason: GOOGLE_REASON.EMAIL_REGISTERED },
+    });
+  }
+
+  /** One tap: the member account opens at once under the Google name. */
+  private async openGoogleMember(profile: GoogleProfile, email: string): Promise<UserProfile> {
+    const name = profile.name?.trim() ?? '';
+    const fullName = name.length >= 2 ? name : email.split('@')[0].padEnd(2, '_');
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email,
+          passwordHash: null,
+          fullName,
+          role: UserRole.MEMBER,
+          googleId: profile.sub,
+          emailVerifiedAt: new Date(),
+        },
+        select: USER_PROFILE_SELECT,
+      });
+      await this.wallets.openForNewAccount(tx, created.id);
+      return created;
+    });
   }
 
   private async session(user: UserProfile): Promise<AuthSessionDto> {

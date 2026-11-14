@@ -1,0 +1,20 @@
+/// Where the Admin puts the mid-roll ads of one episode (BR-32): one row per cue, so the number
+/// of rows is how many times ads are inserted. adId pins one ad to the cue; null leaves it to the
+/// weighted draw among the valid ads (BR-51). An episode without rows falls back to random cues,
+/// as many as PlatformSetting.adMaxBreaksPerEpisode.
+model EpisodeAdSlot {
+  id              String   @id @default(uuid()) @db.Uuid
+  episodeId       String   @map("episode_id") @db.Uuid
+  positionSeconds Int      @map("position_seconds")
+  adId            String?  @map("ad_id") @db.Uuid
+  createdById     String   @map("created_by_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  episode   Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  ad        Ad?     @relation(fields: [adId], references: [id], onDelete: SetNull)
+  createdBy User    @relation("EpisodeAdSlotCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([episodeId, positionSeconds])
+  @@index([adId])
+  @@map("episode_ad_slots")
+}

@@ -1,42 +1,18 @@
-import { PolicyType, UserRole } from '@prisma/client';
+import { PolicyType, RewardPrizeType, UserRole } from '@prisma/client';
+import type { SeedAccount } from './seed-accounts';
 
-/** Development accounts; all of them sign in with SEED_USER_PASSWORD. */
-export const SEED_USERS: { email: string; fullName: string; role: UserRole; dateOfBirth?: Date }[] = [
-  ...[
-    'Nguyễn Minh Anh',
-    'Trần Quốc Bảo',
-    'Lê Hoàng Nam',
-    'Phạm Gia Huy',
-    'Võ Thành Đạt',
-    'Đặng Nhật Minh',
-    'Bùi Đức Anh',
-    'Ngô Tuấn Kiệt',
-  ].map((fullName, i) => ({
-    email: `creator0${i + 1}@aicinema.com`,
-    fullName,
-    role: UserRole.CONTENT_CREATOR,
-  })),
-  ...['Nguyễn Thu Hà', 'Trần Ngọc Linh', 'Lê Thanh Hương', 'Phạm Khánh Vy', 'Vũ Minh Trang', 'Đỗ Hoàng Long'].map(
-    (fullName, i) => ({ email: `reviewer0${i + 1}@aicinema.com`, fullName, role: UserRole.CONTENT_REVIEWER }),
-  ),
-  { email: 'staff01@aicinema.com', fullName: 'Nguyễn Văn Thành', role: UserRole.STAFF },
-  { email: 'admin@aicinema.com', fullName: 'AI Cinema Admin', role: UserRole.ADMIN },
+/** The platform's four accounts; a new one signs in with SEED_USER_PASSWORD until its owner changes it. */
+export const ADMIN_EMAIL = 'admin@gmail.com';
+export const SEED_ACCOUNTS: SeedAccount[] = [
+  { email: ADMIN_EMAIL, fullName: 'Quản trị viên AI Cinema', role: UserRole.ADMIN },
+  { email: 'reviewer@gmail.com', fullName: 'Reviewer AI Cinema', role: UserRole.CONTENT_REVIEWER },
+  { email: 'creator.aicinema@gmail.com', fullName: 'Creator AI Cinema', role: UserRole.CONTENT_CREATOR },
   {
-    email: 'member01@aicinema.com',
-    fullName: 'Nguyễn Hoàng Anh',
+    email: 'abc@gmail.com',
+    fullName: 'Thành viên AI Cinema',
     role: UserRole.MEMBER,
-    dateOfBirth: new Date('2002-08-15'),
+    dateOfBirth: new Date('2003-05-14'),
   },
-];
-
-/** Shared test accounts with a fixed password; the seed resets it on every run so testers can always sign in. */
-export const SEED_TEST_USERS: { email: string; fullName: string; role: UserRole; password: string }[] = [
-  { email: 'creator@gmail.com', fullName: 'Creator Test', role: UserRole.CONTENT_CREATOR, password: '12345678' },
-  { email: 'reviewer@gmail.com', fullName: 'Reviewer Test', role: UserRole.CONTENT_REVIEWER, password: '12345678' },
-  { email: 'admin@gmail.com', fullName: 'Admin Test', role: UserRole.ADMIN, password: '12345678' },
-  { email: 'creatorr@gmail.com', fullName: 'Creator Tester', role: UserRole.CONTENT_CREATOR, password: '123456' },
-  { email: 'reviewerr@gmail.com', fullName: 'Reviewer Tester', role: UserRole.CONTENT_REVIEWER, password: '123456' },
-  { email: 'adminn@gmail.com', fullName: 'Admin Tester', role: UserRole.ADMIN, password: '123456' },
 ];
 
 /** The legal texts AI labels and the compliance checks refer to (BR-40, BR-42). */
@@ -75,3 +51,36 @@ export const SEED_POLICIES = [
     content: { summary: 'Không bạo lực cực đoan, nội dung khiêu dâm, kích động thù hận hay vi phạm pháp luật.' },
   },
 ];
+
+/** BR-05/BR-09: the default check-in ladder (bonus Coins only); day 7 is the spin milestone. */
+export const SEED_REWARD_RULES = [5, 5, 10, 10, 15, 15, 30].map((bonusCoins, index) => ({
+  code: `streak_day_${index + 1}`,
+  name: `Ngày thứ ${index + 1} trong chuỗi`,
+  streakDay: index + 1,
+  bonusCoins,
+  grantsSpin: index === 6,
+}));
+
+/** BR-09: the default reward wheel; the weights are relative chances. */
+export const SEED_REWARD_PRIZES: {
+  code: string;
+  name: string;
+  type: RewardPrizeType;
+  bonusCoins?: number;
+  planDays?: number;
+  weight: number;
+}[] = [
+  { code: 'bonus_20', name: '20 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 20, weight: 50 },
+  { code: 'bonus_50', name: '50 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 50, weight: 30 },
+  { code: 'bonus_100', name: '100 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 100, weight: 12 },
+  { code: 'plan_1_day', name: '1 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 1, weight: 6 },
+  { code: 'plan_3_days', name: '3 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 3, weight: 2 },
+];
+
+/** The demo Staff login (support inbox): its own password, not SEED_USER_PASSWORD. */
+export const SEED_STAFF_ACCOUNT = {
+  email: 'staff@gmail.com',
+  fullName: 'Nhân viên hỗ trợ AI Cinema',
+  role: UserRole.STAFF,
+};
+export const SEED_STAFF_PASSWORD = process.env.SEED_STAFF_PASSWORD ?? 'Staff123456';

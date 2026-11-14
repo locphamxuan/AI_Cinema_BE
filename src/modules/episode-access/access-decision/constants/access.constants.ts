@@ -4,7 +4,6 @@ export const ACCESS_SOURCE = {
   FREE: 'FREE',
   PLAN: 'PLAN',
   EPISODE_PURCHASE: 'EPISODE_PURCHASE',
-  SERIES_PURCHASE: 'SERIES_PURCHASE',
   ADMIN_GRANT: 'ADMIN_GRANT',
 } as const;
 
@@ -21,7 +20,6 @@ export const ACCESS_METHOD = {
   REGISTER_OR_LOGIN: 'REGISTER_OR_LOGIN',
   MONTHLY_PLAN: 'MONTHLY_PLAN',
   UNLOCK_EPISODE: 'UNLOCK_EPISODE',
-  UNLOCK_SERIES: 'UNLOCK_SERIES',
   OBTAIN_COIN: 'OBTAIN_COIN',
 } as const;
 
@@ -31,9 +29,10 @@ export const NEXT_ACTION = {
   REGISTER_OR_LOGIN: 'REGISTER_OR_LOGIN',
   OBTAIN_COIN: 'OBTAIN_COIN',
   UNLOCK_EPISODE: 'UNLOCK_EPISODE',
-  UNLOCK_SERIES: 'UNLOCK_SERIES',
   MONTHLY_PLAN: 'MONTHLY_PLAN',
   HANDOFF_TO_PLAYBACK: 'HANDOFF_TO_PLAYBACK',
+  /** The episode exists but cannot be played now (see `availability`); show `notice` and keep still. */
+  NOT_PLAYABLE: 'NOT_PLAYABLE',
 } as const;
 
 export type NextAction = (typeof NEXT_ACTION)[keyof typeof NEXT_ACTION];

@@ -6,7 +6,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { CoinTopUpService } from './coin-topup.service';
 import { CreateCoinTopUpRequestDto } from './dto/create-coin-top-up.request.dto';
-import { CoinTopUpView } from 'src/modules/episode-access/coin-topup/dto/coin-topup.dto';
+import { CoinTopUpView, TopUpOptionsView } from 'src/modules/episode-access/coin-topup/dto/coin-topup.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
@@ -29,6 +29,15 @@ export class CoinTopUpController {
   @ApiOperation({ summary: 'My top-up orders' })
   listMine(@CurrentUser('id') userId: string, @Paginate() query: PaginateQuery) {
     return this.topUps.listMine(userId, query);
+  }
+
+  // Declared before ':topUpId' so the literal path is not read as an id.
+  @Get('options')
+  @RequirePermission(PERMISSION.WALLET_TOPUP)
+  @ApiOperation({ summary: 'Coin rate and accepted VND range, to quote Coins before paying' })
+  @ApiOkResponse({ type: TopUpOptionsView })
+  options() {
+    return this.topUps.options();
   }
 
   @Get(':topUpId')

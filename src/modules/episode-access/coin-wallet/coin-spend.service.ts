@@ -1,7 +1,9 @@
-import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, type CoinTransaction, type Prisma } from '@prisma/client';
-import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { noticeReceived, noticeSpent } from './coin-notices';
 import { COIN_REASON, type CoinMovement, type CreditRequest, type SpendRequest } from './coin-wallet.types';
 import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './lot-usage';
 
@@ -15,14 +17,14 @@ import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './l
 @Injectable()
 export class CoinSpendService {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingService,
+    @Optional() private readonly notifications?: NotificationService,
   ) {}
 
   /** Takes Coins out: main first, then the bonus lots that expire first. */
   async spend(tx: PrismaTx, walletId: string, request: SpendRequest, now = new Date()): Promise<CoinMovement> {
-    const replayed = await this.replayed(request.idempotencyKey, tx);
-    if (replayed) return this.movementOf(replayed);
+    const replayed = await this.replayed(tx, walletId, request);
+    if (replayed) return spentMovementOf(replayed, request.amountCoins);
     if (request.amountCoins <= 0) throw new ConflictException({ message: 'A Coin payment must be more than 0' });
 
     const wallet = await this.locked(tx, walletId);
@@ -73,13 +75,29 @@ export class CoinSpendService {
 
     const [first] = await tx.coinTransaction.createManyAndReturn({ data: rows });
     await bumpWallet(tx, walletId, mainAfter, bonusAfter);
-    return { transactionId: first.id, mainCoins, bonusCoins, mainBalance: mainAfter, bonusBalance: bonusAfter };
+    const movement = {
+      transactionId: first.id,
+      mainCoins,
+      bonusCoins,
+      mainBalance: mainAfter,
+      bonusBalance: bonusAfter,
+    };
+    await noticeSpent(this.notifications, tx, walletId, request.entryType, movement);
+    return movement;
   }
 
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */
   async credit(tx: PrismaTx, walletId: string, request: CreditRequest, now = new Date()): Promise<CoinMovement> {
-    const replayed = await this.replayed(request.idempotencyKey, tx);
-    if (replayed) return this.movementOf(replayed);
+    const replayed = await this.replayed(tx, walletId, request);
+    if (replayed) {
+      return {
+        transactionId: replayed.id,
+        mainCoins: replayed.mainAmount,
+        bonusCoins: replayed.bonusAmount,
+        mainBalance: replayed.mainBalanceAfter,
+        bonusBalance: replayed.bonusBalanceAfter,
+      };
+    }
     const mainAmount = request.mainAmount ?? 0;
     const bonusAmount = request.bonusAmount ?? 0;
     if (mainAmount === 0 && bonusAmount === 0) throw new ConflictException({ message: 'Nothing to credit' });
@@ -110,7 +128,15 @@ export class CoinSpendService {
       ],
     });
     await bumpWallet(tx, walletId, mainBalance, bonusBalance);
-    return { transactionId: entry.id, mainCoins: mainAmount, bonusCoins: bonusAmount, mainBalance, bonusBalance };
+    const movement = {
+      transactionId: entry.id,
+      mainCoins: mainAmount,
+      bonusCoins: bonusAmount,
+      mainBalance,
+      bonusBalance,
+    };
+    await noticeReceived(this.notifications, tx, walletId, request.entryType, movement);
+    return movement;
   }
 
   /**
@@ -177,17 +203,45 @@ export class CoinSpendService {
     return tx.coinWallet.findUniqueOrThrow({ where: { id: walletId } });
   }
 
-  private replayed(idempotencyKey: string | undefined, tx: PrismaTx): Promise<CoinTransaction | null> {
-    return idempotencyKey ? tx.coinTransaction.findUnique({ where: { idempotencyKey } }) : Promise.resolve(null);
+  /**
+   * The earlier move a retried request already made. A key is only a replay of the same kind of move
+   * on the same wallet: a key first spent on a daily check-in (a credit) must not pass as an episode
+   * already paid for, nor may one member's key answer for another member's wallet.
+   */
+  private async replayed(
+    tx: PrismaTx,
+    walletId: string,
+    { idempotencyKey, entryType }: { idempotencyKey?: string; entryType: CoinEntryType },
+  ): Promise<CoinTransaction | null> {
+    if (!idempotencyKey) return null;
+    const earlier = await tx.coinTransaction.findUnique({ where: { idempotencyKey } });
+    if (earlier && (earlier.walletId !== walletId || earlier.entryType !== entryType)) {
+      throw new ConflictException({
+        message: 'This Idempotency-Key was already used for another request; send a new key',
+        details: { reason: COIN_REASON.IDEMPOTENCY_KEY_REUSED },
+      });
+    }
+    return earlier;
   }
+}
 
-  private movementOf(entry: CoinTransaction): CoinMovement {
-    return {
-      transactionId: entry.id,
-      mainCoins: -entry.mainAmount,
-      bonusCoins: -entry.bonusAmount,
-      mainBalance: entry.mainBalanceAfter,
-      bonusBalance: entry.bonusBalanceAfter,
-    };
-  }
+/**
+ * Rebuilds a debit from its first ledger row. That row carries the whole main part and no bonus
+ * (the bonus left on the lot rows after it), so the bonus part is the rest of the price and the
+ * bonus balance ends that much lower than the first row shows.
+ */
+export function spentMovementOf(
+  first: Pick<CoinTransaction, 'id' | 'mainAmount' | 'mainBalanceAfter' | 'bonusBalanceAfter'>,
+  amountCoins: number,
+): CoinMovement {
+  // `0 -` rather than unary minus: a debit with no main part gives 0, not -0.
+  const mainCoins = 0 - first.mainAmount;
+  const bonusCoins = amountCoins - mainCoins;
+  return {
+    transactionId: first.id,
+    mainCoins,
+    bonusCoins,
+    mainBalance: first.mainBalanceAfter,
+    bonusBalance: first.bonusBalanceAfter - bonusCoins,
+  };
 }

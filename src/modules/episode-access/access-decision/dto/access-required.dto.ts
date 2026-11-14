@@ -8,22 +8,22 @@ export class AccessRequired {
   coinPrice: number;
 
   @ApiPropertyOptional({
+    example: true,
+    description: 'The episode is free for Guests (no sign-up required); implies free for Members too (BR-03)',
+  })
+  isFreeForGuest?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'The episode is free for Members without a Monthly plan and without Coins (BR-03)',
+  })
+  isFreeForMember?: boolean;
+
+  @ApiPropertyOptional({
     example: false,
-    description: 'The episode is one of the Free Starter episodes',
+    description: 'The episode is one of the Free Starter episodes (kept for rows that predate the flags)',
   })
   isFreeStarter?: boolean;
-
-  @ApiPropertyOptional({
-    example: 180,
-    description: 'Price of the whole series; null = not sold as a bundle',
-  })
-  seriesCoinPrice?: number | null;
-
-  @ApiPropertyOptional({
-    example: false,
-    description: 'The caller already owns the series',
-  })
-  seriesOwned?: boolean;
 
   @ApiPropertyOptional({
     example: 900,

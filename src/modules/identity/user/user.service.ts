@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { CoinEntryType, UserRole } from '@prisma/client';
 import { paginate, PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
@@ -82,13 +82,18 @@ export class UserService {
 
   /**
    * Deletes an account that never did anything in the platform (its notifications and sessions go with it).
-   * An account that already owns projects, reviews, deliveries or Token entries is part of that history:
+   * An account that already owns projects, reviews, deliveries or cost entries is part of that history:
    * lock it instead.
    */
   async remove(userId: string, caller: AuthenticatedUser): Promise<void> {
     if (userId === caller.id) throw new BadRequestException('You cannot delete your own account');
     if (!(await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } }))) {
       throw new NotFoundException(`User with id "${userId}" does not exist`);
+    }
+    // The wallet, its ledger, unlocked episodes, check-ins and spins cascade with the user, so a member
+    // whose Coins ever moved (beyond the automatic welcome bonus) is kept: deleting would erase money records.
+    if (await this.hasCoinHistory(userId)) {
+      throw new ConflictException('This account has Coin history; lock it instead of deleting it');
     }
     try {
       await this.prisma.user.delete({ where: { id: userId } });
@@ -101,5 +106,17 @@ export class UserService {
       throw error;
     }
     this.accessControl.forgetAccount(userId);
+  }
+
+  private async hasCoinHistory(userId: string): Promise<boolean> {
+    const [moves, unlocked, checkIns, spins] = await Promise.all([
+      this.prisma.coinTransaction.count({
+        where: { wallet: { userId }, entryType: { not: CoinEntryType.SIGNUP_BONUS } },
+      }),
+      this.prisma.episodeAccess.count({ where: { userId } }),
+      this.prisma.dailyCheckIn.count({ where: { userId } }),
+      this.prisma.rewardSpin.count({ where: { userId } }),
+    ]);
+    return moves + unlocked + checkIns + spins > 0;
   }
 }

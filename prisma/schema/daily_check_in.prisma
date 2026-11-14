@@ -11,8 +11,7 @@ model DailyCheckIn {
   streakDay         Int      @map("streak_day")
   /// Whether this day continues the streak of the day before.
   streakContinued   Boolean  @map("streak_continued")
-  coinsGranted      Int      @map("coins_granted")
-  bonusGranted      Int      @default(0) @map("bonus_granted")
+  bonusGranted      Int      @map("bonus_granted")
   /// The ledger entry that credited the Coins; null while the reward has not been paid out.
   coinTransactionId String?  @unique @map("coin_transaction_id") @db.Uuid
   ruleId            String?  @map("rule_id") @db.Uuid
@@ -22,6 +21,7 @@ model DailyCheckIn {
   wallet          CoinWallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
   coinTransaction CoinTransaction? @relation(fields: [coinTransactionId], references: [id], onDelete: Restrict)
   rule            RewardRule?      @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  rewardSpin      RewardSpin?
 
   @@unique([userId, checkInDate])
   @@map("daily_check_ins")

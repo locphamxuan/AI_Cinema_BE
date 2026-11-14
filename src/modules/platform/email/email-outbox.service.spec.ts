@@ -85,6 +85,20 @@ describe('EmailOutboxService', () => {
     );
   });
 
+  it("sends under the Creator's name and lets the studio reply to the Creator", async () => {
+    prisma.emailMessage.findUnique.mockResolvedValue({
+      ...stored,
+      payload: { ...stored.payload, fromName: 'Creator Test', replyTo: 'creator@gmail.com' },
+    });
+    storage.read.mockResolvedValue(Buffer.from('%PDF'));
+
+    await handler({ emailMessageId: 'e1' });
+
+    expect(mailer.send).toHaveBeenCalledWith(
+      expect.objectContaining({ fromName: 'Creator Test', replyTo: 'creator@gmail.com' }),
+    );
+  });
+
   it('does not send a message twice', async () => {
     prisma.emailMessage.findUnique.mockResolvedValue({ ...stored, status: EmailStatus.SENT });
     await handler({ emailMessageId: 'e1' });
@@ -106,5 +120,15 @@ describe('EmailOutboxService', () => {
     prisma.emailMessage.update.mockResolvedValue(stored);
     await onFailed({ emailMessageId: 'e1' }, new Error('SMTP down'));
     expect(notifications.notify).toHaveBeenCalledWith(['creator-1'], expect.objectContaining({ link: '/projects/m1' }));
+  });
+
+  it('marks a password-reset code FAILED without an in-app notice to a signed-out member', async () => {
+    const { notifyOnFailureId: _none, ...payload } = stored.payload;
+    prisma.emailMessage.update.mockResolvedValue({ ...stored, template: EMAIL_TEMPLATE.PASSWORD_RESET_OTP, payload });
+    await onFailed({ emailMessageId: 'e1' }, new Error('SMTP down'));
+    expect(prisma.emailMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: EmailStatus.FAILED }) }),
+    );
+    expect(notifications.notify).not.toHaveBeenCalled();
   });
 });

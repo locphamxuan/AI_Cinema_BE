@@ -1,16 +1,17 @@
+import { type FreeTierEpisode, freeTierOf } from 'src/modules/catalog/episode-free-tier';
 import { ConflictException, Injectable } from '@nestjs/common';
-import { AccessSource, CoinEntryType, CoinReferenceType, EpisodeStatus, SubscriptionStatus } from '@prisma/client';
+import { AccessSource, CoinEntryType, CoinReferenceType, EpisodeStatus } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { CoinSpendService } from '../coin-wallet/coin-spend.service';
+import { CoinSpendService, spentMovementOf } from '../coin-wallet/coin-spend.service';
+import { lockWallet } from '../coin-wallet/lot-usage';
+import { COIN_REASON } from '../coin-wallet/coin-wallet.types';
 import { WalletService } from '../coin-wallet/wallet.service';
+import { runningPlanWhere } from '../subscription/running-plan';
 import type { PurchaseResultDto } from './dto/purchase-result.dto';
-
-/** A plan that already grants the episode makes buying it pointless. */
-const RUNNING_PLAN = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
 
 /**
  * Step 17 of the flow: unlock one episode with Coins. The Coins leave through the shared spend
@@ -33,7 +34,14 @@ export class EpisodePurchaseService {
 
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, status: EpisodeStatus.PUBLISHED },
-      select: { id: true, movieId: true, episodeNumber: true, coinPrice: true },
+      select: {
+        id: true,
+        movieId: true,
+        episodeNumber: true,
+        coinPrice: true,
+        isFreeForGuest: true,
+        isFreeForMember: true,
+      },
     });
     if (!episode) {
       throw new ConflictException({
@@ -47,12 +55,15 @@ export class EpisodePurchaseService {
         details: { reason: 'EPISODE_NOT_PRICED' },
       });
     }
-    await this.assertNotFree(episode);
+    this.assertNotFree(episode);
 
     const wallet = await this.wallets.walletOf(user.id);
     const { coinRateVnd } = await this.settings.get();
     return this.prisma.$transaction(async (tx) => {
-      await this.assertNotOwned(tx, episode.id, episode.movieId, user.id);
+      // Every Coin payment of this member takes the wallet lock, so a double tap without an
+      // Idempotency-Key waits here and then finds the episode the first tap just bought.
+      await lockWallet(tx, wallet.id);
+      await this.assertNotOwned(tx, episode.id, user.id);
       const movement = await this.coins.spend(tx, wallet.id, {
         entryType: CoinEntryType.EPISODE_PURCHASE,
         amountCoins: episode.coinPrice!,
@@ -76,7 +87,7 @@ export class EpisodePurchaseService {
           action: CONTENT_EVENT.EPISODE_ACCESS_GRANTED,
           entityType: 'EpisodeAccess',
           entityId: access.id,
-          movieId: episode.movieId,
+          projectId: episode.movieId,
           actorId: user.id,
           payload: {
             episodeId: episode.id,
@@ -99,10 +110,9 @@ export class EpisodePurchaseService {
     });
   }
 
-  /** A Free Starter episode and an episode priced at zero need no purchase at all. */
-  private async assertNotFree(episode: { id: string; episodeNumber: number; coinPrice: number | null }) {
-    const settings = await this.settings.get();
-    if (episode.episodeNumber <= settings.freeStarterEpisodeCount || episode.coinPrice === 0) {
+  /** An episode free for members (BR-03 flags) or priced at zero needs no purchase at all. */
+  private assertNotFree(episode: FreeTierEpisode) {
+    if (freeTierOf(episode).forMember) {
       throw new ConflictException({
         message: 'The episode is free, it needs no purchase',
         details: { reason: 'ACCESS_ALREADY_OWNED' },
@@ -118,27 +128,34 @@ export class EpisodePurchaseService {
       include: { episodeAccess: true },
     });
     const access = entry?.episodeAccess;
-    if (!access || access.userId !== userId || access.episodeId !== episodeId) return null;
+    // The key already paid for another episode (or another member's): never let it pass as this one.
+    if (access && (access.userId !== userId || access.episodeId !== episodeId)) {
+      throw new ConflictException({
+        message: 'This Idempotency-Key was already used for another request; send a new key',
+        details: { reason: COIN_REASON.IDEMPOTENCY_KEY_REUSED },
+      });
+    }
+    if (!entry || !access) return null;
+    const movement = spentMovementOf(entry, access.paidCoins);
     return {
       episodeId,
       paidCoins: access.paidCoins,
-      charged: { mainCoins: -entry.mainAmount, bonusCoins: -entry.bonusAmount },
-      mainBalance: entry.mainBalanceAfter,
-      bonusBalance: entry.bonusBalanceAfter,
+      charged: { mainCoins: movement.mainCoins, bonusCoins: movement.bonusCoins },
+      mainBalance: movement.mainBalance,
+      bonusBalance: movement.bonusBalance,
       access: { source: access.source, grantedAt: access.grantedAt },
       accessGranted: true,
       idempotent: true,
     } satisfies PurchaseResultDto;
   }
 
-  /** Anything that already opens the episode: a plan, the episode itself, or the whole series. */
-  private async assertNotOwned(tx: PrismaTx, episodeId: string, movieId: string, userId: string) {
-    const [episodeAccess, seriesAccess, plan] = await Promise.all([
+  /** Anything that already opens the episode: a running plan or the episode itself. */
+  private async assertNotOwned(tx: PrismaTx, episodeId: string, userId: string) {
+    const [episodeAccess, plan] = await Promise.all([
       tx.episodeAccess.count({ where: { userId, episodeId, revokedAt: null } }),
-      tx.seriesAccess.count({ where: { userId, movieId, revokedAt: null } }),
-      tx.subscription.count({ where: { userId, status: { in: RUNNING_PLAN } } }),
+      tx.subscription.count({ where: runningPlanWhere(userId) }),
     ]);
-    if (episodeAccess || seriesAccess || plan) {
+    if (episodeAccess || plan) {
       throw new ConflictException({
         message: 'The episode is already unlocked',
         details: { reason: 'ACCESS_ALREADY_OWNED' },

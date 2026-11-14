@@ -1,15 +1,21 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
+import { OAuthOpen } from 'src/modules/identity/oauth/oauth-scope.guard';
 import { appConfig } from 'src/config/config.module';
 import { AuthService } from './auth.service';
 import { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
+import { ForgotPasswordRequestDto } from './dto/forgot-password.request.dto';
+import { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
+import { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
+import { ResetPasswordRequestDto } from './dto/reset-password.request.dto';
+import { PasswordResetService } from './password-reset.service';
 
 // Guessing passwords or refresh tokens is limited far below the API-wide rate.
 const authRateLimit = {
@@ -19,7 +25,10 @@ const authRateLimit = {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Public()
   @Throttle(authRateLimit)
@@ -41,6 +50,16 @@ export class AuthController {
 
   @Public()
   @Throttle(authRateLimit)
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sign in or sign up with a Google ID token' })
+  @ApiOkResponse({ type: AuthSessionDto })
+  google(@Body() dto: GoogleLoginRequestDto) {
+    return this.authService.googleLogin(dto);
+  }
+
+  @Public()
+  @Throttle(authRateLimit)
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Swap a refresh token for a new token pair (the old one stops working)' })
@@ -57,10 +76,48 @@ export class AuthController {
     return this.authService.logout(dto.refreshToken);
   }
 
+  @Public()
+  @Throttle(authRateLimit)
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'E-mail a password-reset OTP; answers the same whether or not the account exists' })
+  forgotPassword(@Body() dto: ForgotPasswordRequestDto) {
+    return this.passwordReset.request(dto.email);
+  }
+
+  @Public()
+  @Throttle(authRateLimit)
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: AuthSessionDto })
+  @ApiOperation({ summary: 'Reset the password using the OTP emailed to the account' })
+  resetPassword(@Body() dto: ResetPasswordRequestDto) {
+    return this.authService.resetPassword(dto);
+  }
+
   @Get('me')
+  @OAuthOpen()
   @ApiBearerAuth()
   @ApiOkResponse({ type: AuthProfileDto })
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.me(user.id);
+  }
+
+  @Patch('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Edit your own profile: name, phone number, birthday' })
+  @ApiOkResponse({ type: AuthProfileDto })
+  updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateMyProfileRequestDto) {
+    return this.authService.updateMe(user, dto);
+  }
+
+  @Post('me/password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(authRateLimit)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change your password; every other session is signed out and a new one is returned' })
+  @ApiOkResponse({ type: AuthSessionDto })
+  changePassword(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangeMyPasswordRequestDto) {
+    return this.authService.changePassword(user.id, dto);
   }
 }

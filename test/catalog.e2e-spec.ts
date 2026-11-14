@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode } from './support/media';
+import { compliantEpisode, priceEpisode, release, unpublish } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Card {
@@ -55,9 +55,10 @@ describe('Public catalog (e2e)', () => {
     });
     for (let i = 0; i < 4; i += 1) {
       await compliantEpisode(reviewer, creator, episodeId(i));
-      await reviewer.patch(`/episodes/${episodeId(i)}/coin-price`, { coinPrice: 10 + i });
+      // The Admin frees the first two episodes for everyone (BR-03).
+      await priceEpisode(reviewer, episodeId(i), 10 + i, { isFreeForGuest: i < 2 });
       // Episodes 1–3 are out, episode 4 is only scheduled.
-      await reviewer.post(`/episodes/${episodeId(i)}/publications`, i < 3 ? {} : { scheduledAt: inHours(24) });
+      await release(reviewer, `/episodes/${episodeId(i)}/publications`, i < 3 ? {} : { scheduledAt: inHours(24) });
     }
   });
 
@@ -67,14 +68,22 @@ describe('Public catalog (e2e)', () => {
     const page = await guest<{ data: (Card & Record<string, unknown>)[] }>('/movies?limit=100');
     const card = page.data.find((m) => m.id === listed.id)!;
 
-    expect(card).toMatchObject({ ageRating: 'T16', aiGenerated: true });
+    // Episodes 1–3 are out; the scheduled episode 4 is not counted.
+    expect(card).toMatchObject({ ageRating: 'T16', aiGenerated: true, episodeCount: 3 });
     expect(card.genres.length).toBeGreaterThan(0);
-    for (const internal of ['reviewerId', 'creatorId', 'studioName', 'studioEmail', 'ideaDescription', 'status']) {
+    for (const internal of ['reviewerId', 'creatorId', 'studioId', 'studio', 'ideaDescription', 'status']) {
       expect(card).not.toHaveProperty(internal);
     }
     expect(page.data.some((m) => m.id === unreleased.id)).toBe(false);
     await guest(`/movies/${unreleased.id}`, 404);
     await guest(`/movies/${unreleased.id}/episodes`, 404);
+  });
+
+  it('ranks listed movies by plays, most first', async () => {
+    const ranked = await guest<(Card & { viewCount: number })[]>('/movies/ranking');
+    const counts = ranked.map((m) => m.viewCount);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+    expect(ranked.some((m) => m.id === unreleased.id)).toBe(false);
   });
 
   it('searches and filters by genre', async () => {
@@ -93,11 +102,11 @@ describe('Public catalog (e2e)', () => {
     const episodes = await guest<(EpisodeView & Record<string, unknown>)[]>(`/movies/${listed.id}/episodes`);
 
     expect(episodes.map((e) => e.episodeNumber)).toEqual([1, 2, 3]);
-    // Two free starter episodes by default (BR-03).
+    // The Admin flagged the first two episodes free for Guests (BR-03).
     expect(episodes.map((e) => e.isFreeStarter)).toEqual([true, true, false]);
     expect(episodes[2]).toMatchObject({ availability: 'AVAILABLE', notice: null, coinPrice: 12, durationSeconds: 60 });
     expect(episodes[0].aiLabel).toMatchObject({ labelType: 'AI_GENERATED' });
-    for (const internal of ['streamUrl', 'approvedMediaAssetId', 'status', 'dueDate', 'milestoneDate']) {
+    for (const internal of ['streamUrl', 'approvedMediaAssetId', 'status', 'dueDate', 'deliveryDeadline']) {
       expect(episodes[0]).not.toHaveProperty(internal);
     }
 
@@ -115,12 +124,14 @@ describe('Public catalog (e2e)', () => {
       (await reviewer.get<{ id: string; publishedAt: string | null }[]>(`/episodes/${episodeId(i)}/publications`)).find(
         (p) => p.publishedAt,
       )!;
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${(await live(1)).id}/unpublish`,
       { mode: 'REVISION', reason: 'COMPLIANCE_ISSUE', note: 'Cảnh cuối cần làm lại phụ đề.' },
       200,
     );
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${(await live(2)).id}/unpublish`,
       { mode: 'REMOVAL', reason: 'MANUAL', note: 'Gỡ hẳn tập này.' },
       200,

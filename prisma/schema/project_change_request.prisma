@@ -1,0 +1,45 @@
+enum ChangeRequestType {
+    PROJECT_UPDATE
+    DEADLINE_EXTENSION
+    OTHER
+}
+
+enum ChangeRequestStatus {
+    OPEN
+    APPROVED
+    REJECTED
+}
+
+/// A Reviewer or Creator asks the Admin to change a project, with the reason and the documents that
+/// prove it; the Admin approves or rejects (BR-55, §4.1.8). More production cost has its own request
+/// (production_cost_requests). season_id / episode_id narrow the scope;
+/// both NULL = the whole project.
+model ProjectChangeRequest {
+    id                 String              @id @default(uuid()) @db.Uuid
+    projectId            String              @map("project_id") @db.Uuid
+    seasonId           String?             @map("season_id") @db.Uuid
+    episodeId          String?             @map("episode_id") @db.Uuid
+    requestedById      String              @map("requested_by_id") @db.Uuid
+    requestType        ChangeRequestType   @default(PROJECT_UPDATE) @map("request_type")
+    content            String              @db.Text
+    reason             String              @db.Text
+    attachmentName     String?             @map("attachment_name") @db.VarChar(255)
+    attachmentKey      String?             @map("attachment_key") @db.VarChar(500)
+    attachmentMimeType String?             @map("attachment_mime_type") @db.VarChar(100)
+    status             ChangeRequestStatus @default(OPEN)
+    /// Required when REJECTED.
+    adminResponse      String?             @map("admin_response") @db.Text
+    resolvedById       String?             @map("resolved_by_id") @db.Uuid
+    resolvedAt         DateTime?           @map("resolved_at") @db.Timestamptz(6)
+    createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+    project       MovieProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    season      Season?  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+    episode     Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+    requestedBy User     @relation("ChangeRequestRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+    resolvedBy  User?    @relation("ChangeRequestResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+    @@index([projectId, status])
+    @@index([status, createdAt])
+    @@map("project_change_requests")
+}

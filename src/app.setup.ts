@@ -6,6 +6,7 @@ import { ApiExceptionFilter } from 'src/common/http/api-exception.filter';
 import { BigIntJsonInterceptor } from 'src/common/http/bigint-json.interceptor';
 import { requestIdMiddleware } from 'src/common/http/request-id.middleware';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
+import { RedisIoAdapter } from 'src/infrastructure/realtime/redis-io.adapter';
 import { LocalObjectStorage } from 'src/infrastructure/storage/local-storage';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 
@@ -17,7 +18,14 @@ export function configureApp(app: INestApplication) {
   if (config.trustProxy) express.set('trust proxy', 1);
   express.disable('x-powered-by');
   // Swagger UI needs inline scripts, so the Content-Security-Policy is relaxed only where it is served.
-  app.use(helmet({ contentSecurityPolicy: config.swaggerEnabled ? false : undefined }));
+  // Posters and HLS are loaded by the web app from another origin (:3000 → :3001), so helmet's default
+  // `Cross-Origin-Resource-Policy: same-origin` would make the browser block every artwork image.
+  app.use(
+    helmet({
+      contentSecurityPolicy: config.swaggerEnabled ? false : undefined,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   app.use(requestIdMiddleware);
   app.enableCors({ origin: config.corsOrigins, credentials: true });
   app.setGlobalPrefix('api');
@@ -32,6 +40,8 @@ export function configureApp(app: INestApplication) {
   app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalInterceptors(new BigIntJsonInterceptor());
   app.enableShutdownHooks();
+  // Several API instances share watch room sockets through Redis; one instance alone keeps the in-memory adapter.
+  if (config.redisUrl) app.useWebSocketAdapter(new RedisIoAdapter(app, config.redisUrl));
 
   // With the local storage driver the API itself serves the public objects (HLS, artwork).
   const storage = app.get(ObjectStorage);

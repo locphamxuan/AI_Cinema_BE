@@ -1,5 +1,9 @@
-import { createHmac } from 'node:crypto';
-import { secureCompare } from './momo-signing';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+function secureCompare(expectedHex: string, actual: string | undefined): boolean {
+  if (!actual || expectedHex.length !== actual.length) return false;
+  return timingSafeEqual(Buffer.from(expectedHex, 'utf8'), Buffer.from(actual, 'utf8'));
+}
 
 /** VNPay response codes for the IPN answer (`RspCode`). */
 export const VNPAY_RSP = {
@@ -11,12 +15,7 @@ export const VNPAY_RSP = {
   UNKNOWN_ERROR: '99',
 } as const;
 
-export interface VnpayIpnAnswer {
-  RspCode: string;
-  Message: string;
-}
-
-/** `yyyyMMddHHmmss` in Vietnam time — the only clock VNPay speaks. */
+/** `yyyyMMddHHmmss` in Vietnam time - the only clock VNPay speaks. */
 export function formatVnpDateTime(at: Date): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -52,7 +51,7 @@ export function parseVnpDateTime(value: unknown): Date | undefined {
  * in `vnp_ReturnUrl` / `vnp_IpAddr` make the gateway compute a different checksum
  * ("sai chữ ký"). Mirrors the official sample: `encodeURIComponent`, spaces as `+`.
  */
-export function encodeVnpValue(value: string): string {
+function encodeVnpValue(value: string): string {
   return encodeURIComponent(value).replace(/%20/g, '+');
 }
 

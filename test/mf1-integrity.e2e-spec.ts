@@ -3,7 +3,7 @@ import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PublicationService } from 'src/modules/production/publishing/publication.service';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode, deliver } from './support/media';
+import { compliantEpisode, deliver, priceEpisode, release as releaseEpisode } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Publication {
@@ -52,10 +52,11 @@ describe('MF-1 integrity (e2e)', () => {
   });
 
   it('withdraws scheduled releases when the project is cancelled, so the scheduler skips them (BR-39)', async () => {
-    await reviewer.patch(`/episodes/${episodeId(0)}/coin-price`, { coinPrice: 5 });
-    await reviewer.post(`/episodes/${episodeId(0)}/publications`, { scheduledAt: inHours(1) });
+    await priceEpisode(reviewer, episodeId(0), 5);
+    await releaseEpisode(reviewer, `/episodes/${episodeId(0)}/publications`, { scheduledAt: inHours(1) });
 
-    await reviewer.post(`/projects/${project.id}/cancel`, { reason: 'Nhà tài trợ rút vốn.' }, 204);
+    const admin = await reviewer.signInAs('admin@aicinema.com');
+    await admin.post(`/projects/${project.id}/cancel`, { reason: 'Nhà tài trợ rút vốn.' }, 204);
 
     const [release] = await reviewer.get<Publication[]>(`/episodes/${episodeId(0)}/publications`);
     expect(release.unpublishedAt).not.toBeNull();

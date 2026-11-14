@@ -9,8 +9,8 @@ import { EpisodePurchaseService } from './episode-purchase.service';
 
 describe('EpisodePurchaseService.purchase', () => {
   const tx = {
+    $queryRaw: jest.fn(),
     episodeAccess: { count: jest.fn(), create: jest.fn() },
-    seriesAccess: { count: jest.fn() },
     subscription: { count: jest.fn() },
   };
   const prisma = {
@@ -31,7 +31,14 @@ describe('EpisodePurchaseService.purchase', () => {
   );
 
   const user = { id: 'u1' } as unknown as AuthenticatedUser;
-  const episode = { id: 'ep-1', movieId: 'm1', episodeNumber: 5, coinPrice: 25 };
+  const episode = {
+    id: 'ep-1',
+    movieId: 'm1',
+    episodeNumber: 5,
+    coinPrice: 25,
+    isFreeForGuest: false,
+    isFreeForMember: false,
+  };
   const movement = { transactionId: 'tx-1', mainCoins: 10, bonusCoins: 15, mainBalance: 0, bonusBalance: 0 };
 
   beforeEach(() => {
@@ -41,7 +48,6 @@ describe('EpisodePurchaseService.purchase', () => {
     prisma.episode.findFirst.mockResolvedValue(episode);
     prisma.coinTransaction.findUnique.mockResolvedValue(null);
     tx.episodeAccess.count.mockResolvedValue(0);
-    tx.seriesAccess.count.mockResolvedValue(0);
     tx.subscription.count.mockResolvedValue(0);
     coins.spend.mockResolvedValue(movement);
     tx.episodeAccess.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
@@ -84,13 +90,27 @@ describe('EpisodePurchaseService.purchase', () => {
     );
   });
 
-  it('replays the same key instead of charging twice', async () => {
+  it('locks the wallet before checking ownership, so a keyless double tap pays once', async () => {
+    const order: string[] = [];
+    tx.$queryRaw.mockImplementation(() => order.push('lock'));
+    tx.episodeAccess.count.mockImplementation(() => {
+      order.push('owned?');
+      return 0;
+    });
+
+    await service.purchase('ep-1', user);
+
+    expect(order).toEqual(['lock', 'owned?']);
+  });
+
+  it('replays the same key instead of charging twice, with the main/bonus split it charged', async () => {
+    // The keyed row is the first of the debit: the main part, before the bonus lots were touched.
     prisma.coinTransaction.findUnique.mockResolvedValue({
       id: 'tx-1',
       mainAmount: -10,
-      bonusAmount: -15,
+      bonusAmount: 0,
       mainBalanceAfter: 0,
-      bonusBalanceAfter: 0,
+      bonusBalanceAfter: 15,
       episodeAccess: {
         userId: 'u1',
         episodeId: 'ep-1',
@@ -102,7 +122,14 @@ describe('EpisodePurchaseService.purchase', () => {
 
     const result = await service.purchase('ep-1', user, 'key-1');
 
-    expect(result).toMatchObject({ accessGranted: true, idempotent: true, paidCoins: 25 });
+    expect(result).toMatchObject({
+      accessGranted: true,
+      idempotent: true,
+      paidCoins: 25,
+      charged: { mainCoins: 10, bonusCoins: 15 },
+      mainBalance: 0,
+      bonusBalance: 0,
+    });
     expect(coins.spend).not.toHaveBeenCalled();
     expect(tx.episodeAccess.create).not.toHaveBeenCalled();
   });
@@ -111,8 +138,8 @@ describe('EpisodePurchaseService.purchase', () => {
     prisma.episode.findFirst.mockResolvedValue(null);
 
     await expect(service.purchase('missing', user)).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: 'EPISODE_NOT_PUBLISHED',
         },
@@ -136,7 +163,8 @@ describe('EpisodePurchaseService.purchase', () => {
   });
 
   it.each([
-    ['a Free Starter', { ...episode, episodeNumber: 1 }],
+    ['an episode free for guests', { ...episode, isFreeForGuest: true }],
+    ['an episode free for members', { ...episode, isFreeForMember: true }],
     ['priced at zero', { ...episode, coinPrice: 0 }],
   ])('refuses %s: there is nothing to buy', async (_label, row) => {
     prisma.episode.findFirst.mockResolvedValue(row);
@@ -153,12 +181,10 @@ describe('EpisodePurchaseService.purchase', () => {
   });
 
   it.each([
-    ['the episode itself', { episodeAccess: 1, seriesAccess: 0, plan: 0 }],
-    ['the whole series', { episodeAccess: 0, seriesAccess: 1, plan: 0 }],
-    ['a running plan', { episodeAccess: 0, seriesAccess: 0, plan: 1 }],
+    ['the episode itself', { episodeAccess: 1, plan: 0 }],
+    ['a running plan', { episodeAccess: 0, plan: 1 }],
   ])('refuses when %s already opens the episode', async (_label, counts) => {
     tx.episodeAccess.count.mockResolvedValue(counts.episodeAccess);
-    tx.seriesAccess.count.mockResolvedValue(counts.seriesAccess);
     tx.subscription.count.mockResolvedValue(counts.plan);
 
     await expect(service.purchase('ep-1', user)).rejects.toMatchObject({

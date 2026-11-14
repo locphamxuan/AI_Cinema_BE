@@ -6,6 +6,7 @@ import {
   type Episode,
   type MediaAsset,
   type Movie,
+  type MovieProject,
 } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -19,6 +20,8 @@ import {
   assertProjectStatus,
   DELIVERY_PROJECT_STATUSES,
 } from 'src/modules/production/project-access/project-rules';
+import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
+import { reopenOnChanges } from 'src/modules/production/studio-handoff/milestone/deliver-on-submission';
 import type { ReviewMediaRequestDto } from './dto/content-review.request.dto';
 
 /** Until it is scheduled, a reviewed episode can still be sent back to the studio. */
@@ -31,9 +34,10 @@ export const REVIEWED_STATUSES: EpisodeStatus[] = [
 /** BR-31: an actual length this far from the target is flagged on the review sheet. */
 const DURATION_WARNING_RATIO = 0.2;
 
-export type ReviewedAsset = MediaAsset & { episode: Episode & { movie: Movie } };
+/** A delivered version with its episode, the episode's catalog movie and its project. */
+export type ReviewedAsset = MediaAsset & { episode: Episode & { movie: Movie; project: MovieProject } };
 
-/** MF-1 steps 8–9: the Reviewer approves a delivered version or asks the studio for changes (BR-16, BR-18). */
+/** MF-1 §5: the Reviewer approves a delivered version or asks the studio for changes directly (BR-16, BR-18). */
 @Injectable()
 export class ContentReviewService {
   constructor(
@@ -41,18 +45,23 @@ export class ContentReviewService {
     private readonly access: ProjectAccessService,
     private readonly auditLog: AuditLogService,
     private readonly notifications: NotificationService,
+    private readonly mails: StudioMailService,
   ) {}
 
   async review(mediaAssetId: string, dto: ReviewMediaRequestDto, user: AuthenticatedUser) {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
-    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'review media');
+    assertProjectStatus(asset.episode.project.status, DELIVERY_PROJECT_STATUSES, 'review media');
 
     if (dto.decision === ContentReviewDecision.CHANGES_REQUESTED) {
       this.assertUnderReview(asset, [EpisodeStatus.IN_REVIEW, ...REVIEWED_STATUSES]);
-      await this.prisma.$transaction((tx) => this.requestChanges(tx, asset, user.id, dto.comments!.trim()));
+      await this.announce(
+        await this.prisma.$transaction((tx) => this.requestChanges(tx, asset, user.id, dto.comments!.trim())),
+      );
     } else {
       this.assertUnderReview(asset, [EpisodeStatus.IN_REVIEW]);
-      await this.prisma.$transaction((tx) => this.approve(tx, asset, user.id, dto.comments?.trim() || null));
+      await this.announce(
+        await this.prisma.$transaction((tx) => this.approve(tx, asset, user.id, dto.comments?.trim() || null)),
+      );
     }
     return this.sheet(mediaAssetId, user);
   }
@@ -60,9 +69,15 @@ export class ContentReviewService {
   /**
    * Sends the version back: the episode waits for a new delivery and loses its approved version,
    * so a later delivery is reviewed, labeled and checked again (BR-18). Also used by a failed
-   * compliance check (BR-42) and by a published episode taken down to be fixed (BR-56).
+   * compliance check (BR-42) and by a published episode taken down to be fixed (BR-56). Returns the email telling
+   * the studio: pass it to announce() once the transaction committed.
    */
-  async requestChanges(tx: PrismaTx, asset: ReviewedAsset, reviewerId: string, comments: string): Promise<void> {
+  async requestChanges(
+    tx: PrismaTx,
+    asset: ReviewedAsset,
+    reviewerId: string,
+    comments: string,
+  ): Promise<string | null> {
     const { episode } = asset;
     const { count } = await tx.episode.updateMany({
       where: {
@@ -72,9 +87,19 @@ export class ContentReviewService {
           { status: { in: [...REVIEWED_STATUSES, EpisodeStatus.PUBLISHED] }, approvedMediaAssetId: asset.id },
         ],
       },
-      data: { status: EpisodeStatus.CHANGES_REQUESTED, approvedMediaAssetId: null },
+      data: {
+        status: EpisodeStatus.CHANGES_REQUESTED,
+        approvedMediaAssetId: null,
+        finalConfirmedAt: null,
+        finalConfirmedById: null,
+      },
     });
     if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+    await reopenOnChanges(tx, this.auditLog, {
+      handoffId: asset.studioHandoffId,
+      projectId: episode.movieId,
+      reviewerId,
+    });
     const review = await tx.contentReview.create({
       data: { mediaAssetId: asset.id, reviewerId, decision: ContentReviewDecision.CHANGES_REQUESTED, comments },
     });
@@ -83,23 +108,47 @@ export class ContentReviewService {
         action: CONTENT_EVENT.CONTENT_CHANGES_REQUESTED,
         entityType: 'ContentReview',
         entityId: review.id,
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         actorId: reviewerId,
         payload: { episodeId: episode.id, mediaAssetId: asset.id, version: asset.version, comments },
       },
       tx,
     );
+    // MF-1 §5 (07/11/2026): the Reviewer works with the studio directly; its accounts see the request on the portal.
     await this.notifications.notify(
-      [episode.movie.creatorId],
+      await this.notifications.studioAccountIds(episode.project.studioId, tx),
       {
         type: NOTIFICATION_TYPE.CONTENT_CHANGES_REQUESTED,
-        title: `Yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
-        body: `Studio xem góp ý trên cổng studio và giao bản mới: ${comments}`,
-        link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-        payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
+        title: `Reviewer yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`,
+        body: `Sửa theo góp ý rồi gửi lại bản mới: ${comments}`,
+        link: `/projects/${episode.movieId}`,
+        payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },
       tx,
     );
+    return this.mailStudio(tx, asset, `Yêu cầu sửa tập ${episode.episodeNumber} của phim "${episode.movie.title}"`, [
+      `Reviewer yêu cầu sửa tập ${episode.episodeNumber} (bản ${asset.version}) của phim "${episode.movie.title}":`,
+      comments,
+      'Sau khi sửa, vui lòng nộp lại bản mới trên Studio Web.',
+    ]);
+  }
+
+  /** Sends the email a review queued, once its transaction committed. */
+  announce(mailId: string | null): Promise<void> {
+    return this.mails.dispatch(mailId);
+  }
+
+  /** The Reviewer in charge is the studio's contact on the films, whoever triggered the message. */
+  private mailStudio(tx: PrismaTx, asset: ReviewedAsset, subject: string, lines: string[]): Promise<string | null> {
+    const { episode } = asset;
+    return this.mails.queue(tx, {
+      studioId: episode.project.studioId,
+      senderId: episode.project.reviewerId,
+      subject: `[AI Cinema] ${subject}`,
+      lines,
+      portalPath: `/projects/${episode.movieId}/episodes/${episode.id}`,
+      failureLink: `/projects/${episode.movieId}/episodes/${episode.id}`,
+    });
   }
 
   /** Everything the Reviewer looks at for one version: disclosure, length, history, label, compliance. */
@@ -108,9 +157,11 @@ export class ContentReviewService {
     const asset = await this.prisma.mediaAsset.findUniqueOrThrow({
       where: { id: mediaAssetId },
       include: {
-        episode: { include: { movie: { select: { id: true, title: true, status: true } } } },
+        episode: {
+          include: { movie: { select: { id: true, title: true, project: { select: { status: true } } } } },
+        },
         submittedBy: { select: { id: true, fullName: true } },
-        studioHandoff: { select: { id: true, studioName: true } },
+        studioHandoff: { select: { id: true, studio: { select: { id: true, name: true } } } },
         contentReviews: {
           orderBy: { createdAt: 'desc' },
           include: { reviewer: { select: { id: true, fullName: true } } },
@@ -131,7 +182,7 @@ export class ContentReviewService {
         title: episode.title,
         status: episode.status,
         targetDurationSeconds: episode.targetDurationSeconds,
-        movie: episode.movie,
+        movie: { id: episode.movie.id, title: episode.movie.title, status: episode.movie.project?.status },
       },
       isApprovedVersion: episode.approvedMediaAssetId === asset.id,
       durationCheck: durationCheck(episode.targetDurationSeconds, asset.durationSeconds),
@@ -149,7 +200,12 @@ export class ContentReviewService {
     if (!current) throw new ConflictException('This is not the version under review; open the latest one');
   }
 
-  private async approve(tx: PrismaTx, asset: ReviewedAsset, reviewerId: string, comments: string | null) {
+  private async approve(
+    tx: PrismaTx,
+    asset: ReviewedAsset,
+    reviewerId: string,
+    comments: string | null,
+  ): Promise<string | null> {
     const { episode } = asset;
     const { count } = await tx.episode.updateMany({
       where: { id: episode.id, status: EpisodeStatus.IN_REVIEW },
@@ -164,23 +220,27 @@ export class ContentReviewService {
         action: CONTENT_EVENT.CONTENT_APPROVED,
         entityType: 'ContentReview',
         entityId: review.id,
-        movieId: episode.movieId,
+        projectId: episode.movieId,
         actorId: reviewerId,
         payload: { episodeId: episode.id, mediaAssetId: asset.id, version: asset.version },
       },
       tx,
     );
     await this.notifications.notify(
-      [episode.movie.creatorId],
+      await this.notifications.studioAccountIds(episode.project.studioId, tx),
       {
         type: NOTIFICATION_TYPE.CONTENT_APPROVED,
         title: `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã được duyệt`,
         body: `Bản ${asset.version} chuyển sang gắn nhãn AI và kiểm tra tuân thủ.`,
-        link: `/projects/${episode.movieId}/episodes/${episode.id}`,
-        payload: { movieId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
+        link: `/projects/${episode.movieId}`,
+        payload: { projectId: episode.movieId, episodeId: episode.id, mediaAssetId: asset.id },
       },
       tx,
     );
+    return this.mailStudio(tx, asset, `Tập ${episode.episodeNumber} của phim "${episode.movie.title}" đã được duyệt`, [
+      `Reviewer đã duyệt bản ${asset.version} của tập ${episode.episodeNumber}, phim "${episode.movie.title}".`,
+      'Tập phim chuyển sang gắn nhãn AI và kiểm tra tuân thủ.',
+    ]);
   }
 }
 

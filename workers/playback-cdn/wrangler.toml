@@ -1,0 +1,21 @@
+name = "aicinema-playback-cdn"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Custom domain serving CDN_BASE_URL, e.g. https://stream.aicinema.example
+# routes = [{ pattern = "stream.aicinema.example/public/hls/*", zone_name = "aicinema.example" }]
+
+# The bucket holding public/hls/*. Keep it PRIVATE: no r2.dev URL, no public custom domain.
+# The Worker is then the only way in, so the signed token cannot be walked around.
+# [[r2_buckets]]
+# binding = "MEDIA_BUCKET"
+# bucket_name = "aicinema-media"
+
+[vars]
+# Development fallback only, used when MEDIA_BUCKET is not bound: a plain HTTP origin
+# such as a local MinIO, e.g. http://127.0.0.1:9000. Leave unset in production.
+# ORIGIN_BASE = ""
+
+[secrets]
+# Must equal the API's PLAYBACK_URL_SECRET.
+# Set with: wrangler secret put PLAYBACK_URL_SECRET

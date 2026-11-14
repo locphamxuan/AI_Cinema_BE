@@ -1,9 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { CoinEntryType } from '@prisma/client';
 import { IsEnum, IsISO8601, IsIn, IsOptional, IsUUID } from 'class-validator';
+import { PageQueryDto } from 'src/common/validation/page-query.dto';
 
 /** Filters of `GET /api/wallet/statements` and `GET /api/admin/coin-transactions`. */
-export class CoinStatementQueryDto {
+export class CoinStatementQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ enum: ['MAIN', 'BONUS', 'ALL'], default: 'ALL' })
   @IsIn(['MAIN', 'BONUS', 'ALL'])
   @IsOptional()

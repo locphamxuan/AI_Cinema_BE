@@ -4,62 +4,58 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { ChangeStudioRequestDto, HandOffRequestDto } from './dto/studio-handoff.request.dto';
+import { ChangeStudioRequestDto } from './dto/studio-handoff.request.dto';
+import { HandoffMaterialService } from './material/handoff-material.service';
 import { StudioHandoffService } from './studio-handoff.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
 @ApiTags('studio-handoff')
 @ApiBearerAuth()
-@Controller('projects/:movieId')
+@Controller('projects/:projectId')
 export class StudioHandoffController {
-  constructor(private readonly handoffs: StudioHandoffService) {}
-
-  @Post('handoff')
-  @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @ApiOperation({
-    summary:
-      'Hand the project to a studio, due on the Reviewer deadlines: brief PDF and email; IN_PRODUCTION (steps 3–4)',
-  })
-  handOff(
-    @Param('movieId', ID) movieId: string,
-    @Body() dto: HandOffRequestDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.handoffs.handOff(movieId, dto, user);
-  }
+  constructor(
+    private readonly handoffs: StudioHandoffService,
+    private readonly materials: HandoffMaterialService,
+  ) {}
 
   @Post('studio-change')
-  @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @ApiOperation({ summary: 'Move the project to another studio, with the reason; a new brief is sent' })
+  @RequirePermission(PERMISSION.CONTRACT_MANAGE)
+  @ApiOperation({
+    summary: 'Admin: move the project or a season to another studio, with the reason; a new brief is emailed',
+  })
   changeStudio(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Body() dto: ChangeStudioRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.handoffs.changeStudio(movieId, dto, user);
-  }
-
-  @Post('handoffs/portal-link')
-  @RequirePermission(PERMISSION.STUDIO_HANDOFF)
-  @ApiOperation({ summary: 'Email the current studio a new portal link; the previous link stops working' })
-  resendPortalLink(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.handoffs.resendPortalLink(movieId, user);
+    return this.handoffs.changeStudio(projectId, dto, user);
   }
 
   @Get('handoffs')
-  @ApiOperation({ summary: 'Every hand-off and studio change, newest first, with the email status' })
-  history(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.handoffs.history(movieId, user);
+  @ApiOperation({ summary: 'Studio timeline: every hand-off with its materials and milestone events, newest first' })
+  history(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.handoffs.history(projectId, user);
   }
 
   @Get('handoffs/:handoffId/brief')
   @ApiOperation({ summary: 'Download the brief PDF sent with a hand-off' })
   brief(
-    @Param('movieId', ID) movieId: string,
+    @Param('projectId', ID) projectId: string,
     @Param('handoffId', ID) handoffId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.handoffs.briefFile(movieId, handoffId, user);
+    return this.handoffs.briefFile(projectId, handoffId, user);
+  }
+
+  @Get('handoffs/:handoffId/materials/:materialId/content')
+  @ApiOperation({ summary: 'Download a file an older hand-off sent (scripts are no longer emailed)' })
+  material(
+    @Param('projectId', ID) projectId: string,
+    @Param('handoffId', ID) handoffId: string,
+    @Param('materialId', ID) materialId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.materials.download(projectId, handoffId, materialId, user);
   }
 }

@@ -1,3 +1,8 @@
+import { cdnConfig, type CdnConfig } from './cdn-config';
+import { EnvReader, type Env } from './env-reader';
+import { DEFAULT_CODE_TTL_SECONDS, type OAuthConfig } from './oauth-config';
+import { supportConfig, type SupportConfig } from './support-config';
+
 /**
  * Every setting the API reads, parsed and checked once at start-up so a bad .env fails fast
  * instead of on the first request that needs it. Read it through the APP_CONFIG provider.
@@ -7,20 +12,34 @@ export interface AppConfig {
   isProduction: boolean;
   port: number;
   corsOrigins: string[];
-  /** Web app origin, for links sent by email (the studio portal). */
-  webAppUrl: string;
+  /** Studio Web origin, for the links in the emails a studio receives. */
+  studioWebUrl: string;
+  /** Where the payment return trip sends the member: the mobile app's top-up screen. */
+  appReturnUrl: string;
   swaggerEnabled: boolean;
   trustProxy: boolean;
   databaseUrl: string;
   redisUrl: string | null;
   jwt: { secret: string; accessTtlSeconds: number; refreshTtlDays: number; issuer: string; audience: string };
-  rateLimit: { ttlMs: number; limit: number; authLimit: number };
+  rateLimit: {
+    ttlMs: number;
+    limit: number;
+    authLimit: number;
+    /** MF-3: opening a playback session (flow 3, step 11); a deliberate tap, kept tight. */
+    playbackSessionLimit: number;
+    /** MF-3: heartbeats; a viewer sends 4–6/min and CGNAT puts many viewers on one IP. */
+    playbackHeartbeatLimit: number;
+  };
+  /** Absolute base players resolve API-issued playlist URLs against. */
+  apiPublicUrl: string;
   storage: {
     driver: 'local' | 's3';
     localRoot: string;
     publicBaseUrl: string;
     s3: { endpoint?: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string };
   };
+  /** Cloudflare R2 + CDN in front of the HLS output; falls back to the storage origin. */
+  cdn: CdnConfig;
   mail: { host: string | null; port: number; secure: boolean; user?: string; password?: string; from: string };
   media: {
     pipeline: 'ffmpeg' | 'mock';
@@ -40,7 +59,12 @@ export interface AppConfig {
     subscriptionRenewalSweepMs: number;
     coinExpirySweepMs: number;
     coinTopUpSweepMs: number;
+    emailRedeliverySweepMs: number;
     paymentReconcileSweepMs: number;
+    /** MF-3: closing sessions whose heartbeat timed out. */
+    streamingSessionSweepMs: number;
+    /** MF-3: deleting finished sessions older than `playback.sessionRetentionDays`. */
+    streamingSessionRetentionSweepMs: number;
   };
   /**
    * Real payment gateways (MF-2 top-ups). Secrets are optional: a provider with no
@@ -48,16 +72,6 @@ export interface AppConfig {
    * time, so local development boots without any gateway account.
    */
   payments: {
-    momo: {
-      partnerCode?: string;
-      accessKey?: string;
-      secretKey?: string;
-      createUrl: string;
-      statusUrl: string;
-      redirectUrl?: string;
-      ipnUrl?: string;
-      requestType: string;
-    };
     vnpay: {
       tmnCode?: string;
       hashSecret?: string;
@@ -68,6 +82,32 @@ export interface AppConfig {
     };
   };
   briefFontPath: string | null;
+  /**
+   * MF-3 playback: signed URLs and session retention. Empty `urlSecret` = signing disabled:
+   * the API hands out direct stream URLs and the token playlist endpoints refuse with 422,
+   * so local development boots without any secret.
+   */
+  playback: {
+    urlSecret?: string;
+    /**
+     * Lifetime of a signed URL. Playlist responses re-sign their child URLs on every serve,
+     * so this bounds a leaked link rather than an actively playing session.
+     * Keep it inside the 30–60 minute window.
+     */
+    urlTtlSeconds: number;
+    /**
+     * MF-3 retention: a session that ended more than this many days ago is deleted by the
+     * retention sweep, and its ad-break rows cascade with it. 0 keeps every row forever;
+     * keep the window longer than any report that reads session rows.
+     */
+    sessionRetentionDays: number;
+  };
+  /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
+  google: { clientIds: string[] };
+  /** AI customer support: provider, RAG and case-handling settings (src/config/support-config.ts). */
+  support: SupportConfig;
+  /** AI Cinema as an OAuth 2.0 authorization server for Studio Web (src/config/oauth-config.ts). */
+  oauth: OAuthConfig;
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -75,54 +115,6 @@ export const APP_CONFIG = Symbol('APP_CONFIG');
 const PLACEHOLDER_SECRET = 'replace-with-a-long-random-string';
 const MIN_SECRET_LENGTH = 32;
 const MB = 1024 * 1024;
-
-type Env = Record<string, string | undefined>;
-
-class EnvReader {
-  readonly errors: string[] = [];
-
-  constructor(private readonly env: Env) {}
-
-  string(key: string, fallback?: string): string {
-    const value = this.env[key]?.trim();
-    if (value) return value;
-    if (fallback !== undefined) return fallback;
-    this.errors.push(`${key} is required`);
-    return '';
-  }
-
-  optional(key: string): string | undefined {
-    return this.env[key]?.trim() || undefined;
-  }
-
-  int(key: string, fallback: number, min = 0): number {
-    const raw = this.optional(key);
-    if (raw === undefined) return fallback;
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < min) {
-      this.errors.push(`${key} must be an integer >= ${min} (got "${raw}")`);
-      return fallback;
-    }
-    return value;
-  }
-
-  bool(key: string, fallback: boolean): boolean {
-    const raw = this.optional(key)?.toLowerCase();
-    if (raw === undefined) return fallback;
-    if (raw === 'true' || raw === '1') return true;
-    if (raw === 'false' || raw === '0') return false;
-    this.errors.push(`${key} must be true or false (got "${raw}")`);
-    return fallback;
-  }
-
-  oneOf<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-    const raw = this.optional(key);
-    if (raw === undefined) return fallback;
-    if ((allowed as readonly string[]).includes(raw)) return raw as T;
-    this.errors.push(`${key} must be one of ${allowed.join(', ')} (got "${raw}")`);
-    return fallback;
-  }
-}
 
 function jwtSecret(read: EnvReader, isProduction: boolean): string {
   const secret = read.string('JWT_SECRET');
@@ -152,16 +144,6 @@ function storageConfig(read: EnvReader, port: number): AppConfig['storage'] {
 
 function paymentConfig(read: EnvReader): AppConfig['payments'] {
   return {
-    momo: {
-      partnerCode: read.optional('MOMO_PARTNER_CODE'),
-      accessKey: read.optional('MOMO_ACCESS_KEY'),
-      secretKey: read.optional('MOMO_SECRET_KEY'),
-      createUrl: read.string('MOMO_CREATE_URL', 'https://test-payment.momo.vn/v2/gateway/api/create'),
-      statusUrl: read.string('MOMO_STATUS_URL', 'https://test-payment.momo.vn/v2/gateway/api/transaction-status'),
-      redirectUrl: read.optional('MOMO_REDIRECT_URL'),
-      ipnUrl: read.optional('MOMO_IPN_URL'),
-      requestType: read.string('MOMO_REQUEST_TYPE', 'payWithMethod'),
-    },
     vnpay: {
       tmnCode: read.optional('VNPAY_TMN_CODE'),
       hashSecret: read.optional('VNPAY_HASH_SECRET'),
@@ -178,6 +160,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
   const nodeEnv = read.string('NODE_ENV', 'development');
   const isProduction = nodeEnv === 'production';
   const port = read.int('PORT', 3001, 1);
+  const storage = storageConfig(read, port);
 
   const config: AppConfig = {
     nodeEnv,
@@ -188,14 +171,15 @@ export function loadConfig(env: Env = process.env): AppConfig {
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
-    webAppUrl: read.string('WEB_APP_URL', 'http://localhost:3000').replace(/\/+$/, ''),
+    studioWebUrl: read.string('STUDIO_WEB_URL', 'http://localhost:3100'),
+    appReturnUrl: read.string('APP_RETURN_URL', 'aicinema://top-ups'),
     swaggerEnabled: read.bool('SWAGGER_ENABLED', !isProduction),
     trustProxy: read.bool('TRUST_PROXY', false),
     databaseUrl: read.string('DATABASE_URL'),
     redisUrl: read.optional('REDIS_URL') ?? null,
     jwt: {
       secret: jwtSecret(read, isProduction),
-      accessTtlSeconds: read.int('JWT_ACCESS_TTL_SECONDS', 15 * 60, 60),
+      accessTtlSeconds: read.int('JWT_ACCESS_TTL_SECONDS', 30 * 60, 60),
       refreshTtlDays: read.int('JWT_REFRESH_TTL_DAYS', 30, 1),
       issuer: read.string('JWT_ISSUER', 'ai-cinema-api'),
       audience: read.string('JWT_AUDIENCE', 'ai-cinema'),
@@ -204,8 +188,15 @@ export function loadConfig(env: Env = process.env): AppConfig {
       ttlMs: read.int('RATE_LIMIT_TTL_MS', 60_000, 1000),
       limit: read.int('RATE_LIMIT_MAX', 300, 1),
       authLimit: read.int('RATE_LIMIT_AUTH_MAX', 10, 1),
+      // Beating players sit behind shared CGNAT IPs: the heartbeat budget covers ~200
+      // concurrent viewers (6 req/min each) while session creation is tightened so guest
+      // minting cannot ride the API-wide budget.
+      playbackSessionLimit: read.int('RATE_LIMIT_PLAYBACK_SESSION_MAX', 60, 1),
+      playbackHeartbeatLimit: read.int('RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX', 1200, 1),
     },
-    storage: storageConfig(read, port),
+    apiPublicUrl: (read.optional('API_PUBLIC_URL') ?? `http://localhost:${port}`).replace(/\/+$/, ''),
+    storage,
+    cdn: cdnConfig(read, storage.publicBaseUrl),
     mail: {
       host: read.optional('SMTP_HOST') ?? null,
       port: read.int('SMTP_PORT', 587, 1),
@@ -230,17 +221,54 @@ export function loadConfig(env: Env = process.env): AppConfig {
       subscriptionRenewalSweepMs: read.int('SUBSCRIPTION_RENEWAL_SWEEP_MS', 60_000),
       coinExpirySweepMs: read.int('COIN_EXPIRY_SWEEP_MS', 24 * 60 * 60_000),
       coinTopUpSweepMs: read.int('COIN_TOPUP_SWEEP_MS', 5 * 60_000),
+      emailRedeliverySweepMs: read.int('EMAIL_REDELIVERY_SWEEP_MS', 15 * 60_000),
       paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
+      /** MF-3: sessions whose heartbeat timed out are closed and their progress saved. */
+      streamingSessionSweepMs: read.int('STREAMING_SESSION_SWEEP_MS', 30_000),
+      /** MF-3: the retention sweep runs once a day by default; it is cheap when nothing is due. */
+      streamingSessionRetentionSweepMs: read.int('STREAMING_SESSION_RETENTION_SWEEP_MS', 24 * 60 * 60_000),
     },
     payments: paymentConfig(read),
     briefFontPath: read.optional('BRIEF_FONT_PATH') ?? null,
+    playback: {
+      urlSecret: read.optional('PLAYBACK_URL_SECRET'),
+      urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
+      sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
+    },
+    support: supportConfig(read),
+    oauth: { codeTtlSeconds: read.int('OAUTH_CODE_TTL_SECONDS', DEFAULT_CODE_TTL_SECONDS, 30) },
+    google: {
+      clientIds: [
+        ...new Set(
+          [
+            read.optional('GOOGLE_WEB_CLIENT_ID'),
+            read.optional('GOOGLE_ANDROID_CLIENT_ID'),
+            read.optional('GOOGLE_IOS_CLIENT_ID'),
+          ].filter((value): value is string => Boolean(value)),
+        ),
+      ],
+    },
   };
 
-  if (isProduction && config.media.allowPrivateUrls) {
-    read.errors.push('MEDIA_ALLOW_PRIVATE_URLS must stay false in production');
-  }
+  if (isProduction) productionRules(config).forEach((rule) => read.errors.push(rule));
   if (read.errors.length) {
     throw new Error(`Invalid configuration:\n- ${read.errors.join('\n- ')}`);
   }
   return Object.freeze(config);
+}
+
+/**
+ * What production must not start without: without Redis every job (ffmpeg ingest included) runs
+ * inside the HTTP request with no backoff and every instance runs every sweep; without the URL
+ * secret paid episodes stream from unsigned object-storage URLs (only the local-disk demo is exempt).
+ */
+function productionRules(config: AppConfig): string[] {
+  const rules: string[] = [];
+  if (config.media.allowPrivateUrls) rules.push('MEDIA_ALLOW_PRIVATE_URLS must stay false in production');
+  if (config.media.pipeline === 'mock') rules.push('MEDIA_PIPELINE=mock is for tests; use ffmpeg in production');
+  if (!config.redisUrl) rules.push('REDIS_URL is required in production (job queue, sweeps, watch room sockets)');
+  if (config.storage.driver === 's3' && !config.playback.urlSecret) {
+    rules.push('PLAYBACK_URL_SECRET is required in production with STORAGE_DRIVER=s3 (signed stream URLs)');
+  }
+  return rules;
 }

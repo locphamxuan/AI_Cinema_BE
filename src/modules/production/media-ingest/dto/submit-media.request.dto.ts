@@ -3,12 +3,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LabelType, MediaSourceMethod } from '@prisma/client';
 import { plainToInstance, Type } from 'class-transformer';
 import {
-  ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   Equals,
   IsArray,
-  IsBoolean,
   IsDefined,
   IsEnum,
   IsIn,
@@ -17,7 +15,6 @@ import {
   IsString,
   IsUrl,
   MaxLength,
-  MinLength,
   ValidateNested,
   validateSync,
 } from 'class-validator';
@@ -26,25 +23,12 @@ const AI_GENERATED_PARTS = ['image', 'video', 'voice', 'music', 'script', 'subti
 
 /** BR-41: what the studio declares about its use of AI, through its portal (or typed in by the Creator on its behalf). */
 export class AiDisclosureDto {
-  @ApiProperty({ example: ['Kling', 'ElevenLabs'], description: 'AI tools and models the studio used' })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(30)
-  @IsString({ each: true })
-  @MinLength(1, { each: true })
-  @MaxLength(100, { each: true })
-  aiTools: string[];
-
   @ApiProperty({ enum: AI_GENERATED_PARTS, isArray: true, example: ['video', 'voice'] })
   @IsArray()
   @ArrayMinSize(1)
   @ArrayUnique()
   @IsIn(AI_GENERATED_PARTS, { each: true })
   aiGeneratedParts: string[];
-
-  @ApiProperty({ description: 'Whether people edited the AI output by hand' })
-  @IsBoolean()
-  humanEdited: boolean;
 
   @ApiProperty({ description: 'The studio commits to no misleading likeness of a real person or event' })
   @Equals(true, { message: 'The studio must commit to no misleading real-person or real-event likeness (BR-41)' })
@@ -91,7 +75,10 @@ export class SubmitMediaLinkRequestDto extends MediaMetadataDto {
 
 /** Step 5 by file: multipart fields next to `file`; `aiDisclosure` is the JSON of AiDisclosureDto. */
 export class SubmitMediaUploadRequestDto extends MediaMetadataDto {
-  @ApiProperty({ description: 'JSON of AiDisclosureDto', example: JSON.stringify({ aiTools: ['Kling'] }) })
+  @ApiProperty({
+    description: 'JSON of AiDisclosureDto',
+    example: JSON.stringify({ aiGeneratedParts: ['video'], noRealPersonLikeness: true, noCopyrightedMaterial: true }),
+  })
   @IsString()
   @MaxLength(10_000)
   aiDisclosure: string;

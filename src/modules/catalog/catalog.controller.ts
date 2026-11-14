@@ -19,6 +19,13 @@ export class CatalogController {
     return this.catalog.listMovies(query, genreId);
   }
 
+  // Declared before movies/:movieId so "ranking" is not read as an id.
+  @Get('movies/ranking')
+  @ApiOperation({ summary: 'Listed movies ranked by plays, most first' })
+  ranking() {
+    return this.catalog.ranking();
+  }
+
   @Get('movies/:movieId')
   @ApiOperation({ summary: 'A listed movie with its seasons' })
   movie(@Param('movieId', ID) movieId: string) {

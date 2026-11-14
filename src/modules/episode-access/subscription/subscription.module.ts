@@ -8,10 +8,16 @@ import { MembershipPlanModule } from '../membership-plan/membership-plan.module'
 import { SubscriptionController } from './subscription.controller';
 import { SubscriptionRenewalService } from './subscription-renewal.service';
 import { SubscriptionRenewalSweep } from './subscription-renewal.sweep';
+import { SubscriptionAdminService } from './subscription-admin.service';
+import { SubscriptionAutoRenewService } from './subscription-auto-renew.service';
 import { SubscriptionService } from './subscription.service';
 import { AdminSubscriptionController } from 'src/modules/episode-access/subscription/admin-subscription.controller';
+import { PlanDaysGrantService } from './plan-days-grant.service';
 
-/** Steps 9, 10 and 19: joining a plan, stopping auto-renew and letting the sweeper renew it. */
+/**
+ * Steps 9, 10 and 19: joining a plan, stopping auto-renew and letting the sweeper renew it; plus
+ * the plan days a reward spin gives (BR-09).
+ */
 @Module({
   imports: [
     CoinWalletModule,
@@ -22,7 +28,14 @@ import { AdminSubscriptionController } from 'src/modules/episode-access/subscrip
     QueueModule,
   ],
   controllers: [SubscriptionController, AdminSubscriptionController],
-  providers: [SubscriptionService, SubscriptionRenewalService, SubscriptionRenewalSweep],
-  exports: [SubscriptionService],
+  providers: [
+    SubscriptionService,
+    SubscriptionAutoRenewService,
+    SubscriptionAdminService,
+    SubscriptionRenewalService,
+    SubscriptionRenewalSweep,
+    PlanDaysGrantService,
+  ],
+  exports: [SubscriptionService, PlanDaysGrantService],
 })
 export class SubscriptionModule {}

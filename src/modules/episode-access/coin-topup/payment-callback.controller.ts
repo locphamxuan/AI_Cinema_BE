@@ -10,7 +10,7 @@ import { providerOf } from 'src/modules/episode-access/coin-topup/utils/payment-
 
 /**
  * Step 12, the gateway side: webhooks settle top-up orders and the return trip forwards the
- * member back into the app. Webhooks are public (the gateway holds no token) and idempotent on
+ * member back into the mobile app. Webhooks are public (the gateway holds no token) and idempotent on
  * (provider, event_id): a repeated delivery answers with the same order and never credits twice.
  */
 @ApiTags('payments')
@@ -42,14 +42,6 @@ export class PaymentCallbackController {
   }
 
   @Public()
-  @Post('momo/callback')
-  @ApiOperation({ summary: 'MoMo webhook; verifies the delivery and settles the order once' })
-  @ApiBody({ type: PaymentCallbackRequestDto })
-  momo(@Body() body: Record<string, unknown>) {
-    return this.topUps.handleCallback(PaymentProvider.MOMO, body ?? {});
-  }
-
-  @Public()
   @Get(':provider/return')
   @ApiOperation({ summary: 'Where the gateway sends the member back; forwards into the app' })
   @ApiQuery({ name: 'topUpId', required: false })
@@ -59,22 +51,14 @@ export class PaymentCallbackController {
     @Query() query: Record<string, string | string[] | undefined>,
     @Res() res: Response,
   ) {
-    const provider = providerOf(providerParam);
-    // VNPay returns here too (GET query, same URL family as its IPN): verify first,
-    // then forward. Nothing settles on this trip on purpose — the IPN (or the
-    // reconcile sweep) owns the ledger, and the app polls the order meanwhile.
-    if (provider === PaymentProvider.VNPAY) {
-      return res.redirect(await this.vnpayReturnUrl(query));
-    }
-    const order = await this.topUps.findForReturn(provider, {
-      topUpId: asText(query.topUpId),
-      providerTxnId: asText(query.providerTxnId),
-    });
-    return res.redirect(this.orderUrl(order.topUpId, order.status, provider));
+    providerOf(providerParam);
+    // The return trip verifies nothing and settles nothing: the IPN (or the reconcile sweep)
+    // owns the ledger. It only sends the member back into the app, which polls the order.
+    return res.redirect(await this.vnpayReturnUrl(query));
   }
 
   private async vnpayReturnUrl(query: Record<string, string | string[] | undefined>): Promise<string> {
-    const failed = `${this.config.webAppUrl}/wallet/top-ups?status=FAILED&provider=${PaymentProvider.VNPAY}`;
+    const failed = `${this.config.appReturnUrl}?status=FAILED&provider=${PaymentProvider.VNPAY}`;
     const txnRef = asText(query.vnp_TxnRef);
     if (!txnRef) return failed;
     // Settle stays with the IPN and the sweep, never the browser trip: this only forwards.
@@ -87,7 +71,7 @@ export class PaymentCallbackController {
   }
 
   private orderUrl(topUpId: string, status: string, provider: PaymentProvider): string {
-    return `${this.config.webAppUrl}/wallet/top-ups/${topUpId}?status=${status}&provider=${provider}`;
+    return `${this.config.appReturnUrl}?topUpId=${topUpId}&status=${status}&provider=${provider}`;
   }
 }
 

@@ -5,7 +5,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from '../wallet.service';
 
 /** Which counter a statement line is about; ALL shows main and bonus together. */
-export type StatementKind = 'MAIN' | 'BONUS' | 'ALL';
+type StatementKind = 'MAIN' | 'BONUS' | 'ALL';
 
 export interface StatementFilter {
   userId: string;

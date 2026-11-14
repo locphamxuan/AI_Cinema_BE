@@ -1,0 +1,31 @@
+/// Middle tier of Episode → Season → Movie (BR-37). Rolled up from the episodes by a database trigger.
+enum SeasonStatus {
+    DRAFT
+    IN_PRODUCTION
+    COMPLETED
+    UNDER_REVISION
+}
+
+/// A season groups episodes. Its release window bounds the expected release date of each of its
+/// episodes (BR-60).
+model Season {
+    id                    String       @id @default(uuid()) @db.Uuid
+    movieId               String       @map("movie_id") @db.Uuid
+    seasonNumber          Int          @map("season_number")
+    title                 String?      @db.VarChar(255)
+    /// Rolled up from the episodes (trigger `episodes_season_status`), never written by the application.
+    status                SeasonStatus @default(DRAFT)
+    releaseStartDate      DateTime?    @map("release_start_date") @db.Date
+    releaseEndDate        DateTime?    @map("release_end_date") @db.Date
+    createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+    updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+    movie          Movie                  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+    episodes       Episode[]
+    handoffs       StudioHandoff[]
+    changeRequests ProjectChangeRequest[]
+
+    @@unique([movieId, seasonNumber])
+    @@unique([id, movieId])
+    @@map("seasons")
+}

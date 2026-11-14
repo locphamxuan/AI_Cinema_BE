@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { MovieStatus, type Publication } from '@prisma/client';
+import { ProjectStatus, type Publication } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ContentReviewService } from 'src/modules/production/content-review/content-review.service';
+import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 /**
  * BR-56: a published episode taken down to be fixed. It goes back to the Creator with the
@@ -19,31 +20,38 @@ export class EpisodeRevisionService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  async sendBack(tx: PrismaTx, publication: Publication, reviewerId: string, reason: string): Promise<void> {
-    const asset = await tx.mediaAsset.findUniqueOrThrow({
+  /** Returns the email telling the studio: pass it to announce() once the transaction committed. */
+  async sendBack(tx: PrismaTx, publication: Publication, reviewerId: string, reason: string): Promise<string | null> {
+    const found = await tx.mediaAsset.findUniqueOrThrow({
       where: { id: publication.mediaAssetId },
-      include: { episode: { include: { movie: true } } },
+      include: { episode: { include: WITH_PROJECT } },
     });
-    await this.reviews.requestChanges(tx, asset, reviewerId, `Taken down to be fixed: ${reason}`);
+    const asset = { ...found, episode: liftProject(found.episode) };
+    const mailId = await this.reviews.requestChanges(tx, asset, reviewerId, `Taken down to be fixed: ${reason}`);
     await tx.episode.update({ where: { id: asset.episodeId }, data: { revisionStartedAt: new Date() } });
 
-    const movieId = asset.episode.movieId;
-    const { count } = await tx.movie.updateMany({
-      where: { id: movieId, status: MovieStatus.COMPLETED },
-      data: { status: MovieStatus.UNDER_REVISION },
+    const projectId = asset.episode.movieId;
+    const { count } = await tx.movieProject.updateMany({
+      where: { id: projectId, status: ProjectStatus.COMPLETED },
+      data: { status: ProjectStatus.UNDER_REVISION },
     });
     if (count) {
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.PROJECT_UNDER_REVISION,
-          entityType: 'Movie',
-          entityId: movieId,
-          movieId,
+          entityType: 'MovieProject',
+          entityId: projectId,
+          projectId,
           actorId: reviewerId,
           payload: { episodeId: asset.episodeId, reason },
         },
         tx,
       );
     }
+    return mailId;
+  }
+
+  announce(mailId: string | null): Promise<void> {
+    return this.reviews.announce(mailId);
   }
 }

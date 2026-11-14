@@ -3,6 +3,8 @@ import { ComplianceResult, EpisodeStatus, PolicyType } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
+import { NotificationService } from 'src/modules/platform/notification/notification.service';
+import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
@@ -22,11 +24,12 @@ export class AiLabelService {
     private readonly access: ProjectAccessService,
     private readonly reviews: ContentReviewService,
     private readonly auditLog: AuditLogService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async apply(mediaAssetId: string, dto: ApplyAiLabelRequestDto, user: AuthenticatedUser) {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
-    assertProjectStatus(asset.episode.movie.status, DELIVERY_PROJECT_STATUSES, 'label media');
+    assertProjectStatus(asset.episode.project.status, DELIVERY_PROJECT_STATUSES, 'label media');
     this.reviews.assertUnderReview(asset, REVIEWED_STATUSES);
 
     await this.prisma.$transaction(async (tx) => {
@@ -60,7 +63,7 @@ export class AiLabelService {
           action: CONTENT_EVENT.AI_LABEL_APPLIED,
           entityType: 'AiContentLabel',
           entityId: saved.id,
-          movieId: asset.episode.movieId,
+          projectId: asset.episode.movieId,
           actorId: user.id,
           payload: {
             episodeId: asset.episodeId,
@@ -70,6 +73,18 @@ export class AiLabelService {
             labelText: saved.labelText,
             previous: previous ? { labelType: previous.labelType, labelText: previous.labelText } : null,
           },
+        },
+        tx,
+      );
+      // MF-1 oversight: the Admins follow each step (fan-out in NotificationService).
+      await this.notifications.notify(
+        [],
+        {
+          type: NOTIFICATION_TYPE.AI_LABEL_APPLIED,
+          title: `Đã gắn nhãn AI cho tập ${asset.episode.episodeNumber} của phim "${asset.episode.movie.title}"`,
+          body: `Nhãn: ${saved.labelText}. Bước tiếp theo: kiểm tra tuân thủ.`,
+          link: `/projects/${asset.episode.movieId}/episodes/${asset.episodeId}`,
+          payload: { projectId: asset.episode.movieId, episodeId: asset.episodeId, mediaAssetId: asset.id },
         },
         tx,
       );

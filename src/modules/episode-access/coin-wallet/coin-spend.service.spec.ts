@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { CoinEntryType, CoinLotSource } from '@prisma/client';
-import type { PrismaService, PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { CoinSpendService } from './coin-spend.service';
 
@@ -15,7 +15,7 @@ describe('CoinSpendService.spend', () => {
     coinTransaction: { findUnique: jest.fn().mockResolvedValue(null), createManyAndReturn: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000 }) };
-  const service = new CoinSpendService({} as unknown as PrismaService, settings as unknown as PlatformSettingService);
+  const service = new CoinSpendService(settings as unknown as PlatformSettingService);
 
   const spendRequest = (amountCoins: number) => ({
     entryType: CoinEntryType.EPISODE_PURCHASE,
@@ -58,13 +58,16 @@ describe('CoinSpendService.spend', () => {
     });
   });
 
-  it('replays the same idempotency key instead of charging again', async () => {
+  it('replays the same idempotency key with the main/bonus split of the first charge', async () => {
+    // Only the first row carries the key: the main part, with the bonus balance still untouched.
     tx.coinTransaction.findUnique.mockResolvedValue({
       id: 'tx-1',
+      walletId: 'w1',
+      entryType: CoinEntryType.EPISODE_PURCHASE,
       mainAmount: -10,
-      bonusAmount: -15,
+      bonusAmount: 0,
       mainBalanceAfter: 0,
-      bonusBalanceAfter: 25,
+      bonusBalanceAfter: 40,
     });
 
     const movement = await service.spend(tx as unknown as PrismaTx, 'w1', {
@@ -79,6 +82,18 @@ describe('CoinSpendService.spend', () => {
       mainBalance: 0,
       bonusBalance: 25,
     });
+    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a credit of the same member (daily check-in)', { walletId: 'w1', entryType: CoinEntryType.DAILY_REWARD }],
+    ['another member', { walletId: 'w2', entryType: CoinEntryType.EPISODE_PURCHASE }],
+  ])('never takes a key first used by %s as an episode already paid for', async (_case, earlier) => {
+    tx.coinTransaction.findUnique.mockResolvedValue({ id: 'tx-9', mainAmount: 5, ...earlier });
+
+    await expect(
+      service.spend(tx as unknown as PrismaTx, 'w1', { ...spendRequest(25), idempotencyKey: 'key-1' }),
+    ).rejects.toThrow(ConflictException);
     expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
   });
 
@@ -97,8 +112,8 @@ describe('CoinSpendService.spend', () => {
     ]);
 
     await expect(service.spend(tx as unknown as PrismaTx, 'w1', spendRequest(25))).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'INSUFFICIENT_COINS',
           requiredCoins: 25,
@@ -128,7 +143,7 @@ describe('CoinSpendService.credit', () => {
     coinTransaction: { findUnique: jest.fn().mockResolvedValue(null), createManyAndReturn: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000, bonusCoinExpiryDays: 30 }) };
-  const service = new CoinSpendService({} as unknown as PrismaService, settings as unknown as PlatformSettingService);
+  const service = new CoinSpendService(settings as unknown as PlatformSettingService);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -168,6 +183,28 @@ describe('CoinSpendService.credit', () => {
     });
   });
 
+  it('replays a credit with the amounts it added, not their negation', async () => {
+    tx.coinTransaction.findUnique.mockResolvedValue({
+      id: 'tx-8',
+      walletId: 'w1',
+      entryType: CoinEntryType.TOP_UP,
+      mainAmount: 50,
+      bonusAmount: 0,
+      mainBalanceAfter: 70,
+      bonusBalanceAfter: 5,
+    });
+
+    const movement = await service.credit(tx as unknown as PrismaTx, 'w1', {
+      entryType: CoinEntryType.TOP_UP,
+      mainAmount: 50,
+      lotSource: CoinLotSource.TOP_UP_PROMO,
+      idempotencyKey: 'topup:1',
+    });
+
+    expect(movement).toEqual({ transactionId: 'tx-8', mainCoins: 50, bonusCoins: 0, mainBalance: 70, bonusBalance: 5 });
+    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+  });
+
   it('refuses to credit nothing', async () => {
     await expect(
       service.credit(tx as unknown as PrismaTx, 'w1', {
@@ -188,7 +225,7 @@ describe('CoinSpendService.expireBonus', () => {
     coinTransaction: { createManyAndReturn: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000 }) };
-  const service = new CoinSpendService({} as unknown as PrismaService, settings as unknown as PlatformSettingService);
+  const service = new CoinSpendService(settings as unknown as PlatformSettingService);
 
   it('writes one BONUS_EXPIRY row and leaves main Coins alone (BR-28)', async () => {
     tx.coinWallet.findUniqueOrThrow.mockResolvedValue({ id: 'w1', mainBalance: 5, bonusBalance: 10 });

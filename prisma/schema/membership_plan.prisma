@@ -20,7 +20,8 @@ model MembershipPlan {
   /// Order on the plan screen; the recommended plan is flagged separately.
   sortOrder    Int        @default(0) @map("sort_order")
   isFeatured   Boolean    @default(false) @map("is_featured")
-  /// What the plan allows, e.g. {"maxDevices":2,"adFree":true,"maxQuality":"1080p"}.
+  /// What the plan allows (BR-34), e.g.
+  /// {"maxRegisteredDevices":4,"maxConcurrentStreams":2,"adFree":true,"maxQuality":"1080p"}.
   features     Json?      @db.JsonB
   createdById  String     @map("created_by_id") @db.Uuid
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)

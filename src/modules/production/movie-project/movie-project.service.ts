@@ -1,162 +1,252 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { ChangeRequestStatus, MovieStatus, Prisma } from '@prisma/client';
+import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ProjectStatus, Prisma, UserRole } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
-import { ProductionFeeService } from 'src/modules/production/production-fee/production-fee.service';
+import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { CreateMovieProjectRequestDto } from './dto/create-movie-project.request.dto';
 import { UpdateMovieProjectRequestDto } from './dto/update-movie-project.request.dto';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { revisionSummary } from './revision-summary';
-import { milestoneDay } from './episode-milestone';
-
-const PERSON = { select: { id: true, fullName: true, email: true } } as const;
+import { resolveGenreIds } from './genre-resolver';
+import { newEpisodeSchedule, seasonWindow } from './episode-schedule';
+import { StudioService } from 'src/modules/production/studio/studio.service';
+import { ProjectLifecycleService } from './project-lifecycle.service';
+import { lastActivityOf, LIST_ROW, OPEN_CHANGE_REQUESTS, PERSON, PROJECT_PAGE, titledProjects } from './project-list';
 
 const PROJECT_DETAIL = {
-  genres: { include: { genre: true } },
-  reviewer: PERSON,
-  creator: PERSON,
-  seasons: {
-    orderBy: { seasonNumber: 'asc' },
+  movie: {
     include: {
-      episodes: {
-        orderBy: { episodeNumber: 'asc' },
+      genres: { include: { genre: true } },
+      seasons: {
+        orderBy: { seasonNumber: 'asc' },
         include: {
-          mediaAssets: {
-            orderBy: { version: 'desc' },
-            take: 1,
-            select: { id: true, version: true, ingestStatus: true, durationSeconds: true },
+          episodes: {
+            orderBy: { episodeNumber: 'asc' },
+            include: {
+              assignedCreator: PERSON,
+              mediaAssets: {
+                orderBy: { version: 'desc' },
+                take: 1,
+                select: { id: true, version: true, ingestStatus: true, durationSeconds: true },
+              },
+            },
           },
         },
       },
     },
   },
+  reviewer: PERSON,
+  creator: PERSON,
   ideaFiles: { orderBy: [{ fileName: 'asc' }, { version: 'desc' }] },
-  studioHandoffs: { orderBy: { createdAt: 'desc' }, include: { createdBy: PERSON } },
-  _count: { select: { changeRequests: { where: { status: ChangeRequestStatus.OPEN } } } },
-} satisfies Prisma.MovieInclude;
+  creatorAssignments: {
+    where: { isActive: true },
+    orderBy: { assignedAt: 'asc' },
+    include: { creator: PERSON, delegatedFrom: PERSON },
+  },
+  studio: true,
+  studioHandoffs: {
+    orderBy: { createdAt: 'desc' },
+    // The email status tells whether a studio change would cost the old studio's fee (BR-59).
+    include: { createdBy: PERSON, studio: true, emailMessage: { select: { status: true } } },
+  },
+  ...OPEN_CHANGE_REQUESTS,
+} satisfies Prisma.MovieProjectInclude;
+
+type ListRow = Prisma.MovieProjectGetPayload<{ include: typeof LIST_ROW }>;
+
+/** Fields of an update that the catalog shows; the others belong to the project row. */
+const MOVIE_FIELDS: ReadonlySet<string> = new Set([
+  'title',
+  'synopsis',
+  'defaultLanguage',
+  'ageRating',
+  'releaseYear',
+  'freeEpisodeCount',
+]);
+
+function splitUpdate(fields: Omit<UpdateMovieProjectRequestDto, 'genreIds' | 'genreNames'>) {
+  const entries = Object.entries(fields);
+  return {
+    movie: Object.fromEntries(entries.filter(([key]) => MOVIE_FIELDS.has(key))) as Prisma.MovieUpdateInput,
+    project: Object.fromEntries(
+      entries.filter(([key]) => !MOVIE_FIELDS.has(key)),
+    ) as Prisma.MovieProjectUncheckedUpdateInput,
+  };
+}
 
 @Injectable()
 export class MovieProjectService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly fees: ProductionFeeService,
+    private readonly costs: ProductionCostService,
+    private readonly studios: StudioService,
+    private readonly lifecycle: ProjectLifecycleService,
     private readonly auditLog: AuditLogService,
   ) {}
 
-  /** Step 1: the project with its seasons and episodes, numbered across the whole movie (BR-03, BR-37). */
+  /** MF-1 step 1 (07/11/2026): the Admin creates the project, picks its Reviewer and assigns the lead Creator. */
   async create(dto: CreateMovieProjectRequestDto, user: AuthenticatedUser) {
-    await this.assertGenresExist(dto.genreIds);
-    const movieId = await this.prisma.$transaction(async (tx) => {
+    if (dto.studioId) await this.studios.assertUsable(dto.studioId);
+    await this.lifecycle.assertActive(dto.reviewerId, UserRole.CONTENT_REVIEWER);
+    if (dto.creatorId) await this.lifecycle.assertActive(dto.creatorId, UserRole.CONTENT_CREATOR);
+    const seasons = (dto.seasons ?? []).map((season) => {
+      const window = seasonWindow(season);
+      return {
+        season,
+        window,
+        episodes: season.episodes.map((episode) => ({ episode, ...newEpisodeSchedule(episode, window) })),
+      };
+    });
+    const projectId = await this.prisma.$transaction(async (tx) => {
+      const genreIds = await resolveGenreIds(tx, dto.genreIds, dto.genreNames);
       const movie = await tx.movie.create({
         data: {
           title: dto.title.trim(),
-          ideaDescription: dto.ideaDescription.trim(),
+          synopsis: dto.synopsis?.trim() || undefined,
+          releaseYear: dto.releaseYear,
+          ageRating: dto.ageRating,
           defaultLanguage: dto.defaultLanguage,
-          reviewerId: user.id,
-          genres: { create: dto.genreIds.map((genreId) => ({ genreId })) },
+          genres: { create: genreIds.map((genreId) => ({ genreId })) },
+          project: {
+            create: { ideaDescription: dto.ideaDescription.trim(), studioId: dto.studioId, reviewerId: dto.reviewerId },
+          },
         },
       });
       let episodeNumber = 1;
-      for (const [index, season] of dto.seasons.entries()) {
+      for (const [index, { season, window, episodes }] of seasons.entries()) {
         const created = await tx.season.create({
-          data: { movieId: movie.id, seasonNumber: index + 1, title: season.title },
+          data: {
+            movieId: movie.id,
+            seasonNumber: index + 1,
+            title: season.title,
+            ...window,
+          },
         });
         await tx.episode.createMany({
-          data: season.episodes.map((episode) => ({
+          data: episodes.map(({ episode, deliveryDeadline, expectedReleaseDate }) => ({
             movieId: movie.id,
             seasonId: created.id,
             episodeNumber: episodeNumber++,
             title: episode.title.trim(),
             synopsis: episode.synopsis,
             targetDurationSeconds: episode.targetDurationSeconds,
-            milestoneDate: milestoneDay(episode.milestoneDate),
+            deliveryDeadline,
+            expectedReleaseDate,
           })),
         });
       }
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.PROJECT_CREATED,
-          entityType: 'Movie',
+          entityType: 'MovieProject',
           entityId: movie.id,
-          movieId: movie.id,
+          projectId: movie.id,
           actorId: user.id,
         },
         tx,
       );
       return movie.id;
     });
-    return this.detail(movieId, user);
+    await this.lifecycle.announceReviewer(projectId);
+    if (dto.creatorId) await this.lifecycle.assignCreator(projectId, dto.creatorId, user);
+    return this.detail(projectId, user);
   }
 
+  /** One row per project, its catalog fields alongside, with the open change requests (§4.1.8). */
   async list(query: PaginateQuery, user: AuthenticatedUser) {
-    return paginate(query, this.prisma.movie, {
-      where: await this.access.readableWhere(user),
-      relations: { reviewer: PERSON, creator: PERSON, _count: { select: { episodes: true } } },
-      sortableColumns: ['title', 'status', 'createdAt', 'updatedAt'],
-      defaultSortBy: [['updatedAt', 'DESC']],
-      searchableColumns: ['title', 'studioName'],
-      filterableColumns: { status: ['$eq', '$in'], creatorId: ['$eq'] },
+    const readable = await this.access.readableWhere(user);
+    const page = await paginate(query, this.prisma.movieProject, {
+      where: { AND: [readable, titledProjects(query)] },
+      relations: LIST_ROW,
+      ...PROJECT_PAGE,
     });
+    const lastActivity = await lastActivityOf(
+      this.prisma,
+      page.data.map((project) => project.id),
+    );
+    return {
+      ...page,
+      data: (page.data as ListRow[]).map(({ movie: { _count: movieCount, ...movie }, _count, ...project }) => ({
+        ...movie,
+        ...project,
+        _count: { episodes: movieCount.episodes },
+        openChangeRequests: _count.changeRequests,
+        lastActivityAt: lastActivity.get(project.id) ?? project.updatedAt,
+      })),
+    };
   }
 
-  async detail(movieId: string, user: AuthenticatedUser) {
-    await this.access.movie(movieId, user, 'read');
-    const movie = await this.prisma.movie.findUniqueOrThrow({ where: { id: movieId }, include: PROJECT_DETAIL });
-    const { _count, genres, ...rest } = movie;
+  /** The project with its catalog fields flattened in, as the production screens read it. */
+  async detail(projectId: string, user: AuthenticatedUser) {
+    await this.access.project(projectId, user, 'read');
+    const project = await this.prisma.movieProject.findUniqueOrThrow({
+      where: { id: projectId },
+      include: PROJECT_DETAIL,
+    });
+    const {
+      _count,
+      movie: { genres, ...movie },
+      ...rest
+    } = project;
     return {
+      ...movie,
       ...rest,
       genres: genres.map(({ genre }) => genre),
-      productionFeeTokens: await this.fees.totalTokens(movieId),
+      cost: await this.costs.summary(projectId),
       openChangeRequests: _count.changeRequests,
       revision: revisionSummary(movie.seasons),
     };
   }
 
-  async update(movieId: string, dto: UpdateMovieProjectRequestDto, user: AuthenticatedUser) {
-    const movie = await this.access.movie(movieId, user, 'reviewer');
+  async update(projectId: string, dto: UpdateMovieProjectRequestDto, user: AuthenticatedUser) {
+    const project = await this.access.project(projectId, user, 'reviewer');
     assertProjectStatus(
-      movie.status,
-      [...OPEN_PROJECT_STATUSES, MovieStatus.COMPLETED, MovieStatus.UNDER_REVISION],
+      project.status,
+      [...OPEN_PROJECT_STATUSES, ProjectStatus.COMPLETED, ProjectStatus.UNDER_REVISION],
       'edit the project',
     );
-    if (dto.genreIds) await this.assertGenresExist(dto.genreIds);
+    if (dto.studioId && dto.studioId !== project.studioId) {
+      // MF-1 (12/11/2026): the Admin chooses the studio — at creation, on the Final Script, or by a studio change
+      // after the hand-off. The Reviewer edits the project content only (and the Admin never edits it, BR-55).
+      throw new ForbiddenException(
+        'Only the Admin chooses the studio: at creation, on the Final Script or by a studio change',
+      );
+    }
 
-    const { genreIds, ...fields } = dto;
+    const { genreIds, genreNames, ...fields } = dto;
+    const changes = splitUpdate(fields);
     await this.prisma.$transaction(async (tx) => {
-      await tx.movie.update({ where: { id: movieId }, data: fields });
-      if (genreIds) await this.replaceGenres(tx, movieId, genreIds);
+      await tx.movieProject.update({ where: { id: projectId }, data: changes.project });
+      await tx.movie.update({ where: { id: projectId }, data: changes.movie });
+      if (genreIds || genreNames)
+        await this.replaceGenres(tx, projectId, await resolveGenreIds(tx, genreIds, genreNames));
       await this.auditLog.record(
         {
           action: CONTENT_EVENT.PROJECT_UPDATED,
-          entityType: 'Movie',
-          entityId: movieId,
-          movieId,
+          entityType: 'MovieProject',
+          entityId: projectId,
+          projectId,
           actorId: user.id,
           payload: { fields: Object.keys(dto) },
         },
         tx,
       );
     });
-    return this.detail(movieId, user);
+    return this.detail(projectId, user);
   }
 
-  async events(movieId: string, user: AuthenticatedUser) {
-    await this.access.movie(movieId, user, 'read');
-    return this.auditLog.findForMovie(movieId);
+  async events(projectId: string, user: AuthenticatedUser) {
+    await this.access.project(projectId, user, 'read');
+    return this.auditLog.findForProject(projectId);
   }
 
   private async replaceGenres(tx: PrismaTx, movieId: string, genreIds: string[]) {
     await tx.movieGenre.deleteMany({ where: { movieId } });
     await tx.movieGenre.createMany({ data: genreIds.map((genreId) => ({ movieId, genreId })) });
-  }
-
-  private async assertGenresExist(genreIds: string[]) {
-    const found = await this.prisma.genre.count({ where: { id: { in: genreIds } } });
-    if (found !== genreIds.length) throw new BadRequestException('One of the genres does not exist');
   }
 }

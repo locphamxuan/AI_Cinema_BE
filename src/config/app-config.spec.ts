@@ -8,8 +8,34 @@ describe('loadConfig', () => {
     expect(config.isProduction).toBe(false);
     expect(config.swaggerEnabled).toBe(true);
     expect(config.storage).toMatchObject({ driver: 'local', publicBaseUrl: 'http://localhost:3001/media' });
-    expect(config.jwt.accessTtlSeconds).toBe(900);
+    expect(config.jwt.accessTtlSeconds).toBe(1800);
     expect(config.redisUrl).toBeNull();
+  });
+
+  it('serves HLS from the storage origin when no CDN is configured (local dev/demo)', () => {
+    const config = loadConfig(base);
+    expect(config.cdn.enabled).toBe(false);
+    expect(config.cdn.baseUrl).toBe('http://localhost:3001/media');
+    expect(config.cdn.purge).toMatchObject({ zoneId: undefined, apiToken: undefined });
+  });
+
+  it('puts the Cloudflare custom domain in front of the bucket when CDN_BASE_URL is set', () => {
+    const config = loadConfig({
+      ...base,
+      STORAGE_PUBLIC_BASE_URL: 'https://pub-r2.example',
+      CDN_BASE_URL: 'https://stream.aicinema.example/',
+      CLOUDFLARE_ZONE_ID: 'zone-1',
+      CLOUDFLARE_API_TOKEN: 'cf-token',
+    });
+    expect(config.cdn).toMatchObject({ baseUrl: 'https://stream.aicinema.example', enabled: true });
+    expect(config.cdn.purge).toMatchObject({ zoneId: 'zone-1', apiToken: 'cf-token' });
+  });
+
+  it('refuses a relative CDN_BASE_URL and half-configured purge credentials', () => {
+    expect(() => loadConfig({ ...base, CDN_BASE_URL: '/media' })).toThrow('CDN_BASE_URL must be an absolute');
+    expect(() => loadConfig({ ...base, CLOUDFLARE_ZONE_ID: 'zone-1' })).toThrow(
+      'CLOUDFLARE_ZONE_ID and CLOUDFLARE_API_TOKEN must be set together',
+    );
   });
 
   it('lists every invalid or missing setting at once', () => {
@@ -30,22 +56,56 @@ describe('loadConfig', () => {
     );
   });
 
-  it('hides Swagger in production unless it is switched on', () => {
+  it('refuses to start production without Redis, with the mock pipeline or with unsigned S3 streams', () => {
     const production = { ...base, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(48) };
+    expect(() => loadConfig({ ...production, MEDIA_PIPELINE: 'mock' })).toThrow(/MEDIA_PIPELINE=mock[\s\S]*REDIS_URL/);
+    const s3 = {
+      STORAGE_DRIVER: 's3',
+      S3_BUCKET: 'b',
+      S3_ACCESS_KEY_ID: 'k',
+      S3_SECRET_ACCESS_KEY: 's',
+      STORAGE_PUBLIC_BASE_URL: 'https://cdn.example.com',
+    };
+    const withRedis = { ...production, REDIS_URL: 'redis://r:6379' };
+    expect(() => loadConfig({ ...withRedis, ...s3 })).toThrow(/PLAYBACK_URL_SECRET is required/);
+    expect(loadConfig({ ...withRedis, ...s3, PLAYBACK_URL_SECRET: 'y'.repeat(32) }).isProduction).toBe(true);
+    // The local-disk demo (docker compose) keeps direct URLs.
+    expect(loadConfig(withRedis).playback.urlSecret).toBeUndefined();
+  });
+
+  it('hides Swagger in production unless it is switched on', () => {
+    const production = { ...base, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(48), REDIS_URL: 'redis://r:6379' };
     expect(loadConfig(production).swaggerEnabled).toBe(false);
     expect(loadConfig({ ...production, SWAGGER_ENABLED: 'true' }).swaggerEnabled).toBe(true);
   });
 
+  it('gives playback its own rate budgets: tight on creation, generous on heartbeats', () => {
+    const config = loadConfig(base);
+    expect(config.rateLimit).toMatchObject({
+      limit: 300,
+      playbackSessionLimit: 60,
+      playbackHeartbeatLimit: 1200,
+    });
+    const tuned = loadConfig({ ...base, RATE_LIMIT_PLAYBACK_HEARTBEAT_MAX: '5000' });
+    expect(tuned.rateLimit.playbackHeartbeatLimit).toBe(5000);
+  });
+
+  it('keeps the signed playback window inside the 30–60 minute hardening range', () => {
+    const config = loadConfig(base);
+    expect(config.playback.urlTtlSeconds).toBe(3600);
+    expect(loadConfig({ ...base, PLAYBACK_URL_TTL_SECONDS: '1800' }).playback.urlTtlSeconds).toBe(1800);
+  });
+
+  it('retains finished playback sessions for a window, switchable off', () => {
+    const config = loadConfig(base);
+    expect(config.playback.sessionRetentionDays).toBe(90);
+    expect(config.schedules.streamingSessionRetentionSweepMs).toBe(86_400_000);
+    const off = loadConfig({ ...base, STREAMING_SESSION_RETENTION_DAYS: '0' });
+    expect(off.playback.sessionRetentionDays).toBe(0);
+  });
+
   it('leaves payment gateways unconfigured by default (sandbox URLs kept)', () => {
     const config = loadConfig(base);
-    expect(config.payments.momo).toMatchObject({
-      partnerCode: undefined,
-      accessKey: undefined,
-      secretKey: undefined,
-      createUrl: 'https://test-payment.momo.vn/v2/gateway/api/create',
-      statusUrl: 'https://test-payment.momo.vn/v2/gateway/api/transaction-status',
-      requestType: 'payWithMethod',
-    });
     expect(config.payments.vnpay).toMatchObject({
       tmnCode: undefined,
       hashSecret: undefined,
@@ -59,22 +119,10 @@ describe('loadConfig', () => {
   it('reads payment gateway credentials from the environment', () => {
     const config = loadConfig({
       ...base,
-      MOMO_PARTNER_CODE: 'MOMO',
-      MOMO_ACCESS_KEY: 'key',
-      MOMO_SECRET_KEY: 'secret',
-      MOMO_REDIRECT_URL: 'https://api.example.com/api/payments/momo/return',
-      MOMO_IPN_URL: 'https://api.example.com/api/payments/momo/callback',
       VNPAY_TMN_CODE: 'TMN123',
       VNPAY_HASH_SECRET: 'hash',
       VNPAY_RETURN_URL: 'https://api.example.com/api/payments/vnpay/return',
       VNPAY_IPN_URL: 'https://api.example.com/api/payments/vnpay/callback',
-    });
-    expect(config.payments.momo).toMatchObject({
-      partnerCode: 'MOMO',
-      accessKey: 'key',
-      secretKey: 'secret',
-      redirectUrl: 'https://api.example.com/api/payments/momo/return',
-      ipnUrl: 'https://api.example.com/api/payments/momo/callback',
     });
     expect(config.payments.vnpay).toMatchObject({
       tmnCode: 'TMN123',

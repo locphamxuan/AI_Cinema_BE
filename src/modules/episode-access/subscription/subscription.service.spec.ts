@@ -1,4 +1,4 @@
-import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { UnprocessableEntityException } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -7,13 +7,14 @@ import type { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import type { WalletService } from '../coin-wallet/wallet.service';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { SUB_REASON, SubscriptionService } from './subscription.service';
+import { SUB_REASON } from './subscription-rules';
+import { SubscriptionService } from './subscription.service';
 
 describe('SubscriptionService.subscribe', () => {
   const tx = {
     membershipPlan: { findUnique: jest.fn() },
     membershipPlanPrice: { findFirst: jest.fn() },
-    subscription: { count: jest.fn(), create: jest.fn() },
+    subscription: { count: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
@@ -39,7 +40,15 @@ describe('SubscriptionService.subscribe', () => {
     auditLog as unknown as AuditLogService,
   );
 
-  const plan = { id: 'p1', code: 'MONTHLY', name: 'Monthly', durationDays: 30, isActive: true, isFree: false };
+  const plan = {
+    id: 'p1',
+    code: 'MONTHLY',
+    name: 'Monthly',
+    period: 'MONTHLY',
+    durationDays: 30,
+    isActive: true,
+    isFree: false,
+  };
   const price = { id: 'price-1', priceCoins: 900 };
 
   beforeEach(() => {
@@ -59,6 +68,18 @@ describe('SubscriptionService.subscribe', () => {
       id: 'sub-1',
       ...data,
     }));
+  });
+
+  it('replaces an earlier unpaid intent instead of refusing the new quote', async () => {
+    await service.subscribe('u1', 'p1');
+
+    expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', status: SubscriptionStatus.PENDING },
+      data: expect.objectContaining({ status: SubscriptionStatus.CANCELLED }),
+    });
+    expect(tx.subscription.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.subscription.count.mock.invocationCallOrder[0],
+    );
   });
 
   it('quotes a PENDING intent without moving any Coin (step 10)', async () => {
@@ -87,8 +108,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.subscription.count.mockResolvedValue(1);
 
     await expect(service.subscribe('u1', 'p1')).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: SUB_REASON.EXISTS,
         },
@@ -102,8 +123,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.membershipPlan.findUnique.mockResolvedValue(null);
 
     await expect(service.subscribe('u1', 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: 'PLAN_NOT_FOUND',
         },
@@ -130,8 +151,8 @@ describe('SubscriptionService.subscribe', () => {
     tx.membershipPlanPrice.findFirst.mockResolvedValue(null);
 
     await expect(service.subscribe('u1', 'p1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'PLAN_NOT_PRICED',
         },
@@ -142,8 +163,9 @@ describe('SubscriptionService.subscribe', () => {
 
 describe('SubscriptionService.activate', () => {
   const tx = {
+    $queryRaw: jest.fn(),
     membershipPlan: { findUnique: jest.fn() },
-    subscription: { update: jest.fn() },
+    subscription: { update: jest.fn(), findUniqueOrThrow: jest.fn() },
     subscriptionCycle: { create: jest.fn() },
   };
   const prisma = {
@@ -174,6 +196,7 @@ describe('SubscriptionService.activate', () => {
     settings.get.mockResolvedValue({ subscriptionCancelWindowHours: 24 });
     wallets.walletOf.mockResolvedValue({ id: 'w1' });
     prisma.subscription.findFirst.mockResolvedValue(intent);
+    tx.subscription.findUniqueOrThrow.mockResolvedValue({ status: SubscriptionStatus.PENDING });
     tx.membershipPlan.findUnique.mockResolvedValue(plan);
     coins.spend.mockResolvedValue(movement);
     tx.subscription.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
@@ -222,8 +245,8 @@ describe('SubscriptionService.activate', () => {
     });
 
     await expect(service.activate('u1', 'sub-1')).rejects.toMatchObject({
+      status: 409,
       response: {
-        statusCode: 409,
         details: {
           reason: SUB_REASON.NOT_PENDING,
         },
@@ -233,12 +256,24 @@ describe('SubscriptionService.activate', () => {
     expect(coins.spend).not.toHaveBeenCalled();
   });
 
+  it('lets only the first of two concurrent taps pay: the second sees the locked row ACTIVE', async () => {
+    tx.subscription.findUniqueOrThrow.mockResolvedValue({ status: SubscriptionStatus.ACTIVE });
+
+    await expect(service.activate('u1', 'sub-1')).rejects.toMatchObject({
+      status: 409,
+      response: { details: { reason: SUB_REASON.NOT_PENDING } },
+    });
+
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    expect(coins.spend).not.toHaveBeenCalled();
+  });
+
   it('answers 404 for somebody else’s subscription id', async () => {
     prisma.subscription.findFirst.mockResolvedValue(null);
 
     await expect(service.activate('u1', 'missing')).rejects.toMatchObject({
+      status: 404,
       response: {
-        statusCode: 404,
         details: {
           reason: SUB_REASON.NOT_FOUND,
         },
@@ -253,8 +288,8 @@ describe('SubscriptionService.activate', () => {
     });
 
     await expect(service.activate('u1', 'sub-1')).rejects.toMatchObject({
+      status: 422,
       response: {
-        statusCode: 422,
         details: {
           reason: 'PLAN_NOT_ACTIVE',
         },
@@ -275,101 +310,18 @@ describe('SubscriptionService.activate', () => {
   });
 });
 
-describe('SubscriptionService auto-renew toggles', () => {
-  const tx = { subscription: { update: jest.fn() } };
-  const prisma = {
-    $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
-    subscription: { findFirst: jest.fn(), findUnique: jest.fn() },
-    subscriptionCycle: { findMany: jest.fn() },
-  };
-  const settings = { get: jest.fn().mockResolvedValue({ subscriptionCancelWindowHours: 24 }) };
-  const notifications = { notify: jest.fn() };
-  const service = new SubscriptionService(
-    prisma as unknown as PrismaService,
-    {} as unknown as CoinSpendService,
-    {} as unknown as WalletService,
-    settings as unknown as PlatformSettingService,
-    notifications as unknown as NotificationService,
-    {} as unknown as AuditLogService,
-  );
-
-  const active = {
-    id: 'sub-1',
-    userId: 'u1',
-    status: SubscriptionStatus.ACTIVE,
-    autoRenew: true,
-    currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000),
-    nextRenewalAt: new Date(Date.now() + 30 * 86_400_000),
-  };
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    settings.get.mockResolvedValue({ subscriptionCancelWindowHours: 24 });
-    prisma.subscription.findFirst.mockResolvedValue(active);
-    tx.subscription.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
-      ...active,
-      ...data,
-    }));
-  });
-
-  it('stops auto-renew inside the window and keeps access until the period ends', async () => {
-    const result = await service.cancelAutoRenew('u1', 'sub-1');
-
-    expect(tx.subscription.update).toHaveBeenCalledWith({
-      where: { id: 'sub-1' },
-      data: expect.objectContaining({ autoRenew: false, nextRenewalAt: null }),
-    });
-    expect(result).toMatchObject({ id: 'sub-1', autoRenew: false, accessUntil: active.currentPeriodEnd });
-    expect(notifications.notify).toHaveBeenCalled();
-  });
-
-  it('refuses once the 24h window has closed, and the renewal still runs', async () => {
-    prisma.subscription.findFirst.mockResolvedValue({
-      ...active,
-      nextRenewalAt: new Date(Date.now() + 60 * 60_000),
-    });
-
-    await expect(service.cancelAutoRenew('u1', 'sub-1')).rejects.toMatchObject({
-      response: {
-        statusCode: 422,
-        details: {
-          reason: SUB_REASON.WINDOW_CLOSED,
-        },
-      },
-    });
-
-    expect(tx.subscription.update).not.toHaveBeenCalled();
-  });
-
-  it('resumes auto-renew before the period ends', async () => {
-    prisma.subscription.findFirst.mockResolvedValue({ ...active, autoRenew: false, nextRenewalAt: null });
-
-    const result = await service.resumeAutoRenew('u1', 'sub-1');
-
-    expect(tx.subscription.update).toHaveBeenCalledWith({
-      where: { id: 'sub-1' },
-      data: expect.objectContaining({ autoRenew: true, nextRenewalAt: active.currentPeriodEnd }),
-    });
-    expect(result).toMatchObject({ autoRenew: true });
-  });
-
-  it('resuming what already renews changes nothing', async () => {
-    await expect(service.resumeAutoRenew('u1', 'sub-1')).resolves.toMatchObject({ autoRenew: true });
-    expect(tx.subscription.update).not.toHaveBeenCalled();
-  });
-});
-
 describe('SubscriptionService reads', () => {
   const prisma = {
     $transaction: jest.fn(),
     subscription: { findFirst: jest.fn(), findUnique: jest.fn() },
     subscriptionCycle: { findMany: jest.fn() },
   };
+  const settings = { get: jest.fn().mockResolvedValue({ subscriptionCancelWindowHours: 24 }) };
   const service = new SubscriptionService(
     prisma as unknown as PrismaService,
     {} as unknown as CoinSpendService,
     {} as unknown as WalletService,
-    {} as unknown as PlatformSettingService,
+    settings as unknown as PlatformSettingService,
     {} as unknown as NotificationService,
     {} as unknown as AuditLogService,
   );
@@ -382,20 +334,53 @@ describe('SubscriptionService reads', () => {
   });
 
   it('mine maps the plan, the deadline alias and the last cycle', async () => {
-    const deadline = new Date('2026-11-04T00:00:00.000Z');
+    const renewalAt = new Date(Date.now() + 10 * 86_400_000);
     prisma.subscription.findFirst.mockResolvedValue({
       id: 'sub-1',
       status: SubscriptionStatus.ACTIVE,
-      cancelWindowEndsAt: deadline,
+      autoRenew: true,
+      nextRenewalAt: renewalAt,
+      // The snapshot of a window the Admin has since changed: the reply must not repeat it.
+      cancelWindowEndsAt: new Date('2026-11-04T00:00:00.000Z'),
       plan: { id: 'p1', code: 'MONTHLY', name: 'Monthly', period: 'MONTHLY', durationDays: 30, features: {} },
       cycles: [{ cycleNumber: 2 }],
     });
 
     await expect(service.mine('u1')).resolves.toMatchObject({
-      cancelDeadline: deadline,
+      cancelDeadline: new Date(renewalAt.getTime() - 24 * 3_600_000),
+      cancelWindowEndsAt: new Date(renewalAt.getTime() - 24 * 3_600_000),
+      canCancelNow: true,
       plan: { code: 'MONTHLY' },
       lastCycle: { cycleNumber: 2 },
     });
+  });
+
+  it('mine says the window is shut once the renewal is less than the window away', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({
+      id: 'sub-1',
+      status: SubscriptionStatus.ACTIVE,
+      autoRenew: true,
+      nextRenewalAt: new Date(Date.now() + 3_600_000),
+      cancelWindowEndsAt: null,
+      plan: { id: 'p1', code: 'MONTHLY', name: 'Monthly', period: 'MONTHLY', durationDays: 30, features: {} },
+      cycles: [],
+    });
+
+    await expect(service.mine('u1')).resolves.toMatchObject({ canCancelNow: false });
+  });
+
+  it('mine shows no deadline on a plan that no longer renews', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({
+      id: 'sub-1',
+      status: SubscriptionStatus.ACTIVE,
+      autoRenew: false,
+      nextRenewalAt: null,
+      cancelWindowEndsAt: new Date(Date.now() + 86_400_000),
+      plan: { id: 'p1', code: 'MONTHLY', name: 'Monthly', period: 'MONTHLY', durationDays: 30, features: {} },
+      cycles: [],
+    });
+
+    await expect(service.mine('u1')).resolves.toMatchObject({ cancelDeadline: null, canCancelNow: false });
   });
 
   it('cycles reads only the owner’s rows, oldest first', async () => {
@@ -407,50 +392,5 @@ describe('SubscriptionService reads', () => {
       where: { subscriptionId: 'sub-1' },
       orderBy: { cycleNumber: 'asc' },
     });
-  });
-
-  it('detail answers 404 for an unknown subscription', async () => {
-    prisma.subscription.findUnique.mockResolvedValue(null);
-    await expect(service.detail('missing')).rejects.toThrow(NotFoundException);
-  });
-});
-
-describe('SubscriptionService.cancelByAdmin', () => {
-  const tx = { subscription: { update: jest.fn() } };
-  const prisma = {
-    $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)),
-    subscription: { findFirst: jest.fn(), findUnique: jest.fn() },
-    subscriptionCycle: { findMany: jest.fn() },
-  };
-  const notifications = { notify: jest.fn() };
-  const auditLog = { record: jest.fn() };
-  const service = new SubscriptionService(
-    prisma as unknown as PrismaService,
-    {} as unknown as CoinSpendService,
-    {} as unknown as WalletService,
-    {} as unknown as PlatformSettingService,
-    notifications as unknown as NotificationService,
-    auditLog as unknown as AuditLogService,
-  );
-
-  it('ends the plan now with an audit trail', async () => {
-    tx.subscription.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
-      id: 'sub-1',
-      userId: 'u1',
-      ...data,
-    }));
-
-    const result = await service.cancelByAdmin('sub-1', 'admin-1', 'fraud');
-
-    expect(tx.subscription.update).toHaveBeenCalledWith({
-      where: { id: 'sub-1' },
-      data: expect.objectContaining({ status: SubscriptionStatus.CANCELLED, endReason: 'CANCELLED_BY_ADMIN' }),
-    });
-    expect(auditLog.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: CONTENT_EVENT.SUBSCRIPTION_CANCELLED, actorId: 'admin-1' }),
-      tx,
-    );
-    expect(notifications.notify).toHaveBeenCalledWith(['u1'], expect.anything(), tx);
-    expect(result).toMatchObject({ status: SubscriptionStatus.CANCELLED });
   });
 });

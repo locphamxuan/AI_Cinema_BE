@@ -13,11 +13,11 @@ export class CheckInResultDto {
   @ApiProperty({ example: true })
   streakContinued: boolean;
 
-  @ApiProperty({ example: 3 })
-  coinsGranted: number;
-
-  @ApiProperty({ example: 0 })
+  @ApiProperty({ example: 5, description: 'Bonus Coins credited (check-in pays bonus Coins only)' })
   bonusGranted: number;
+
+  @ApiProperty({ example: false, description: 'The milestone day: one reward spin was granted' })
+  spinGranted: boolean;
 
   @ApiProperty({ example: 137 })
   bonusBalance: number;

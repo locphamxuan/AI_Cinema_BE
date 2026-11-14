@@ -3,7 +3,7 @@ import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PublicationService } from 'src/modules/production/publishing/publication.service';
 import { type Actor, bootApp, signIn } from './support/api';
-import { compliantEpisode } from './support/media';
+import { compliantEpisode, priceEpisode, release, unpublish } from './support/media';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Publication {
@@ -56,13 +56,15 @@ describe('Pricing and publishing (e2e)', () => {
   const bellOf = async (actor: Actor, type: string) =>
     (await actor.get<Bell>('/notifications?limit=100')).data.filter((n) => n.type === type);
 
-  it('prices an episode; a price outside the range is kept and flagged to the Admin (BR-47)', async () => {
+  it('lets only the Admin price an episode; a price outside the range is kept and flagged (BR-29, BR-47)', async () => {
     const path = `/episodes/${episodeId(0)}/coin-price`;
     await creator.patch(path, { coinPrice: 10 }, 403);
-    await reviewer.patch(path, { coinPrice: -1 }, 400);
+    // 2026-11-11: the Reviewer stops at the Final Film and never prices an episode.
+    await reviewer.patch(path, { coinPrice: 10 }, 403);
+    await admin.patch(path, { coinPrice: -1 }, 400);
 
-    expect(await reviewer.patch<PriceResult>(path, { coinPrice: 10 })).toMatchObject({ inRange: true, alert: null });
-    const flagged = await reviewer.patch<PriceResult>(path, { coinPrice: 120 });
+    expect(await admin.patch<PriceResult>(path, { coinPrice: 10 })).toMatchObject({ inRange: true, alert: null });
+    const flagged = await admin.patch<PriceResult>(path, { coinPrice: 120 });
     expect(flagged).toMatchObject({ coinPrice: 120, inRange: false, alert: { status: 'OPEN' } });
 
     const raised = await bellOf(admin, 'PRICE_OUT_OF_RANGE');
@@ -70,6 +72,19 @@ describe('Pricing and publishing (e2e)', () => {
     await reviewer.get('/admin/price-alerts', 403);
     const open = await admin.get<{ data: Alert[] }>('/admin/price-alerts?filter.status=$eq:OPEN&limit=100');
     expect(open.data.find((a) => a.id === flagged.alert!.id)).toMatchObject({ coinPrice: 120 });
+  });
+
+  it('lets only the Admin flag an episode free; free for Guests always means free for Members (BR-03)', async () => {
+    const path = `/episodes/${episodeId(0)}/access-flags`;
+    await reviewer.patch(path, { isFreeForGuest: true }, 403);
+    expect(await admin.patch(path, { isFreeForGuest: true, isFreeForMember: false })).toMatchObject({
+      isFreeForGuest: true,
+      isFreeForMember: true,
+    });
+    expect(await admin.patch(path, { isFreeForGuest: false, isFreeForMember: false })).toMatchObject({
+      isFreeForGuest: false,
+      isFreeForMember: false,
+    });
   });
 
   it('lets the Admin ask for a change but never edit the price; a new price settles the alert', async () => {
@@ -88,7 +103,7 @@ describe('Pricing and publishing (e2e)', () => {
       true,
     );
 
-    await reviewer.patch(`/episodes/${episodeId(0)}/coin-price`, { coinPrice: 15 });
+    await admin.patch(`/episodes/${episodeId(0)}/coin-price`, { coinPrice: 15 });
     const resolved = await admin.get<{ data: Alert[] }>('/admin/price-alerts?filter.status=$eq:RESOLVED&limit=100');
     expect(resolved.data.some((a) => a.id === alert.id)).toBe(true);
   });
@@ -96,24 +111,24 @@ describe('Pricing and publishing (e2e)', () => {
   it('refuses to release an episode that misses anything of BR-19, and says what', async () => {
     type Refusal = { error: { message: string; details?: string[] } };
     const path = `/episodes/${episodeId(0)}/publications`;
-    const early = await reviewer.post<Refusal>(path, {}, 409);
+    const early = await release<Refusal>(reviewer, path, {}, 409);
     expect(early.error.message).toContain('AWAITING_MEDIA');
 
     await compliantEpisode(reviewer, creator, episodeId(0));
-    const blocked = await reviewer.post<Refusal>(path, {}, 409);
-    expect(blocked.error.details).toEqual(['the movie synopsis', 'the movie age rating (BR-54)']);
+    const blocked = await release<Refusal>(reviewer, path, {}, 409);
+    expect(blocked.error.details).toEqual(['the movie synopsis', 'the movie age rating']);
 
     await reviewer.patch(`/projects/${project.id}`, {
       synopsis: 'Một thám tử AI điều tra chuỗi vụ mất tích ở Đà Lạt.',
       ageRating: 'T16',
     });
-    await reviewer.post(`/episodes/${episodeId(0)}/publications`, { scheduledAt: '2020-01-01T00:00:00Z' }, 400);
+    await release(reviewer, `/episodes/${episodeId(0)}/publications`, { scheduledAt: '2020-01-01T00:00:00Z' }, 400);
   });
 
   it('schedules, reschedules and publishes when the time comes (step 14)', async () => {
     const path = `/episodes/${episodeId(0)}/publications`;
-    await reviewer.post(path, { scheduledAt: inHours(1) });
-    const [scheduled] = await reviewer.post<Publication[]>(path, { scheduledAt: inHours(2) });
+    await release(reviewer, path, { scheduledAt: inHours(1) });
+    const [scheduled] = await release<Publication[]>(reviewer, path, { scheduledAt: inHours(2) });
     expect(await statusOf(0)).toBe('SCHEDULED');
     expect(await reviewer.get<Publication[]>(path)).toHaveLength(1);
 
@@ -140,25 +155,27 @@ describe('Pricing and publishing (e2e)', () => {
 
   it('takes an episode down with a reason and releases it again', async () => {
     const [live] = await reviewer.get<Publication[]>(`/episodes/${episodeId(0)}/publications`);
-    await reviewer.post(`/publications/${live.id}/unpublish`, { reason: 'MANUAL' }, 400);
+    await unpublish(reviewer, `/publications/${live.id}/unpublish`, { reason: 'MANUAL' }, 400);
     // A published episode must say whether it is taken down to be fixed or for good.
-    await reviewer.post(`/publications/${live.id}/unpublish`, { reason: 'MANUAL', note: 'Gỡ tập này.' }, 400);
+    await unpublish(reviewer, `/publications/${live.id}/unpublish`, { reason: 'MANUAL', note: 'Gỡ tập này.' }, 400);
     await creator.post(`/publications/${live.id}/unpublish`, { reason: 'MANUAL', note: 'Gỡ thử.' }, 403);
 
-    const after = await reviewer.post<Publication[]>(
+    const after = await unpublish<Publication[]>(
+      reviewer,
       `/publications/${live.id}/unpublish`,
       { mode: 'REMOVAL', reason: 'COMPLIANCE_ISSUE', note: 'Khán giả báo cảnh gây nhầm lẫn với người thật.' },
       200,
     );
     expect(after[0]).toMatchObject({ unpublishReason: 'COMPLIANCE_ISSUE', unpublishMode: 'REMOVAL' });
     expect(await statusOf(0)).toBe('UNPUBLISHED');
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${live.id}/unpublish`,
       { mode: 'REMOVAL', reason: 'MANUAL', note: 'Lần hai.' },
       409,
     );
 
-    const releases = await reviewer.post<Publication[]>(`/episodes/${episodeId(0)}/publications`, {});
+    const releases = await release<Publication[]>(reviewer, `/episodes/${episodeId(0)}/publications`, {});
     expect(releases).toHaveLength(2);
     expect(releases[0].publishedAt).not.toBeNull();
     expect(await statusOf(0)).toBe('PUBLISHED');
@@ -166,11 +183,24 @@ describe('Pricing and publishing (e2e)', () => {
 
   it('cancels a scheduled release, and completes the project once every episode is out (BR-38)', async () => {
     await compliantEpisode(reviewer, creator, episodeId(1));
-    await reviewer.patch(`/episodes/${episodeId(1)}/coin-price`, { coinPrice: 5 });
-    const [pending] = await reviewer.post<Publication[]>(`/episodes/${episodeId(1)}/publications`, {
+    await priceEpisode(reviewer, episodeId(1), 5);
+    // MF-1 §5–6: only the Admin publishes, and only a Final Film the Reviewer confirmed.
+    const path = `/episodes/${episodeId(1)}/publications`;
+    await reviewer.post(path, {}, 403);
+    const early = await admin.post<{ error: { details: string[] } }>(path, {}, 409);
+    expect(early.error.details).toContain('the Final Film confirmation of the Reviewer');
+    await admin.post(`/episodes/${episodeId(1)}/final-confirmation`, {}, 403);
+    await reviewer.post(`/episodes/${episodeId(1)}/final-confirmation`, {}, 200);
+    expect((await bellOf(admin, 'FINAL_FILM_CONFIRMED')).length).toBeGreaterThan(0);
+    // Sent back through the Reviewer, never to the studio.
+    await admin.post(`/episodes/${episodeId(1)}/final-rejection`, { reason: 'Cảnh cuối quá tối.' }, 200);
+    expect((await bellOf(reviewer, 'FINAL_FILM_REJECTED')).length).toBeGreaterThan(0);
+    await admin.post(path, {}, 409);
+    const [pending] = await release<Publication[]>(reviewer, `/episodes/${episodeId(1)}/publications`, {
       scheduledAt: inHours(5),
     });
-    await reviewer.post(
+    await unpublish(
+      reviewer,
       `/publications/${pending.id}/unpublish`,
       { reason: 'MANUAL', note: 'Dời lịch sang tuần sau.' },
       200,
@@ -178,7 +208,7 @@ describe('Pricing and publishing (e2e)', () => {
     expect(await statusOf(1)).toBe('COMPLIANCE_PASSED');
     expect((await reviewer.get<{ status: string }>(`/projects/${project.id}`)).status).toBe('IN_PRODUCTION');
 
-    await reviewer.post(`/episodes/${episodeId(1)}/publications`, {});
+    await release(reviewer, `/episodes/${episodeId(1)}/publications`, {});
     expect((await reviewer.get<{ status: string }>(`/projects/${project.id}`)).status).toBe('COMPLETED');
 
     const events = await reviewer.get<{ action: string }[]>(`/projects/${project.id}/events`);

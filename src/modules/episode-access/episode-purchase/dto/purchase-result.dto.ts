@@ -42,12 +42,6 @@ export class PurchaseResultDto {
   accessGranted: boolean;
 
   @ApiPropertyOptional({
-    example: 12,
-    description: 'Episodes the series purchase opens; only for a series purchase',
-  })
-  unlockedEpisodes?: number;
-
-  @ApiPropertyOptional({
     example: true,
     description: 'The request had been paid already and was not charged twice',
   })

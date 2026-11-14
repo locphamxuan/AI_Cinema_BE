@@ -13,5 +13,7 @@ export class SubscriptionView {
   cancelWindowEndsAt: Date | null;
   @ApiProperty({ nullable: true, description: 'Alias of cancelWindowEndsAt' })
   cancelDeadline: Date | null;
+  @ApiProperty({ description: 'Whether auto-renew can still be stopped right now (BR-05)' })
+  canCancelNow: boolean;
   @ApiPropertyOptional({ enum: SubscriptionEndReason, nullable: true }) endReason: SubscriptionEndReason | null;
 }

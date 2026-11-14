@@ -41,6 +41,7 @@ export function pendingPayment(overrides: Record<string, unknown> = {}) {
 
 export function createTx() {
   return {
+    $queryRaw: jest.fn(),
     payment: { create: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
     coinTopUp: { create: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
   };

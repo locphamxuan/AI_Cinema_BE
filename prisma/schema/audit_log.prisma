@@ -8,14 +8,14 @@ model AuditLog {
   actorType  String   @map("actor_type") @db.VarChar(50)
   actorId    String?  @map("actor_id") @db.Uuid
   /// The movie project the event belongs to, so its history is one indexed query.
-  movieId    String?  @map("movie_id") @db.Uuid
+  projectId    String?  @map("project_id") @db.Uuid
   payload    Json?    @db.JsonB
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   actor User?  @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  movie Movie? @relation(fields: [movieId], references: [id], onDelete: SetNull)
+  project MovieProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
-  @@index([movieId, createdAt])
+  @@index([projectId, createdAt])
   @@index([entityType, entityId])
   @@map("audit_logs")
 }

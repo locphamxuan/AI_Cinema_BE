@@ -1,6 +1,20 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PlanPeriod } from '@prisma/client';
-import { IsString, Length, IsOptional, IsEnum, IsInt, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { MONTHLY_DAYS } from './plan-rules';
+import { PlanFeaturesDto } from './plan-features.dto';
 
 export class UpdateMembershipPlanRequestDto {
   @ApiPropertyOptional()
@@ -11,35 +25,42 @@ export class UpdateMembershipPlanRequestDto {
 
   @ApiPropertyOptional()
   @IsString()
+  @MaxLength(1000)
   @IsOptional()
   description?: string;
 
-  @ApiPropertyOptional({ enum: PlanPeriod })
-  @IsEnum(PlanPeriod)
+  @ApiPropertyOptional({ enum: [PlanPeriod.MONTHLY] })
+  @IsIn([PlanPeriod.MONTHLY])
   @IsOptional()
   period?: PlanPeriod;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minimum: MONTHLY_DAYS.min, maximum: MONTHLY_DAYS.max })
   @IsInt()
-  @Min(1)
-  @Max(365)
+  @Min(MONTHLY_DAYS.min)
+  @Max(MONTHLY_DAYS.max)
   @IsOptional()
   durationDays?: number;
 
   @ApiPropertyOptional({ description: 'Show or hide the plan' })
+  @IsBoolean()
   @IsOptional()
   isActive?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minimum: 0 })
   @IsInt()
+  @Min(0)
+  @Max(999)
   @IsOptional()
   sortOrder?: number;
 
   @ApiPropertyOptional()
+  @IsBoolean()
   @IsOptional()
   isFeatured?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: PlanFeaturesDto })
+  @ValidateNested()
+  @Type(() => PlanFeaturesDto)
   @IsOptional()
-  features?: Record<string, unknown>;
+  features?: PlanFeaturesDto;
 }
