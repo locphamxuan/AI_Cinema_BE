@@ -98,6 +98,18 @@ describe('Auth (e2e)', () => {
     await prisma.user.update({ where: { email }, data: { passwordHash: await hashPassword(password) } });
   });
 
+  it('mails no reset code to a staff account: forgot password is for Members only', async () => {
+    const prisma = app.get(PrismaService);
+    const staff = 'reviewer01@aicinema.com';
+    const before = await prisma.emailMessage.count({ where: { toEmail: staff, template: 'PASSWORD_RESET_OTP' } });
+    await api().post('/api/auth/forgot-password').send({ email: staff }).expect(200);
+    expect(await prisma.emailMessage.count({ where: { toEmail: staff, template: 'PASSWORD_RESET_OTP' } })).toBe(before);
+    await api()
+      .post('/api/auth/reset-password')
+      .send({ email: staff, otp: '123456', newPassword: 'Changed123' })
+      .expect(401);
+  });
+
   it('does not accept a token signed with another secret', async () => {
     const forged =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ4Iiwicm9sZSI6IkFETUlOIiwidHlwZSI6ImFjY2VzcyJ9.c2lnbmF0dXJl';

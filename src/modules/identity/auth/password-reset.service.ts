@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
 import { EMAIL_TEMPLATE, EmailOutboxService } from 'src/modules/platform/email/email-outbox.service';
@@ -15,8 +16,9 @@ const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const INVALID_OTP = 'Invalid or expired OTP';
 
 /**
- * Forgot password: a 6-digit code is e-mailed to an active account that signs in with a password, and
- * that code (latest one only, 10 minutes, 5 tries) sets a new password and signs every old session out.
+ * Forgot password, for Members only (the Mobile app): a 6-digit code is e-mailed to an active Member account
+ * that signs in with a password, and that code (latest one only, 10 minutes, 5 tries) sets a new password
+ * and signs every old session out. Staff and Studio accounts get their password reset by the Admin.
  */
 @Injectable()
 export class PasswordResetService {
@@ -25,13 +27,13 @@ export class PasswordResetService {
     private readonly emails: EmailOutboxService,
   ) {}
 
-  /** Always succeeds from the caller's side: an unknown, Google-only or locked account gets no email. */
+  /** Always succeeds from the caller's side: an unknown, Google-only, locked or non-Member account gets no email. */
   async request(emailInput: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { email: normalizeEmail(emailInput) },
-      select: { id: true, email: true, passwordHash: true, isActive: true },
+      select: { id: true, email: true, passwordHash: true, isActive: true, role: true },
     });
-    if (!user?.passwordHash || !user.isActive) return;
+    if (!user?.passwordHash || !user.isActive || user.role !== UserRole.MEMBER) return;
     const latest = await this.prisma.passwordResetOtp.findFirst({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
@@ -72,7 +74,9 @@ export class PasswordResetService {
       where: { email: normalizeEmail(dto.email) },
       select: { ...USER_PROFILE_SELECT, passwordHash: true },
     });
-    if (!found?.passwordHash || !found.isActive) throw new UnauthorizedException(INVALID_OTP);
+    if (!found?.passwordHash || !found.isActive || found.role !== UserRole.MEMBER) {
+      throw new UnauthorizedException(INVALID_OTP);
+    }
     const otpRow = await this.prisma.passwordResetOtp.findFirst({
       where: { userId: found.id, consumedAt: null },
       orderBy: { createdAt: 'desc' },
