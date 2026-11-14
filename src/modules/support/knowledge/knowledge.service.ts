@@ -207,6 +207,22 @@ export class KnowledgeService {
     return article;
   }
 
+  /** Deletes an article for good; its chunks and vectors go with it (FK cascade), so the AI stops citing it. */
+  async remove(id: string, actorId: string) {
+    const current = await this.prisma.supportKnowledgeArticle.findUnique({ where: { id }, select: { slug: true } });
+    if (!current) throw new NotFoundException('Knowledge article not found');
+    await this.prisma.supportKnowledgeArticle.delete({ where: { id } });
+    await this.audit.record({
+      action: CONTENT_EVENT.SUPPORT_KNOWLEDGE_DELETED,
+      entityType: 'SupportKnowledgeArticle',
+      entityId: id,
+      projectId: null,
+      actorId,
+      payload: { slug: current.slug },
+    });
+    return { id, deleted: true };
+  }
+
   async reindex(id: string, actorId: string) {
     const current = await this.prisma.supportKnowledgeArticle.findUnique({
       where: { id },
