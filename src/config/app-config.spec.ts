@@ -56,8 +56,25 @@ describe('loadConfig', () => {
     );
   });
 
-  it('hides Swagger in production unless it is switched on', () => {
+  it('refuses to start production without Redis, with the mock pipeline or with unsigned S3 streams', () => {
     const production = { ...base, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(48) };
+    expect(() => loadConfig({ ...production, MEDIA_PIPELINE: 'mock' })).toThrow(/MEDIA_PIPELINE=mock[\s\S]*REDIS_URL/);
+    const s3 = {
+      STORAGE_DRIVER: 's3',
+      S3_BUCKET: 'b',
+      S3_ACCESS_KEY_ID: 'k',
+      S3_SECRET_ACCESS_KEY: 's',
+      STORAGE_PUBLIC_BASE_URL: 'https://cdn.example.com',
+    };
+    const withRedis = { ...production, REDIS_URL: 'redis://r:6379' };
+    expect(() => loadConfig({ ...withRedis, ...s3 })).toThrow(/PLAYBACK_URL_SECRET is required/);
+    expect(loadConfig({ ...withRedis, ...s3, PLAYBACK_URL_SECRET: 'y'.repeat(32) }).isProduction).toBe(true);
+    // The local-disk demo (docker compose) keeps direct URLs.
+    expect(loadConfig(withRedis).playback.urlSecret).toBeUndefined();
+  });
+
+  it('hides Swagger in production unless it is switched on', () => {
+    const production = { ...base, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(48), REDIS_URL: 'redis://r:6379' };
     expect(loadConfig(production).swaggerEnabled).toBe(false);
     expect(loadConfig({ ...production, SWAGGER_ENABLED: 'true' }).swaggerEnabled).toBe(true);
   });

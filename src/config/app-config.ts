@@ -59,6 +59,7 @@ export interface AppConfig {
     subscriptionRenewalSweepMs: number;
     coinExpirySweepMs: number;
     coinTopUpSweepMs: number;
+    emailRedeliverySweepMs: number;
     paymentReconcileSweepMs: number;
     /** MF-3: closing sessions whose heartbeat timed out. */
     streamingSessionSweepMs: number;
@@ -220,6 +221,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       subscriptionRenewalSweepMs: read.int('SUBSCRIPTION_RENEWAL_SWEEP_MS', 60_000),
       coinExpirySweepMs: read.int('COIN_EXPIRY_SWEEP_MS', 24 * 60 * 60_000),
       coinTopUpSweepMs: read.int('COIN_TOPUP_SWEEP_MS', 5 * 60_000),
+      emailRedeliverySweepMs: read.int('EMAIL_REDELIVERY_SWEEP_MS', 15 * 60_000),
       paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
       /** MF-3: sessions whose heartbeat timed out are closed and their progress saved. */
       streamingSessionSweepMs: read.int('STREAMING_SESSION_SWEEP_MS', 30_000),
@@ -248,11 +250,25 @@ export function loadConfig(env: Env = process.env): AppConfig {
     },
   };
 
-  if (isProduction && config.media.allowPrivateUrls) {
-    read.errors.push('MEDIA_ALLOW_PRIVATE_URLS must stay false in production');
-  }
+  if (isProduction) productionRules(config).forEach((rule) => read.errors.push(rule));
   if (read.errors.length) {
     throw new Error(`Invalid configuration:\n- ${read.errors.join('\n- ')}`);
   }
   return Object.freeze(config);
+}
+
+/**
+ * What production must not start without: without Redis every job (ffmpeg ingest included) runs
+ * inside the HTTP request with no backoff and every instance runs every sweep; without the URL
+ * secret paid episodes stream from unsigned object-storage URLs (only the local-disk demo is exempt).
+ */
+function productionRules(config: AppConfig): string[] {
+  const rules: string[] = [];
+  if (config.media.allowPrivateUrls) rules.push('MEDIA_ALLOW_PRIVATE_URLS must stay false in production');
+  if (config.media.pipeline === 'mock') rules.push('MEDIA_PIPELINE=mock is for tests; use ffmpeg in production');
+  if (!config.redisUrl) rules.push('REDIS_URL is required in production (job queue, sweeps, watch room sockets)');
+  if (config.storage.driver === 's3' && !config.playback.urlSecret) {
+    rules.push('PLAYBACK_URL_SECRET is required in production with STORAGE_DRIVER=s3 (signed stream URLs)');
+  }
+  return rules;
 }
