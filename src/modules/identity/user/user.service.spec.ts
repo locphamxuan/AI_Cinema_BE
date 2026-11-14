@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PERMISSION } from 'src/common/auth/permissions';
@@ -53,4 +53,37 @@ describe('UserService.update', () => {
     await expect(service.update('admin-id', { isActive: false }, admin)).rejects.toThrow(BadRequestException);
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
+});
+
+describe('UserService.remove', () => {
+  const count = () => jest.fn().mockResolvedValue(0);
+  const prisma = {
+    user: { findUnique: jest.fn().mockResolvedValue({ id: 'm1' }), delete: jest.fn() },
+    coinTransaction: { count: count() },
+    episodeAccess: { count: count() },
+    dailyCheckIn: { count: count() },
+    rewardSpin: { count: count() },
+  };
+  const accessControl = { forgetAccount: jest.fn() } as unknown as AccessControlService;
+  const service = new UserService(prisma as unknown as PrismaService, accessControl, {} as SessionTokenService);
+  const admin = { id: 'admin-id', role: UserRole.ADMIN };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('deletes a member whose only Coin move is the automatic welcome bonus', async () => {
+    await service.remove('m1', admin);
+    expect(prisma.coinTransaction.count).toHaveBeenCalledWith({
+      where: { wallet: { userId: 'm1' }, entryType: { not: 'SIGNUP_BONUS' } },
+    });
+    expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: 'm1' } });
+  });
+
+  it.each(['coinTransaction', 'episodeAccess', 'dailyCheckIn', 'rewardSpin'] as const)(
+    'keeps an account with %s rows, so the Coin ledger is never cascaded away',
+    async (table) => {
+      prisma[table].count.mockResolvedValueOnce(1);
+      await expect(service.remove('m1', admin)).rejects.toThrow(ConflictException);
+      expect(prisma.user.delete).not.toHaveBeenCalled();
+    },
+  );
 });

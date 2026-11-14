@@ -27,9 +27,3 @@ const stampFormat = new Intl.DateTimeFormat('vi-VN', {
 export function businessStamp(at: Date): string {
   return `${stampFormat.format(at).replace(', ', ' ')} (giờ Việt Nam)`;
 }
-
-/** A calendar day in Vietnam as "10/11/2026", for contract wording. */
-export function businessDayText(at: Date): string {
-  const [year, month, day] = dayFormat.format(at).split('-');
-  return `${day}/${month}/${year}`;
-}

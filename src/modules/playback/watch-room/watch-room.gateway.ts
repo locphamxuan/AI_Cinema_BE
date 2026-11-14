@@ -1,26 +1,26 @@
-import { Inject, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Logger, OnModuleInit, UseGuards } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Server, Socket } from 'socket.io';
 import { type AccessTokenPayload, JWT_ALGORITHM } from 'src/common/auth/authenticated-user';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RoomInviteService } from './room-invite.service';
-import { LiveRooms, PlaybackThrottle } from './room-live-state';
-import { RoomSeats } from './room-seats';
+import { RoomCluster } from './room-cluster';
 import { handshakeTokenOf, liveStateOf, socketErrorOf, assertActiveAccount } from './room-socket-utils';
+import { SignedInSocketGuard } from './room-socket.guard';
 import { RoomTerminationService } from './room-termination.service';
 import { WatchRoomService } from './watch-room.service';
 import {
-  HEARTBEAT_MS,
   HOST_GRACE_MS,
   INVITE_COOLDOWN_MS,
   ROOM_CHANNEL,
@@ -29,23 +29,17 @@ import {
   USER_CHANNEL,
 } from './room-events';
 
-interface SocketData {
-  userId?: string;
-  roomId?: string;
-}
+type SocketData = { userId?: string; roomId?: string };
 
 /**
  * Watch Party gateway (BR-69): the Host drives, everyone follows. Handshake = access JWT; one seat
  * per member per room (5.2); 5 s heartbeat (2.2); 45 s Host grace (3.1); pause → vote (3.3).
  */
 @WebSocketGateway({ namespace: 'watch', cors: { origin: '*', credentials: true }, transports: ['websocket'] })
-export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
+@UseGuards(SignedInSocketGuard)
+export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer() server!: Server;
-  private readonly live = new LiveRooms();
-  private readonly throttle = new PlaybackThrottle();
-  private readonly seats = new RoomSeats<Socket>();
-  private readonly graceTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private readonly logger = new Logger(WatchRoomGateway.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -54,16 +48,23 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     private readonly termination: RoomTerminationService,
     private readonly jwt: JwtService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly cluster: RoomCluster,
   ) {}
+
+  private get live() {
+    return this.cluster.live;
+  }
+
+  private get seats() {
+    return this.cluster.seats;
+  }
+
+  afterInit(server: Server): void {
+    this.cluster.attach(server as unknown as Namespace);
+  }
 
   onModuleInit(): void {
     this.termination.register((roomIds, reason) => this.broadcastTermination(roomIds, reason));
-    this.heartbeat = setInterval(() => void this.onHeartbeat(), HEARTBEAT_MS);
-    this.heartbeat.unref?.();
-  }
-
-  onModuleDestroy(): void {
-    if (this.heartbeat) clearInterval(this.heartbeat);
   }
 
   /** The socket is admitted only with a valid access token; the member id comes from it alone. */
@@ -87,7 +88,11 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   handleDisconnect(client: Socket): void {
     const { userId, roomId } = client.data as SocketData;
-    if (this.seats.disconnect(userId, client.id, roomId)) void this.onMemberDrop(roomId!, userId!);
+    if (!this.seats.disconnect(userId, client.id, roomId)) return;
+    // A drop during shutdown may find the Redis adapter already closed: never leave the rejection unhandled.
+    this.onMemberDrop(roomId!, userId!).catch((e: unknown) =>
+      this.logger.warn(`Drop of ${userId} not handled: ${String(e)}`),
+    );
   }
 
   @SubscribeMessage(ROOM_EVENT.JOIN)
@@ -97,7 +102,10 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
       const room = await this.rooms.join(userId, body.roomId);
       this.takeSeat(body.roomId, userId, client);
       this.live.seed(body.roomId, room.hostUserId, liveStateOf(room.status), room.currentPositionSeconds);
-      if (room.hostUserId === userId) this.cancelGrace(body.roomId, true);
+      if (room.hostUserId === userId) {
+        this.cluster.cancelGrace(body.roomId, true);
+        this.cluster.publish({ t: 'hostBack', roomId: body.roomId });
+      }
       this.server
         .to(ROOM_CHANNEL(body.roomId))
         .emit(ROOM_EVENT.PARTICIPANT_JOINED, { userId, count: room.participantCount });
@@ -116,6 +124,12 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     try {
       await this.rooms.hostSync(userId, body.roomId, { state: body.state, positionSeconds: body.positionSeconds });
       this.live.sync(body.roomId, body.state, body.positionSeconds);
+      this.cluster.publish({
+        t: 'sync',
+        roomId: body.roomId,
+        state: body.state,
+        positionSeconds: body.positionSeconds,
+      });
       if (body.state === 'ENDED') {
         // Edge 3.5 — credits roll: the room sees the countdown; only the Host may continue.
         this.server.to(ROOM_CHANNEL(body.roomId)).emit(ROOM_EVENT.EPISODE_ENDED, { countdownSeconds: 10 });
@@ -127,7 +141,7 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
         hostUserId: userId,
         serverTimestamp: Date.now(),
       };
-      this.throttle.offer(body.roomId, payload, (p) =>
+      this.cluster.throttle.offer(body.roomId, payload, (p) =>
         this.server.to(ROOM_CHANNEL(body.roomId)).emit(ROOM_EVENT.SYNC_PLAYBACK, p),
       );
     } catch (e) {
@@ -157,10 +171,12 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     const active = await this.prisma.roomParticipant.count({
       where: { roomId: body.roomId, leftAt: null, role: 'PARTICIPANT' },
     });
-    if (!this.live.vote(body.roomId, userId, active)) return;
+    const carried = this.live.vote(body.roomId, userId, active);
+    this.cluster.publish({ t: 'vote', roomId: body.roomId, userId });
+    if (!carried) return;
     const newHost = await this.rooms.promoteNextHost(body.roomId);
     if (!newHost) return;
-    this.live.setHost(body.roomId, newHost);
+    this.handOver(body.roomId, newHost);
     this.server.to(ROOM_CHANNEL(body.roomId)).emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: newHost, reason: 'VOTE' });
   }
 
@@ -171,7 +187,12 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     @MessageBody() body: { roomId: string; friendId: string },
   ): Promise<void> {
     const userId = (client.data as SocketData).userId!;
-    const outcome = await this.invites.invite(userId, body.roomId, body.friendId, this.seats.isOnline(body.friendId));
+    const outcome = await this.invites.invite(
+      userId,
+      body.roomId,
+      body.friendId,
+      await this.cluster.isOnline(body.friendId),
+    );
     if (!outcome.ok) {
       client.emit(ROOM_EVENT.INVITE_FAILED, outcome);
       return;
@@ -191,22 +212,22 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
     void client.join(ROOM_CHANNEL(roomId));
     (client.data as SocketData).roomId = roomId;
+    this.cluster.publish({ t: 'unseat', roomId, userId, keepSocketId: client.id });
   }
 
   /** A socket vanished mid-room: the Host gets the 45 s grace (edge 3.1), a member just leaves. */
   private async onMemberDrop(roomId: string, userId: string): Promise<void> {
     const liveRoom = this.live.get(roomId);
     if (liveRoom?.hostUserId === userId) {
-      this.live.sync(roomId, 'PAUSED', this.live.positionNow(roomId) ?? 0);
+      const positionSeconds = this.live.positionNow(roomId) ?? 0;
+      this.live.sync(roomId, 'PAUSED', positionSeconds);
+      this.cluster.publish({ t: 'sync', roomId, state: 'PAUSED', positionSeconds });
       await this.prisma.watchRoom.update({ where: { id: roomId }, data: { status: 'PAUSED' } }).catch(() => undefined);
       this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.HOST_DISCONNECTED, {
         graceSeconds: HOST_GRACE_MS / 1000,
         message: 'Trưởng phòng bị mất kết nối, đang chờ kết nối lại (45s)...',
       });
-      this.cancelGrace(roomId, false);
-      const timer = setTimeout(() => void this.onGraceExpired(roomId, userId), HOST_GRACE_MS);
-      timer.unref?.();
-      this.graceTimers.set(roomId, timer);
+      this.cluster.startGrace(roomId, HOST_GRACE_MS, () => void this.onGraceExpired(roomId, userId));
       return;
     }
     this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.PARTICIPANT_LEFT, { userId });
@@ -214,11 +235,10 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 
   private async onGraceExpired(roomId: string, hostUserId: string): Promise<void> {
-    this.graceTimers.delete(roomId);
-    if (this.seats.isSeated(roomId, hostUserId)) return; // the Host made it back
+    if (await this.cluster.isSeated(roomId, hostUserId)) return; // the Host made it back, on any instance
     const newHost = await this.rooms.promoteNextHost(roomId);
     if (newHost) {
-      this.live.setHost(roomId, newHost);
+      this.handOver(roomId, newHost);
       this.server
         .to(ROOM_CHANNEL(roomId))
         .emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: newHost, reason: 'HOST_TIMEOUT' });
@@ -239,7 +259,7 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
     this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.PARTICIPANT_LEFT, { userId });
     if (result.newHostUserId) {
-      this.live.setHost(roomId, result.newHostUserId);
+      this.handOver(roomId, result.newHostUserId);
       this.server
         .to(ROOM_CHANNEL(roomId))
         .emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: result.newHostUserId, reason: 'HOST_LEFT' });
@@ -257,44 +277,16 @@ export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
   }
 
-  /** The 5 s pulse: HEARTBEAT_SYNC for drift (edge 2.2) and the pause-too-long ladder (edge 3.3). */
-  private async onHeartbeat(): Promise<void> {
-    for (const roomId of this.live.roomIds()) {
-      const sockets = await this.server.in(ROOM_CHANNEL(roomId)).fetchSockets();
-      if (!sockets.length) {
-        this.live.drop(roomId);
-        this.throttle.clear(roomId);
-        continue;
-      }
-      const room = this.live.get(roomId)!;
-      this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.HEARTBEAT_SYNC, {
-        state: room.state,
-        positionSeconds: this.live.positionNow(roomId),
-        serverTimestamp: Date.now(),
-      });
-      const step = this.live.inactivityStep(roomId);
-      if (step === 'WARN_HOST' && room.hostUserId) {
-        this.server.to(USER_CHANNEL(room.hostUserId)).emit(ROOM_EVENT.HOST_INACTIVE, { roomId });
-      } else if (step === 'OPEN_VOTE') {
-        this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.VOTE_OPEN, { roomId });
-      }
-    }
-  }
-
   private broadcastTermination(roomIds: string[], reason: string): void {
     for (const roomId of roomIds) {
       this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.TERMINATED, { roomId, reason });
-      this.live.drop(roomId);
-      this.throttle.clear(roomId);
-      this.cancelGrace(roomId, false);
+      this.cluster.forget(roomId);
+      this.cluster.publish({ t: 'drop', roomId });
     }
   }
 
-  private cancelGrace(roomId: string, announce: boolean): void {
-    const timer = this.graceTimers.get(roomId);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.graceTimers.delete(roomId);
-    if (announce) this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.HOST_RECONNECTED, { roomId });
+  private handOver(roomId: string, hostUserId: string | null): void {
+    this.live.setHost(roomId, hostUserId);
+    this.cluster.publish({ t: 'host', roomId, hostUserId });
   }
 }

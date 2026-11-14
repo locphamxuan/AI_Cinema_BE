@@ -6,6 +6,7 @@ import type { WalletService } from 'src/modules/episode-access/coin-wallet/walle
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { AuthService } from './auth.service';
 import type { GoogleTokenVerifier } from './google-token.verifier';
+import type { PasswordResetService } from './password-reset.service';
 import type { SessionTokenService } from './session-token.service';
 
 const profile = {
@@ -29,12 +30,14 @@ describe('AuthService', () => {
   const wallets = { openForNewAccount: jest.fn() };
   const sessions = { issue: jest.fn(), rotate: jest.fn(), revoke: jest.fn(), revokeAll: jest.fn() };
   const accessControl = { permissionsOf: () => Promise.resolve(new Set(['project:manage', 'content:review'])) };
+  const passwordReset = { reset: jest.fn() };
   const service = new AuthService(
     prisma as unknown as PrismaService,
     sessions as unknown as SessionTokenService,
     accessControl as unknown as AccessControlService,
     wallets as unknown as WalletService,
     { verify: jest.fn() } as unknown as GoogleTokenVerifier,
+    passwordReset as unknown as PasswordResetService,
   );
 
   beforeEach(() => {
@@ -141,5 +144,15 @@ describe('AuthService', () => {
 
     await expect(service.refresh('old-token')).resolves.toMatchObject({ ...tokens, user: { id: profile.id } });
     expect(sessions.rotate).toHaveBeenCalledWith('old-token');
+  });
+
+  it('opens a fresh session after a password reset and signs every older one out', async () => {
+    const dto = { email: profile.email, otp: '123456', newPassword: 'Newpass123' };
+    passwordReset.reset.mockResolvedValue(profile);
+
+    await expect(service.resetPassword(dto)).resolves.toMatchObject({ ...tokens, user: { id: profile.id } });
+    expect(passwordReset.reset).toHaveBeenCalledWith(dto);
+    expect(sessions.revokeAll).toHaveBeenCalledWith(profile.id);
+    expect(sessions.revokeAll.mock.invocationCallOrder[0]).toBeLessThan(sessions.issue.mock.invocationCallOrder[0]);
   });
 });

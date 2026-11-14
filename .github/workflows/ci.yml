@@ -43,6 +43,9 @@ jobs:
         run: npm run test:cov
       - name: Build
         run: npm run build
+      # The Dockerfile and start:prod run dist/main: a src file importing outside src would move it to dist/src/main.
+      - name: Entry point at dist/main.js
+        run: test -f dist/main.js
 
   e2e:
     name: E2E tests (Postgres, Redis)

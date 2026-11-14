@@ -7,7 +7,11 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 
-export const EMAIL_TEMPLATE = { STUDIO_BRIEF: 'STUDIO_BRIEF', STUDIO_UPDATE: 'STUDIO_UPDATE' } as const;
+export const EMAIL_TEMPLATE = {
+  STUDIO_BRIEF: 'STUDIO_BRIEF',
+  STUDIO_UPDATE: 'STUDIO_UPDATE',
+  PASSWORD_RESET_OTP: 'PASSWORD_RESET_OTP',
+} as const;
 
 export interface EmailAttachment {
   /** Private storage key of the file. */
@@ -22,8 +26,11 @@ export interface NewEmail {
   subject: string;
   text: string;
   attachments: EmailAttachment[];
-  /** Account told in-app when the email could not be delivered. */
-  notifyOnFailureId: string;
+  /**
+   * Account told in-app when the email could not be delivered. Left out for mail to someone who is
+   * signed out (a password-reset code): they could not read the notice, and it would show them SMTP errors.
+   */
+  notifyOnFailureId?: string;
   /** Screen the failure notification opens. */
   link?: string;
   /** Sender name shown to the recipient (the Admin or Reviewer in charge). */
@@ -34,7 +41,7 @@ export interface NewEmail {
 interface StoredPayload {
   text: string;
   attachments: Omit<EmailAttachment, 'key'>[];
-  notifyOnFailureId: string;
+  notifyOnFailureId?: string;
   link?: string;
   fromName?: string;
   replyTo?: string;
@@ -43,7 +50,8 @@ interface StoredPayload {
 const SEND_JOB = 'email.send';
 
 /**
- * Outbox of the emails the platform sends (BR-53): what the Admin and Reviewer tell a studio. The message is written with the
+ * Outbox of the emails the platform sends: what the Admin and Reviewer tell a studio (BR-53) and
+ * the password-reset codes members ask for. The message is written with the
  * change that causes it, then delivered by a background job with retries; a message that
  * still fails is marked FAILED and its sender is notified in-app.
  */
@@ -131,6 +139,7 @@ export class EmailOutboxService implements OnModuleInit {
       data: { status: EmailStatus.FAILED, errorMessage: error.message },
     });
     const payload = message.payload as unknown as StoredPayload;
+    if (!payload.notifyOnFailureId) return;
     await this.notifications.notify([payload.notifyOnFailureId], {
       type: NOTIFICATION_TYPE.BRIEF_EMAIL_FAILED,
       title: `Không gửi được email "${message.subject}" tới ${message.toEmail}`,

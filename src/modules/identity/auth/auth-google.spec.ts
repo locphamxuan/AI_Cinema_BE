@@ -5,6 +5,7 @@ import type { WalletService } from 'src/modules/episode-access/coin-wallet/walle
 import type { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { AuthService } from './auth.service';
 import { GOOGLE_REASON, type GoogleTokenVerifier } from './google-token.verifier';
+import type { PasswordResetService } from './password-reset.service';
 import type { SessionTokenService } from './session-token.service';
 
 const member = {
@@ -34,6 +35,7 @@ describe('AuthService.googleLogin', () => {
     { permissionsOf: () => Promise.resolve(new Set<string>()) } as unknown as AccessControlService,
     wallets as unknown as WalletService,
     google as unknown as GoogleTokenVerifier,
+    {} as PasswordResetService,
   );
   // First lookup is by Google subject, the second by email.
   const lookups = (bySubject: unknown, byEmail?: unknown) =>

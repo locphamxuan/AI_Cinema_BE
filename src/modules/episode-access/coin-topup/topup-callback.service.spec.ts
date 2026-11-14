@@ -136,11 +136,9 @@ describe('CoinTopUpService.handleCallback', () => {
     }
 
     expect(error.getResponse()).toMatchObject({ details: { reason: TOPUP_REASON.INVALID_SIGNATURE } });
-    expect(prisma.paymentCallback.upsert).toHaveBeenCalledWith({
-      where: { provider_eventId: { provider: PaymentProvider.VNPAY, eventId: 'evt-1' } },
-      update: expect.objectContaining({ errorMessage: 'Invalid gateway signature' }),
-      create: expect.objectContaining({ provider: PaymentProvider.VNPAY, eventId: 'evt-1' }),
-    });
+    // A forged delivery leaves no trace in the idempotency table, so the real one still credits.
+    expect(prisma.paymentCallback.upsert).not.toHaveBeenCalled();
+    expect(prisma.paymentCallback.create).not.toHaveBeenCalled();
     expect(deps.coins.credit).not.toHaveBeenCalled();
   });
 

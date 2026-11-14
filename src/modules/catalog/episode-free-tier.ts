@@ -28,5 +28,3 @@ export function isFreeFor(episode: FreeTierEpisode, signedIn: boolean): boolean 
   const tier = freeTierOf(episode);
   return signedIn ? tier.forMember : tier.forGuest;
 }
-
-export const FREE_TIER_SELECT = { isFreeForGuest: true, isFreeForMember: true, coinPrice: true } as const;

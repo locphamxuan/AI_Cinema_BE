@@ -38,6 +38,12 @@ export class RoomSeats<S extends { id: string }> {
     return previous && previous !== socket.id ? this.sockets.get(previous) : undefined;
   }
 
+  /** The socket of this instance holding the member's seat in the room, if any. */
+  holder(roomId: string, userId: string): S | undefined {
+    const socketId = this.seats.get(seatKey(roomId, userId));
+    return socketId ? this.sockets.get(socketId) : undefined;
+  }
+
   release(roomId: string, userId: string): void {
     this.seats.delete(seatKey(roomId, userId));
   }

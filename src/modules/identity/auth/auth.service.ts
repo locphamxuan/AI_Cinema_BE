@@ -17,7 +17,9 @@ import type { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
 import type { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
+import type { ResetPasswordRequestDto } from './dto/reset-password.request.dto';
 import { GOOGLE_REASON, GoogleTokenVerifier, type GoogleProfile } from './google-token.verifier';
+import { PasswordResetService } from './password-reset.service';
 import { SessionTokenService } from './session-token.service';
 
 const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
@@ -41,6 +43,7 @@ export class AuthService {
     private readonly accessControl: AccessControlService,
     private readonly wallets: WalletService,
     private readonly google: GoogleTokenVerifier,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
@@ -147,6 +150,13 @@ export class AuthService {
       data: { passwordHash: await hashPassword(dto.newPassword) },
     });
     await this.tokens.revokeAll(userId);
+    return this.session(user);
+  }
+
+  /** Forgot password: the e-mailed code sets the new password, then only the new session stays signed in. */
+  async resetPassword(dto: ResetPasswordRequestDto): Promise<AuthSessionDto> {
+    const user = await this.passwordReset.reset(dto);
+    await this.tokens.revokeAll(user.id);
     return this.session(user);
   }
 

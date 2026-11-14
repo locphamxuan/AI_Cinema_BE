@@ -86,10 +86,13 @@ model User {
   supportKnowledgeUpdated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleUpdatedBy")
 
   /// Group Watch (planned 2026-11-11): rooms this member hosts and the friendships touching this account.
-  watchRoomsHosted     WatchRoom[]             @relation("WatchRoomHost")
-  friendshipsSent      Friendship[]            @relation("FriendshipSender")
-  friendshipsReceived  Friendship[]            @relation("FriendshipReceiver")
-  roomParticipations   RoomParticipant[]       @relation("RoomParticipantUser")
+  watchRoomsHosted    WatchRoom[]       @relation("WatchRoomHost")
+  friendshipsSent     Friendship[]      @relation("FriendshipSender")
+  friendshipsReceived Friendship[]      @relation("FriendshipReceiver")
+  roomParticipations  RoomParticipant[] @relation("RoomParticipantUser")
+
+  /// Forgot password: the latest e-mailed OTP is the only live one.
+  passwordResetOtps PasswordResetOtp[]
 
   @@index([role])
   @@index([studioId])

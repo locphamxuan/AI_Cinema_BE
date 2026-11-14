@@ -1,6 +1,14 @@
-import { ConnectedSocket, MessageBody, SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import {
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+import { Namespace, Server, Socket } from 'socket.io';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { RoomCluster } from './room-cluster';
 import { ROOM_CHANNEL, ROOM_EVENT } from './room-events';
 import { isChatRejection, RoomSharedScreen } from './room-shared-screen';
 
@@ -16,11 +24,22 @@ interface SocketData {
  * - Chat: members still in the room talk beside the player (in memory, 50 latest lines).
  */
 @WebSocketGateway({ namespace: 'watch', cors: { origin: '*', credentials: true }, transports: ['websocket'] })
-export class WatchRoomScreenGateway {
+export class WatchRoomScreenGateway implements OnGatewayInit {
   @WebSocketServer() server!: Server;
-  readonly screen = new RoomSharedScreen();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cluster: RoomCluster,
+  ) {}
+
+  /** Same state on every API instance: what changes here is mirrored through RoomCluster. */
+  get screen(): RoomSharedScreen {
+    return this.cluster.screen;
+  }
+
+  afterInit(server: Server): void {
+    this.cluster.attach(server as unknown as Namespace);
+  }
 
   /** A member who just joined catches up: quality, the running ad and the chat so far. */
   @SubscribeMessage(ROOM_EVENT.SCREEN_STATE)
@@ -38,6 +57,7 @@ export class WatchRoomScreenGateway {
     if (!member) return;
     const result = this.screen.chat(body.roomId, member, body.text);
     if (isChatRejection(result)) return void client.emit(ROOM_EVENT.CHAT_REJECTED, { reason: result });
+    this.cluster.publish({ t: 'chat', roomId: body.roomId, message: result });
     this.server.to(ROOM_CHANNEL(body.roomId)).emit(ROOM_EVENT.CHAT_MESSAGE, result);
   }
 
@@ -61,7 +81,9 @@ export class WatchRoomScreenGateway {
       if (!row) return void client.emit(ROOM_EVENT.ERROR, { reason: 'AD_BREAK_NOT_FOUND' });
       ad = { active: true, ...row.ad };
     }
-    this.server.to(ROOM_CHANNEL(body.roomId)).emit(ROOM_EVENT.AD_STATE, this.screen.setAd(body.roomId, ad));
+    const state = this.screen.setAd(body.roomId, ad);
+    this.cluster.publish({ t: 'ad', roomId: body.roomId, ad: state });
+    this.server.to(ROOM_CHANNEL(body.roomId)).emit(ROOM_EVENT.AD_STATE, state);
   }
 
   @SubscribeMessage(ROOM_EVENT.QUALITY)
@@ -72,6 +94,7 @@ export class WatchRoomScreenGateway {
     if (!(await this.isHost(client, body?.roomId))) return;
     const quality = this.screen.setQuality(body.roomId, body.quality);
     if (!quality) return void client.emit(ROOM_EVENT.ERROR, { reason: 'INVALID_QUALITY' });
+    this.cluster.publish({ t: 'quality', roomId: body.roomId, quality });
     this.server.to(ROOM_CHANNEL(body.roomId)).emit(ROOM_EVENT.QUALITY_CHANGED, { quality });
   }
 

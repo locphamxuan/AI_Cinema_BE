@@ -8,11 +8,14 @@ import { OAuthOpen } from 'src/modules/identity/oauth/oauth-scope.guard';
 import { appConfig } from 'src/config/config.module';
 import { AuthService } from './auth.service';
 import { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
+import { ForgotPasswordRequestDto } from './dto/forgot-password.request.dto';
 import { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
 import { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
+import { ResetPasswordRequestDto } from './dto/reset-password.request.dto';
+import { PasswordResetService } from './password-reset.service';
 
 // Guessing passwords or refresh tokens is limited far below the API-wide rate.
 const authRateLimit = {
@@ -22,7 +25,10 @@ const authRateLimit = {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Public()
   @Throttle(authRateLimit)
@@ -68,6 +74,25 @@ export class AuthController {
   @ApiOperation({ summary: 'Revoke a refresh token' })
   logout(@Body() dto: RefreshTokenRequestDto) {
     return this.authService.logout(dto.refreshToken);
+  }
+
+  @Public()
+  @Throttle(authRateLimit)
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'E-mail a password-reset OTP; answers the same whether or not the account exists' })
+  forgotPassword(@Body() dto: ForgotPasswordRequestDto) {
+    return this.passwordReset.request(dto.email);
+  }
+
+  @Public()
+  @Throttle(authRateLimit)
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: AuthSessionDto })
+  @ApiOperation({ summary: 'Reset the password using the OTP emailed to the account' })
+  resetPassword(@Body() dto: ResetPasswordRequestDto) {
+    return this.authService.resetPassword(dto);
   }
 
   @Get('me')

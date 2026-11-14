@@ -13,7 +13,7 @@ xem [`docs/cdn-cloudflare-r2.md`](docs/cdn-cloudflare-r2.md).
 
 ## Run it
 
-Requires Node.js 20.19+. Pick one of the two ways.
+Requires Node.js 24.9+ (as in `engines`, CI and the Dockerfile). Pick one of the two ways.
 
 ### A. Docker (Postgres + Redis + API, nothing else to install)
 

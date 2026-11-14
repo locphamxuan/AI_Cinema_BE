@@ -1,5 +1,8 @@
 {
+  // The RAG eval set reads prisma/ seed data and only runs from prisma/eval-rag.ts: building it would
+  // lift rootDir above src and move the entry point to dist/src/main.js (the image runs dist/main).
+  // Spec-only fixtures and harnesses stay out of the production bundle.
   "extends": "./tsconfig.json",
   "include": ["src"],
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "src/modules/support/knowledge/rag-eval-*.ts", "src/**/*.fixtures.ts", "src/**/*.test-harness.ts"]
 }

@@ -121,4 +121,14 @@ describe('EmailOutboxService', () => {
     await onFailed({ emailMessageId: 'e1' }, new Error('SMTP down'));
     expect(notifications.notify).toHaveBeenCalledWith(['creator-1'], expect.objectContaining({ link: '/projects/m1' }));
   });
+
+  it('marks a password-reset code FAILED without an in-app notice to a signed-out member', async () => {
+    const { notifyOnFailureId: _none, ...payload } = stored.payload;
+    prisma.emailMessage.update.mockResolvedValue({ ...stored, template: EMAIL_TEMPLATE.PASSWORD_RESET_OTP, payload });
+    await onFailed({ emailMessageId: 'e1' }, new Error('SMTP down'));
+    expect(prisma.emailMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: EmailStatus.FAILED }) }),
+    );
+    expect(notifications.notify).not.toHaveBeenCalled();
+  });
 });

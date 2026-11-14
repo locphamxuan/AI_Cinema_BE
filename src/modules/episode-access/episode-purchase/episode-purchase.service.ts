@@ -8,6 +8,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { CoinSpendService, spentMovementOf } from '../coin-wallet/coin-spend.service';
 import { lockWallet } from '../coin-wallet/lot-usage';
+import { COIN_REASON } from '../coin-wallet/coin-wallet.types';
 import { WalletService } from '../coin-wallet/wallet.service';
 import { runningPlanWhere } from '../subscription/running-plan';
 import type { PurchaseResultDto } from './dto/purchase-result.dto';
@@ -127,7 +128,14 @@ export class EpisodePurchaseService {
       include: { episodeAccess: true },
     });
     const access = entry?.episodeAccess;
-    if (!access || access.userId !== userId || access.episodeId !== episodeId) return null;
+    // The key already paid for another episode (or another member's): never let it pass as this one.
+    if (access && (access.userId !== userId || access.episodeId !== episodeId)) {
+      throw new ConflictException({
+        message: 'This Idempotency-Key was already used for another request; send a new key',
+        details: { reason: COIN_REASON.IDEMPOTENCY_KEY_REUSED },
+      });
+    }
+    if (!entry || !access) return null;
     const movement = spentMovementOf(entry, access.paidCoins);
     return {
       episodeId,

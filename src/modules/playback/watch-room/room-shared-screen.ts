@@ -77,6 +77,13 @@ export class RoomSharedScreen {
     return message;
   }
 
+  /** Stores a line another API instance already accepted and broadcast. */
+  remember(roomId: string, message: RoomChatMessage, now = Date.now()): void {
+    const room = this.touch(roomId, now);
+    if (room.chat.some((line) => line.id === message.id)) return;
+    room.chat = [...room.chat, message].slice(-CHAT_HISTORY_LIMIT);
+  }
+
   /** The Host's ad started (with what everyone shows) or ended. */
   setAd(roomId: string, ad: RoomAdState, now = Date.now()): RoomAdState {
     const next: RoomAdState = ad.active

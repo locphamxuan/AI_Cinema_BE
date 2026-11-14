@@ -8,7 +8,7 @@ enum EmailStatus {
 model EmailMessage {
     id             String      @id @default(uuid()) @db.Uuid
     toEmail        String      @map("to_email") @db.VarChar(255)
-    /// STUDIO_BRIEF / STUDIO_UPDATE / OTP
+    /// STUDIO_BRIEF / STUDIO_UPDATE / PASSWORD_RESET_OTP
     template       String      @db.VarChar(100)
     subject        String      @db.VarChar(255)
     payload        Json?       @db.JsonB

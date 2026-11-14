@@ -23,7 +23,7 @@ export class CoinSpendService {
 
   /** Takes Coins out: main first, then the bonus lots that expire first. */
   async spend(tx: PrismaTx, walletId: string, request: SpendRequest, now = new Date()): Promise<CoinMovement> {
-    const replayed = await this.replayed(request.idempotencyKey, tx);
+    const replayed = await this.replayed(tx, walletId, request);
     if (replayed) return spentMovementOf(replayed, request.amountCoins);
     if (request.amountCoins <= 0) throw new ConflictException({ message: 'A Coin payment must be more than 0' });
 
@@ -88,7 +88,7 @@ export class CoinSpendService {
 
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */
   async credit(tx: PrismaTx, walletId: string, request: CreditRequest, now = new Date()): Promise<CoinMovement> {
-    const replayed = await this.replayed(request.idempotencyKey, tx);
+    const replayed = await this.replayed(tx, walletId, request);
     if (replayed) {
       return {
         transactionId: replayed.id,
@@ -203,8 +203,25 @@ export class CoinSpendService {
     return tx.coinWallet.findUniqueOrThrow({ where: { id: walletId } });
   }
 
-  private replayed(idempotencyKey: string | undefined, tx: PrismaTx): Promise<CoinTransaction | null> {
-    return idempotencyKey ? tx.coinTransaction.findUnique({ where: { idempotencyKey } }) : Promise.resolve(null);
+  /**
+   * The earlier move a retried request already made. A key is only a replay of the same kind of move
+   * on the same wallet: a key first spent on a daily check-in (a credit) must not pass as an episode
+   * already paid for, nor may one member's key answer for another member's wallet.
+   */
+  private async replayed(
+    tx: PrismaTx,
+    walletId: string,
+    { idempotencyKey, entryType }: { idempotencyKey?: string; entryType: CoinEntryType },
+  ): Promise<CoinTransaction | null> {
+    if (!idempotencyKey) return null;
+    const earlier = await tx.coinTransaction.findUnique({ where: { idempotencyKey } });
+    if (earlier && (earlier.walletId !== walletId || earlier.entryType !== entryType)) {
+      throw new ConflictException({
+        message: 'This Idempotency-Key was already used for another request; send a new key',
+        details: { reason: COIN_REASON.IDEMPOTENCY_KEY_REUSED },
+      });
+    }
+    return earlier;
   }
 }
 

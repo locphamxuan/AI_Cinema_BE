@@ -1,8 +1,4 @@
 import type {
-  KnowledgeArticleStatus,
-  KnowledgeIndexStatus,
-  KnowledgeSource,
-  SupportAudience,
   SupportCloseReason,
   SupportEscalationReason,
   SupportPriority,
@@ -64,24 +60,6 @@ export interface SupportSendResult {
   /** System line telling the member the case moved to Staff. */
   systemMessage: SupportMessageView | null;
   quickReplies: SupportQuickReply[];
-}
-
-export interface SupportKnowledgeArticleView {
-  id: string;
-  title: string;
-  slug: string;
-  category: string;
-  audience: SupportAudience;
-  locale: string;
-  status: KnowledgeArticleStatus;
-  source: KnowledgeSource;
-  version: number;
-  contentHash: string | null;
-  indexStatus: KnowledgeIndexStatus;
-  indexError: string | null;
-  indexedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 export interface RetrievedKnowledge {

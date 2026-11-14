@@ -164,9 +164,3 @@ vite.config.ts.timestamp-*
 
 # Files of the local storage driver (STORAGE_DRIVER=local)
 /storage/
-
-# Genre Style LoRA datasets - keep folder layout + captions in git, not the images
-training-data/**/*.png
-training-data/**/*.jpg
-training-data/**/*.jpeg
-training-data/**/*.webp
