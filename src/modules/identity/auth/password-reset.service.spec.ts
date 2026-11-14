@@ -49,7 +49,7 @@ describe('PasswordResetService', () => {
   });
 
   describe('request', () => {
-    const account = { id: profile.id, email: profile.email, passwordHash, isActive: true };
+    const account = { id: profile.id, email: profile.email, passwordHash, isActive: true, role: UserRole.MEMBER };
 
     it('retires older codes, stores only the hash and mails the new code without an in-app failure notice', async () => {
       user.findUnique.mockResolvedValue(account);
@@ -76,6 +76,8 @@ describe('PasswordResetService', () => {
       ['an unknown email', null],
       ['a Google-only account', { ...account, passwordHash: null }],
       ['a deactivated account', { ...account, isActive: false }],
+      ['a staff account', { ...account, role: UserRole.CONTENT_REVIEWER }],
+      ['a studio account', { ...account, role: UserRole.STUDIO }],
     ])('sends nothing for %s, answering the same way', async (_case, found) => {
       user.findUnique.mockResolvedValue(found);
 
@@ -122,6 +124,7 @@ describe('PasswordResetService', () => {
       ['an unknown email', null],
       ['a Google-only account', { ...profile, passwordHash: null }],
       ['a deactivated account', { ...profile, passwordHash, isActive: false }],
+      ['an Admin account', { ...profile, passwordHash, role: UserRole.ADMIN }],
     ])('gives %s the same answer as a wrong code', async (_case, found) => {
       user.findUnique.mockResolvedValue(found);
 
