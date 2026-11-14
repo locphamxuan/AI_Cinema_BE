@@ -134,7 +134,7 @@ jobs:
           context: .
           target: runtime
           push: ${{ env.PUBLISH == 'true' }}
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/ai-cinema:latest
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/ai-cinema-api:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
