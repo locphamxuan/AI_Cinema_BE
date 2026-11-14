@@ -91,6 +91,9 @@ model User {
   friendshipsReceived  Friendship[]            @relation("FriendshipReceiver")
   roomParticipations   RoomParticipant[]       @relation("RoomParticipantUser")
 
+  /// Forgot password: the latest e-mailed OTP is the only live one.
+  passwordResetOtps    PasswordResetOtp[]
+
   @@index([role])
   @@index([studioId])
   @@map("users")

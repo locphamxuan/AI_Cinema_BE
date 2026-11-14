@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 
 const PASSWORD_SALT_ROUNDS = 12;
@@ -34,4 +34,20 @@ export function isAdult(dateOfBirth: Date, today = new Date()): boolean {
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+export function generateOtp(length = 6): string {
+  const max = 10 ** length;
+  return randomInt(0, max).toString().padStart(length, '0');
+}
+
+export function hashOtp(otp: string): string {
+  return createHash('sha256').update(otp).digest('hex');
+}
+
+export function otpEquals(input: string, storedHash: string): boolean {
+  const a = Buffer.from(hashOtp(input), 'hex');
+  const b = Buffer.from(storedHash, 'hex');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }

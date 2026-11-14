@@ -6,6 +6,7 @@ import type { AccessControlService } from 'src/modules/identity/access-control/a
 import { AuthService } from './auth.service';
 import { GOOGLE_REASON, type GoogleTokenVerifier } from './google-token.verifier';
 import type { SessionTokenService } from './session-token.service';
+import type { EmailOutboxService } from 'src/modules/platform/email/email-outbox.service';
 
 const member = {
   id: 'f0f1a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b',
@@ -28,12 +29,14 @@ describe('AuthService.googleLogin', () => {
   const wallets = { openForNewAccount: jest.fn() };
   const sessions = { issue: jest.fn() };
   const google = { verify: jest.fn() };
+  const emails = { create: jest.fn().mockResolvedValue('email-1'), dispatch: jest.fn().mockResolvedValue(undefined) };
   const service = new AuthService(
     prisma as unknown as PrismaService,
     sessions as unknown as SessionTokenService,
     { permissionsOf: () => Promise.resolve(new Set<string>()) } as unknown as AccessControlService,
     wallets as unknown as WalletService,
     google as unknown as GoogleTokenVerifier,
+    emails as unknown as EmailOutboxService,
   );
   // First lookup is by Google subject, the second by email.
   const lookups = (bySubject: unknown, byEmail?: unknown) =>
