@@ -7,7 +7,7 @@ import { CodeGuessLimiter, generateRoomCode, normalizeRoomCode } from './room-co
 import { RoomJoinGuard } from './room-join.guard';
 import { WatchRoomResponseDto } from './dto/watch-room.dto';
 
-/** The room closes 15 min after the episode ends or the Host leaves (BR-69). */
+/** The room closes 15 min after the episode ends or the Host leaves (BR-69); every Host sync extends it. */
 const ROOM_TTL_MS = 15 * 60 * 1000;
 
 const OPEN_STATUSES: WatchRoomStatus[] = [
@@ -122,7 +122,9 @@ export class WatchRoomService {
     const host = room.participants.find((p) => p.userId === userId && p.role === 'HOST');
     if (!host) throw new ForbiddenException({ message: 'Only the Host may sync', details: { reason: 'NOT_HOST' } });
 
-    const expiresAt = dto.state === 'ENDED' ? new Date(Date.now() + ROOM_TTL_MS) : room.expiresAt;
+    // BR-69: the 15 minutes count from the last sign of the Host (play, pause, seek or the end of the episode),
+    // so a room in use never expires mid-episode; it closes 15 min after the episode ends or the Host goes quiet.
+    const expiresAt = new Date(Date.now() + ROOM_TTL_MS);
     const updated = await this.prisma.watchRoom.update({
       where: { id: roomId },
       data: { status: dto.state, currentPositionSeconds: dto.positionSeconds, lastHostPingAt: new Date(), expiresAt },

@@ -124,6 +124,16 @@ describe('WatchRoomService', () => {
     expect(res.currentPositionSeconds).toBeGreaterThanOrEqual(129);
   });
 
+  it('pushes the expiry 15 min past every Host sync so a room in play never expires (BR-69)', async () => {
+    prisma.watchRoom.findUnique.mockResolvedValue(room({ expiresAt: new Date(Date.now() - 1000) }));
+    prisma.watchRoom.update.mockResolvedValue(room({ status: WatchRoomStatus.PAUSED }));
+    const before = Date.now();
+    await newService().hostSync('u1', 'r1', { state: 'PAUSED', positionSeconds: 900 });
+    const [[{ data }]] = prisma.watchRoom.update.mock.calls as [[{ data: { expiresAt: Date } }]];
+    const { expiresAt } = data;
+    expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + 15 * 60 * 1000);
+  });
+
   it('refuses a non-Host from syncing (edge 2.4)', async () => {
     prisma.watchRoom.findUnique.mockResolvedValue(room({ participants: [host, member] }));
     await expect(newService().hostSync('u2', 'r1', { state: 'PLAYING', positionSeconds: 0 })).rejects.toThrow(
