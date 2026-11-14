@@ -26,7 +26,9 @@ export class PriceAlertController {
   @Post(':alertId/request-change')
   @HttpCode(200)
   @RequirePermission(PERMISSION.PRICE_ALERT_MANAGE)
-  @ApiOperation({ summary: 'Ask the Reviewer to change the price; the Admin never edits it' })
+  @ApiOperation({
+    summary: 'Tell the Reviewer the price is out of range and why; the Admin then sets the new price itself',
+  })
   requestChange(
     @Param('alertId', ID) alertId: string,
     @Body() dto: RequestPriceChangeRequestDto,
