@@ -37,18 +37,25 @@ export class BonusExpirySweep implements OnModuleInit {
   async expireDue(now = new Date()): Promise<{ lots: number; coins: number }> {
     let lots = 0;
     let coins = 0;
+    // A lot that fails stays due and first in line: skip it for the rest of the run, retry next run.
+    const failed: string[] = [];
     for (;;) {
       const due = await this.prisma.coinLot.findMany({
-        where: { remainingAmount: { gt: 0 }, closedAt: null, expiresAt: { lte: now } },
+        where: { remainingAmount: { gt: 0 }, closedAt: null, expiresAt: { lte: now }, id: { notIn: failed } },
         orderBy: { expiresAt: 'asc' },
         take: BATCH,
         include: { wallet: { select: { userId: true, mainBalance: true, bonusBalance: true } } },
       });
       if (!due.length) break;
       for (const lot of due) {
-        await this.expire(lot, now);
-        lots += 1;
-        coins += lot.remainingAmount;
+        try {
+          if (!(await this.expire(lot, now))) continue; // another sweep closed it first
+          lots += 1;
+          coins += lot.remainingAmount;
+        } catch (error) {
+          failed.push(lot.id);
+          this.logger.warn(`Could not close bonus lot ${lot.id}: ${String(error)}`);
+        }
       }
       if (due.length < BATCH) break;
     }
@@ -59,15 +66,15 @@ export class BonusExpirySweep implements OnModuleInit {
   private async expire(
     lot: CoinLot & { wallet: { userId: string; mainBalance: number; bonusBalance: number } },
     now: Date,
-  ) {
-    await this.prisma.$transaction(async (tx) => {
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
       await lockWallet(tx, lot.walletId);
       // Another sweep may have closed it while this one waited for the lock.
       const { count } = await tx.coinLot.updateMany({
         where: { id: lot.id, closedAt: null, remainingAmount: { gt: 0 } },
         data: { remainingAmount: 0, closedAt: now },
       });
-      if (count === 0) return;
+      if (count === 0) return false;
       await this.coins.expireBonus(tx, lot.walletId, {
         id: lot.id,
         amount: lot.remainingAmount,
@@ -84,6 +91,7 @@ export class BonusExpirySweep implements OnModuleInit {
         },
         tx,
       );
+      return true;
     });
   }
 }

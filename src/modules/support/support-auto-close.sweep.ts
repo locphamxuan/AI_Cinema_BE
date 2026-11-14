@@ -40,6 +40,12 @@ export class SupportAutoCloseSweep implements OnModuleInit {
       where: {
         status: SupportStatus.AI_HANDLING,
         aiResolutionSuggestedAt: { not: null, lt: cutoff },
+        // A member who answered after the suggestion keeps the case open; filtered here, not after the
+        // query, so 200 such cases first in line can never fill the batch and starve the others.
+        OR: [
+          { lastMemberMessageAt: null },
+          { lastMemberMessageAt: { lte: this.prisma.supportConversation.fields.aiResolutionSuggestedAt } },
+        ],
       },
       orderBy: { aiResolutionSuggestedAt: 'asc' },
       take: BATCH,
@@ -96,7 +102,13 @@ export class SupportAutoCloseSweep implements OnModuleInit {
             tx,
           );
         });
-
+      } catch (error) {
+        // A concurrent member reply or Staff claim wins the guarded transition; skip this case.
+        this.logger.warn(`Auto-close skipped conversation ${candidate.id}: ${errorMessage(error)}`);
+        continue;
+      }
+      closed += 1;
+      try {
         await this.notifications.notify([candidate.memberId], {
           type: NOTIFICATION_TYPE.SUPPORT_CASE_CLOSED,
           title: 'Yêu cầu hỗ trợ đã tự động đóng',
@@ -104,10 +116,9 @@ export class SupportAutoCloseSweep implements OnModuleInit {
           link: `/support/conversations/${candidate.id}`,
           payload: { conversationId: candidate.id, closeReason: SupportCloseReason.INACTIVITY },
         });
-        closed += 1;
       } catch (error) {
-        // A concurrent member reply or Staff claim wins the guarded transition; skip this case.
-        this.logger.warn(`Auto-close skipped conversation ${candidate.id}: ${errorMessage(error)}`);
+        // The case is closed already; only the notice failed.
+        this.logger.warn(`Closed conversation ${candidate.id} but could not notify the member: ${errorMessage(error)}`);
       }
     }
 
