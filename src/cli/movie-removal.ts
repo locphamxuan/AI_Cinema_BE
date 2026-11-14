@@ -5,9 +5,12 @@ type Tx = Prisma.TransactionClient | PrismaClient;
 /**
  * Deletes a movie with its project and everything under it. Rows that point at it with onDelete: Restrict go
  * first, children before parents; episodes return to DRAFT so the BR-19 trigger lets their approved version go.
- * Run it inside a transaction.
+ * Run it inside a transaction. A movie members already paid Coins for is refused: its episode_access rows
+ * would cascade away without the BR-52 refund, so take such a movie down through unpublish instead.
  */
 export async function removeMovie(tx: Tx, movieId: string): Promise<void> {
+  const paid = await tx.episodeAccess.count({ where: { episode: { movieId }, coinTransactionId: { not: null } } });
+  if (paid > 0) throw new Error(`Movie ${movieId} has ${paid} paid unlock(s); unpublish it (BR-52 refund) instead`);
   // Rows that point at the movie with onDelete: Restrict go first, children before parents.
   const media = { mediaAsset: { episode: { movieId: movieId } } };
   await tx.streamingSession.deleteMany({ where: media });
