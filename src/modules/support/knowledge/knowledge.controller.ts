@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PERMISSION } from 'src/common/auth/permissions';
@@ -69,6 +69,12 @@ export class KnowledgeController {
   @ApiOperation({ summary: 'Archive an article and drop its chunks' })
   archive(@CurrentUser('id') adminId: string, @Param('id', ID) id: string) {
     return this.knowledge.archive(id, adminId);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete an article for good, with its chunks and embeddings' })
+  remove(@CurrentUser('id') adminId: string, @Param('id', ID) id: string) {
+    return this.knowledge.remove(id, adminId);
   }
 
   @Post(':id/reindex')

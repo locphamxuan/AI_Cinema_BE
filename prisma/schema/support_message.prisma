@@ -5,6 +5,12 @@ enum SupportSenderType {
   SYSTEM
 }
 
+/// Admin's verdict on one AI answer (AI console, 2026-11-14): NOT_HELPFUL answers show where the KB needs more.
+enum SupportAiFeedback {
+  HELPFUL
+  NOT_HELPFUL
+}
+
 /// Every message of a support case. `isInternal` rows are Staff notes the member never sees.
 /// `clientMessageId` makes a member's retry idempotent; `replyToMessageId` is unique so one
 /// member message gets at most one AI reply.
@@ -18,11 +24,17 @@ model SupportMessage {
   clientMessageId  String?           @map("client_message_id") @db.VarChar(100)
   replyToMessageId String?           @unique @map("reply_to_message_id") @db.Uuid
   aiMetadata       Json?             @map("ai_metadata") @db.JsonB
+  aiFeedback       SupportAiFeedback? @map("ai_feedback")
+  aiFeedbackNote   String?           @map("ai_feedback_note") @db.Text
+  aiFeedbackById   String?           @map("ai_feedback_by_id") @db.Uuid
+  aiFeedbackAt     DateTime?         @map("ai_feedback_at") @db.Timestamptz(6)
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
 
   conversation SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  aiFeedbackBy User?               @relation("SupportMessageAiFeedbackBy", fields: [aiFeedbackById], references: [id], onDelete: SetNull)
 
   @@unique([conversationId, clientMessageId])
   @@index([conversationId, createdAt])
+  @@index([senderType, createdAt])
   @@map("support_messages")
 }

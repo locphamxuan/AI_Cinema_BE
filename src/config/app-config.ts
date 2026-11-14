@@ -61,6 +61,9 @@ export interface AppConfig {
     coinTopUpSweepMs: number;
     emailRedeliverySweepMs: number;
     paymentReconcileSweepMs: number;
+    /** MF-5: shares last month's Monthly-plan revenue once the month is over (BR-48) and scans for risky Coin rows. */
+    revenueAllocationSweepMs: number;
+    riskScanSweepMs: number;
     /** MF-3: closing sessions whose heartbeat timed out. */
     streamingSessionSweepMs: number;
     /** MF-3: deleting finished sessions older than `playback.sessionRetentionDays`. */
@@ -223,6 +226,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
       coinTopUpSweepMs: read.int('COIN_TOPUP_SWEEP_MS', 5 * 60_000),
       emailRedeliverySweepMs: read.int('EMAIL_REDELIVERY_SWEEP_MS', 15 * 60_000),
       paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
+      revenueAllocationSweepMs: read.int('REVENUE_ALLOCATION_SWEEP_MS', 6 * 60 * 60_000),
+      riskScanSweepMs: read.int('RISK_SCAN_SWEEP_MS', 60 * 60_000),
       /** MF-3: sessions whose heartbeat timed out are closed and their progress saved. */
       streamingSessionSweepMs: read.int('STREAMING_SESSION_SWEEP_MS', 30_000),
       /** MF-3: the retention sweep runs once a day by default; it is cheap when nothing is due. */

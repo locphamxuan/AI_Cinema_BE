@@ -40,6 +40,7 @@ describe('StudioHandoffService', () => {
   const storage = { stream: jest.fn() };
   const auditLog = { record: jest.fn() };
   const notifications = { notify: jest.fn() };
+  const lifecycle = { announceStudio: jest.fn() };
   const service = new StudioHandoffService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
@@ -51,6 +52,7 @@ describe('StudioHandoffService', () => {
     auditLog as unknown as AuditLogService,
     notifications as unknown as NotificationService,
     contracts as unknown as ContractService,
+    lifecycle as never,
   );
 
   beforeEach(() => {
@@ -69,6 +71,7 @@ describe('StudioHandoffService', () => {
       db.studioHandoff.findMany.mockResolvedValueOnce([OLD]).mockResolvedValueOnce([{ id: 'h2' }]);
 
       await expect(service.changeStudio('p1', DTO as never, ADMIN)).resolves.toEqual([{ id: 'h2' }]);
+      expect(lifecycle.announceStudio).toHaveBeenCalledWith('p1', STUDIO, db);
 
       expect(db.studioHandoff.findMany).toHaveBeenNthCalledWith(1, {
         where: { projectId: 'p1', seasonId: null, milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },

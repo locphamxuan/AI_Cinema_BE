@@ -91,7 +91,7 @@ export class MovieProjectService {
 
   /** MF-1 step 1 (07/11/2026): the Admin creates the project, picks its Reviewer and assigns the lead Creator. */
   async create(dto: CreateMovieProjectRequestDto, user: AuthenticatedUser) {
-    if (dto.studioId) await this.studios.assertUsable(dto.studioId);
+    const studio = dto.studioId ? await this.studios.assertUsable(dto.studioId) : null;
     await this.lifecycle.assertActive(dto.reviewerId, UserRole.CONTENT_REVIEWER);
     if (dto.creatorId) await this.lifecycle.assertActive(dto.creatorId, UserRole.CONTENT_CREATOR);
     const seasons = (dto.seasons ?? []).map((season) => {
@@ -154,6 +154,7 @@ export class MovieProjectService {
     });
     await this.lifecycle.announceReviewer(projectId);
     if (dto.creatorId) await this.lifecycle.assignCreator(projectId, dto.creatorId, user);
+    if (studio) await this.lifecycle.announceStudio(projectId, studio);
     return this.detail(projectId, user);
   }
 

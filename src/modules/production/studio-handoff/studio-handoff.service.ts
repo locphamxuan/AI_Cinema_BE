@@ -10,6 +10,7 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService, type TitledProject } from 'src/modules/production/project-access/project-access.service';
 import { ContractService } from 'src/modules/production/contract/contract.service';
+import { ProjectLifecycleService } from 'src/modules/production/movie-project/project-lifecycle.service';
 import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
@@ -64,6 +65,7 @@ export class StudioHandoffService {
     private readonly auditLog: AuditLogService,
     private readonly notifications: NotificationService,
     private readonly contracts: ContractService,
+    private readonly lifecycle: ProjectLifecycleService,
   ) {}
 
   async changeStudio(projectId: string, dto: ChangeStudioRequestDto, user: AuthenticatedUser) {
@@ -105,6 +107,7 @@ export class StudioHandoffService {
       await tx.movieProject.update({ where: { id: projectId }, data: { studioId: studio.id } });
       // After the old studios are superseded, so what they give back is already in the budget.
       await this.costs.assertAffordable(tx, projectId, dto.offeredFeeVnd);
+      if (studio.id !== project.studioId) await this.lifecycle.announceStudio(projectId, studio, tx);
       return this.record(tx, project, handoff, user);
     });
     await this.mails.dispatch(mailId);

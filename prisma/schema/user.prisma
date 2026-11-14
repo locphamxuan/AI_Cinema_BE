@@ -84,6 +84,7 @@ model User {
   assignedSupportCases    SupportConversation[]      @relation("SupportConversationAgent")
   supportKnowledgeCreated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleCreatedBy")
   supportKnowledgeUpdated SupportKnowledgeArticle[]  @relation("SupportKnowledgeArticleUpdatedBy")
+  supportAiFeedbacks      SupportMessage[]           @relation("SupportMessageAiFeedbackBy")
 
   /// Group Watch (planned 2026-11-11): rooms this member hosts and the friendships touching this account.
   watchRoomsHosted    WatchRoom[]       @relation("WatchRoomHost")
@@ -93,6 +94,7 @@ model User {
 
   /// Forgot password: the latest e-mailed OTP is the only live one.
   passwordResetOtps PasswordResetOtp[]
+  reviewedTransactionFlags TransactionFlag[] @relation("TransactionFlagReviewedBy")
 
   @@index([role])
   @@index([studioId])

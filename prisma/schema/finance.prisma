@@ -1,0 +1,47 @@
+/// BR-48: last month's Monthly-plan revenue shared across movies by the watch time of plan members.
+/// One row per (period, movie); re-running a period replaces its rows, so it is never counted twice.
+model RevenueAllocation {
+  id                String   @id @default(uuid()) @db.Uuid
+  /// Calendar month in Vietnam, "YYYY-MM".
+  period            String   @db.VarChar(7)
+  movieId           String   @map("movie_id") @db.Uuid
+  movieWatchSeconds BigInt   @map("movie_watch_seconds")
+  totalWatchSeconds BigInt   @map("total_watch_seconds")
+  /// Main Coins paid for Monthly plans in the period, in VND at each payment's rate (BR-49, BR-50).
+  monthlyPoolVnd    BigInt   @map("monthly_pool_vnd")
+  allocatedVnd      BigInt   @map("allocated_vnd")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@unique([period, movieId])
+  @@index([movieId])
+  @@map("revenue_allocations")
+}
+
+enum TransactionFlagStatus {
+  OPEN
+  CONFIRMED
+  DISMISSED
+}
+
+/// A Coin ledger row a risk rule found suspicious; the Admin confirms or dismisses it.
+model TransactionFlag {
+  id                String                @id @default(uuid()) @db.Uuid
+  coinTransactionId String                @map("coin_transaction_id") @db.Uuid
+  /// The rule that raised it (src/modules/platform/finance/risk-rules.ts).
+  ruleCode          String                @map("rule_code") @db.VarChar(40)
+  reason            String                @db.Text
+  status            TransactionFlagStatus @default(OPEN)
+  reviewNote        String?               @map("review_note") @db.Text
+  reviewedById      String?               @map("reviewed_by_id") @db.Uuid
+  reviewedAt        DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  coinTransaction CoinTransaction @relation(fields: [coinTransactionId], references: [id], onDelete: Cascade)
+  reviewedBy      User?           @relation("TransactionFlagReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([ruleCode, coinTransactionId])
+  @@index([status, createdAt])
+  @@map("transaction_flags")
+}
