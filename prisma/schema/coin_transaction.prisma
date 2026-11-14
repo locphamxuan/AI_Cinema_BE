@@ -54,6 +54,7 @@ model CoinTransaction {
   lot               CoinLot?           @relation("CoinLotSpentBy", fields: [lotId], references: [id], onDelete: Restrict)
   reverses          CoinTransaction?   @relation("CoinTransactionReversal", fields: [reversesId], references: [id], onDelete: Restrict)
   reversedBy        CoinTransaction[]  @relation("CoinTransactionReversal")
+  flags             TransactionFlag[]
   createdBy         User?              @relation("CoinTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   topUp             CoinTopUp?
   checkIn           DailyCheckIn?

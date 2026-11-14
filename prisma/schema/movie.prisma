@@ -25,6 +25,7 @@ trailerUrl       String?       @map("trailer_url") @db.VarChar(500)
    episodes Episode[]
    likes    MovieLike[]
    savedBy  SavedMovie[]
+  revenueAllocations RevenueAllocation[]
 
    @@map("movies")
 }

@@ -93,6 +93,7 @@ model User {
 
   /// Forgot password: the latest e-mailed OTP is the only live one.
   passwordResetOtps PasswordResetOtp[]
+  reviewedTransactionFlags TransactionFlag[] @relation("TransactionFlagReviewedBy")
 
   @@index([role])
   @@index([studioId])
