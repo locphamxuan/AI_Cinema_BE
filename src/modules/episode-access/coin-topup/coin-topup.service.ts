@@ -1,5 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { PaymentProvider, PaymentStatus, Prisma, TopUpStatus } from '@prisma/client';
 import type { PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -24,6 +30,8 @@ const ORDER_TTL_MINUTES = 15;
  */
 @Injectable()
 export class CoinTopUpService {
+  private readonly logger = new Logger(CoinTopUpService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly wallets: WalletService,
@@ -135,18 +143,9 @@ export class CoinTopUpService {
   async handleCallback(provider: PaymentProvider, raw: Record<string, unknown>) {
     const callback = normalizeCallback(raw);
     if (!this.gateways.verifyCallbackSignature(provider, raw)) {
-      await this.prisma.paymentCallback.upsert({
-        where: { provider_eventId: { provider, eventId: callback.eventId } },
-        update: { errorMessage: 'Invalid gateway signature', handledAt: new Date() },
-        create: {
-          provider,
-          eventId: callback.eventId,
-          signature: callback.signature,
-          payload: raw as Prisma.InputJsonValue,
-          errorMessage: 'Invalid gateway signature',
-          handledAt: new Date(),
-        },
-      });
+      // Never stored: the endpoint is public and the event id is the sender's, so recording a forged
+      // delivery would mark the real one as handled before it arrives, and its Coins would never land.
+      this.logger.warn(`Rejected a ${provider} callback with a bad signature (event ${callback.eventId})`);
       throw new BadRequestException({
         message: 'The callback signature does not check out',
         details: { reason: TOPUP_REASON.INVALID_SIGNATURE, provider },
