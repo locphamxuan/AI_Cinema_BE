@@ -62,6 +62,8 @@ describe('CoinSpendService.spend', () => {
     // Only the first row carries the key: the main part, with the bonus balance still untouched.
     tx.coinTransaction.findUnique.mockResolvedValue({
       id: 'tx-1',
+      walletId: 'w1',
+      entryType: CoinEntryType.EPISODE_PURCHASE,
       mainAmount: -10,
       bonusAmount: 0,
       mainBalanceAfter: 0,
@@ -80,6 +82,18 @@ describe('CoinSpendService.spend', () => {
       mainBalance: 0,
       bonusBalance: 25,
     });
+    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a credit of the same member (daily check-in)', { walletId: 'w1', entryType: CoinEntryType.DAILY_REWARD }],
+    ['another member', { walletId: 'w2', entryType: CoinEntryType.EPISODE_PURCHASE }],
+  ])('never takes a key first used by %s as an episode already paid for', async (_case, earlier) => {
+    tx.coinTransaction.findUnique.mockResolvedValue({ id: 'tx-9', mainAmount: 5, ...earlier });
+
+    await expect(
+      service.spend(tx as unknown as PrismaTx, 'w1', { ...spendRequest(25), idempotencyKey: 'key-1' }),
+    ).rejects.toThrow(ConflictException);
     expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
   });
 
@@ -172,6 +186,8 @@ describe('CoinSpendService.credit', () => {
   it('replays a credit with the amounts it added, not their negation', async () => {
     tx.coinTransaction.findUnique.mockResolvedValue({
       id: 'tx-8',
+      walletId: 'w1',
+      entryType: CoinEntryType.TOP_UP,
       mainAmount: 50,
       bonusAmount: 0,
       mainBalanceAfter: 70,
