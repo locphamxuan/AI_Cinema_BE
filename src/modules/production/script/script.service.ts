@@ -7,6 +7,7 @@ import { CONTENT_EVENT, type ContentEvent } from 'src/modules/platform/audit-log
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ContractService } from 'src/modules/production/contract/contract.service';
+import { ProjectLifecycleService } from 'src/modules/production/movie-project/project-lifecycle.service';
 import { ProjectAccessService, type TitledProject } from 'src/modules/production/project-access/project-access.service';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { StudioService } from 'src/modules/production/studio/studio.service';
@@ -40,6 +41,7 @@ export class ScriptService {
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
     private readonly mails: StudioMailService,
+    private readonly lifecycle: ProjectLifecycleService,
   ) {}
 
   async get(projectId: string, user: AuthenticatedUser) {
@@ -101,7 +103,7 @@ export class ScriptService {
   async finalReview(projectId: string, dto: FinalReviewScriptRequestDto, admin: AuthenticatedUser) {
     const project = await this.access.project(projectId, admin, 'read');
     this.assertAssigned(project);
-    const studioName = dto.approve ? await this.assertReadyForStudio(project, dto.studioId) : null;
+    const studio = dto.approve ? await this.assertReadyForStudio(project, dto.studioId) : null;
     let mailId: string | null = null;
     const result = await this.prisma.$transaction(async (tx) => {
       const script = await this.locked(tx, projectId, ScriptStatus.REVIEWER_APPROVED);
@@ -125,13 +127,18 @@ export class ScriptService {
         return this.find(projectId, tx);
       }
       await this.decide(tx, version, projectId, ScriptReviewStage.ADMIN, dto, admin.id, ScriptStatus.FINAL);
-      if (dto.studioId) await tx.movieProject.update({ where: { id: projectId }, data: { studioId: dto.studioId } });
+      const chosen = studio as NonNullable<typeof studio>;
+      if (chosen.id !== project.studioId) {
+        // MF-1: a studio picked (or replaced) on the Final Script is announced to the Reviewer and the lead Creator.
+        await tx.movieProject.update({ where: { id: projectId }, data: { studioId: chosen.id } });
+        await this.lifecycle.announceStudio(projectId, chosen, tx);
+      }
       await this.record(tx, project, CONTENT_EVENT.SCRIPT_FINALIZED, admin.id, { version });
       await this.tell(
         tx,
         [project.creatorId, project.reviewerId],
         project,
-        `Admin đã duyệt Kịch bản Final (bản ${version}); hệ thống gửi hợp đồng mẫu cho Studio "${studioName}".`,
+        `Admin đã duyệt Kịch bản Final (bản ${version}); hệ thống gửi hợp đồng mẫu cho Studio "${chosen.name}".`,
       );
       ({ mailId } = await this.contracts.sendTemplate(tx, projectId, admin.id, dto.terms));
       return this.find(projectId, tx);
@@ -146,8 +153,8 @@ export class ScriptService {
     }
   }
 
-  /** The studio must be chosen (and still active) and every episode planned before it is contracted; returns its name. */
-  private async assertReadyForStudio(project: TitledProject, studioId?: string): Promise<string> {
+  /** The studio must be chosen (and still active) and every episode planned before it is contracted; returns it. */
+  private async assertReadyForStudio(project: TitledProject, studioId?: string): Promise<{ id: string; name: string }> {
     const chosen = studioId ?? project.studioId;
     if (!chosen) throw new ConflictException('Pick the studio to send the contract to (studioId)');
     const studio = await this.studios.assertUsable(chosen);
@@ -157,7 +164,7 @@ export class ScriptService {
     ]);
     if (!episodes) throw new ConflictException('The Reviewer must plan at least one episode first');
     if (undated) throw new ConflictException('Every episode needs a delivery deadline before the studio is contracted');
-    return studio.name;
+    return { id: studio.id, name: studio.name };
   }
 
   /** The script, row-locked, in the expected status: a double click cannot review the same version twice. */

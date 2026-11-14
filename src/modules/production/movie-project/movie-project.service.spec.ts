@@ -92,6 +92,7 @@ describe('MovieProjectService', () => {
     });
 
     it('numbers episodes across seasons and assigns the Creator after the transaction', async () => {
+      studios.assertUsable.mockResolvedValueOnce({ id: 'st1', name: 'Lumen' });
       const episode = (title: string) => ({ title, deliveryDeadline: '2099-01-10' });
       await service.create(
         {
@@ -120,6 +121,7 @@ describe('MovieProjectService', () => {
         data: [expect.objectContaining({ episodeNumber: 3, title: 'C' })],
       });
       expect(lifecycle.assignCreator).toHaveBeenCalledWith('p1', 'cre', ADMIN);
+      expect(lifecycle.announceStudio).toHaveBeenCalledWith('p1', { id: 'st1', name: 'Lumen' });
     });
   });
 

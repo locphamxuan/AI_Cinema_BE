@@ -1,3 +1,4 @@
+import { MovieProjectModule } from 'src/modules/production/movie-project/movie-project.module';
 import { Module } from '@nestjs/common';
 import { ContractModule } from 'src/modules/production/contract/contract.module';
 import { ProductionCostModule } from 'src/modules/production/production-cost/production-cost.module';
@@ -9,7 +10,7 @@ import { StudioHandoffController } from './studio-handoff.controller';
 import { StudioHandoffService } from './studio-handoff.service';
 
 @Module({
-  imports: [ProductionCostModule, StudioModule, ContractModule],
+  imports: [ProductionCostModule, StudioModule, ContractModule, MovieProjectModule],
   controllers: [StudioHandoffController],
   providers: [StudioHandoffService, HandoffMaterialService, BriefService, OverdueEpisodesJob],
 })
