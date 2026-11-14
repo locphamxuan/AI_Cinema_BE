@@ -21,7 +21,9 @@ CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
 FROM deps AS build
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
-RUN npm run build && npm prune --omit=dev --ignore-scripts
+RUN npm run build \
+    && npm prune --omit=dev --ignore-scripts \
+    && npm install --no-save --omit=dev --ignore-scripts prisma tsx
 
 # Production API image.
 FROM base AS runtime
@@ -30,6 +32,8 @@ ENV NODE_ENV=production
 COPY --from=build --chown=node:node /app/package.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/prisma ./prisma
+COPY --from=build --chown=node:node /app/prisma.config.ts ./
 
 RUN mkdir -p /app/storage && chown node:node /app/storage
 
