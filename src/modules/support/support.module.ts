@@ -39,6 +39,9 @@ import { StaffAiAssistService } from './staff/staff-ai-assist.service';
 import { StaffSupportService } from './staff/staff-support.service';
 import { SupportStatsService } from './staff/support-stats.service';
 import { SupportAutoCloseSweep } from './support-auto-close.sweep';
+import { AiAnswerLogService } from './ai-console/ai-answer-log.service';
+import { AiConsoleController } from './ai-console/ai-console.controller';
+import { AiPlaygroundService } from './ai-console/ai-playground.service';
 
 @Module({
   imports: [
@@ -49,7 +52,13 @@ import { SupportAutoCloseSweep } from './support-auto-close.sweep';
     RecommendationModule,
     DailyRewardModule,
   ],
-  controllers: [MemberSupportController, StaffSupportController, KnowledgeController, SupportAiHealthController],
+  controllers: [
+    MemberSupportController,
+    StaffSupportController,
+    KnowledgeController,
+    SupportAiHealthController,
+    AiConsoleController,
+  ],
   providers: [
     // AI providers
     {
@@ -117,6 +126,9 @@ import { SupportAutoCloseSweep } from './support-auto-close.sweep';
     ChunkingService,
     RetrievalService,
     KnowledgeIndexJob,
+    // Admin AI console
+    AiPlaygroundService,
+    AiAnswerLogService,
     SupportAutoCloseSweep,
   ],
   exports: [SupportChatService, SupportConversationService, SupportMessageService, KnowledgeService],
