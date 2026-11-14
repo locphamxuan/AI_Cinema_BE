@@ -47,6 +47,7 @@ function buildService(configOverrides: Partial<AppConfig['support']> = {}) {
       findFirst: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
+      delete: jest.fn(),
       count: jest.fn(),
     },
     supportKnowledgeChunk: { count: jest.fn(), deleteMany: jest.fn() },
@@ -401,6 +402,31 @@ describe('KnowledgeService.health — failure state', () => {
     expect(health.chatConfigured).toBe(false);
     expect(health.embeddingConfigured).toBe(true);
     expect(health.lastIndexedAt).toBeNull();
+  });
+});
+
+describe('KnowledgeService.remove', () => {
+  it('deletes the article (chunks cascade) and audits it', async () => {
+    const { service, prisma, audit } = buildService();
+    prisma.supportKnowledgeArticle.findUnique.mockResolvedValue({ slug: CURRENT.slug });
+
+    await expect(service.remove(ARTICLE_ID, ACTOR_ID)).resolves.toEqual({ id: ARTICLE_ID, deleted: true });
+
+    expect(prisma.supportKnowledgeArticle.delete).toHaveBeenCalledWith({ where: { id: ARTICLE_ID } });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: CONTENT_EVENT.SUPPORT_KNOWLEDGE_DELETED,
+        entityId: ARTICLE_ID,
+        actorId: ACTOR_ID,
+      }),
+    );
+  });
+
+  it('404s an unknown article without deleting anything', async () => {
+    const { service, prisma } = buildService();
+    prisma.supportKnowledgeArticle.findUnique.mockResolvedValue(null);
+    await expect(service.remove(ARTICLE_ID, ACTOR_ID)).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.supportKnowledgeArticle.delete).not.toHaveBeenCalled();
   });
 });
 
