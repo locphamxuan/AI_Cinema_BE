@@ -12,10 +12,7 @@ CREATE TABLE "password_reset_otps" (
 );
 
 -- CreateIndex
-CREATE INDEX "password_reset_otps_user_id_idx" ON "password_reset_otps"("user_id");
-
--- CreateIndex
-CREATE INDEX "password_reset_otps_expires_at_idx" ON "password_reset_otps"("expires_at");
+CREATE INDEX "password_reset_otps_user_id_created_at_idx" ON "password_reset_otps"("user_id", "created_at");
 
 -- AddForeignKey
 ALTER TABLE "password_reset_otps" ADD CONSTRAINT "password_reset_otps_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
