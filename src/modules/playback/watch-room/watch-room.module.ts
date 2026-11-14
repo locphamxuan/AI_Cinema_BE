@@ -3,6 +3,7 @@ import { AccessDecisionModule } from 'src/modules/episode-access/access-decision
 import { NotificationModule } from 'src/modules/platform/notification/notification.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { PlaybackAccessModule } from '../playback-access/playback-access.module';
+import { RoomCluster } from './room-cluster';
 import { RoomInviteService } from './room-invite.service';
 import { RoomJoinGuard } from './room-join.guard';
 import { RoomTerminationService } from './room-termination.service';
@@ -25,6 +26,7 @@ import { WatchRoomService } from './watch-room.service';
     RoomJoinGuard,
     RoomTerminationService,
     RoomInviteService,
+    RoomCluster,
   ],
   exports: [WatchRoomService, RoomTerminationService],
 })

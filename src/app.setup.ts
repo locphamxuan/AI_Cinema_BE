@@ -6,6 +6,7 @@ import { ApiExceptionFilter } from 'src/common/http/api-exception.filter';
 import { BigIntJsonInterceptor } from 'src/common/http/bigint-json.interceptor';
 import { requestIdMiddleware } from 'src/common/http/request-id.middleware';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
+import { RedisIoAdapter } from 'src/infrastructure/realtime/redis-io.adapter';
 import { LocalObjectStorage } from 'src/infrastructure/storage/local-storage';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 
@@ -39,6 +40,8 @@ export function configureApp(app: INestApplication) {
   app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalInterceptors(new BigIntJsonInterceptor());
   app.enableShutdownHooks();
+  // Several API instances share watch room sockets through Redis; one instance alone keeps the in-memory adapter.
+  if (config.redisUrl) app.useWebSocketAdapter(new RedisIoAdapter(app, config.redisUrl));
 
   // With the local storage driver the API itself serves the public objects (HLS, artwork).
   const storage = app.get(ObjectStorage);

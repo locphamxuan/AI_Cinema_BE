@@ -1,5 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { AppConfig } from 'src/config/app-config';
+import { RoomCluster } from './room-cluster';
 import { ROOM_EVENT } from './room-events';
 import { WatchRoomScreenGateway } from './watch-room-screen.gateway';
 
@@ -9,23 +11,27 @@ function setup() {
     watchRoom: { findUnique: jest.fn() },
     sessionAdBreak: { findFirst: jest.fn() },
   };
-  const gateway = new WatchRoomScreenGateway(prisma as unknown as PrismaService);
+  const cluster = new RoomCluster({ redisUrl: null } as unknown as AppConfig);
+  const publish = jest.spyOn(cluster, 'publish');
+  const gateway = new WatchRoomScreenGateway(prisma as unknown as PrismaService, cluster);
   const roomEmit = jest.fn();
   gateway.server = { to: jest.fn(() => ({ emit: roomEmit })) } as unknown as Server;
   const emit = jest.fn();
   const client = { data: { userId: 'host' }, emit } as unknown as Socket;
-  return { prisma, gateway, roomEmit, client, emit };
+  return { prisma, gateway, roomEmit, client, emit, publish };
 }
 
 describe('WatchRoomScreenGateway', () => {
   it('broadcasts a chat line of a seated member with their name', async () => {
-    const { prisma, gateway, roomEmit, client } = setup();
+    const { prisma, gateway, roomEmit, client, publish } = setup();
     prisma.roomParticipant.findFirst.mockResolvedValue({ participant: { fullName: 'An' } });
     await gateway.onChat(client, { roomId: 'r1', text: 'hello' });
     expect(roomEmit).toHaveBeenCalledWith(
       ROOM_EVENT.CHAT_MESSAGE,
       expect.objectContaining({ userId: 'host', fullName: 'An', text: 'hello' }),
     );
+    // The other API instances keep the same chat history.
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ t: 'chat', roomId: 'r1' }));
   });
 
   it('refuses chat from someone not in the room, and tells the sender why a line was rejected', async () => {
