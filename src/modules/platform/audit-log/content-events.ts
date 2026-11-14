@@ -90,6 +90,9 @@ export const CONTENT_EVENT = {
   SUPPORT_KNOWLEDGE_UPDATED: 'SUPPORT_KNOWLEDGE_UPDATED',
   SUPPORT_KNOWLEDGE_ARCHIVED: 'SUPPORT_KNOWLEDGE_ARCHIVED',
   SUPPORT_KNOWLEDGE_INDEXED: 'SUPPORT_KNOWLEDGE_INDEXED',
+  // MF-5 finance (Admin only)
+  REVENUE_ALLOCATED: 'REVENUE_ALLOCATED',
+  TRANSACTION_FLAG_REVIEWED: 'TRANSACTION_FLAG_REVIEWED',
 } as const;
 
 export type ContentEvent = (typeof CONTENT_EVENT)[keyof typeof CONTENT_EVENT];
@@ -129,4 +132,7 @@ export type AuditEntity =
   | 'StreamingSession'
   // AI Customer Support: cases live outside a movie, so their audit row has no movie_id.
   | 'SupportConversation'
-  | 'SupportKnowledgeArticle';
+  | 'SupportKnowledgeArticle'
+  // MF-5 finance: platform-wide, no movie_id on the audit row.
+  | 'RevenueAllocation'
+  | 'TransactionFlag';
