@@ -10,6 +10,7 @@ import { PermissionsGuard } from 'src/modules/identity/access-control/permission
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { GoogleTokenVerifier } from './google-token.verifier';
+import { PasswordResetService } from './password-reset.service';
 import { SessionTokenService } from './session-token.service';
 
 @Global()
@@ -31,6 +32,7 @@ import { SessionTokenService } from './session-token.service';
     AuthService,
     SessionTokenService,
     GoogleTokenVerifier,
+    PasswordResetService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],

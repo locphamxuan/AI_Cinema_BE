@@ -11,10 +11,11 @@ import { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
 import { ForgotPasswordRequestDto } from './dto/forgot-password.request.dto';
 import { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
-import { ResetPasswordRequestDto } from './dto/reset-password.request.dto';
 import { ChangeMyPasswordRequestDto, UpdateMyProfileRequestDto } from './dto/profile.request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token.request.dto';
 import { RegisterRequestDto } from './dto/register.request.dto';
+import { ResetPasswordRequestDto } from './dto/reset-password.request.dto';
+import { PasswordResetService } from './password-reset.service';
 
 // Guessing passwords or refresh tokens is limited far below the API-wide rate.
 const authRateLimit = {
@@ -24,7 +25,10 @@ const authRateLimit = {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Public()
   @Throttle(authRateLimit)
@@ -76,9 +80,9 @@ export class AuthController {
   @Throttle(authRateLimit)
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request a password-reset OTP sent to the account email' })
+  @ApiOperation({ summary: 'E-mail a password-reset OTP; answers the same whether or not the account exists' })
   forgotPassword(@Body() dto: ForgotPasswordRequestDto) {
-    return this.authService.requestPasswordReset(dto.email);
+    return this.passwordReset.request(dto.email);
   }
 
   @Public()
