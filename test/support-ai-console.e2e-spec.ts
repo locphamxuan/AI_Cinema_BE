@@ -114,7 +114,7 @@ describe('AI playground', () => {
 describe('AI answer log and feedback', () => {
   it('lists the answers the AI gave members and stores the Admin rating', async () => {
     const conversation = await member.post<Row & { id: string }>('/support/conversations');
-    const turn = await member.post<Row & { aiMessage: Row & { id: string } }>(
+    const turn = await member.post<Row & { aiMessage: { id: string }; memberMessage: { id: string } }>(
       `/support/conversations/${conversation.id}/messages`,
       { content: 'Làm sao để nạp Coin?', clientMessageId: `${RUN}-1` },
       200,
@@ -147,7 +147,7 @@ describe('AI answer log and feedback', () => {
     expect(summary.notHelpful).toBeGreaterThanOrEqual(1);
     expect(summary.totalAnswers).toBeGreaterThanOrEqual(summary.notHelpful + summary.unrated);
 
-    const memberMessageId = (turn as Row & { memberMessage: Row & { id: string } }).memberMessage.id;
+    const memberMessageId = turn.memberMessage.id;
     await admin.post(`/admin/support/ai/answers/${memberMessageId}/feedback`, { rating: 'HELPFUL' }, 409);
     await admin.post(`/admin/support/ai/answers/${answerId}/feedback`, { rating: 'MEH' }, 400);
   });
