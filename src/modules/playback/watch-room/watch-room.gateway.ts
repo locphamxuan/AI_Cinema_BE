@@ -1,4 +1,4 @@
-import { Inject, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, OnModuleDestroy, OnModuleInit, UseGuards } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
@@ -17,6 +17,7 @@ import { RoomInviteService } from './room-invite.service';
 import { LiveRooms, PlaybackThrottle } from './room-live-state';
 import { RoomSeats } from './room-seats';
 import { handshakeTokenOf, liveStateOf, socketErrorOf, assertActiveAccount } from './room-socket-utils';
+import { SignedInSocketGuard } from './room-socket.guard';
 import { RoomTerminationService } from './room-termination.service';
 import { WatchRoomService } from './watch-room.service';
 import {
@@ -29,16 +30,14 @@ import {
   USER_CHANNEL,
 } from './room-events';
 
-interface SocketData {
-  userId?: string;
-  roomId?: string;
-}
+type SocketData = { userId?: string; roomId?: string };
 
 /**
  * Watch Party gateway (BR-69): the Host drives, everyone follows. Handshake = access JWT; one seat
  * per member per room (5.2); 5 s heartbeat (2.2); 45 s Host grace (3.1); pause → vote (3.3).
  */
 @WebSocketGateway({ namespace: 'watch', cors: { origin: '*', credentials: true }, transports: ['websocket'] })
+@UseGuards(SignedInSocketGuard)
 export class WatchRoomGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private readonly live = new LiveRooms();
