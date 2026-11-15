@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
 import { PrismaClient, UserRole } from '@prisma/client';
-import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from '../src/common/auth/permissions';
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from 'src/common/auth/permissions';
 import { GENRE_CATALOG } from './genre-catalog';
 import { createAccounts, SEED_USER_PASSWORD } from './seed-accounts';
 import {

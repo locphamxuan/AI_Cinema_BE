@@ -27,9 +27,8 @@ RUN echo "=== NODE_ENV=$NODE_ENV ===" \
   && ls -d node_modules/tsx 2>&1 || true \
   && npm ls tsx 2>&1 || true
 
-RUN test -x /app/node_modules/.bin/tsx || (echo "tsx missing!" && exit 1)
-
-RUN npm install --no-save --include=dev tsx prisma
+RUN test -x node_modules/.bin/tsx \
+ || npm install --no-save --include=dev tsx prisma
 
 CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
 
