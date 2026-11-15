@@ -22,7 +22,14 @@ FROM deps AS migrate
 COPY tsconfig.json ./
 COPY src ./src
 
+RUN echo "=== NODE_ENV=$NODE_ENV ===" \
+  && ls -la node_modules/.bin/tsx 2>&1 || true \
+  && ls -d node_modules/tsx 2>&1 || true \
+  && npm ls tsx 2>&1 || true
+
 RUN test -x /app/node_modules/.bin/tsx || (echo "tsx missing!" && exit 1)
+
+RUN npm install --no-save --include=dev tsx prisma
 
 CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
 
