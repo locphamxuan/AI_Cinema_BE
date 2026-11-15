@@ -9,21 +9,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ffmpeg 
 FROM base AS deps
 COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
-RUN npm ci
+
+RUN npm ci --include=dev
 
 # Migration and seed stage.
 FROM deps AS migrate
 COPY tsconfig.json ./
 COPY src ./src
+
 CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
 
 # Build the NestJS application.
 FROM deps AS build
+
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
+
 RUN npm run build \
-    && npm prune --omit=dev --ignore-scripts \
-    && npm install --no-save --omit=dev --ignore-scripts prisma tsx
+    && npm prune --omit=dev --ignore-scripts
 
 # Production API image.
 FROM base AS runtime
