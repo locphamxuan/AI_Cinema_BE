@@ -22,6 +22,8 @@ FROM deps AS migrate
 COPY tsconfig.json ./
 COPY src ./src
 
+RUN test -x /app/node_modules/.bin/tsx || (echo "tsx missing!" && exit 1)
+
 CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
 
 # Build the NestJS application.
