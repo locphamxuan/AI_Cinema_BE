@@ -138,14 +138,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trigger the deployment
+      
+      - name: Deploy to VPS via SSH
         if: env.PUBLISH == 'true'
         env:
-          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          if [ -z "$DEPLOY_HOOK_URL" ]; then
-            echo "::notice::DEPLOY_HOOK_URL is not set; the image is published, nothing is deployed."
-          else
-            curl --fail --silent --show-error --request POST "$DEPLOY_HOOK_URL"
-          fi
+          set -e
 
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -p "$DEPLOY_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd /opt/ai-cinema && docker compose pull api migrate && docker compose up -d --no-build && docker image prune -f"
+            
