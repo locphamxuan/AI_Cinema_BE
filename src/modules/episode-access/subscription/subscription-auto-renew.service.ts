@@ -5,6 +5,7 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { assertRunning, findOwnSubscription, SUB_REASON, windowEndOf } from './subscription-rules';
+import { businessDate } from 'src/common/time/business-day';
 
 const autoRenewOf = (subscription: Subscription) => {
   // A plan that no longer renews has no deadline left to show (BR-05).
@@ -63,7 +64,7 @@ export class SubscriptionAutoRenewService {
         {
           type: NOTIFICATION_TYPE.SUBSCRIPTION_CANCELLED,
           title: 'Đã tắt gia hạn tự động',
-          body: `Gói còn hiệu lực đến ${subscription.currentPeriodEnd.toISOString().slice(0, 10)} rồi kết thúc.`,
+          body: `Gói còn hiệu lực đến ${businessDate(subscription.currentPeriodEnd)} rồi kết thúc.`,
           link: '/membership',
           payload: { subscriptionId: subscription.id, currentPeriodEnd: subscription.currentPeriodEnd },
         },

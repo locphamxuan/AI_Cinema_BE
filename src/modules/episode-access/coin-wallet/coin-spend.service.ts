@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, type CoinTransaction, type Prisma } from '@prisma/client';
+import { businessDate } from 'src/common/time/business-day';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
@@ -11,7 +12,7 @@ import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './l
  * The only place a Coin balance changes. Every call takes the wallet row with FOR UPDATE,
  * writes the coin_transactions rows that explain the move and updates the two counters in the
  * same transaction, so the wallet is never out of step with its ledger. Buying an episode,
- * buying a series, paying for a plan and renewing one all go through here, which keeps the
+ * paying for a plan and renewing one all go through here, which keeps the
  * "main Coins before bonus Coins" rule in one file.
  */
 @Injectable()
@@ -161,7 +162,7 @@ export class CoinSpendService {
           lotId: lot.id,
           mainBalanceAfter: wallet.mainBalance,
           bonusBalanceAfter: bonusBalance,
-          description: `Bonus Coins expired on ${lot.expiresAt.toISOString().slice(0, 10)}`,
+          description: `Bonus Coins expired on ${businessDate(lot.expiresAt)}`,
         },
       ],
     });

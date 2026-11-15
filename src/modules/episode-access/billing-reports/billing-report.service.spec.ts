@@ -78,16 +78,27 @@ describe('BillingReportService.revenueByDay', () => {
   const service = new BillingReportService(prisma as unknown as PrismaService);
   const range = { from: new Date('2026-10-01T00:00:00.000Z'), to: new Date('2026-10-31T00:00:00.000Z') };
 
-  it('buckets the chart by calendar day, oldest first', async () => {
+  it('buckets the chart by Vietnam calendar day, oldest first', async () => {
     prisma.subscriptionCycle.findMany.mockResolvedValue([
       { attemptedAt: new Date('2026-10-05T01:00:00.000Z'), mainCoinsCharged: 900, bonusCoinsCharged: 0 },
-      { attemptedAt: new Date('2026-10-05T23:00:00.000Z'), mainCoinsCharged: 100, bonusCoinsCharged: 0 },
+      // 16:59 UTC is still 23:59 on the 5th in Vietnam.
+      { attemptedAt: new Date('2026-10-05T16:59:00.000Z'), mainCoinsCharged: 100, bonusCoinsCharged: 0 },
       { attemptedAt: new Date('2026-10-06T12:00:00.000Z'), mainCoinsCharged: 10, bonusCoinsCharged: 890 },
     ]);
 
     await expect(service.revenueByDay(range)).resolves.toEqual([
       { date: '2026-10-05', cycles: 2, mainCoins: 1000, bonusCoins: 0 },
       { date: '2026-10-06', cycles: 1, mainCoins: 10, bonusCoins: 890 },
+    ]);
+  });
+
+  it('puts a payment late in the UTC day on the next Vietnam day', async () => {
+    prisma.subscriptionCycle.findMany.mockResolvedValue([
+      { attemptedAt: new Date('2026-10-05T17:30:00.000Z'), mainCoinsCharged: 50, bonusCoinsCharged: 0 },
+    ]);
+
+    await expect(service.revenueByDay(range)).resolves.toEqual([
+      { date: '2026-10-06', cycles: 1, mainCoins: 50, bonusCoins: 0 },
     ]);
   });
 });

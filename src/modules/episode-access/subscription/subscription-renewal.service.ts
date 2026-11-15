@@ -17,6 +17,7 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
 import { currentPrice } from '../membership-plan/membership-plan.service';
+import { businessDate } from 'src/common/time/business-day';
 
 const DAY_MS = 86_400_000;
 
@@ -123,7 +124,7 @@ export class SubscriptionRenewalService {
         {
           type: NOTIFICATION_TYPE.SUB_RENEWED,
           title: 'Đã gia hạn gói',
-          body: `Chu kỳ ${cycleNumber} đã thanh toán, hiệu lực đến ${periodEnd.toISOString().slice(0, 10)}.`,
+          body: `Chu kỳ ${cycleNumber} đã thanh toán, hiệu lực đến ${businessDate(periodEnd)}.`,
           link: '/membership',
           payload: { subscriptionId: subscription.id, cycleNumber, periodEnd },
         },
