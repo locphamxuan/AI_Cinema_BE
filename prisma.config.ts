@@ -7,7 +7,7 @@ export default defineConfig({
   schema: 'prisma/schema',
   migrations: {
     path: 'prisma/migrations',
-    seed: 'tsx prisma/seed.ts',
+    seed: 'node --import tsx prisma/seed.ts',
   },
   // The CLI (migrate, db seed) takes the direct connection when there is one: a pooler such as Neon's
   // `-pooler` host cannot hold the advisory lock `migrate deploy` waits for (P1002). The API keeps DATABASE_URL.
