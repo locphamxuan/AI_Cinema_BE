@@ -24,11 +24,13 @@ export class CoinSpendService {
 
   /** Takes Coins out: main first, then the bonus lots that expire first. */
   async spend(tx: PrismaTx, walletId: string, request: SpendRequest, now = new Date()): Promise<CoinMovement> {
+    // The key is looked up under the wallet lock: a concurrent retry with the same key waits for the
+    // first attempt to commit and then replays it, instead of failing on the unique key.
+    const wallet = await this.locked(tx, walletId);
     const replayed = await this.replayed(tx, walletId, request);
     if (replayed) return spentMovementOf(replayed, request.amountCoins);
     if (request.amountCoins <= 0) throw new ConflictException({ message: 'A Coin payment must be more than 0' });
 
-    const wallet = await this.locked(tx, walletId);
     const mainCoins = Math.min(wallet.mainBalance, request.amountCoins);
     const bonusCoins = request.amountCoins - mainCoins;
     const lots = await spendableLots(tx, walletId, now);
@@ -89,6 +91,7 @@ export class CoinSpendService {
 
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */
   async credit(tx: PrismaTx, walletId: string, request: CreditRequest, now = new Date()): Promise<CoinMovement> {
+    const wallet = await this.locked(tx, walletId);
     const replayed = await this.replayed(tx, walletId, request);
     if (replayed) {
       return {
@@ -104,7 +107,6 @@ export class CoinSpendService {
     if (mainAmount === 0 && bonusAmount === 0) throw new ConflictException({ message: 'Nothing to credit' });
 
     const settings = await this.settings.get();
-    const wallet = await this.locked(tx, walletId);
     const lotId = request.lotId ?? (await this.openLot(tx, walletId, request, bonusAmount, now));
     const mainBalance = wallet.mainBalance + mainAmount;
     const bonusBalance = wallet.bonusBalance + bonusAmount;
