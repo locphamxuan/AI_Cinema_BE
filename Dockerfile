@@ -7,10 +7,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ffmpeg 
 
 # Install dependencies and generate Prisma Client.
 FROM base AS deps
+
 COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
 
+ENV NODE_ENV=development
+
 RUN npm ci --include=dev
+
+RUN npm ls tsx prisma @prisma/client
 
 # Migration and seed stage.
 FROM deps AS migrate
