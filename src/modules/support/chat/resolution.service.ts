@@ -50,6 +50,9 @@ export class ResolutionService {
   async staffResolve(conversationId: string, staffId: string, note?: string): Promise<SupportConversation> {
     const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
+      const current = await this.conversations.findById(conversationId, tx);
+      // A repeated tap on a case already resolved changes nothing: no second message or notice.
+      if (current.status === SupportStatus.RESOLVED) return { conversation: current, replayed: true };
       const updated = await this.conversations.transition(
         conversationId,
         SupportStatus.STAFF_HANDLING,
@@ -76,8 +79,9 @@ export class ResolutionService {
         },
         tx,
       );
-      return { conversation: updated, systemMessage };
+      return { conversation: updated, systemMessage, replayed: false };
     });
+    if (result.replayed) return result.conversation;
     await this.notifications.notify([result.conversation.memberId], {
       type: NOTIFICATION_TYPE.SUPPORT_CASE_CLOSED,
       title: 'Yêu cầu hỗ trợ đã được xử lý',
@@ -109,8 +113,10 @@ export class ResolutionService {
     resolutionNote?: string,
   ): Promise<SupportConversation> {
     const now = new Date();
-    const conversation = await this.prisma.$transaction(async (tx) => {
+    const { conversation, replayed } = await this.prisma.$transaction(async (tx) => {
       const current = await this.conversations.findById(conversationId, tx);
+      // Closing a case twice (double tap, or the auto-close sweep got there first) is a no-op.
+      if (current.status === SupportStatus.CLOSED) return { conversation: current, replayed: true };
       const updated = await this.conversations.transition(
         conversationId,
         from,
@@ -145,8 +151,9 @@ export class ResolutionService {
         },
         tx,
       );
-      return updated;
+      return { conversation: updated, replayed: false };
     });
+    if (replayed) return conversation;
 
     await this.notifications.notify([conversation.memberId], {
       type: NOTIFICATION_TYPE.SUPPORT_CASE_CLOSED,
