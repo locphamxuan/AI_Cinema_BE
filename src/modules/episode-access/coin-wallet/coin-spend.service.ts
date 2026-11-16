@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, type CoinTransaction, type Prisma } from '@prisma/client';
+import { businessDate } from 'src/common/time/business-day';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
@@ -11,7 +12,7 @@ import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './l
  * The only place a Coin balance changes. Every call takes the wallet row with FOR UPDATE,
  * writes the coin_transactions rows that explain the move and updates the two counters in the
  * same transaction, so the wallet is never out of step with its ledger. Buying an episode,
- * buying a series, paying for a plan and renewing one all go through here, which keeps the
+ * paying for a plan and renewing one all go through here, which keeps the
  * "main Coins before bonus Coins" rule in one file.
  */
 @Injectable()
@@ -23,11 +24,13 @@ export class CoinSpendService {
 
   /** Takes Coins out: main first, then the bonus lots that expire first. */
   async spend(tx: PrismaTx, walletId: string, request: SpendRequest, now = new Date()): Promise<CoinMovement> {
+    // The key is looked up under the wallet lock: a concurrent retry with the same key waits for the
+    // first attempt to commit and then replays it, instead of failing on the unique key.
+    const wallet = await this.locked(tx, walletId);
     const replayed = await this.replayed(tx, walletId, request);
     if (replayed) return spentMovementOf(replayed, request.amountCoins);
     if (request.amountCoins <= 0) throw new ConflictException({ message: 'A Coin payment must be more than 0' });
 
-    const wallet = await this.locked(tx, walletId);
     const mainCoins = Math.min(wallet.mainBalance, request.amountCoins);
     const bonusCoins = request.amountCoins - mainCoins;
     const lots = await spendableLots(tx, walletId, now);
@@ -88,6 +91,7 @@ export class CoinSpendService {
 
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */
   async credit(tx: PrismaTx, walletId: string, request: CreditRequest, now = new Date()): Promise<CoinMovement> {
+    const wallet = await this.locked(tx, walletId);
     const replayed = await this.replayed(tx, walletId, request);
     if (replayed) {
       return {
@@ -103,7 +107,6 @@ export class CoinSpendService {
     if (mainAmount === 0 && bonusAmount === 0) throw new ConflictException({ message: 'Nothing to credit' });
 
     const settings = await this.settings.get();
-    const wallet = await this.locked(tx, walletId);
     const lotId = request.lotId ?? (await this.openLot(tx, walletId, request, bonusAmount, now));
     const mainBalance = wallet.mainBalance + mainAmount;
     const bonusBalance = wallet.bonusBalance + bonusAmount;
@@ -161,7 +164,7 @@ export class CoinSpendService {
           lotId: lot.id,
           mainBalanceAfter: wallet.mainBalance,
           bonusBalanceAfter: bonusBalance,
-          description: `Bonus Coins expired on ${lot.expiresAt.toISOString().slice(0, 10)}`,
+          description: `Bonus Coins expired on ${businessDate(lot.expiresAt)}`,
         },
       ],
     });

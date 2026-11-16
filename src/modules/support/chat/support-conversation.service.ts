@@ -81,6 +81,21 @@ export class SupportConversationService {
     data: Omit<Prisma.SupportConversationUncheckedUpdateManyInput, 'status'> = {},
     tx?: PrismaTx,
   ): Promise<SupportConversation> {
+    return (await this.move(id, from, to, data, tx)).conversation;
+  }
+
+  /**
+   * The same guarded move, also telling whether this call changed the row. `changed: false` is the
+   * idempotent replay (the case is already in `to`, e.g. a concurrent request got there first), so
+   * the caller can skip the side effects the first move already produced.
+   */
+  async move(
+    id: string,
+    from: SupportStatus | readonly SupportStatus[],
+    to: SupportStatus,
+    data: Omit<Prisma.SupportConversationUncheckedUpdateManyInput, 'status'> = {},
+    tx?: PrismaTx,
+  ): Promise<{ conversation: SupportConversation; changed: boolean }> {
     const allowedFrom: SupportStatus[] = typeof from === 'string' ? [from] : [...from];
     if (allowedFrom.length === 1) assertStatusTransition(allowedFrom[0], to);
     const client = tx ?? this.prisma;
@@ -91,10 +106,10 @@ export class SupportConversationService {
     if (count === 0) {
       const current = await client.supportConversation.findUnique({ where: { id }, select: { status: true } });
       if (!current) throw new NotFoundException('Support conversation not found');
-      if (current.status === to) return this.findById(id, tx); // idempotent replay
+      if (current.status === to) return { conversation: await this.findById(id, tx), changed: false };
       throw new ConflictException(`Support case cannot move from ${current.status} to ${to}`);
     }
-    return this.findById(id, tx);
+    return { conversation: await this.findById(id, tx), changed: true };
   }
 
   /** Member/Staff unread badge (plan §3.1); only the columns the badge reads. */

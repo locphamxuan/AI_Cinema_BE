@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { businessDay } from 'src/modules/episode-access/daily-reward/daily-reward.service';
+import { businessDay } from 'src/common/time/business-day';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
 import { registerMember } from './support/members';
 

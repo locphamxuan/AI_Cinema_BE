@@ -1,13 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { CycleStatus, SubscriptionEndReason, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { businessDate } from 'src/common/time/business-day';
+import type { ReportRange } from './report-range';
 
 const DAY_MS = 86_400_000;
-
-export interface ReportRange {
-  from: Date;
-  to: Date;
-}
 
 /** Reads the billing history, so revenue and churn are two views of the same cycles. */
 @Injectable()
@@ -69,7 +66,7 @@ export class BillingReportService {
     });
     const byDay = new Map<string, { date: string; cycles: number; mainCoins: number; bonusCoins: number }>();
     for (const cycle of cycles) {
-      const date = cycle.attemptedAt.toISOString().slice(0, 10);
+      const date = businessDate(cycle.attemptedAt);
       const row = byDay.get(date) ?? { date, cycles: 0, mainCoins: 0, bonusCoins: 0 };
       row.cycles += 1;
       row.mainCoins += cycle.mainCoinsCharged;

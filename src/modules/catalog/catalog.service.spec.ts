@@ -91,6 +91,19 @@ describe('Catalog ranking', () => {
     expect(prisma.movie.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { createdAt: 'desc' } }));
   });
 
+  it('counts hearts as well as plays, each scaled to the top movie', async () => {
+    const liked = (id: string, views: number[], likes: number) => ({ ...movie(id, views), _count: { likes } });
+    // 'loved' has fewer plays than 'played' but far more hearts: 0.7·0.8 + 0.3·1 > 0.7·1 + 0.3·0.
+    prisma.movie.findMany.mockResolvedValue([liked('played', [10], 0), liked('loved', [8], 50)]);
+
+    const ranked = await catalog.ranking();
+
+    expect(ranked.map((m) => [m.id, m.viewCount, m.likeCount])).toEqual([
+      ['loved', 8, 50],
+      ['played', 10, 0],
+    ]);
+  });
+
   it('keeps only the top of the list', async () => {
     prisma.movie.findMany.mockResolvedValue([movie('a', [3]), movie('b', [2]), movie('c', [1])]);
     expect((await catalog.ranking(2)).map((m) => m.id)).toEqual(['a', 'b']);

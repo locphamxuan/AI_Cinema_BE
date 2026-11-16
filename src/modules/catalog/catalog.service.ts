@@ -5,6 +5,7 @@ import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { EPISODE_AVAILABILITY, REVISION_NOTICE, VISIBLE_EPISODE } from './episode-visibility';
+import { blendPopularity } from './popularity';
 
 /** A movie is listed once one of its episodes is out (MF-1 step 14), never once cancelled. */
 export const LISTED_MOVIE: Prisma.MovieWhereInput = {
@@ -97,18 +98,26 @@ export class CatalogService {
 
   /**
    * The ranking tab: listed movies by plays of their episodes (the viewCount viewers see under a
-   * movie), most first. Ties keep the newer movie first.
+   * movie) and hearts, each scaled to the top movie (`blendPopularity`), most first. Ties keep the
+   * newer movie first.
    */
   async ranking(limit = RANKING_SIZE) {
     const movies = await this.prisma.movie.findMany({
       where: LISTED_MOVIE,
       orderBy: { createdAt: 'desc' },
-      include: { ...GENRES, episodes: { select: { _count: { select: { views: true } } } } },
+      include: {
+        ...GENRES,
+        _count: { select: { likes: true } },
+        episodes: { select: { _count: { select: { views: true } } } },
+      },
     });
-    return movies
-      .map((movie) => ({ ...movieCard(movie), viewCount: movie.episodes.reduce((sum, e) => sum + e._count.views, 0) }))
-      .sort((a, b) => b.viewCount - a.viewCount)
-      .slice(0, limit);
+    const cards = movies.map((movie) => ({
+      ...movieCard(movie),
+      viewCount: movie.episodes.reduce((sum, e) => sum + e._count.views, 0),
+      likeCount: movie._count?.likes ?? 0,
+    }));
+    const score = blendPopularity(cards.map((c) => ({ id: c.id, views: c.viewCount, likes: c.likeCount })));
+    return cards.sort((a, b) => (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0)).slice(0, limit);
   }
 
   /** Seasons that have something to show, with how many episodes they show. */
