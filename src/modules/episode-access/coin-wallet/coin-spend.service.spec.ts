@@ -85,6 +85,24 @@ describe('CoinSpendService.spend', () => {
     expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
   });
 
+  it('looks the key up only after taking the wallet lock, so a concurrent retry replays', async () => {
+    tx.coinTransaction.findUnique.mockResolvedValue({
+      id: 'tx-1',
+      walletId: 'w1',
+      entryType: CoinEntryType.EPISODE_PURCHASE,
+      mainAmount: -25,
+      bonusAmount: 0,
+      mainBalanceAfter: 0,
+      bonusBalanceAfter: 0,
+    });
+
+    await service.spend(tx as unknown as PrismaTx, 'w1', { ...spendRequest(25), idempotencyKey: 'key-1' });
+
+    const [lockOrder] = tx.$queryRaw.mock.invocationCallOrder;
+    const [lookupOrder] = tx.coinTransaction.findUnique.mock.invocationCallOrder;
+    expect(lockOrder).toBeLessThan(lookupOrder);
+  });
+
   it.each([
     ['a credit of the same member (daily check-in)', { walletId: 'w1', entryType: CoinEntryType.DAILY_REWARD }],
     ['another member', { walletId: 'w2', entryType: CoinEntryType.EPISODE_PURCHASE }],

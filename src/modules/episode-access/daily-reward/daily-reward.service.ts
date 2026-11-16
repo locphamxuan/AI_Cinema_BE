@@ -1,16 +1,14 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, CoinLotSource, CoinReferenceType, RewardSpinStatus } from '@prisma/client';
+import { businessDay } from 'src/common/time/business-day';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
 import { LADDER_LENGTH } from './reward-ladder';
 
-/** The business day is Vietnam's, so a reward cannot be claimed twice by moving the clock. */
-const BUSINESS_TZ = 'Asia/Ho_Chi_Minh';
-
 const DAY_MS = 86_400_000;
 
-/** The next three days of bonus Coins that run out, so the check-in screen can warn about them. */
+/** Up to three bonus lots that run out within a week, so the check-in screen can warn about them. */
 const EXPIRING_HORIZON_DAYS = 7;
 const EXPIRING_LIMIT = 3;
 
@@ -20,20 +18,6 @@ export const CHECKIN_REASON = { ALREADY_TODAY: 'ALREADY_CHECKED_IN_TODAY' } as c
 interface Reward {
   bonusCoins: number;
   grantsSpin: boolean;
-}
-
-/**
- * Midnight of the business day `at` falls in. The `@db.Date` column stores that day, so the unique
- * (user_id, check_in_date) row is what stops a second claim on the same day.
- */
-export function businessDay(at = new Date()): Date {
-  const isoDate = new Intl.DateTimeFormat('en-CA', {
-    timeZone: BUSINESS_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(at);
-  return new Date(`${isoDate}T00:00:00.000Z`);
 }
 
 /**

@@ -39,8 +39,9 @@ export class ArtworkService {
       where: { id: projectId },
       select: { posterUrl: true },
     });
-    const posterUrl = await this.store(`movies/${projectId}/artwork`, file);
-    await this.prisma.$transaction(async (tx) => {
+    const stored = await this.store(`movies/${projectId}/artwork`, file);
+    const posterUrl = stored.url;
+    await this.saveOrDiscard(stored.key, async (tx) => {
       await tx.movie.update({ where: { id: projectId }, data: { posterUrl } });
       await this.record(tx, projectId, projectId, user.id, 'poster');
     });
@@ -51,8 +52,9 @@ export class ArtworkService {
   async uploadThumbnail(episodeId: string, file: Express.Multer.File | undefined, user: AuthenticatedUser) {
     const episode = await this.access.episode(episodeId, user, 'reviewer');
     assertProjectStatus(episode.project.status, EDITABLE_PROJECT_STATUSES, 'change the thumbnail');
-    const thumbnailUrl = await this.store(`movies/${episode.movieId}/artwork`, file);
-    await this.prisma.$transaction(async (tx) => {
+    const stored = await this.store(`movies/${episode.movieId}/artwork`, file);
+    const thumbnailUrl = stored.url;
+    await this.saveOrDiscard(stored.key, async (tx) => {
       await tx.episode.update({ where: { id: episodeId }, data: { thumbnailUrl } });
       await this.record(tx, episode.movieId, episodeId, user.id, 'thumbnail');
     });
@@ -60,13 +62,23 @@ export class ArtworkService {
     return { thumbnailUrl };
   }
 
-  private async store(folder: string, file: Express.Multer.File | undefined): Promise<string> {
+  private async store(folder: string, file: Express.Multer.File | undefined): Promise<{ key: string; url: string }> {
     if (!file?.size) throw new BadRequestException('Attach an image in the "file" field');
     const fileName = safeFileName(file.originalname);
     const kind = detectKind(fileName, file.buffer.subarray(0, 16), ARTWORK_KINDS);
     const key = `${folder}/${randomUUID()}${kind.extensions[0]}`;
     await this.storage.putBuffer(key, file.buffer, kind.mimeType, 'public');
-    return this.storage.publicUrl(key);
+    return { key, url: this.storage.publicUrl(key) };
+  }
+
+  /** Writes the new link; when that fails, the image just stored would be an orphan, so it goes too. */
+  private async saveOrDiscard(key: string, write: (tx: PrismaTx) => Promise<void>): Promise<void> {
+    try {
+      await this.prisma.$transaction(write);
+    } catch (error) {
+      await removeQuietly(this.storage, key, 'public');
+      throw error;
+    }
   }
 
   /** Removes the image an upload replaces, when it is one of ours. */

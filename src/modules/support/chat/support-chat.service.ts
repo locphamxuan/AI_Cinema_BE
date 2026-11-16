@@ -29,6 +29,7 @@ import { ResolutionService } from './resolution.service';
 import { SupportConversationService } from './support-conversation.service';
 import { SupportMessageService } from './support-message.service';
 import { SupportTurnLockService } from './support-turn-lock.service';
+import { startOfBusinessDay } from 'src/common/time/business-day';
 
 export interface SendSupportMessageInput {
   content?: string;
@@ -259,8 +260,7 @@ export class SupportChatService {
   }
 
   private async assertDailyQuota(memberId: string): Promise<void> {
-    const since = new Date();
-    since.setHours(0, 0, 0, 0);
+    const since = startOfBusinessDay();
     const used = await this.messages.countMemberMessagesSince(memberId, since);
     if (used >= this.config.support.dailyMessageLimit) {
       throw new HttpException(

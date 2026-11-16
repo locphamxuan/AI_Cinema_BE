@@ -16,6 +16,7 @@ import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
 import { PLAN_REASON, purchasablePlan } from '../membership-plan/membership-plan.service';
 import { findOwnSubscription, planOf, SUB_REASON, windowEndOf } from './subscription-rules';
+import { businessDate } from 'src/common/time/business-day';
 
 const DAY_MS = 86_400_000;
 
@@ -175,7 +176,7 @@ export class SubscriptionService {
         {
           type: NOTIFICATION_TYPE.SUB_RENEWED,
           title: `Đã kích hoạt gói ${plan.name}`,
-          body: `Gói có hiệu lực đến ${periodEnd.toISOString().slice(0, 10)}.`,
+          body: `Gói có hiệu lực đến ${businessDate(periodEnd)}.`,
           link: '/membership',
           payload: { subscriptionId: subscription.id, periodEnd },
         },

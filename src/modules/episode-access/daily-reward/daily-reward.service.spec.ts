@@ -1,7 +1,8 @@
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import type { WalletService } from '../coin-wallet/wallet.service';
-import { businessDay, CHECKIN_REASON, DailyRewardService } from './daily-reward.service';
+import { businessDay } from 'src/common/time/business-day';
+import { CHECKIN_REASON, DailyRewardService } from './daily-reward.service';
 
 describe('businessDay', () => {
   it('counts the day in Vietnam, not in UTC', () => {

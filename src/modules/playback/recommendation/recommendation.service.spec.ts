@@ -6,6 +6,7 @@ describe('RecommendationService', () => {
     user: { findUnique: jest.fn() },
     movieLike: { findMany: jest.fn(), groupBy: jest.fn(), count: jest.fn() },
     watchProgress: { findMany: jest.fn(), findFirst: jest.fn() },
+    savedMovie: { findMany: jest.fn(), count: jest.fn() },
     movie: { findMany: jest.fn(), findFirst: jest.fn() },
     $queryRaw: jest.fn(),
   };
@@ -31,6 +32,8 @@ describe('RecommendationService', () => {
     prisma.watchProgress.findMany.mockResolvedValue([]);
     prisma.movieLike.count.mockResolvedValue(0);
     prisma.watchProgress.findFirst.mockResolvedValue(null);
+    prisma.savedMovie.findMany.mockResolvedValue([]);
+    prisma.savedMovie.count.mockResolvedValue(0);
   });
 
   it('returns recommendations for an adult member, age-gated', async () => {
@@ -123,7 +126,103 @@ describe('RecommendationService', () => {
     await service.forYou('u1');
     prisma.movieLike.count.mockResolvedValue(1);
     await service.forYou('u1');
-    expect(prisma.movie.findMany).toHaveBeenCalledTimes(2);
+    // The taste is read again; the shared catalog snapshot is not.
+    expect(prisma.movieLike.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.movie.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('only names movies with an episode playable from R2 (published, not under revision, film READY and self-hosted)', async () => {
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    prisma.movie.findMany.mockResolvedValue([movie()]);
+    await newService().trending();
+    expect(prisma.movie.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          episodes: {
+            some: {
+              status: 'PUBLISHED',
+              revisionStartedAt: null,
+              approvedMediaAsset: { is: { ingestStatus: 'READY', isSelfHosted: true, streamUrl: { not: null } } },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      }),
+    );
+    // The popularity SQL keeps to the same R2-playable episodes.
+    const [[strings]] = prisma.$queryRaw.mock.calls as [[string[]]];
+    const sql = strings.join('?');
+    expect(sql).toContain('"is_self_hosted" = true');
+    expect(sql).toContain(`"ingest_status" = 'READY'`);
+    expect(sql).toContain('"revision_started_at" IS NULL');
+  });
+
+  it('reads saved movies as taste and never suggests them again', async () => {
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    prisma.savedMovie.findMany.mockResolvedValue([
+      { movie: { id: 'saved', country: 'KR', genres: [{ genre: { name: 'Horror' } }] } },
+    ]);
+    prisma.movie.findMany.mockResolvedValue([
+      movie({ id: 'saved', genres: [{ genre: { name: 'Horror' } }], country: 'KR' }),
+      movie({ id: 'horror', genres: [{ genre: { name: 'Horror' } }], country: 'US' }),
+      movie({ id: 'drama', genres: [{ genre: { name: 'Drama' } }], country: 'US' }),
+    ]);
+    const res = await newService().forYou('u1');
+    expect(res.map((r) => r.movieId)).toEqual(['horror', 'drama']);
+    expect(res[0].reason).toBe('Hợp gu Horror bạn hay xem hết');
+  });
+
+  it('drops T18 from a cached list at once when the birthday changes to under 18', async () => {
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    prisma.movie.findMany.mockResolvedValue([movie({ id: 'p' }), movie({ id: 'adult', ageRating: 'T18' })]);
+    const service = newService();
+    expect((await service.forYou('u1')).map((r) => r.movieId).sort()).toEqual(['adult', 'p']);
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('2012-01-01') });
+    expect((await service.forYou('u1')).map((r) => r.movieId)).toEqual(['p']);
+  });
+
+  it('drops a movie that left the catalog from a cached list once the catalog is read again', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    prisma.movie.findMany.mockResolvedValue([movie({ id: 'a' }), movie({ id: 'gone' })]);
+    const service = newService();
+    expect(await service.forYou('u1')).toHaveLength(2);
+    prisma.movie.findMany.mockResolvedValue([movie({ id: 'a' })]);
+    now.mockReturnValue(1_000_000 + 6 * 60 * 1000); // past the 5-minute catalog snapshot, inside the 6 h list cache
+    expect((await service.forYou('u1')).map((r) => r.movieId)).toEqual(['a']);
+    now.mockRestore();
+  });
+
+  it('gives two members different picks after the same movie, from their own behaviour', async () => {
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    prisma.movie.findFirst.mockResolvedValue({
+      id: 't',
+      title: 'Phim A',
+      country: 'VN',
+      genres: [{ genre: { name: 'Drama' } }],
+    });
+    prisma.movie.findMany.mockResolvedValue([
+      movie({
+        id: 'drama-action',
+        genres: [{ genre: { name: 'Drama' } }, { genre: { name: 'Action' } }],
+        country: 'US',
+      }),
+      movie({
+        id: 'drama-romance',
+        genres: [{ genre: { name: 'Drama' } }, { genre: { name: 'Romance' } }],
+        country: 'US',
+      }),
+    ]);
+    const likes = (genre: string) => [
+      { movie: { id: `liked-${genre}`, country: null, genres: [{ genre: { name: genre } }] } },
+    ];
+    const service = newService();
+    prisma.movieLike.findMany.mockResolvedValueOnce(likes('Action'));
+    const actionFan = await service.after('t', 'u-action');
+    prisma.movieLike.findMany.mockResolvedValueOnce(likes('Romance'));
+    const romanceFan = await service.after('t', 'u-romance');
+    expect(actionFan[0].movieId).toBe('drama-action');
+    expect(romanceFan[0].movieId).toBe('drama-romance');
   });
 
   it('explains a suggestion by the genre the member watches most', async () => {

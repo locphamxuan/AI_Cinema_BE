@@ -64,5 +64,3 @@ export const RISK_RULES: RiskRule[] = [
       ) refunds WHERE burst = ${REPEATED_REFUND_COUNT}`,
   },
 ];
-
-export const RISK_RULE_CODES = RISK_RULES.map((rule) => rule.code);

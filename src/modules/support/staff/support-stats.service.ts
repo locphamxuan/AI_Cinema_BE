@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SupportCloseReason, SupportEscalationReason, SupportStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { startOfBusinessDay } from 'src/common/time/business-day';
 
 /**
  * The Staff dashboard numbers (plan A8.4): queue depth, today's flow and how much of the last 30
@@ -12,8 +13,7 @@ export class SupportStatsService {
 
   /** Plan A8.4 dashboard; the counts are of the whole platform, not one operator. */
   async stats() {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfToday = startOfBusinessDay();
     const startOfWindow = new Date(startOfToday.getTime() - 30 * 24 * 60 * 60_000);
 
     const [byStatus, oldestWaiting, escalatedToday, resolvedToday, closedWindow, closedByAi, reasons] =

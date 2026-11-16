@@ -11,6 +11,7 @@ import {
   TRENDING_REASON,
   type Taste,
 } from './recommendation-taste';
+import { LISTED, loadCandidates, loadPopularity, type CandidateMovie } from './recommendation-catalog';
 
 /** BR-68 hybrid score: taste read from viewing behavior + platform popularity + recency. */
 const WEIGHTS = { genreAffinity: 0.4, countryAffinity: 0.2, popularity: 0.25, recency: 0.15 } as const;
@@ -24,9 +25,9 @@ const SHORT_LIST = 12;
 /** How far back viewing behavior shapes the taste. */
 const TASTE_WINDOW_MS = 90 * 24 * 3600 * 1000;
 const CACHE_TTL_MS = 6 * 3600 * 1000;
+/** The candidate movies and their popularity are shared by every viewer and read again after this. */
+const CATALOG_TTL_MS = 5 * 60 * 1000;
 const AGE_GATE_LABELS = new Set(['T18']);
-/** Movies a recommendation may name: at least one published episode. */
-const LISTED = { episodes: { some: { status: 'PUBLISHED' as const } } };
 /** Members whose list stays cached; the oldest entry goes first when full. */
 const CACHE_MAX_MEMBERS = 5000;
 
@@ -34,19 +35,10 @@ const MOVIE_TASTE = {
   select: { id: true, country: true, genres: { select: { genre: { select: { name: true } } } } },
 } as const;
 
-type CandidateMovie = {
-  id: string;
-  title: string;
-  ageRating: string | null;
-  posterUrl: string | null;
-  country: string | null;
-  releaseYear: number | null;
-  genres: { genre: { name: string } }[];
-};
-
 @Injectable()
 export class RecommendationService {
   private readonly cache = new Map<string, { at: number; stamp: string; rows: RecommendationResponseDto[] }>();
+  private snapshot?: { at: number; movies: CandidateMovie[]; popularity: Map<string, number> };
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -55,17 +47,21 @@ export class RecommendationService {
    * first minutes score down; movies already opened are skipped and T18 is only for confirmed adults.
    */
   async forYou(userId: string): Promise<RecommendationResponseDto[]> {
-    // A like or a watch since the last scoring makes the cached list stale at once, not after 6 h.
-    const stamp = await this.tasteStamp(userId);
-    const cached = this.cache.get(userId);
-    if (cached && cached.stamp === stamp && Date.now() - cached.at < CACHE_TTL_MS) return cached.rows;
-
+    // A like, a save, a watch or a birthday change since the last scoring makes the cached list stale at once.
     const adult = await this.isAdultViewer(userId);
-    const [taste, movies, popularity] = await Promise.all([
-      this.tasteOf(userId),
-      this.candidates(),
-      this.popularityByMovie(),
-    ]);
+    const stamp = `${adult ? 'adult' : 'minor'}:${await this.tasteStamp(userId)}`;
+    const { movies, popularity } = await this.catalog();
+    const cached = this.cache.get(userId);
+    if (cached && cached.stamp === stamp && Date.now() - cached.at < CACHE_TTL_MS) {
+      // A movie taken off the catalog or relabelled T18 since then drops out of the cached list too.
+      const still = new Map(movies.map((m) => [m.id, m]));
+      return cached.rows.filter((row) => {
+        const movie = still.get(row.movieId);
+        return !!movie && this.allowed(movie, adult);
+      });
+    }
+
+    const taste = await this.tasteOf(userId);
     const rows = movies
       .filter((m) => !taste.seen.has(m.id) && this.allowed(m, adult))
       .map((m) => ({ movie: m, score: this.score(m, taste, popularity.get(m.id) ?? 0) }))
@@ -82,7 +78,7 @@ export class RecommendationService {
 
   /** Cold start (Guest): the catalog ranked by platform-wide watch time and likes, never T18 (BR-68). */
   async trending(): Promise<RecommendationResponseDto[]> {
-    const [movies, popularity] = await Promise.all([this.candidates(), this.popularityByMovie()]);
+    const { movies, popularity } = await this.catalog();
     return movies
       .filter((m) => this.allowed(m, false))
       .map((m) => ({ movie: m, score: popularity.get(m.id) ?? 0 }))
@@ -95,7 +91,7 @@ export class RecommendationService {
   async similar(movieId: string, viewerId?: string): Promise<RecommendationResponseDto[]> {
     const target = await this.target(movieId);
     const adult = viewerId ? await this.isAdultViewer(viewerId) : false;
-    const [movies, popularity] = await Promise.all([this.candidates(), this.popularityByMovie()]);
+    const { movies, popularity } = await this.catalog();
     return movies
       .filter((m) => m.id !== movieId && this.allowed(m, adult))
       .map((m) => {
@@ -125,11 +121,7 @@ export class RecommendationService {
     });
     if (!target) throw new NotFoundException('Movie not found');
     const adult = await this.isAdultViewer(userId);
-    const [taste, movies, popularity] = await Promise.all([
-      this.tasteOf(userId),
-      this.candidates(),
-      this.popularityByMovie(),
-    ]);
+    const [taste, { movies, popularity }] = await Promise.all([this.tasteOf(userId), this.catalog()]);
     return movies
       .filter((m) => m.id !== movieId && !taste.seen.has(m.id) && this.allowed(m, adult))
       .map((m) => {
@@ -169,27 +161,20 @@ export class RecommendationService {
     return adult || !AGE_GATE_LABELS.has(movie.ageRating ?? '');
   }
 
-  /** Movies with at least one published episode: the only ones a recommendation may point at. */
-  private candidates(): Promise<CandidateMovie[]> {
-    return this.prisma.movie.findMany({
-      where: LISTED,
-      select: {
-        id: true,
-        title: true,
-        ageRating: true,
-        posterUrl: true,
-        country: true,
-        releaseYear: true,
-        genres: { select: { genre: { select: { name: true } } } },
-      },
-    });
+  /** Candidate movies (R2-playable only) and their popularity, shared by every viewer for a few minutes. */
+  private async catalog(): Promise<{ movies: CandidateMovie[]; popularity: Map<string, number> }> {
+    if (this.snapshot && Date.now() - this.snapshot.at < CATALOG_TTL_MS) return this.snapshot;
+    const [movies, popularity] = await Promise.all([loadCandidates(this.prisma), loadPopularity(this.prisma)]);
+    this.snapshot = { at: Date.now(), movies, popularity };
+    return this.snapshot;
   }
 
-  /** Likes plus the last 90 days of episode progress: how far into each movie the member got. */
+  /** Likes, saved movies and the last 90 days of episode progress: how far into each movie the member got. */
   private async tasteOf(userId: string): Promise<Taste> {
     const since = new Date(Date.now() - TASTE_WINDOW_MS);
-    const [likes, progress] = await Promise.all([
+    const [likes, saved, progress] = await Promise.all([
       this.prisma.movieLike.findMany({ where: { userId }, select: { movie: MOVIE_TASTE } }),
+      this.prisma.savedMovie.findMany({ where: { userId }, select: { movie: MOVIE_TASTE } }),
       this.prisma.watchProgress.findMany({
         where: { userId, updatedAt: { gte: since } },
         select: {
@@ -203,20 +188,22 @@ export class RecommendationService {
     return buildTaste(
       likes.map((l) => l.movie),
       progress,
+      saved.map((s) => s.movie),
     );
   }
 
-  /** Changes whenever the member likes a movie or watches an episode. */
+  /** Changes whenever the member likes or saves a movie or watches an episode. */
   private async tasteStamp(userId: string): Promise<string> {
-    const [likes, latest] = await Promise.all([
+    const [likes, saved, latest] = await Promise.all([
       this.prisma.movieLike.count({ where: { userId } }),
+      this.prisma.savedMovie.count({ where: { userId } }),
       this.prisma.watchProgress.findFirst({
         where: { userId },
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true },
       }),
     ]);
-    return `${likes}:${latest?.updatedAt.getTime() ?? 0}`;
+    return `${likes}:${saved}:${latest?.updatedAt.getTime() ?? 0}`;
   }
 
   private score(movie: CandidateMovie, taste: Taste, popularity: number): number {
@@ -226,22 +213,6 @@ export class RecommendationService {
       WEIGHTS.popularity * popularity +
       WEIGHTS.recency * this.recency(movie.releaseYear)
     );
-  }
-
-  /** Movie popularity = total watch time + likes across its published episodes, normalized 0..1. */
-  private async popularityByMovie(): Promise<Map<string, number>> {
-    const rows = await this.prisma.$queryRaw<{ movieId: string; total: bigint }[]>`
-      SELECT e."movie_id" AS "movieId", COALESCE(SUM(s."total_watched_seconds"), 0) AS total
-      FROM "episodes" e
-      LEFT JOIN "episode_watch_stats" s ON s."episode_id" = e."id"
-      WHERE e."status" = 'PUBLISHED'
-      GROUP BY e."movie_id"
-    `;
-    const likes = await this.prisma.movieLike.groupBy({ by: ['movieId'], _count: { _all: true } });
-    const likeMap = new Map(likes.map((l) => [l.movieId, l._count._all]));
-    const values = new Map(rows.map((r) => [r.movieId, Number(r.total) + (likeMap.get(r.movieId) ?? 0)]));
-    const max = Math.max(1, ...values.values());
-    return new Map([...values].map(([id, value]) => [id, Math.min(1, value / max)]));
   }
 
   private recency(releaseYear: number | null): number {
