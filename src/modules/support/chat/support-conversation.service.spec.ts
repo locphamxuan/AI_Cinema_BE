@@ -217,6 +217,30 @@ describe('SupportConversationService.transition (state machine)', () => {
     expect(result.status).toBe(SupportStatus.CLOSED);
   });
 
+  it('move reports changed: true when this call updated the row', async () => {
+    const { service, prisma } = buildService();
+    prisma.supportConversation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.supportConversation.findUnique.mockResolvedValue(conversationRow({ status: SupportStatus.CLOSED }));
+
+    const result = await service.move(CONVERSATION_ID, SupportStatus.RESOLVED, SupportStatus.CLOSED);
+
+    expect(result.changed).toBe(true);
+    expect(result.conversation.status).toBe(SupportStatus.CLOSED);
+  });
+
+  it('move reports changed: false on the idempotent replay a concurrent request causes', async () => {
+    const { service, prisma } = buildService();
+    prisma.supportConversation.updateMany.mockResolvedValue({ count: 0 });
+    prisma.supportConversation.findUnique
+      .mockResolvedValueOnce({ status: SupportStatus.CLOSED })
+      .mockResolvedValueOnce(conversationRow({ status: SupportStatus.CLOSED }));
+
+    const result = await service.move(CONVERSATION_ID, SupportStatus.RESOLVED, SupportStatus.CLOSED);
+
+    expect(result.changed).toBe(false);
+    expect(result.conversation.status).toBe(SupportStatus.CLOSED);
+  });
+
   it('throws 404 when the guarded update matches nothing and the case is gone', async () => {
     const { service, prisma } = buildService();
     prisma.supportConversation.updateMany.mockResolvedValue({ count: 0 });

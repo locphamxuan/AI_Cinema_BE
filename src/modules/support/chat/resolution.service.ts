@@ -50,16 +50,16 @@ export class ResolutionService {
   async staffResolve(conversationId: string, staffId: string, note?: string): Promise<SupportConversation> {
     const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
-      const current = await this.conversations.findById(conversationId, tx);
-      // A repeated tap on a case already resolved changes nothing: no second message or notice.
-      if (current.status === SupportStatus.RESOLVED) return { conversation: current, replayed: true };
-      const updated = await this.conversations.transition(
+      // A repeated or concurrent resolve finds the case already RESOLVED (changed: false) and
+      // writes nothing more: no second message, audit row or notice.
+      const { conversation: updated, changed } = await this.conversations.move(
         conversationId,
         SupportStatus.STAFF_HANDLING,
         SupportStatus.RESOLVED,
         { resolvedAt: now, resolutionNote: note ?? null },
         tx,
       );
+      if (!changed) return { conversation: updated, replayed: true };
       const systemMessage = await this.messages.create(
         {
           conversationId,
@@ -115,9 +115,10 @@ export class ResolutionService {
     const now = new Date();
     const { conversation, replayed } = await this.prisma.$transaction(async (tx) => {
       const current = await this.conversations.findById(conversationId, tx);
-      // Closing a case twice (double tap, or the auto-close sweep got there first) is a no-op.
+      // Closing a case twice (double tap, a concurrent request, or the auto-close sweep got there
+      // first) is a no-op: the guarded move reports changed: false and nothing more is written.
       if (current.status === SupportStatus.CLOSED) return { conversation: current, replayed: true };
-      const updated = await this.conversations.transition(
+      const { conversation: updated, changed } = await this.conversations.move(
         conversationId,
         from,
         SupportStatus.CLOSED,
@@ -129,6 +130,7 @@ export class ResolutionService {
         },
         tx,
       );
+      if (!changed) return { conversation: updated, replayed: true };
 
       await this.messages.create(
         {

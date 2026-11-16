@@ -19,7 +19,7 @@ const conversationIn = (status: SupportStatus, extra: Record<string, unknown> = 
 describe('ResolutionService', () => {
   const tx = { tag: 'tx' };
   const prisma = { $transaction: jest.fn((run: (t: typeof tx) => unknown) => run(tx)) };
-  const conversations = { findById: jest.fn(), transition: jest.fn() };
+  const conversations = { findById: jest.fn(), move: jest.fn() };
   const messages = { create: jest.fn().mockResolvedValue({ id: 'msg-1' }) };
   const audit = { record: jest.fn() };
   const notifications = { notify: jest.fn() };
@@ -39,11 +39,11 @@ describe('ResolutionService', () => {
 
   it('closes an AI-handled case as AI_RESOLVED, tells the member and audits it', async () => {
     conversations.findById.mockResolvedValue(conversationIn(SupportStatus.AI_HANDLING));
-    conversations.transition.mockResolvedValue(conversationIn(SupportStatus.CLOSED));
+    conversations.move.mockResolvedValue({ conversation: conversationIn(SupportStatus.CLOSED), changed: true });
 
     await service.aiResolved('c1', 'm1');
 
-    expect(conversations.transition).toHaveBeenCalledWith(
+    expect(conversations.move).toHaveBeenCalledWith(
       'c1',
       [SupportStatus.AI_HANDLING],
       SupportStatus.CLOSED,
@@ -67,11 +67,11 @@ describe('ResolutionService', () => {
   it('keeps the first resolved time and writes the staff note when Staff closes', async () => {
     const resolvedAt = new Date('2026-11-10T03:00:00Z');
     conversations.findById.mockResolvedValue(conversationIn(SupportStatus.RESOLVED, { resolvedAt }));
-    conversations.transition.mockResolvedValue(conversationIn(SupportStatus.CLOSED));
+    conversations.move.mockResolvedValue({ conversation: conversationIn(SupportStatus.CLOSED), changed: true });
 
     await service.staffClose('c1', 'staff-1', 'Đã hoàn Coin');
 
-    expect(conversations.transition).toHaveBeenCalledWith(
+    expect(conversations.move).toHaveBeenCalledWith(
       'c1',
       [SupportStatus.RESOLVED, SupportStatus.STAFF_HANDLING],
       SupportStatus.CLOSED,
@@ -86,7 +86,7 @@ describe('ResolutionService', () => {
 
   it('lets a member close a case still waiting for Staff', async () => {
     conversations.findById.mockResolvedValue(conversationIn(SupportStatus.WAITING_FOR_STAFF));
-    conversations.transition.mockResolvedValue(conversationIn(SupportStatus.CLOSED));
+    conversations.move.mockResolvedValue({ conversation: conversationIn(SupportStatus.CLOSED), changed: true });
 
     await service.memberClose('c1', 'm1', 'Tự xử lý được');
 
@@ -102,7 +102,7 @@ describe('ResolutionService', () => {
 
     await expect(service.memberClose('c1', 'm1')).resolves.toBe(closed);
 
-    expect(conversations.transition).not.toHaveBeenCalled();
+    expect(conversations.move).not.toHaveBeenCalled();
     expect(messages.create).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
     expect(notifications.notify).not.toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe('ResolutionService', () => {
 
   it('passes on a refused transition without notifying anyone', async () => {
     conversations.findById.mockResolvedValue(conversationIn(SupportStatus.STAFF_HANDLING));
-    conversations.transition.mockRejectedValue(new ConflictException('Support case cannot move'));
+    conversations.move.mockRejectedValue(new ConflictException('Support case cannot move'));
 
     await expect(service.aiResolved('c1', 'm1')).rejects.toThrow(ConflictException);
     expect(notifications.notify).not.toHaveBeenCalled();
@@ -118,11 +118,11 @@ describe('ResolutionService', () => {
 
   it('resolves a case Staff is handling and tells the member', async () => {
     conversations.findById.mockResolvedValue(conversationIn(SupportStatus.STAFF_HANDLING));
-    conversations.transition.mockResolvedValue(conversationIn(SupportStatus.RESOLVED));
+    conversations.move.mockResolvedValue({ conversation: conversationIn(SupportStatus.RESOLVED), changed: true });
 
     await service.staffResolve('c1', 'staff-1', 'Đã sửa lỗi phát');
 
-    expect(conversations.transition).toHaveBeenCalledWith(
+    expect(conversations.move).toHaveBeenCalledWith(
       'c1',
       SupportStatus.STAFF_HANDLING,
       SupportStatus.RESOLVED,
@@ -136,12 +136,25 @@ describe('ResolutionService', () => {
     expect(notifications.notify).toHaveBeenCalledWith(['m1'], expect.objectContaining({ body: 'Đã sửa lỗi phát' }));
   });
 
-  it('answers a repeated resolve with the resolved case and no second notice', async () => {
+  it('answers a repeated or concurrent resolve with the resolved case and no second notice', async () => {
     const resolved = conversationIn(SupportStatus.RESOLVED);
-    conversations.findById.mockResolvedValue(resolved);
+    conversations.move.mockResolvedValue({ conversation: resolved, changed: false });
 
     await expect(service.staffResolve('c1', 'staff-1')).resolves.toBe(resolved);
-    expect(conversations.transition).not.toHaveBeenCalled();
+    expect(messages.create).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when a concurrent close won the race after this one read the case', async () => {
+    // Both requests read STAFF_HANDLING; the other one closed the row first, so this move replays.
+    const closed = conversationIn(SupportStatus.CLOSED);
+    conversations.findById.mockResolvedValue(conversationIn(SupportStatus.STAFF_HANDLING));
+    conversations.move.mockResolvedValue({ conversation: closed, changed: false });
+
+    await expect(service.memberClose('c1', 'm1')).resolves.toBe(closed);
+    expect(messages.create).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
     expect(notifications.notify).not.toHaveBeenCalled();
   });
 });
