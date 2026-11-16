@@ -3,10 +3,12 @@
  * a movie watched to the end counts fully, one dropped half-way a little, and one left in the
  * first minutes counts *against* its genres and country.
  */
-export type Engagement = 'LIKED' | 'FINISHED' | 'ENGAGED' | 'DROPPED' | 'BOUNCED';
+export type Engagement = 'LIKED' | 'SAVED' | 'FINISHED' | 'ENGAGED' | 'DROPPED' | 'BOUNCED';
 
 export const ENGAGEMENT_WEIGHT: Record<Engagement, number> = {
   LIKED: 1,
+  /** Put on the saved list to watch: a clear wish, a little below a heart or a movie seen through. */
+  SAVED: 0.8,
   FINISHED: 1,
   ENGAGED: 0.6,
   DROPPED: 0.15,
@@ -29,7 +31,7 @@ export type ProgressRow = {
 };
 
 export type Taste = {
-  /** Movies the member already opened or liked: never suggested again. */
+  /** Movies the member already opened, liked or saved: never suggested again. */
   seen: Set<string>;
   behaviors: Map<string, Engagement>;
   genre: Map<string, number>;
@@ -56,7 +58,7 @@ export function engagementOf(rows: ProgressRow[]): Engagement {
   return 'BOUNCED';
 }
 
-export function buildTaste(likes: TasteMovie[], progress: ProgressRow[]): Taste {
+export function buildTaste(likes: TasteMovie[], progress: ProgressRow[], saved: TasteMovie[] = []): Taste {
   const byMovie = new Map<string, { movie: TasteMovie; rows: ProgressRow[] }>();
   for (const row of progress) {
     const entry = byMovie.get(row.episode.movie.id) ?? { movie: row.episode.movie, rows: [] };
@@ -67,6 +69,12 @@ export function buildTaste(likes: TasteMovie[], progress: ProgressRow[]): Taste 
   const movies = new Map<string, TasteMovie>();
   for (const { movie, rows } of byMovie.values()) {
     behaviors.set(movie.id, engagementOf(rows));
+    movies.set(movie.id, movie);
+  }
+  // A saved movie not watched yet says what the member wants; once watched, how they watched it counts.
+  for (const movie of saved) {
+    if (behaviors.has(movie.id)) continue;
+    behaviors.set(movie.id, 'SAVED');
     movies.set(movie.id, movie);
   }
   // A like outweighs a bounce: the member said they want this kind of movie.
