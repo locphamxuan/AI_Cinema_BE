@@ -1,7 +1,16 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { EpisodeStatus, ProjectStatus, StudioMilestoneStatus } from '@prisma/client';
+import { type ContractStatus, EpisodeStatus, ProjectStatus, StudioMilestoneStatus } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
+import { OPEN_CONTRACT_STATUSES } from './contract-rounds';
+
+/** The fields of a round its budget depends on. */
+export interface BudgetedRound {
+  projectId: string;
+  handoffId: string | null;
+  costVnd: bigint | null;
+  status: ContractStatus;
+}
 
 /** A contract round that both sides just signed. */
 export interface SignedRound {
@@ -29,10 +38,31 @@ export class ContractHandoffService {
    * hand-off already holds counts as available, since the signed cost replaces it.
    */
   async assertAffordable(tx: PrismaTx, projectId: string, costVnd: number, handoffId?: string | null): Promise<void> {
-    const held = handoffId
-      ? await tx.studioHandoff.findUniqueOrThrow({ where: { id: handoffId }, select: { offeredFeeVnd: true } })
-      : null;
-    return this.costs.assertAffordable(tx, projectId, costVnd - Number(held?.offeredFeeVnd ?? 0));
+    return this.costs.assertAffordable(tx, projectId, costVnd - (await this.held(tx, handoffId)));
+  }
+
+  /**
+   * The budget ceiling of a contract: the most its cost may be, i.e. the budget left plus the fee its waiting
+   * hand-off already holds. This is the figure the studio sees on the unsigned template.
+   */
+  async ceiling(db: PrismaTx, projectId: string, handoffId?: string | null): Promise<number> {
+    const { remainingVnd } = await this.costs.summary(projectId, db);
+    return remainingVnd + (await this.held(db, handoffId));
+  }
+
+  /** What the studio sees as the budget of a round: the ceiling while it is open, the signed cost once closed. */
+  async budgetOf(db: PrismaTx, contract: BudgetedRound): Promise<number> {
+    if (!OPEN_CONTRACT_STATUSES.includes(contract.status) && contract.costVnd !== null) return Number(contract.costVnd);
+    return this.ceiling(db, contract.projectId, contract.handoffId);
+  }
+
+  private async held(db: PrismaTx, handoffId?: string | null): Promise<number> {
+    if (!handoffId) return 0;
+    const handoff = await db.studioHandoff.findUniqueOrThrow({
+      where: { id: handoffId },
+      select: { offeredFeeVnd: true },
+    });
+    return Number(handoff.offeredFeeVnd);
   }
 
   async open(tx: PrismaTx, round: SignedRound): Promise<string> {

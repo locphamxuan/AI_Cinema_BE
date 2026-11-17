@@ -70,7 +70,7 @@ describe('ContractService', () => {
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn() };
-  const handoffs = { open: jest.fn(), assertAffordable: jest.fn() };
+  const handoffs = { open: jest.fn(), assertAffordable: jest.fn(), ceiling: jest.fn() };
   const signatures = { prepare: jest.fn(), attach: jest.fn(), discard: jest.fn() };
   const completion = { complete: jest.fn() };
   const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
@@ -104,7 +104,15 @@ describe('ContractService', () => {
   it("sends the project's studio a template with no cost and tells the studio accounts", async () => {
     db.contract.count.mockResolvedValue(0);
     db.contract.create.mockResolvedValue(contract());
+    handoffs.ceiling.mockResolvedValue(200_000_000);
     await expect(service.sendTemplate(db as never, 'p1', 'admin')).resolves.toMatchObject({ mailId: 'm1' });
+    expect(handoffs.ceiling).toHaveBeenCalledWith(db, 'p1', null);
+    expect(mails.queue).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        lines: expect.arrayContaining([expect.stringContaining('Ngân sách trần cho hợp đồng: 200.000.000')]),
+      }),
+    );
     expect(db.contract.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ projectId: 'p1', studioId: 's1' }) }),
     );

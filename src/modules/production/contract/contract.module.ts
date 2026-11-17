@@ -8,6 +8,7 @@ import { ContractSignatureService } from './contract-signature.service';
 import { StudioContractService } from './contract-studio.service';
 import { ContractController } from './contract.controller';
 import { ContractService } from './contract.service';
+import { ContractTemplateService } from './template/contract-template.service';
 
 @Module({
   imports: [ProductionCostModule, StudioModule],
@@ -19,7 +20,8 @@ import { ContractService } from './contract.service';
     ContractSignatureService,
     ContractCompletionService,
     ContractDocumentService,
+    ContractTemplateService,
   ],
-  exports: [ContractService, StudioContractService, ContractDocumentService],
+  exports: [ContractService, StudioContractService, ContractDocumentService, ContractTemplateService],
 })
 export class ContractModule {}

@@ -65,6 +65,7 @@ export class ContractService {
     if (open) throw new ConflictException('This project already has a contract');
     const contract = await this.openRound(tx, { projectId, studioId: project.studioId, actorId, terms });
     const title = contract.project.movie.title;
+    const ceiling = await this.handoffs.ceiling(tx, projectId, contract.handoffId);
     const mailId = await queueContractMail(
       this.mails,
       tx,
@@ -74,7 +75,9 @@ export class ContractService {
       '/contracts',
       [
         `Kịch bản Final của phim "${title}" đã được duyệt và hợp đồng mẫu đã sẵn sàng.`,
-        'Vui lòng đăng nhập Studio Web để xem điều khoản, điền chi phí sản xuất và tải lên bản PDF hợp đồng đã có chữ ký của Studio.',
+        `Ngân sách trần cho hợp đồng: ${vnd(ceiling)}. Chi phí Studio đề xuất không được vượt mức này.`,
+        'Vui lòng đăng nhập Studio Web, tải bản hợp đồng mẫu chưa ký (đã điền thông tin dự án và ngân sách trần) để kiểm tra, ' +
+          'rồi điền chi phí sản xuất và tải lên bản PDF hợp đồng đã có chữ ký của Studio.',
       ],
     );
     return { contract, mailId };

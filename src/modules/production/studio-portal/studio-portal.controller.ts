@@ -22,6 +22,7 @@ import { ContractDocumentService } from 'src/modules/production/contract/contrac
 import { StudioContractService, type StudioActor } from 'src/modules/production/contract/contract-studio.service';
 import { ContractCostRequestDto } from 'src/modules/production/contract/dto/contract.request.dto';
 import { SignedPdfUpload } from 'src/modules/production/contract/signed-pdf-upload';
+import { ContractTemplateService } from 'src/modules/production/contract/template/contract-template.service';
 import {
   parseAiDisclosure,
   SubmitMediaLinkRequestDto,
@@ -46,6 +47,7 @@ export class StudioPortalController {
     private readonly portal: StudioPortalService,
     private readonly contracts: StudioContractService,
     private readonly documents: ContractDocumentService,
+    private readonly templates: ContractTemplateService,
     private readonly media: MediaIngestService,
   ) {}
 
@@ -59,6 +61,12 @@ export class StudioPortalController {
   @ApiOperation({ summary: 'Every contract round sent to this studio, newest first' })
   async listContracts(@CurrentUser() user: AuthenticatedUser) {
     return this.contracts.forStudio(await this.portal.studioOf(user));
+  }
+
+  @Get('contracts/:contractId/template')
+  @ApiOperation({ summary: 'Download the unsigned contract template with the budget ceiling, to check before quoting' })
+  async downloadTemplate(@Param('contractId', ID) contractId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.templates.forStudio(contractId, await this.portal.studioOf(user));
   }
 
   @Get('contracts/:contractId/documents/:side/content')

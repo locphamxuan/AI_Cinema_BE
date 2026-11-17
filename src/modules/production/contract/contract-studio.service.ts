@@ -6,6 +6,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { ContractCompletionService, vnd } from './contract-completion.service';
+import { ContractHandoffService } from './contract-handoff.service';
 import { recordContractEvent, tellContractUpdate } from './contract-notice';
 import {
   assertContractStatus,
@@ -38,15 +39,22 @@ export class StudioContractService {
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
     private readonly mails: StudioMailService,
+    private readonly handoffs: ContractHandoffService,
   ) {}
 
-  /** Every round sent to one studio, newest first (the studio's own view). */
-  forStudio(studioId: string) {
-    return this.prisma.contract.findMany({
+  /**
+   * Every round sent to one studio, newest first (the studio's own view), each with its budget: the ceiling the
+   * studio may quote up to while the round is open, the signed cost once it is closed.
+   */
+  async forStudio(studioId: string) {
+    const rounds = await this.prisma.contract.findMany({
       where: { studioId },
       orderBy: [{ updatedAt: 'desc' }],
       include: CONTRACT_DETAIL,
     });
+    return Promise.all(
+      rounds.map(async (round) => ({ ...round, budgetVnd: await this.handoffs.budgetOf(this.prisma, round) })),
+    );
   }
 
   /** Studio: fills in the cost of the freshly sent template and uploads its signed PDF of it. */
@@ -62,6 +70,7 @@ export class StudioContractService {
     return this.signing(prepared, async (tx) => {
       const contract = await lockedContract(tx, contractId, actor.studioId);
       assertContractStatus(contract, ContractStatus.SENT, 'fill in');
+      await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
       await tx.contract.update({
         where: { id: contractId },
         data: {
@@ -114,6 +123,7 @@ export class StudioContractService {
     return this.signing(prepared, async (tx) => {
       const contract = await lockedContract(tx, contractId, actor.studioId);
       assertContractStatus(contract, ContractStatus.ADMIN_COUNTERED, 'answer with another price');
+      await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
       const opened = await openNextRound(tx, contract, {
         costVnd: BigInt(costVnd),
         proposedBy: ContractProposedBy.STUDIO,
