@@ -209,18 +209,35 @@ describe('DeviceEligibilityService.register (MF-4 §4.4.1)', () => {
   it('registers a new device while the plan has room, serialized per member', async () => {
     tx.userDevice.count.mockResolvedValue(1);
 
-    await expect(service.register('u-1', { key: KEY, platform: 'tv' }, plan)).resolves.toBe('dev-new');
+    await expect(service.register('u-1', { key: KEY, platform: 'ANDROID' }, plan)).resolves.toBe('dev-new');
 
     expect(tx.$executeRaw).toHaveBeenCalled();
     expect(tx.userDevice.create).toHaveBeenCalledWith({
-      data: { userId: 'u-1', deviceKey: KEY, name: 'Thiết bị chưa đặt tên', platform: 'OTHER' },
+      data: { userId: 'u-1', deviceKey: KEY, name: 'Thiết bị chưa đặt tên', platform: 'ANDROID' },
     });
+  });
+
+  it.each([
+    ['WEB', 'WEB'],
+    [' ios ', 'IOS'],
+    ['tv', 'TV'],
+    [undefined, null],
+  ])('refuses %p: only Android phones may share the account', async (platform, reported) => {
+    tx.userDevice.findUnique.mockResolvedValue({ id: 'dev-old-web' });
+
+    await expect(service.register('u-1', { key: KEY, platform }, plan)).rejects.toMatchObject({
+      status: 403,
+      response: expect.objectContaining({ details: { reason: 'DEVICE_PLATFORM_NOT_SUPPORTED', platform: reported } }),
+    });
+    // Refused before the lock: even a computer registered before the rule cannot play again.
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.userDevice.update).not.toHaveBeenCalled();
   });
 
   it('refuses a new device at the plan limit with the numbers on the error', async () => {
     tx.userDevice.count.mockResolvedValue(2);
 
-    await expect(service.register('u-1', { key: KEY }, plan)).rejects.toMatchObject({
+    await expect(service.register('u-1', { key: KEY, platform: 'android' }, plan)).rejects.toMatchObject({
       response: expect.objectContaining({
         details: { reason: 'DEVICE_LIMIT_REACHED', maxRegisteredDevices: 2, registeredDevices: 2 },
       }),

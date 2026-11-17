@@ -99,10 +99,18 @@ describe('Playback viewing experience (e2e)', () => {
   });
 
   it('member switches episodes mid-way on one device, sees it registered and frees a stream elsewhere (MF-4)', async () => {
-    const first = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(0) }, 201);
+    const first = await member.post<SessionView>(
+      '/playback/sessions',
+      { episodeId: episodeId(0), devicePlatform: 'ANDROID' },
+      201,
+    );
     await member.patch(`/playback/sessions/${first.sessionId}/heartbeat`, { positionSeconds: 20, watchedSeconds: 10 });
     // Leaving episode 1 half-way for episode 2 on the same device is not a second stream.
-    const second = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(1) }, 201);
+    const second = await member.post<SessionView>(
+      '/playback/sessions',
+      { episodeId: episodeId(1), devicePlatform: 'ANDROID' },
+      201,
+    );
     const stale = await member.patch<ApiErrorBody>(
       `/playback/sessions/${first.sessionId}/heartbeat`,
       { positionSeconds: 25, watchedSeconds: 5 },
@@ -135,11 +143,19 @@ describe('Playback viewing experience (e2e)', () => {
   });
 
   it('member resumes, completes and re-reads history; next points at the following episode', async () => {
-    const first = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(1) }, 201);
+    const first = await member.post<SessionView>(
+      '/playback/sessions',
+      { episodeId: episodeId(1), devicePlatform: 'ANDROID' },
+      201,
+    );
     await member.patch(`/playback/sessions/${first.sessionId}/heartbeat`, { positionSeconds: 30, watchedSeconds: 10 });
     await member.post(`/playback/sessions/${first.sessionId}/stop`, { positionSeconds: 30 });
 
-    const second = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(1) }, 201);
+    const second = await member.post<SessionView>(
+      '/playback/sessions',
+      { episodeId: episodeId(1), devicePlatform: 'ANDROID' },
+      201,
+    );
     expect(second).toMatchObject({ resumePositionSeconds: 30 });
 
     const progress = await member.get<{
@@ -159,7 +175,11 @@ describe('Playback viewing experience (e2e)', () => {
     expect(stillOpen).toMatchObject({ completed: false });
 
     // Reaching the threshold (mock duration 60s, 90% = 54s) does mark it completed.
-    const third = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(1) }, 201);
+    const third = await member.post<SessionView>(
+      '/playback/sessions',
+      { episodeId: episodeId(1), devicePlatform: 'ANDROID' },
+      201,
+    );
     await member.post(`/playback/sessions/${third.sessionId}/complete`, { positionSeconds: 55 });
 
     const done = await member.get<{ completed: boolean }>(`/playback/episodes/${episodeId(1)}/progress`);
@@ -200,7 +220,11 @@ describe('Playback viewing experience (e2e)', () => {
     await admin.upload('/admin/ads/media', { field: 'file', name: 'quang-cao.mov', content: MP4 }, {}, 400);
     await member.upload('/admin/ads/media', { field: 'file', name: 'quang-cao.mp4', content: MP4 }, {}, 403);
 
-    const session = await member.post<SessionView>('/playback/sessions', { episodeId: episodeId(0) }, 201);
+    const session = await member.post<SessionView>(
+      '/playback/sessions',
+      { episodeId: episodeId(0), devicePlatform: 'ANDROID' },
+      201,
+    );
     const token = new URL(session.stream.masterUrl);
     expect(token.pathname).toContain('/media/');
     await member.get(
@@ -295,7 +319,11 @@ describe('Playback viewing experience (e2e)', () => {
     });
 
     // Main Flow 3: a caller who skips the decision still gets the reason, not a 404.
-    const refused = await member.post<ApiErrorBody>('/playback/sessions', { episodeId: episodeId(2) }, 409);
+    const refused = await member.post<ApiErrorBody>(
+      '/playback/sessions',
+      { episodeId: episodeId(2), devicePlatform: 'ANDROID' },
+      409,
+    );
     expect(refused.error.details).toMatchObject({ reason: 'EPISODE_UNDER_REVISION' });
   });
 
