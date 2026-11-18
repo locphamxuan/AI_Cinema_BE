@@ -1,216 +1,156 @@
-import 'dotenv/config';
-// Background jobs and outgoing mail stay off while the demo is built: no sweeps, no real email to the studio.
-process.env.REDIS_URL = '';
-process.env.SMTP_HOST = '';
-process.env.MEDIA_PIPELINE = 'mock';
-for (const job of ['PUBLICATION_SWEEP_MS', 'OVERDUE_SWEEP_MS', 'HLS_CHECK_MS', 'STREAMING_SESSION_SWEEP_MS']) {
-  process.env[job] = '0';
-}
-process.env.STREAMING_SESSION_RETENTION_SWEEP_MS = '0';
-process.env.SUPPORT_AUTO_CLOSE_SWEEP_MS = '0';
-
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { NestFactory } from '@nestjs/core';
-import {
-  ContentReviewDecision,
-  EpisodeStatus,
-  LabelType,
-  MediaIngestStatus,
-  MediaSourceMethod,
-  UserRole,
-  type PrismaClient,
-} from '@prisma/client';
-import { AppModule } from 'src/app.module';
+import type { INestApplicationContext } from '@nestjs/common';
+import { ContentReviewDecision, LabelType, UserRole } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { AiLabelService } from 'src/modules/production/content-review/ai-label.service';
 import { ComplianceService } from 'src/modules/production/content-review/compliance.service';
 import { ContentReviewService } from 'src/modules/production/content-review/content-review.service';
-import { ContractService } from 'src/modules/production/contract/contract.service';
 import { StudioContractService } from 'src/modules/production/contract/contract-studio.service';
+import { ContractService } from 'src/modules/production/contract/contract.service';
+import { demoMark } from 'src/modules/production/contract/template/demo-signature';
+import { ContractTemplateService } from 'src/modules/production/contract/template/contract-template.service';
 import { MovieProjectService } from 'src/modules/production/movie-project/movie-project.service';
 import { ProjectNoteService } from 'src/modules/production/movie-project/project-note/project-note.service';
 import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { FinalFilmService } from 'src/modules/production/publishing/final-film.service';
 import { ScriptService } from 'src/modules/production/script/script.service';
-import { removeMovie } from './movie-removal';
+import { StudioService } from 'src/modules/production/studio/studio.service';
+import { removeMovie } from '../movie-removal';
+import { asUpload, inDays, loadDemoData } from './demo-data';
+import { deliverFromR2 } from './deliver-from-r2';
 
 /**
- * MF-1 demo (12/11/2026): five projects, each stopped at one milestone so the flow can be shown step by step.
- * Built through the real services (rules, triggers, notifications), with the team's R2 films as the delivered
- * media and the sample contract PDFs as the signed counterparts. Run again to rebuild it.
- *   npm run seed:mf1-demo   (builds first: Nest DI needs decorator metadata, which tsx does not emit)
+ * MF-1 demo: one project per milestone, each built through the real services (rules, triggers, notifications)
+ * from prisma/demo/mf1-demo.json and a film of the team's R2 catalogue. The contracts are the ones the system
+ * generates for each project; the signed copies uploaded are those same PDFs with a demo signature drawn in, so
+ * every PDF names the right film, studio and budget. Run again to rebuild it.
+ * Answers what it built. Run by `npm run seed:mf1-demo` (seed-mf1-demo.main.ts).
  */
-const PREFIX = '[Demo MF-1]';
-const PEOPLE = {
-  admin: process.env.DEMO_ADMIN_EMAIL ?? 'admin@gmail.com',
-  reviewer: 'reviewer@gmail.com',
-  creator: 'creator.aicinema@gmail.com',
-  studio: 'studio@aicinema.com',
-};
-const BUDGET_VND = 200_000_000;
-const COST_VND = 170_000_000;
-const PDF_DIR = join(process.cwd(), 'docs', 'contracts');
-const pdf = (name: string) =>
-  ({
-    buffer: readFileSync(join(PDF_DIR, name)),
-    originalname: name,
-    mimetype: 'application/pdf',
-  }) as Express.Multer.File;
-
-type CatalogEpisode = { number: number; title: string; url: string; size: number; duration: number; height?: number };
-type Catalog = { movies: { title: string; genres: string[]; synopsis: string; episodes: CatalogEpisode[] }[] };
-const catalog = JSON.parse(readFileSync(join(process.cwd(), 'AI_Film', 'CATALOG.json'), 'utf8')) as Catalog;
-const SOURCE = catalog.movies.find((m) => m.episodes.length >= 3) ?? catalog.movies[0];
-
-const STAGES = [
-  ['1. Viết kịch bản', 'Creator đã nộp kịch bản bản 1, chờ Reviewer duyệt.'],
-  ['2. Hợp đồng', 'Admin đã duyệt Kịch bản Final, hệ thống gửi hợp đồng mẫu cho Studio.'],
-  ['3. Giao phim', 'Hợp đồng đủ 2 chữ ký PDF, Studio đang sản xuất, chờ giao tập.'],
-  ['4. Duyệt nội dung', 'Studio đã giao tập 1 (phim trên R2), chờ Reviewer duyệt, gắn nhãn AI, kiểm tra tuân thủ.'],
-  ['5. Định giá & phát hành', 'Reviewer đã xác nhận Final Film tập 1, chờ Admin đặt giá, tập khoá / mở và publish.'],
-] as const;
-
-const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
-
-async function main(): Promise<void> {
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
+export async function seedMf1Demo(
+  app: INestApplicationContext,
+  { data, film }: ReturnType<typeof loadDemoData> = loadDemoData(),
+): Promise<string> {
   const prisma = app.get(PrismaService);
-  /** The signed-in shape the services expect (studioId only for a studio account). */
-  const asUser = (u: { id: string; role: UserRole; studioId: string | null }): AuthenticatedUser => ({
-    id: u.id,
-    role: u.role,
-    studioId: u.studioId ?? undefined,
-  });
-  const as = async (email: string): Promise<AuthenticatedUser> =>
-    asUser(await prisma.user.findUniqueOrThrow({ where: { email }, select: { id: true, role: true, studioId: true } }));
-  const [reviewer, creator, studioUser] = await Promise.all([PEOPLE.reviewer, PEOPLE.creator, PEOPLE.studio].map(as));
-  // The seeded Admin is admin@gmail.com; any active Admin will do where it is named otherwise (e2e databases).
-  const admin = asUser(
-    (await prisma.user.findUnique({
-      where: { email: PEOPLE.admin },
+  const as = async (email: string): Promise<AuthenticatedUser> => {
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email },
       select: { id: true, role: true, studioId: true },
-    })) ??
-      (await prisma.user.findFirstOrThrow({
-        where: { role: UserRole.ADMIN, isActive: true },
-        select: { id: true, role: true, studioId: true },
-      })),
+    });
+    return { id: user.id, role: user.role, studioId: user.studioId ?? undefined };
+  };
+  const [admin, reviewer, creator, studioUser] = await Promise.all(
+    [data.people.admin, data.people.reviewer, data.people.creator, data.people.studio].map(as),
   );
-  if (studioUser.role !== UserRole.STUDIO || !studioUser.studioId)
-    throw new Error('Run `npx prisma db seed` first (demo studio)');
+  if (studioUser.role !== UserRole.STUDIO || !studioUser.studioId) throw new Error('Run `npx prisma db seed` first');
   const studio = { studioId: studioUser.studioId, userId: studioUser.id };
 
-  for (const old of await prisma.movie.findMany({ where: { title: { startsWith: PREFIX } }, select: { id: true } })) {
+  // Step 0, done once by the Admin: the legal identity of both parties the contract is filled with.
+  await app.get(PlatformSettingService).update(data.platformParty, admin.id);
+  await app.get(StudioService).update(studio.studioId, data.studioProfile, admin);
+
+  for (const old of await prisma.movie.findMany({
+    where: { title: { startsWith: data.prefix } },
+    select: { id: true },
+  })) {
     await prisma.$transaction((tx) => removeMovie(tx, old.id));
   }
+  const by = { admin, reviewer, creator, studio, studioUser };
+  for (const [index, stage] of data.stages.entries()) await buildStage(app, index, stage, { data, film, by });
+  return `MF-1 demo ready: ${data.stages.length} projects "${data.prefix} …" built from "${film.title}".`;
+}
 
-  const projects = app.get(MovieProjectService);
+type Demo = ReturnType<typeof loadDemoData> & {
+  by: {
+    admin: AuthenticatedUser;
+    reviewer: AuthenticatedUser;
+    creator: AuthenticatedUser;
+    studio: { studioId: string; userId: string };
+    studioUser: AuthenticatedUser;
+  };
+};
+
+/** Project N walks MF-1 up to milestone N and stops there. */
+async function buildStage(app: INestApplicationContext, index: number, [stage, summary]: [string, string], demo: Demo) {
+  const { data, film, by } = demo;
+  const { project: p } = data;
+  const prisma = app.get(PrismaService);
+  const created = (await app.get(MovieProjectService).create(
+    {
+      title: `${data.prefix} ${film.title} - ${stage}`,
+      ideaDescription: `${summary}\n${film.synopsis}`,
+      genreNames: film.genres.slice(0, 3),
+      synopsis: film.synopsis,
+      ageRating: p.ageRating,
+      studioId: by.studio.studioId,
+      reviewerId: by.reviewer.id,
+      creatorId: by.creator.id,
+      seasons: [
+        {
+          title: 'Mùa 1',
+          releaseStartDate: inDays(p.releaseStartInDays),
+          releaseEndDate: inDays(p.releaseEndInDays),
+          episodes: film.episodes.slice(0, p.episodeCount).map((e, i) => ({
+            title: e.title,
+            targetDurationSeconds: Math.max(60, Math.round(e.duration)),
+            deliveryDeadline: inDays(p.firstDeadlineInDays + i * p.daysBetweenDeadlines),
+          })),
+        },
+      ],
+    } as never,
+    by.admin,
+  )) as { id: string };
+  const projectId = created.id;
+  await app
+    .get(ProductionCostService)
+    .addEntry(projectId, { entryType: 'BUDGET', amountVnd: p.budgetVnd, reason: p.budgetReason } as never, by.admin);
+  for (const [who, text] of p.notes) await app.get(ProjectNoteService).send(projectId, text, by[who]);
   const scripts = app.get(ScriptService);
-  const notes = app.get(ProjectNoteService);
-  const costs = app.get(ProductionCostService);
-  const contracts = app.get(ContractService);
-  const studioContracts = app.get(StudioContractService);
+  await scripts.submit(
+    projectId,
+    { content: `Kịch bản "${film.title}"\n\n${film.synopsis}`, note: p.scriptNote },
+    by.creator,
+  );
+  if (index === 0) return;
 
-  for (const [index, [stage, summary]] of STAGES.entries()) {
-    const created = await projects.create(
-      {
-        title: `${PREFIX} ${SOURCE.title} — ${stage}`,
-        ideaDescription: `${summary}\n${SOURCE.synopsis}`,
-        genreNames: SOURCE.genres.slice(0, 3),
-        synopsis: SOURCE.synopsis,
-        ageRating: 'T16',
-        studioId: studio.studioId,
-        reviewerId: reviewer.id,
-        creatorId: creator.id,
-        seasons: [
-          {
-            title: 'Mùa 1',
-            releaseStartDate: inDays(30),
-            releaseEndDate: inDays(90),
-            episodes: SOURCE.episodes.slice(0, 3).map((e, i) => ({
-              title: e.title,
-              targetDurationSeconds: Math.max(60, Math.round(e.duration)),
-              deliveryDeadline: inDays(14 + i * 7),
-            })),
-          },
-        ],
-      } as never,
-      admin,
-    );
-    const projectId = (created as { id: string }).id;
-    await notes.send(projectId, 'Admin: phim giữ tông lãng mạn nhẹ nhàng, 3 tập ngắn cho mobile.', admin);
-    await notes.send(projectId, 'Creator: đồng ý, bản kịch bản đầu tiên sẽ có trong tuần này.', creator);
-    await scripts.submit(
-      projectId,
-      { content: `Kịch bản "${SOURCE.title}"\n\n${SOURCE.synopsis}`, note: 'Bản 1' },
-      creator,
-    );
-    if (index === 0) continue;
+  await scripts.review(projectId, { approve: true, comment: p.reviewComment }, by.reviewer);
+  // Approving the Final Script sends the studio its unsigned contract, priced at the budget ceiling.
+  await scripts.finalReview(projectId, { approve: true, comment: p.finalComment }, by.admin);
+  if (index === 1) return;
 
-    await scripts.review(projectId, { approve: true, comment: 'Kịch bản ổn, chuyển Admin duyệt Final.' }, reviewer);
-    await costs.addEntry(
-      projectId,
-      { entryType: 'BUDGET', amountVnd: BUDGET_VND, reason: 'Ngân sách demo' } as never,
-      admin,
-    );
-    await scripts.finalReview(projectId, { approve: true, comment: 'Duyệt Kịch bản Final.' }, admin);
-    if (index === 1) continue;
+  const templates = app.get(ContractTemplateService);
+  const sent = await prisma.contract.findFirstOrThrow({ where: { projectId }, orderBy: { round: 'desc' } });
+  const studioCopy = await templates.signedCopy(sent.id, [demoMark('STUDIO')]);
+  await app
+    .get(StudioContractService)
+    .propose(sent.id, undefined, by.studio, asUpload(studioCopy, 'hop-dong-studio-da-ky.pdf'));
+  if (index === 2) return;
 
-    // Admin signs first on the template with its PDF, the studio signs the same price with its own PDF.
-    const template = await prisma.contract.findFirstOrThrow({ where: { projectId }, orderBy: { round: 'desc' } });
-    const offer = await contracts.counter(template.id, COST_VND, admin, pdf('hop-dong-ai-cinema-ban-ky-admin.pdf'));
-    await studioContracts.studioSign(offer.id, studio, pdf('hop-dong-ai-cinema-ban-ky-studio.pdf'));
-    if (index === 2) continue;
+  const bothSigned = await templates.signedCopy(sent.id, [demoMark('STUDIO'), demoMark('ADMIN')]);
+  await app.get(ContractService).sign(sent.id, by.admin, asUpload(bothSigned, 'hop-dong-admin-da-ky.pdf'));
+  if (index === 3) return;
 
-    const episode = await prisma.episode.findFirstOrThrow({ where: { movieId: projectId, episodeNumber: 1 } });
-    const asset = await deliverFromR2(prisma, episode.id, studio.userId, SOURCE.episodes[0]);
-    if (index === 3) continue;
-
-    await app.get(ContentReviewService).review(asset, { decision: ContentReviewDecision.APPROVED }, reviewer);
-    await app
-      .get(AiLabelService)
-      .apply(asset, { labelType: LabelType.AI_GENERATED, labelText: 'Nội dung do AI tạo' }, reviewer);
-    await app.get(ComplianceService).run(
-      asset,
-      {
-        decree142Notice: { result: 'PASS' },
-        contentSafety: { result: 'PASS' },
-        depictsRealPersonOrEvent: false,
-      } as never,
-      reviewer,
-    );
-    await app.get(FinalFilmService).confirm(episode.id, reviewer);
-  }
-  console.log(`MF-1 demo ready: ${STAGES.length} projects "${PREFIX} …" built from "${SOURCE.title}".`);
-  await app.close();
-}
-
-/** The studio delivers episode 1 as the team's R2 file, already playable (no transcoding in the demo). */
-async function deliverFromR2(prisma: PrismaClient, episodeId: string, studioUserId: string, source: CatalogEpisode) {
-  const asset = await prisma.mediaAsset.create({
-    data: {
-      episodeId,
-      version: 1,
-      sourceMethod: MediaSourceMethod.REMOTE_FILE,
-      sourceUrl: source.url,
-      streamUrl: source.url,
-      isSelfHosted: true,
-      qualities: source.height ? [`${source.height}p`] : [],
-      durationSeconds: Math.round(source.duration),
-      fileSizeBytes: BigInt(source.size),
-      ingestStatus: MediaIngestStatus.READY,
-      aiDisclosure: { aiGeneratedParts: ['video', 'audio'], noRealPersonLikeness: true, noCopyrightedMaterial: true },
-      proposedLabelType: LabelType.AI_GENERATED,
-      submissionNote: 'Studio giao tập 1 bằng link phim trên R2 (demo).',
-      submittedById: studioUserId,
-    },
+  const episode = await prisma.episode.findFirstOrThrow({ where: { movieId: projectId, episodeNumber: 1 } });
+  const asset = await deliverFromR2(prisma, {
+    episodeId: episode.id,
+    studioUserId: by.studio.userId,
+    source: film.episodes[0],
+    note: p.deliveryNote,
   });
-  await prisma.episode.update({ where: { id: episodeId }, data: { status: EpisodeStatus.IN_REVIEW } });
-  return asset.id;
-}
+  if (index === 4) return;
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+  await app.get(ContentReviewService).review(asset, { decision: ContentReviewDecision.APPROVED }, by.reviewer);
+  await app
+    .get(AiLabelService)
+    .apply(asset, { labelType: LabelType.AI_GENERATED, labelText: p.aiLabelText }, by.reviewer);
+  await app.get(ComplianceService).run(
+    asset,
+    {
+      decree142Notice: { result: 'PASS' },
+      contentSafety: { result: 'PASS' },
+      depictsRealPersonOrEvent: false,
+    } as never,
+    by.reviewer,
+  );
+  await app.get(FinalFilmService).confirm(episode.id, by.reviewer);
+}

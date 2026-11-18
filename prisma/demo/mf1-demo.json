@@ -1,0 +1,59 @@
+{
+  "$comment": "MF-1 demo data for `npm run seed:mf1-demo`. Every value the demo shows lives here; the code holds none. Company names, tax codes and accounts are fictional demo data.",
+  "prefix": "[Demo MF-1]",
+  "people": {
+    "admin": "admin@gmail.com",
+    "reviewer": "reviewer@gmail.com",
+    "creator": "creator.aicinema@gmail.com",
+    "studio": "studio@aicinema.com"
+  },
+  "platformParty": {
+    "contractCompanyName": "Công ty TNHH Nền tảng Phim AI Cinema (giả lập)",
+    "contractAddress": "Lô E2a-7, Đường D1, Khu Công nghệ cao, TP. Thủ Đức, TP. Hồ Chí Minh",
+    "contractTaxCode": "0000000001 (giả lập)",
+    "contractPhone": "028 0000 0001",
+    "contractEmail": "admin@aicinema.com",
+    "contractBankAccount": "0000 0000 0001 - Ngân hàng giả lập, chi nhánh TP. Hồ Chí Minh",
+    "contractRepresentative": "Nguyễn Văn An",
+    "contractRepresentativeTitle": "Giám đốc",
+    "contractPlace": "Thành phố Hồ Chí Minh"
+  },
+  "studioProfile": {
+    "contactName": "Nguyễn Thị Lan",
+    "phone": "028 0000 0002",
+    "address": "00 Đường Số 1, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh",
+    "taxCode": "0000000002 (giả lập)",
+    "bankAccount": "0000 0000 0002 - Ngân hàng giả lập, chi nhánh Quận 1",
+    "representativeTitle": "Giám đốc"
+  },
+  "project": {
+    "budgetVnd": 200000000,
+    "budgetReason": "Ngân sách sản xuất duyệt cho dự án demo",
+    "ageRating": "T16",
+    "episodeCount": 3,
+    "firstDeadlineInDays": 14,
+    "daysBetweenDeadlines": 7,
+    "releaseStartInDays": 30,
+    "releaseEndInDays": 90,
+    "notes": [
+      ["admin", "Phim giữ tông lãng mạn nhẹ nhàng, 3 tập ngắn cho mobile."],
+      ["creator", "Đồng ý, bản kịch bản đầu tiên sẽ có trong tuần này."]
+    ],
+    "scriptNote": "Bản 1",
+    "reviewComment": "Kịch bản ổn, chuyển Admin duyệt Final.",
+    "finalComment": "Duyệt Kịch bản Final.",
+    "deliveryNote": "Studio giao tập 1 bằng link phim trên R2 (demo).",
+    "aiLabelText": "Nội dung do AI tạo"
+  },
+  "stages": [
+    ["1. Viết kịch bản", "Creator đã nộp kịch bản bản 1, chờ Reviewer duyệt."],
+    [
+      "2. Hợp đồng",
+      "Admin đã duyệt Kịch bản Final; hệ thống đã gửi Studio hợp đồng chưa ký kèm ngân sách, chờ Studio ký."
+    ],
+    ["3. Chờ Admin ký", "Studio đã tải hợp đồng về, ký và tải lên bản có chữ ký Studio, chờ Admin ký."],
+    ["4. Giao phim", "Hợp đồng đủ 2 chữ ký PDF, Studio đang sản xuất, chờ giao tập."],
+    ["5. Duyệt nội dung", "Studio đã giao tập 1 (phim trên R2), chờ Reviewer duyệt, gắn nhãn AI, kiểm tra tuân thủ."],
+    ["6. Định giá & phát hành", "Reviewer đã xác nhận Final Film tập 1, chờ Admin đặt giá, tập khoá / mở và publish."]
+  ]
+}
