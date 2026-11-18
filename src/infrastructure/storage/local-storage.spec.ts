@@ -27,6 +27,22 @@ describe('LocalObjectStorage', () => {
     expect(storage.publicRoot).toBe(path.resolve(root, 'public'));
   });
 
+  it('signs no direct upload, but stats, reads the head of and moves an object', async () => {
+    await storage.putBuffer('uploads/u1/source.mp4', Buffer.from('0123456789abcdefXYZ'), 'video/mp4', 'private');
+
+    await expect(storage.presignPut()).resolves.toBeNull();
+    await expect(storage.stat('uploads/u1/source.mp4', 'private')).resolves.toEqual({ size: 19 });
+    await expect(storage.stat('uploads/none.mp4', 'private')).resolves.toBeNull();
+    await expect(storage.readHead('uploads/u1/source.mp4', 'private', 16)).resolves.toEqual(
+      Buffer.from('0123456789abcdef'),
+    );
+    await expect(storage.readHead('uploads/u1/source.mp4', 'private', 64)).resolves.toHaveLength(19);
+
+    await storage.move('uploads/u1/source.mp4', 'media/u1/source.mp4', 'private');
+    await expect(storage.stat('uploads/u1/source.mp4', 'private')).resolves.toBeNull();
+    await expect(storage.stat('media/u1/source.mp4', 'private')).resolves.toEqual({ size: 19 });
+  });
+
   it('refuses keys that could escape the storage folder', async () => {
     await expect(storage.read('../secrets.env', 'private')).rejects.toThrow('Unsafe storage key');
     expect(() => storage.publicUrl('/etc/passwd')).toThrow('Unsafe storage key');
