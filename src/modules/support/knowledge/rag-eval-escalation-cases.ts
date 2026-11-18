@@ -13,11 +13,11 @@ export const RAG_EVAL_ESCALATION_CASES: RagEvalCase[] = [
   },
   {
     id: 'rag-tools-02',
-    question: 'Coin thưởng của tôi hết hạn ngày nào? Còn bao nhiêu?',
+    question: 'Tôi còn bao nhiêu Coin thưởng?',
     expect: 'tool',
     expectedSlugs: [],
     expectedTools: ['get_member_wallet'],
-    notes: 'Same tool, differently phrased (lots with expiry).',
+    notes: 'Same tool, differently phrased (bonus lots).',
   },
   {
     id: 'rag-tools-03',
