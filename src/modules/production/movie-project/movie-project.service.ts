@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { ProjectStatus, Prisma, UserRole } from '@prisma/client';
+import { ProductionCostEntryType, ProjectStatus, Prisma, UserRole } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -16,6 +16,9 @@ import { newEpisodeSchedule, seasonWindow } from './episode-schedule';
 import { StudioService } from 'src/modules/production/studio/studio.service';
 import { ProjectLifecycleService } from './project-lifecycle.service';
 import { lastActivityOf, LIST_ROW, OPEN_CHANGE_REQUESTS, PERSON, PROJECT_PAGE, titledProjects } from './project-list';
+
+/** Reason of the budget entry written with the project. */
+const PROJECT_BUDGET_REASON = 'Ngân sách sản xuất khi tạo dự án';
 
 const PROJECT_DETAIL = {
   movie: {
@@ -89,7 +92,10 @@ export class MovieProjectService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  /** MF-1 step 1 (07/11/2026): the Admin creates the project, picks its Reviewer and assigns the lead Creator. */
+  /**
+   * MF-1 step 1 (07/11/2026): the Admin creates the project with its budget, picks its Reviewer and assigns the
+   * lead Creator. The budget is the first entry of the cost ledger, written as the Cost tab would.
+   */
   async create(dto: CreateMovieProjectRequestDto, user: AuthenticatedUser) {
     const studio = dto.studioId ? await this.studios.assertUsable(dto.studioId) : null;
     await this.lifecycle.assertActive(dto.reviewerId, UserRole.CONTENT_REVIEWER);
@@ -152,6 +158,13 @@ export class MovieProjectService {
       );
       return movie.id;
     });
+    if (dto.budgetVnd) {
+      await this.costs.addEntry(
+        projectId,
+        { entryType: ProductionCostEntryType.BUDGET, amountVnd: dto.budgetVnd, reason: PROJECT_BUDGET_REASON },
+        user,
+      );
+    }
     await this.lifecycle.announceReviewer(projectId);
     if (dto.creatorId) await this.lifecycle.assignCreator(projectId, dto.creatorId, user);
     if (studio) await this.lifecycle.announceStudio(projectId, studio);
