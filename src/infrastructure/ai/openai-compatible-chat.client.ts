@@ -32,7 +32,7 @@ interface OpenAiTool {
 
 type OpenAiMessage =
   | { role: 'system' | 'user' | 'assistant'; content: string | null; tool_calls?: OpenAiToolCall[] }
-  | { role: 'tool'; content: string; tool_call_id?: string };
+  | { role: 'tool'; content: string; tool_call_id?: string; name?: string };
 
 interface OpenAiResponseBody {
   model?: string;
@@ -102,6 +102,7 @@ export class OpenAiCompatibleChatClient implements ChatClient {
         role: 'tool',
         content: message.content,
         ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+        ...(message.toolName ? { name: message.toolName } : {}),
       };
     }
     if (message.role === 'assistant' && message.toolCalls?.length) {

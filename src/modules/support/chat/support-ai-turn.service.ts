@@ -59,21 +59,27 @@ export class SupportAiTurnService {
 
     let reply: SupportAgentReply;
     try {
-      reply = await this.agent.reply({
-        conversationId,
-        memberId,
-        message: content,
-        history: history.map(({ senderType, content: line }) => ({ senderType, content: line })),
-        platformFacts,
-        retrieved,
-      });
+      reply = await withDeadline(
+        this.agent.reply({
+          conversationId,
+          memberId,
+          message: content,
+          history: history.map(({ senderType, content: line }) => ({ senderType, content: line })),
+          platformFacts,
+          retrieved,
+        }),
+        this.config.support.aiTurnDeadlineMs,
+      );
     } catch (error) {
       if (error instanceof SupportAiUnavailableError) {
+        // The provider's own words (already cut short) say why a model or a key refused the request.
+        this.logger.warn(`AI provider failed on conversation ${conversationId}: ${error.message}`);
         return this.escalateAfterAiFailure(conversationId, memberMessage, history, error.cause);
       }
       const failures = await this.conversations.recordAiFailure(conversationId);
       // Provider errors are logged by request shape only, never their content (plan §8.2).
-      this.logger.warn(`AI turn failed on conversation ${conversationId} (failure ${failures})`);
+      const kind = error instanceof Error ? error.name : typeof error;
+      this.logger.warn(`AI turn failed on conversation ${conversationId} (failure ${failures}, ${kind})`);
       if (failures >= 2) {
         return this.escalateAfterAiFailure(conversationId, memberMessage, history, 'PROVIDER_ERROR');
       }
@@ -198,4 +204,18 @@ export class SupportAiTurnService {
       refundOnRemoval: settings.refundOnRemoval,
     };
   }
+}
+
+/** Raised when one AI answer took longer than AI_TURN_DEADLINE_MS: the member's next message is answered anew. */
+export class AiTurnDeadlineError extends Error {
+  override readonly name = 'AiTurnDeadlineError';
+}
+
+/** The answer, unless it takes longer than `ms`; the late answer is dropped (the agent writes nothing itself). */
+export function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AiTurnDeadlineError(`AI turn took longer than ${ms} ms`)), ms);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
