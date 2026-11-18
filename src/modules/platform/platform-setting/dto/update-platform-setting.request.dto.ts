@@ -1,8 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { ContractPartySettingsDto } from './contract-party-settings.dto';
 
-/** Only the fields sent are changed. */
-export class UpdatePlatformSettingRequestDto {
+/** Only the fields sent are changed; the contract party of the platform (Bên A) is part of the settings. */
+export class UpdatePlatformSettingRequestDto extends ContractPartySettingsDto {
   @ApiPropertyOptional({
     example: 2,
     description: 'First episodes of every movie Guests and Free members watch (BR-03).',
