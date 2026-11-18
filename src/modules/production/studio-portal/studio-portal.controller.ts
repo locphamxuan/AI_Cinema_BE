@@ -31,6 +31,11 @@ import {
   SubmitMediaLinkRequestDto,
   SubmitMediaUploadRequestDto,
 } from 'src/modules/production/media-ingest/dto/submit-media.request.dto';
+import { DirectUploadService } from 'src/modules/production/media-ingest/direct-upload.service';
+import {
+  CompleteDirectUploadRequestDto,
+  StartDirectUploadRequestDto,
+} from 'src/modules/production/media-ingest/dto/direct-upload.request.dto';
 import { MediaIngestService } from 'src/modules/production/media-ingest/media-ingest.service';
 import { StudioPortalService } from './studio-portal.service';
 
@@ -52,6 +57,7 @@ export class StudioPortalController {
     private readonly documents: ContractDocumentService,
     private readonly templates: ContractTemplateService,
     private readonly media: MediaIngestService,
+    private readonly uploads: DirectUploadService,
   ) {}
 
   @Get('me')
@@ -159,6 +165,29 @@ export class StudioPortalController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.media.submitUpload(episodeId, file, dto, parseAiDisclosure(dto.aiDisclosure), user);
+  }
+
+  @Post('episodes/:episodeId/media/uploads')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Start a direct upload: a signed URL the browser PUTs the MP4/MOV to, bypassing the API (15 minutes)',
+  })
+  startUpload(
+    @Param('episodeId', ID) episodeId: string,
+    @Body() dto: StartDirectUploadRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.uploads.start(episodeId, dto, user);
+  }
+
+  @Post('episodes/:episodeId/media/uploads/complete')
+  @ApiOperation({ summary: 'Finish a direct upload: checks the stored film and sends it to the Reviewer' })
+  completeUpload(
+    @Param('episodeId', ID) episodeId: string,
+    @Body() dto: CompleteDirectUploadRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.uploads.complete(episodeId, dto, user);
   }
 
   @Post('media-assets/:mediaAssetId/retry')
