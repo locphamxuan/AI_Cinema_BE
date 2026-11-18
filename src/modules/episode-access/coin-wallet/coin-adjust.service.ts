@@ -88,7 +88,7 @@ export class CoinAdjustService {
     const wanted = -(request.bonusAmount ?? 0);
     await lockWallet(tx, walletId);
     const wallet = await tx.coinWallet.findUniqueOrThrow({ where: { id: walletId } });
-    const lots = await spendableLots(tx, walletId, now);
+    const lots = await spendableLots(tx, walletId);
     const available = bonusOf(lots);
     if (available < wanted) {
       throw new UnprocessableEntityException({
@@ -148,7 +148,6 @@ export class CoinAdjustService {
   }
 
   private async openLot(tx: PrismaTx, walletId: string, bonusAmount: number, now: Date): Promise<string> {
-    const days = (await this.settings.get()).bonusCoinExpiryDays;
     const lot = await tx.coinLot.create({
       data: {
         walletId,
@@ -156,7 +155,6 @@ export class CoinAdjustService {
         originalAmount: bonusAmount,
         remainingAmount: bonusAmount,
         grantedAt: now,
-        expiresAt: new Date(now.getTime() + days * 86_400_000),
       },
     });
     return lot.id;

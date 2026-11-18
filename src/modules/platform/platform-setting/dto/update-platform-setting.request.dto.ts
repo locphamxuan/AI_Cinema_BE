@@ -32,12 +32,6 @@ export class UpdatePlatformSettingRequestDto extends ContractPartySettingsDto {
   @IsOptional()
   episodeCoinPriceMax?: number;
 
-  @ApiPropertyOptional({ example: 30, description: 'Days a bonus coin lot stays usable (BR-28).' })
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  bonusCoinExpiryDays?: number;
-
   @ApiPropertyOptional({
     example: 90,
     description: 'Seconds without a heartbeat before a playback session times out (BR-36).',

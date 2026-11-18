@@ -8,8 +8,6 @@ model PlatformSetting {
   /// BR-47: valid Coin price of one episode; a price outside it alerts the Admin.
   episodeCoinPriceMin             Int      @default(1) @map("episode_coin_price_min")
   episodeCoinPriceMax             Int      @default(50) @map("episode_coin_price_max")
-  /// BR-28, BR-52
-  bonusCoinExpiryDays             Int      @default(30) @map("bonus_coin_expiry_days")
   /// BR-36
   playbackHeartbeatTimeoutSeconds Int      @default(90) @map("playback_heartbeat_timeout_seconds")
   /// Hours before the renewal date a member may still stop auto-renew; a later request is

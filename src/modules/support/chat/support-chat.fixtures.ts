@@ -137,7 +137,7 @@ export function buildChatService() {
   const settings = {
     get: jest.fn().mockResolvedValue({
       coinRateVnd: 1000,
-      bonusCoinExpiryDays: 30,
+      bonusCoinsNeverExpire: true,
       coinTopUpMinVnd: 10000,
       coinTopUpMaxVnd: 10000000,
       subscriptionCancelWindowHours: 24,

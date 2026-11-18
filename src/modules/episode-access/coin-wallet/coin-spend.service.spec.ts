@@ -232,39 +232,3 @@ describe('CoinSpendService.credit', () => {
     ).rejects.toThrow(ConflictException);
   });
 });
-
-describe('CoinSpendService.expireBonus', () => {
-  const tx = {
-    $queryRaw: jest.fn(),
-    coinWallet: {
-      findUniqueOrThrow: jest.fn(),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-    },
-    coinTransaction: { createManyAndReturn: jest.fn() },
-  };
-  const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000 }) };
-  const service = new CoinSpendService(settings as unknown as PlatformSettingService);
-
-  it('writes one BONUS_EXPIRY row and leaves main Coins alone (BR-28)', async () => {
-    tx.coinWallet.findUniqueOrThrow.mockResolvedValue({ id: 'w1', mainBalance: 5, bonusBalance: 10 });
-    tx.coinTransaction.createManyAndReturn.mockResolvedValue([{ id: 'tx-e' }]);
-
-    const movement = await service.expireBonus(tx as unknown as PrismaTx, 'w1', {
-      id: 'lot-e',
-      amount: 4,
-      expiresAt: new Date('2026-10-05T00:00:00.000Z'),
-    });
-
-    expect(movement).toMatchObject({ mainCoins: 0, bonusCoins: 4, mainBalance: 5, bonusBalance: 6 });
-    expect(tx.coinTransaction.createManyAndReturn).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({
-          entryType: CoinEntryType.BONUS_EXPIRY,
-          mainAmount: 0,
-          bonusAmount: -4,
-          lotId: 'lot-e',
-        }),
-      ],
-    });
-  });
-});

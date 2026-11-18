@@ -196,7 +196,7 @@ export class SupportAiTurnService {
     const settings = await this.settings.get();
     return {
       coinRateVnd: settings.coinRateVnd,
-      bonusCoinExpiryDays: settings.bonusCoinExpiryDays,
+      bonusCoinsNeverExpire: true,
       coinTopUpMinVnd: settings.coinTopUpMinVnd,
       coinTopUpMaxVnd: settings.coinTopUpMaxVnd,
       subscriptionCancelWindowHours: settings.subscriptionCancelWindowHours,

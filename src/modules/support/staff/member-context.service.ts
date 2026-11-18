@@ -114,10 +114,10 @@ export class MemberContextService {
             bonusBalance: true,
             updatedAt: true,
             lots: {
-              where: { remainingAmount: { gt: 0 }, expiresAt: { gt: new Date() } },
-              orderBy: { expiresAt: 'asc' },
+              where: { remainingAmount: { gt: 0 }, closedAt: null },
+              orderBy: { grantedAt: 'asc' },
               take: 5,
-              select: { source: true, remainingAmount: true, grantedAt: true, expiresAt: true },
+              select: { source: true, remainingAmount: true, grantedAt: true },
             },
           },
         });
