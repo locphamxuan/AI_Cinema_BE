@@ -20,7 +20,10 @@ import { RequirePermission } from 'src/common/decorators/require-permission.deco
 import { RemoveTempUploadInterceptor } from 'src/common/http/remove-temp-upload.interceptor';
 import { ContractDocumentService } from 'src/modules/production/contract/contract-document.service';
 import { StudioContractService, type StudioActor } from 'src/modules/production/contract/contract-studio.service';
-import { ContractCostRequestDto } from 'src/modules/production/contract/dto/contract.request.dto';
+import {
+  ContractCostRequestDto,
+  ProposeContractRequestDto,
+} from 'src/modules/production/contract/dto/contract.request.dto';
 import { SignedPdfUpload } from 'src/modules/production/contract/signed-pdf-upload';
 import { ContractTemplateService } from 'src/modules/production/contract/template/contract-template.service';
 import {
@@ -81,14 +84,15 @@ export class StudioPortalController {
 
   @Post('contracts/:contractId/propose')
   @HttpCode(200)
-  @SignedPdfUpload(true)
+  @SignedPdfUpload('optional')
   @ApiOperation({
-    summary: 'Fill the production cost into the template and upload the contract PDF signed by the studio',
+    summary:
+      'Upload the contract PDF signed by the studio: at the budget ceiling it was sent with, or at a lower cost it proposes',
   })
   async propose(
     @Param('contractId', ID) contractId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Body() dto: ContractCostRequestDto,
+    @Body() dto: ProposeContractRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.contracts.propose(contractId, dto.costVnd, await this.actor(user), file);
@@ -111,7 +115,7 @@ export class StudioPortalController {
 
   @Post('contracts/:contractId/counter')
   @HttpCode(200)
-  @SignedPdfUpload(true)
+  @SignedPdfUpload('required')
   @ApiOperation({ summary: "Disagree with the Admin's cost: propose another one with the contract PDF signed for it" })
   async counter(
     @Param('contractId', ID) contractId: string,

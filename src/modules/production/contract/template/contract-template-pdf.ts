@@ -5,7 +5,7 @@ import { articles, LEGAL_BASES, money, type ContractDraft, type ContractParty } 
 export type ContractSide = 'ADMIN' | 'STUDIO';
 type Text = (value: string) => string;
 
-/** Draws one side's signature and seal inside its box (the demo samples only; the real template stays blank). */
+/** Draws one side's signature and seal inside its box (demo signing only; the contract the studio gets is unsigned). */
 export interface SignatureMark {
   side: ContractSide;
   draw: (doc: PDFKit.PDFDocument, box: { x: number; y: number; partyName: string }, text: Text) => void;
@@ -14,6 +14,15 @@ export interface SignatureMark {
 const LEFT = 56;
 const WIDTH = 483;
 const RIGHT_BOX = 320;
+
+/**
+ * The PDF names the project it belongs to in its keywords, so an upload of another project's contract is refused.
+ * PDF readers keep the keywords when a signer adds a signature; a scanned copy has none and is accepted as is.
+ */
+export const PROJECT_MARKER = 'aicinema-project:';
+export const CONTRACT_MARKER = 'aicinema-contract:';
+export const contractKeywords = (projectId: string, contractId: string) =>
+  `${PROJECT_MARKER}${projectId} ${CONTRACT_MARKER}${contractId}`;
 
 function party(doc: PDFKit.PDFDocument, label: string, p: ContractParty, text: Text): void {
   doc
@@ -55,16 +64,17 @@ function annex(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text): void {
       .moveTo(x, tableTop)
       .lineTo(x, y + 22)
       .stroke();
-  const cost = c.costVnd === null ? 'do Bên B đề xuất' : money(c.costVnd);
   doc.text(
-    text(`Tổng số tập: ${c.episodes.length}. Giá trị Hợp đồng: ${cost}. Ngân sách trần: ${money(c.budgetVnd)}.`),
+    text(
+      `Tổng số tập: ${c.episodes.length}. Giá trị Hợp đồng: ${money(c.costVnd)}. Ngân sách trần: ${money(c.budgetVnd)}.`,
+    ),
     LEFT,
     y + 34,
     { width: WIDTH },
   );
 }
 
-function signatures(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text, mark?: SignatureMark): void {
+function signatures(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text, marks: SignatureMark[]): void {
   if (doc.y > 600) doc.addPage();
   const top = doc.y + 24;
   doc.fontSize(11);
@@ -74,7 +84,7 @@ function signatures(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text, mark?
   doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), LEFT, top + 15, { width: 220, align: 'center' });
   doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), RIGHT_BOX, top + 15, { width: 220, align: 'center' });
   doc.fillColor('#000000');
-  if (mark) {
+  for (const mark of marks) {
     const admin = mark.side === 'ADMIN';
     mark.draw(doc, { x: admin ? LEFT : RIGHT_BOX, y: top, partyName: admin ? c.partyA.name : c.partyB.name }, text);
   }
@@ -105,10 +115,13 @@ export interface RenderOptions {
   fontPath: string | null;
   /** Printed under every page number. */
   footnote: string;
-  mark?: SignatureMark;
+  /** Written into the PDF keywords: see contractKeywords. */
+  keywords?: string;
+  /** Signatures already on the copy: none on the contract the studio receives. */
+  marks?: SignatureMark[];
 }
 
-/** The production contract as a PDF: unsigned when no mark is given, which is what the studio receives. */
+/** The production contract as a PDF: unsigned unless marks are given, which is what the studio receives. */
 export function renderContractPdf(c: ContractDraft, options: RenderOptions): Promise<Buffer> {
   const { fontPath } = options;
   const text = pdfText(fontPath);
@@ -116,7 +129,10 @@ export function renderContractPdf(c: ContractDraft, options: RenderOptions): Pro
     size: 'A4',
     margins: { top: 56, bottom: 70, left: LEFT, right: LEFT },
     bufferPages: true,
-    info: { Title: `Hop dong san xuat phim ${c.contractNo}` },
+    info: {
+      Title: `Hop dong san xuat phim ${c.contractNo}`,
+      ...(options.keywords ? { Keywords: options.keywords } : {}),
+    },
   });
   if (fontPath) doc.font(fontPath);
   const chunks: Buffer[] = [];
@@ -150,7 +166,7 @@ export function renderContractPdf(c: ContractDraft, options: RenderOptions): Pro
     doc.fontSize(10);
     for (const p of paragraphs) doc.text(text(p), { align: 'justify' });
   }
-  signatures(doc, c, text, options.mark);
+  signatures(doc, c, text, options.marks ?? []);
   annex(doc, c, text);
   footers(doc, c, text, options.footnote);
   doc.end();

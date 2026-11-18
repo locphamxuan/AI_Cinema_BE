@@ -57,19 +57,23 @@ export class StudioContractService {
     );
   }
 
-  /** Studio: fills in the cost of the freshly sent template and uploads its signed PDF of it. */
+  /**
+   * Studio: uploads its signed PDF of the contract it was sent. Without a cost it signs at the value printed on
+   * it, the budget ceiling; with one it proposes a lower cost. Either way the Admin countersigns next.
+   */
   async propose(
     contractId: string,
-    costVnd: number,
+    proposedVnd: number | undefined,
     actor: StudioActor,
     file?: Express.Multer.File,
   ): Promise<Detailed> {
     const round = await this.own(contractId, actor.studioId);
-    assertContractStatus(round, ContractStatus.SENT, 'fill in');
-    const prepared = await this.prepare(round, false, BigInt(costVnd), file);
+    assertContractStatus(round, ContractStatus.SENT, 'sign');
+    const prepared = await this.prepare(round, false, proposedVnd === undefined ? null : BigInt(proposedVnd), file);
     return this.signing(prepared, async (tx) => {
       const contract = await lockedContract(tx, contractId, actor.studioId);
-      assertContractStatus(contract, ContractStatus.SENT, 'fill in');
+      assertContractStatus(contract, ContractStatus.SENT, 'sign');
+      const costVnd = proposedVnd ?? (await this.handoffs.ceiling(tx, contract.projectId, contract.handoffId));
       await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
       await tx.contract.update({
         where: { id: contractId },

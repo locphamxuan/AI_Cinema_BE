@@ -1,10 +1,14 @@
 import { NotFoundException } from '@nestjs/common';
 import type { AppConfig } from 'src/config/app-config';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import type { ContractHandoffService } from '../contract-handoff.service';
+import { BLANK } from './contract-clauses';
+import { PLATFORM, STUDIO } from './template.fixtures';
 import * as pdf from './contract-template-pdf';
 import { ContractTemplateService, longVnDay, vnDay } from './contract-template.service';
+import { demoMark } from './demo-signature';
 
 const SOURCE = {
   id: '9f2b4c6e-0000-4000-8000-000000000001',
@@ -14,7 +18,7 @@ const SOURCE = {
   costVnd: null as bigint | null,
   status: 'SENT',
   createdAt: new Date('2026-11-16T18:30:00.000Z'),
-  studio: { name: 'Lumen', email: 'studio@lumen.example', phone: null, contactName: 'Bình' },
+  studio: STUDIO,
   project: {
     movie: {
       title: 'Giấc Mơ Số',
@@ -34,21 +38,27 @@ const SOURCE = {
 };
 
 describe('ContractTemplateService', () => {
-  const prisma = { contract: { findUnique: jest.fn(), findFirst: jest.fn() } };
+  const prisma = { contract: { findFirst: jest.fn() } };
   const access = { project: jest.fn() };
   const handoffs = { budgetOf: jest.fn() };
+  const settings = { get: jest.fn() };
   const service = new ContractTemplateService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
     handoffs as unknown as ContractHandoffService,
+    settings as unknown as PlatformSettingService,
     { briefFontPath: null } as AppConfig,
   );
   const render = jest.spyOn(pdf, 'renderContractPdf');
+  const draftOf = (call = 0) => render.mock.calls[call][0];
+  const optionsOf = (call = 0) => render.mock.calls[call][1];
 
   beforeEach(() => {
     jest.clearAllMocks();
     render.mockResolvedValue(Buffer.from('%PDF-1.7'));
     handoffs.budgetOf.mockResolvedValue(200_000_000);
+    settings.get.mockResolvedValue({ ...PLATFORM, contractPlace: 'Thành phố Hồ Chí Minh' });
+    prisma.contract.findFirst.mockResolvedValue(SOURCE);
   });
 
   it('formats contract dates in Vietnam time', () => {
@@ -56,50 +66,62 @@ describe('ContractTemplateService', () => {
     expect(longVnDay(SOURCE.createdAt)).toBe('17 tháng 11 năm 2026');
   });
 
-  it('fills the template with the project, the studio and the budget for the project team', async () => {
-    prisma.contract.findUnique.mockResolvedValue(SOURCE);
+  it('fills the contract with the project, both parties and the budget ceiling as its value', async () => {
     const user = { id: 'rev', role: 'REVIEWER' } as never;
 
     const file = await service.forStaff(SOURCE.id, user);
 
+    expect(prisma.contract.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: SOURCE.id } }));
     expect(access.project).toHaveBeenCalledWith('p1', user, 'read');
     expect(handoffs.budgetOf).toHaveBeenCalledWith(prisma, SOURCE);
-    const [draft, options] = render.mock.calls[0];
-    expect(draft).toMatchObject({
+    expect(draftOf()).toMatchObject({
       contractNo: 'AIC-2026-9F2B4C6E-R2',
       day: '17 tháng 11 năm 2026',
+      place: 'Thành phố Hồ Chí Minh',
       genre: 'Tâm lý, Viễn tưởng',
       ageRating: 'T13',
-      costVnd: null,
+      costVnd: 200_000_000,
       budgetVnd: 200_000_000,
       episodes: [
         { number: 1, title: 'Khởi động', minutes: 12, dueDate: '25/11/2026' },
         { number: 2, title: 'Lỗi', minutes: 10, dueDate: '-' },
       ],
     });
-    expect(draft.partyB).toMatchObject({ name: 'Lumen', representative: 'Bình' });
-    expect(options.mark).toBeUndefined();
-    expect(file.getHeaders()).toMatchObject({ type: 'application/pdf', length: 8 });
+    expect(draftOf().partyA.name).toBe('Công ty TNHH AI Cinema');
+    expect(draftOf().partyB).toMatchObject({ name: 'Lumen Studio', representative: 'Nguyễn Thị Lan' });
+    expect(optionsOf()).toMatchObject({ keywords: `aicinema-project:p1 aicinema-contract:${SOURCE.id}`, marks: [] });
+    expect(file.getHeaders()).toMatchObject({
+      type: 'application/pdf',
+      length: 8,
+      disposition: 'attachment; filename="hop-dong-AIC-2026-9F2B4C6E-R2.pdf"',
+    });
   });
 
-  it('keeps the cost of a priced round and names unknown labels', async () => {
+  it('keeps the cost a side proposed and names what is not known yet', async () => {
     const movie = { ...SOURCE.project.movie, ageRating: null, genres: [] };
     prisma.contract.findFirst.mockResolvedValue({ ...SOURCE, costVnd: 170_000_000n, project: { movie } });
+    settings.get.mockResolvedValue({ ...PLATFORM, contractPlace: null });
 
     await service.forStudio(SOURCE.id, 's1');
 
     expect(prisma.contract.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: SOURCE.id, studioId: 's1' } }),
     );
-    expect(render.mock.calls[0][0]).toMatchObject({
+    expect(draftOf()).toMatchObject({
       costVnd: 170_000_000,
       genre: 'chưa phân loại',
       ageRating: 'chưa phân loại',
+      place: BLANK,
     });
   });
 
+  it('draws the given signatures into the copy used for demo signing', async () => {
+    const marks = [demoMark('STUDIO')];
+    await expect(service.signedCopy(SOURCE.id, marks)).resolves.toEqual(Buffer.from('%PDF-1.7'));
+    expect(optionsOf().marks).toBe(marks);
+  });
+
   it('answers 404 for an unknown round or a round of another studio', async () => {
-    prisma.contract.findUnique.mockResolvedValue(null);
     prisma.contract.findFirst.mockResolvedValue(null);
     await expect(service.forStaff('x', {} as never)).rejects.toBeInstanceOf(NotFoundException);
     await expect(service.forStudio('x', 's2')).rejects.toBeInstanceOf(NotFoundException);

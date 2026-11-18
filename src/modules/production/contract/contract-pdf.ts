@@ -3,6 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import PDFKitDocument from 'pdfkit';
 import { businessStamp } from 'src/common/time/business-day';
 import { pdfText } from 'src/infrastructure/pdf/unicode-font';
+import { PROJECT_MARKER } from './template/contract-template-pdf';
 
 /** What the closing page of the merged contract states about the round both sides signed. */
 export interface SignedSummary {
@@ -114,7 +115,16 @@ export async function mergeSignedCounterparts(
 }
 
 /** 400s unless the upload is a PDF pdf-lib can open and of a sane length; returns its page count. */
-export async function assertUsableCounterpart(file: Buffer, side: string): Promise<number> {
+export async function assertUsableCounterpart(file: Buffer, side: string, projectId?: string): Promise<number> {
   const pdf = await loadCounterpart(file, side);
+  const marker = pdf
+    .getKeywords()
+    ?.split(/\s+/)
+    .find((word) => word.startsWith(PROJECT_MARKER));
+  if (projectId && marker && marker !== `${PROJECT_MARKER}${projectId}`) {
+    throw new BadRequestException(
+      `The ${side} PDF is the contract of another project; download this project's contract, sign it and upload it`,
+    );
+  }
   return pdf.getPageCount();
 }

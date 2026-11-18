@@ -1,6 +1,6 @@
 /**
- * Text of the MF-1 production contract template. The same 14 articles are the unsigned template the studio
- * receives once the Admin approves the Final Script and the demo PDFs of `npm run contracts:samples`.
+ * Text of the MF-1 production contract. The same 14 articles make the unsigned contract the studio receives once
+ * the Admin approves the Final Script, priced at the budget ceiling, and every demo PDF built from it.
  */
 export interface ContractParty {
   name: string;
@@ -29,8 +29,8 @@ export interface ContractDraft {
   genre: string;
   ageRating: string;
   episodes: ContractEpisode[];
-  /** The agreed cost; null on the unsigned template the studio prices. */
-  costVnd: number | null;
+  /** Value of the contract: the budget ceiling until a side proposes another cost. */
+  costVnd: number;
   costInWords?: string;
   /** Most the studio may ask for: the project's budget left for this contract (VND). */
   budgetVnd: number;
@@ -38,7 +38,7 @@ export interface ContractDraft {
   partyB: ContractParty;
 }
 
-/** Left for the studio to fill in by hand before signing. */
+/** Printed where the platform holds no value yet, for the signer to fill in by hand. */
 export const BLANK = '....................................';
 
 export const money = (amount: number) => `${new Intl.NumberFormat('vi-VN').format(amount)} đồng`;
@@ -60,29 +60,17 @@ export const PAYMENTS: [number, string][] = [
 ];
 
 function value(c: ContractDraft): string[] {
-  const ceiling = money(c.budgetVnd);
-  const cost = c.costVnd;
-  if (cost === null) {
-    return [
-      `3.1. Giá trị Hợp đồng là ${BLANK} đồng (Bằng chữ: ${BLANK}), do Bên B đề xuất trên Hệ thống AI Cinema, là chi phí ` +
-        'sản xuất trọn gói, đã bao gồm thuế giá trị gia tăng và mọi chi phí để Bên B hoàn thành công việc.',
-      `3.2. Ngân sách trần Bên A dành cho Hợp đồng này là ${ceiling}. Giá trị Bên B đề xuất không được vượt ngân sách trần; ` +
-        'hệ thống từ chối mọi đề xuất cao hơn.',
-      '3.3. Bên A thanh toán cho Bên B thành ba đợt:',
-      ...PAYMENTS.map(
-        ([share, when], i) => `     - Đợt ${i + 1}: ${Math.round(share * 100)}% giá trị Hợp đồng, ${when}.`,
-      ),
-    ];
-  }
+  const words = c.costInWords ? ` (Bằng chữ: ${c.costInWords})` : '';
+  const atCeiling = c.costVnd === c.budgetVnd ? ', bằng ngân sách trần Bên A dành cho Hợp đồng này' : '';
   return [
-    `3.1. Giá trị Hợp đồng là ${money(cost)}${c.costInWords ? ` (Bằng chữ: ${c.costInWords})` : ''}, là chi phí sản xuất ` +
-      'trọn gói, đã bao gồm thuế giá trị gia tăng và mọi chi phí để Bên B hoàn thành công việc. Giá trị này là mức hai bên đã ' +
-      'thống nhất qua thương lượng trên Hệ thống AI Cinema.',
-    `3.2. Ngân sách trần Bên A dành cho Hợp đồng này là ${ceiling}; giá trị Hợp đồng không vượt ngân sách trần.`,
+    `3.1. Giá trị Hợp đồng là ${money(c.costVnd)}${words}${atCeiling}, là chi phí sản xuất trọn gói, đã bao gồm thuế giá trị ` +
+      'gia tăng và mọi chi phí để Bên B hoàn thành công việc.',
+    `3.2. Ngân sách trần Bên A dành cho Hợp đồng này là ${money(c.budgetVnd)}. Bên B được đề xuất giá trị thấp hơn trên ` +
+      'Hệ thống AI Cinema; hệ thống từ chối mọi đề xuất vượt ngân sách trần.',
     '3.3. Bên A thanh toán cho Bên B thành ba đợt:',
     ...PAYMENTS.map(
       ([share, when], i) =>
-        `     - Đợt ${i + 1}: ${Math.round(share * 100)}% giá trị Hợp đồng, tương đương ${money(Math.round(cost * share))}, ${when}.`,
+        `     - Đợt ${i + 1}: ${Math.round(share * 100)}% giá trị Hợp đồng, tương đương ${money(Math.round(c.costVnd * share))}, ${when}.`,
     ),
   ];
 }

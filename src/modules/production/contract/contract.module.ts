@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { ProductionCostModule } from 'src/modules/production/production-cost/production-cost.module';
 import { StudioModule } from 'src/modules/production/studio/studio.module';
 import { ContractCompletionService } from './contract-completion.service';
@@ -11,7 +12,7 @@ import { ContractService } from './contract.service';
 import { ContractTemplateService } from './template/contract-template.service';
 
 @Module({
-  imports: [ProductionCostModule, StudioModule],
+  imports: [ProductionCostModule, StudioModule, PlatformSettingModule],
   controllers: [ContractController],
   providers: [
     ContractService,

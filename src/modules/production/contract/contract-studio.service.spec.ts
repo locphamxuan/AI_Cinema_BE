@@ -63,7 +63,7 @@ describe('StudioContractService', () => {
   const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
   const auditLog = { record: jest.fn() };
   const mails = { queue: jest.fn(), dispatch: jest.fn() };
-  const handoffs = { assertAffordable: jest.fn(), budgetOf: jest.fn() };
+  const handoffs = { assertAffordable: jest.fn(), budgetOf: jest.fn(), ceiling: jest.fn() };
   const service = new StudioContractService(
     prisma as unknown as PrismaService,
     signatures as unknown as ContractSignatureService,
@@ -108,6 +108,23 @@ describe('StudioContractService', () => {
     expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 999_000_000, null);
     expect(db.contract.update).not.toHaveBeenCalled();
     expect(signatures.discard).toHaveBeenCalledWith(PREPARED);
+  });
+
+  it('signs at the budget ceiling printed on the contract when the studio sends no cost', async () => {
+    db.contract.findFirst.mockResolvedValue(contract());
+    db.contract.findUniqueOrThrow
+      .mockResolvedValueOnce(contract())
+      .mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED }));
+    handoffs.ceiling.mockResolvedValue(200_000_000);
+
+    await service.propose('c1', undefined, ACTOR, file);
+
+    expect(signatures.prepare).toHaveBeenCalledWith(expect.objectContaining({ costVnd: null }), file, prisma);
+    expect(handoffs.ceiling).toHaveBeenCalledWith(db, 'p1', null);
+    expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 200_000_000, null);
+    expect(db.contract.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ costVnd: 200_000_000n }) }),
+    );
   });
 
   it('fills in the cost and records the studio-signed PDF on the template', async () => {

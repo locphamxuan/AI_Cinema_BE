@@ -113,7 +113,7 @@ export class ContractSignatureService {
     }
     const fileName = safeFileName(file.originalname);
     detectKind(fileName, file.buffer.subarray(0, 16), [FILE_KINDS.pdf]);
-    await assertUsableCounterpart(file.buffer, side === ContractDocumentSide.ADMIN ? 'Admin' : 'Studio');
+    await assertUsableCounterpart(file.buffer, side === ContractDocumentSide.ADMIN ? 'Admin' : 'Studio', projectId);
     return this.write(projectId, side, fileName, file.buffer);
   }
 
