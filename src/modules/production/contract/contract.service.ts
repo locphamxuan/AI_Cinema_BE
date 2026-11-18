@@ -9,6 +9,7 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { ContractCompletionService, vnd } from './contract-completion.service';
 import { ContractHandoffService } from './contract-handoff.service';
+import { assertStudioCanSign } from './studio-login';
 import { queueContractMail, recordContractEvent, tellContractUpdate } from './contract-notice';
 import {
   assertContractStatus,
@@ -105,6 +106,8 @@ export class ContractService {
     round: { projectId: string; studioId: string; actorId: string; terms?: string; handoffId?: string },
   ): Promise<Detailed> {
     const { projectId, studioId, actorId, terms, handoffId } = round;
+    const studio = await tx.studio.findUniqueOrThrow({ where: { id: studioId }, select: { name: true } });
+    await assertStudioCanSign(tx, studioId, studio.name);
     const contract = await tx.contract.create({
       data: { projectId, studioId, handoffId, terms: terms?.trim() || STANDARD_TERMS, createdById: actorId },
       include: CONTRACT_DETAIL,

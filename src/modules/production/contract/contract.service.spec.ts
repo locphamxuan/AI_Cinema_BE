@@ -56,7 +56,8 @@ const contract = (overrides: Record<string, unknown> = {}) => ({
 describe('ContractService', () => {
   const db = {
     movieProject: { findUniqueOrThrow: jest.fn() },
-    user: { findUniqueOrThrow: jest.fn() },
+    user: { findUniqueOrThrow: jest.fn(), count: jest.fn().mockResolvedValue(1) },
+    studio: { findUniqueOrThrow: jest.fn().mockResolvedValue({ name: 'Studio A' }) },
     contract: {
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(),
@@ -121,6 +122,16 @@ describe('ContractService', () => {
       expect.objectContaining({ link: '/contracts' }),
       db,
     );
+  });
+
+  it('sends nothing to a studio that has no Studio Web login yet', async () => {
+    db.contract.count.mockResolvedValue(0);
+    db.user.count.mockResolvedValueOnce(0);
+    await expect(service.sendTemplate(db as never, 'p1', 'admin')).rejects.toMatchObject({
+      response: { details: { reason: 'STUDIO_HAS_NO_LOGIN', studioId: 's1' } },
+    });
+    expect(db.contract.create).not.toHaveBeenCalled();
+    expect(mails.queue).not.toHaveBeenCalled();
   });
 
   it('supersedes the open rounds and sends the new studio a template tied to its waiting hand-off', async () => {
