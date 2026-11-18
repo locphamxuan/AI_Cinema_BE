@@ -36,6 +36,9 @@ export interface SendSupportMessageInput {
   clientMessageId?: string;
 }
 
+/** What Staff is told when a member reopens a resolved case. */
+const REOPENED_PREVIEW = 'Member cho biết vẫn cần hỗ trợ sau khi case được giải quyết.';
+
 @Injectable()
 export class SupportChatService {
   private readonly logger = new Logger(SupportChatService.name);
@@ -184,8 +187,11 @@ export class SupportChatService {
 
   /** Member tapped "Đã giải quyết": the server performs the CLOSED transition. */
   async confirmResolved(memberId: string, conversationId: string, rating?: number, comment?: string) {
-    await this.conversations.findOwned(conversationId, memberId);
-    const conversation = await this.resolution.aiResolved(conversationId, memberId);
+    const owned = await this.conversations.findOwned(conversationId, memberId);
+    const conversation =
+      owned.status === SupportStatus.RESOLVED
+        ? await this.resolution.staffResolutionConfirmed(conversationId, memberId)
+        : await this.resolution.aiResolved(conversationId, memberId);
     if (rating !== undefined || comment !== undefined) {
       await this.prisma.supportConversation.update({
         where: { id: conversationId },
@@ -202,9 +208,10 @@ export class SupportChatService {
   /** Member asks for a human, without waiting for the AI to decide. */
   async requestStaff(memberId: string, conversationId: string, note?: string) {
     const conversation = await this.conversations.findOwned(conversationId, memberId);
-    if (conversation.status === SupportStatus.CLOSED || conversation.status === SupportStatus.RESOLVED) {
-      throw new ConflictException('This support conversation is no longer open');
-    }
+    if (conversation.status === SupportStatus.CLOSED)
+      throw new ConflictException('This support conversation is closed');
+    // "Vẫn cần hỗ trợ" on a case Staff marked resolved: it goes back to the Staff queue.
+    if (conversation.status === SupportStatus.RESOLVED) return this.reopen(conversation, memberId);
     // Already with Staff: a repeated tap changes nothing, so it must not pay for another AI summary.
     if (
       conversation.status === SupportStatus.WAITING_FOR_STAFF ||
@@ -233,6 +240,12 @@ export class SupportChatService {
       conversation: conversationView(escalated.conversation),
       systemMessage: escalated.systemMessage ? messageView(escalated.systemMessage) : null,
     };
+  }
+
+  private async reopen(conversation: SupportConversation, memberId: string) {
+    const { conversation: reopened, changed } = await this.resolution.reopen(conversation.id, memberId);
+    if (changed) await this.recipients.notifyMemberReply(reopened, REOPENED_PREVIEW);
+    return { conversation: conversationView(reopened), systemMessage: null };
   }
 
   async close(memberId: string, conversationId: string, note?: string) {

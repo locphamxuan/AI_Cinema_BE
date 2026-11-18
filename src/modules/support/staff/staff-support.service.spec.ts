@@ -89,7 +89,6 @@ function buildService() {
   };
   const resolution = {
     staffResolve: jest.fn().mockResolvedValue(undefined),
-    staffClose: jest.fn().mockResolvedValue(undefined),
   };
   const recipients = {
     notifyAssigned: jest.fn().mockResolvedValue(undefined),
@@ -318,15 +317,6 @@ describe('StaffSupportService.resolve / close / detail', () => {
     const view = await service.resolve(CASE_ID, STAFF.id, 'Đã xử lý xong');
 
     expect(resolution.staffResolve).toHaveBeenCalledWith(CASE_ID, STAFF.id, 'Đã xử lý xong');
-    expect(view.memberId).toBe(MEMBER_ID);
-  });
-
-  it('closes then views the updated case', async () => {
-    const { service, resolution } = buildService();
-
-    const view = await service.close(CASE_ID, STAFF.id, 'Member xác nhận');
-
-    expect(resolution.staffClose).toHaveBeenCalledWith(CASE_ID, STAFF.id, 'Member xác nhận');
     expect(view.memberId).toBe(MEMBER_ID);
   });
 

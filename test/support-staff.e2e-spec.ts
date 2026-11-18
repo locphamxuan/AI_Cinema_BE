@@ -69,7 +69,7 @@ describe('AI Customer Support — Staff hand-off (e2e)', () => {
     );
   });
 
-  it('staff claims, releases, claims again, replies and resolves; member confirms and cannot reopen', async () => {
+  it('staff claims, releases, claims again, replies and resolves; the member reopens it, then confirms', async () => {
     await staff.post(`/admin/support/conversations/${caseId}/claim`, {}, 200);
     await staff.post(`/admin/support/conversations/${caseId}/release`, {}, 200);
     await staff.post(`/admin/support/conversations/${caseId}/claim`, {}, 200);
@@ -82,9 +82,18 @@ describe('AI Customer Support — Staff hand-off (e2e)', () => {
     await staff.post(`/admin/support/conversations/${caseId}/resolve`, { note: 'Đã giải thích số dư' }, 200);
 
     await member.post(`/support/conversations/${caseId}/read`, {}, 204);
-    // confirm-resolved is for an AI answer; Staff closes the case it resolved (or the auto-close sweep does).
-    await member.post(`/support/conversations/${caseId}/confirm-resolved`, { rating: 5 }, 409);
-    await staff.post(`/admin/support/conversations/${caseId}/close`, {}, 200);
+    // "Vẫn cần hỗ trợ" puts the resolved case back in the queue; Staff never closes a case itself.
+    const reopened = await member.post<{ conversation: Conversation }>(
+      `/support/conversations/${caseId}/request-staff`,
+      {},
+      200,
+    );
+    expect(reopened.conversation.status).toBe('WAITING_FOR_STAFF');
+    await staff.post(`/admin/support/conversations/${caseId}/close`, {}, 404);
+    await staff.post(`/admin/support/conversations/${caseId}/claim`, {}, 200);
+    await staff.post(`/admin/support/conversations/${caseId}/resolve`, { note: 'Đã hoàn Coin' }, 200);
+    // The member confirms the work and the case closes.
+    await member.post(`/support/conversations/${caseId}/confirm-resolved`, { rating: 5 }, 200);
     await member.post(`/support/conversations/${caseId}/request-staff`, {}, 409);
   });
 

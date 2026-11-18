@@ -12,10 +12,30 @@ import { SupportConversationService } from './chat/support-conversation.service'
 const SWEEP_NAME = 'support.auto-close.sweep';
 const BATCH = 200;
 
+/** The two kinds of case the clock closes, the time each one is measured from and what the member is told. */
+const RULES = [
+  {
+    status: SupportStatus.AI_HANDLING,
+    since: 'aiResolutionSuggestedAt',
+    message:
+      'Yêu cầu hỗ trợ đã được tự động đóng vì không có phản hồi sau khi trợ lý AI đề xuất cách giải quyết. Bạn có thể mở yêu cầu mới nếu vẫn cần hỗ trợ.',
+    notice: 'Không có phản hồi sau khi trợ lý AI đề xuất cách giải quyết. Bạn có thể mở yêu cầu hỗ trợ mới.',
+  },
+  {
+    status: SupportStatus.RESOLVED,
+    since: 'resolvedAt',
+    message:
+      'Yêu cầu hỗ trợ đã được tự động đóng vì bạn không phản hồi sau khi nhân viên xử lý xong. Bạn có thể mở yêu cầu mới nếu vẫn cần hỗ trợ.',
+    notice: 'Không có phản hồi sau khi nhân viên xử lý xong. Bạn có thể mở yêu cầu hỗ trợ mới.',
+  },
+] as const;
+
+type Rule = (typeof RULES)[number];
+
 /**
- * Plan §7/§11.4: only a case where the AI already suggested a resolution and the member has not
- * written since is closed for inactivity. A case the AI never resolved is left for Staff, and a
- * member reply after the suggestion restarts the clock.
+ * Plan §7/§11.4: a case is closed for inactivity once its answer is in and the member has not written since:
+ * the AI suggested a resolution (AI_HANDLING), or Staff marked it resolved (RESOLVED, 18/11/2026). A member reply
+ * after that moment restarts the clock; a case nobody answered is left for Staff.
  */
 @Injectable()
 export class SupportAutoCloseSweep implements OnModuleInit {
@@ -36,94 +56,91 @@ export class SupportAutoCloseSweep implements OnModuleInit {
 
   async run(): Promise<{ closed: number }> {
     const cutoff = new Date(Date.now() - this.config.support.autoCloseHours * 60 * 60_000);
+    let closed = 0;
+    for (const rule of RULES) closed += await this.closeStale(rule, cutoff);
+    if (closed) this.logger.log(`Auto-closed ${closed} inactive support case(s)`);
+    return { closed };
+  }
+
+  private async closeStale(rule: Rule, cutoff: Date): Promise<number> {
+    const fields = this.prisma.supportConversation.fields;
     const candidates = await this.prisma.supportConversation.findMany({
       where: {
-        status: SupportStatus.AI_HANDLING,
-        aiResolutionSuggestedAt: { not: null, lt: cutoff },
-        // A member who answered after the suggestion keeps the case open; filtered here, not after the
-        // query, so 200 such cases first in line can never fill the batch and starve the others.
-        OR: [
-          { lastMemberMessageAt: null },
-          { lastMemberMessageAt: { lte: this.prisma.supportConversation.fields.aiResolutionSuggestedAt } },
-        ],
+        status: rule.status,
+        [rule.since]: { not: null, lt: cutoff },
+        // A member who answered after that moment keeps the case open; filtered here, not after the query,
+        // so 200 such cases first in line can never fill the batch and starve the others.
+        OR: [{ lastMemberMessageAt: null }, { lastMemberMessageAt: { lte: fields[rule.since] } }],
       },
-      orderBy: { aiResolutionSuggestedAt: 'asc' },
+      orderBy: { [rule.since]: 'asc' },
       take: BATCH,
-      select: {
-        id: true,
-        memberId: true,
-        aiResolutionSuggestedAt: true,
-        resolvedAt: true,
-        lastMemberMessageAt: true,
-      },
+      select: { id: true, memberId: true, aiResolutionSuggestedAt: true, resolvedAt: true },
     });
 
     let closed = 0;
     for (const candidate of candidates) {
-      const suggestedAt = candidate.aiResolutionSuggestedAt;
-      if (!suggestedAt) continue;
-      if (candidate.lastMemberMessageAt && candidate.lastMemberMessageAt > suggestedAt) continue;
-
-      try {
-        const now = new Date();
-        await this.prisma.$transaction(async (tx) => {
-          await this.conversations.transition(
-            candidate.id,
-            SupportStatus.AI_HANDLING,
-            SupportStatus.CLOSED,
-            {
-              closedAt: now,
-              resolvedAt: candidate.resolvedAt ?? suggestedAt,
-              closeReason: SupportCloseReason.INACTIVITY,
-            },
-            tx,
-          );
-
-          await tx.supportMessage.create({
-            data: {
-              conversationId: candidate.id,
-              senderType: SupportSenderType.SYSTEM,
-              senderId: null,
-              content:
-                'Yêu cầu hỗ trợ đã được tự động đóng vì không có phản hồi sau khi trợ lý AI đề xuất cách giải quyết. Bạn có thể mở yêu cầu mới nếu vẫn cần hỗ trợ.',
-              isInternal: false,
-            },
-          });
-
-          await this.audit.record(
-            {
-              action: CONTENT_EVENT.SUPPORT_CASE_CLOSED,
-              entityType: 'SupportConversation',
-              entityId: candidate.id,
-              projectId: null,
-              actorId: null,
-              payload: { closeReason: SupportCloseReason.INACTIVITY, automatic: true },
-            },
-            tx,
-          );
-        });
-      } catch (error) {
-        // A concurrent member reply or Staff claim wins the guarded transition; skip this case.
-        this.logger.warn(`Auto-close skipped conversation ${candidate.id}: ${errorMessage(error)}`);
-        continue;
-      }
-      closed += 1;
-      try {
-        await this.notifications.notify([candidate.memberId], {
-          type: NOTIFICATION_TYPE.SUPPORT_CASE_CLOSED,
-          title: 'Yêu cầu hỗ trợ đã tự động đóng',
-          body: 'Không có phản hồi sau khi trợ lý AI đề xuất cách giải quyết. Bạn có thể mở yêu cầu hỗ trợ mới.',
-          link: `/support/conversations/${candidate.id}`,
-          payload: { conversationId: candidate.id, closeReason: SupportCloseReason.INACTIVITY },
-        });
-      } catch (error) {
-        // The case is closed already; only the notice failed.
-        this.logger.warn(`Closed conversation ${candidate.id} but could not notify the member: ${errorMessage(error)}`);
-      }
+      if (await this.close(rule, candidate)) closed += 1;
     }
+    return closed;
+  }
 
-    if (closed) this.logger.log(`Auto-closed ${closed} inactive support case(s)`);
-    return { closed };
+  private async close(
+    rule: Rule,
+    candidate: { id: string; memberId: string; aiResolutionSuggestedAt: Date | null; resolvedAt: Date | null },
+  ): Promise<boolean> {
+    try {
+      const now = new Date();
+      await this.prisma.$transaction(async (tx) => {
+        await this.conversations.transition(
+          candidate.id,
+          rule.status,
+          SupportStatus.CLOSED,
+          {
+            closedAt: now,
+            resolvedAt: candidate.resolvedAt ?? candidate.aiResolutionSuggestedAt ?? now,
+            closeReason: SupportCloseReason.INACTIVITY,
+          },
+          tx,
+        );
+        await tx.supportMessage.create({
+          data: {
+            conversationId: candidate.id,
+            senderType: SupportSenderType.SYSTEM,
+            senderId: null,
+            content: rule.message,
+            isInternal: false,
+          },
+        });
+        await this.audit.record(
+          {
+            action: CONTENT_EVENT.SUPPORT_CASE_CLOSED,
+            entityType: 'SupportConversation',
+            entityId: candidate.id,
+            projectId: null,
+            actorId: null,
+            payload: { closeReason: SupportCloseReason.INACTIVITY, automatic: true, from: rule.status },
+          },
+          tx,
+        );
+      });
+    } catch (error) {
+      // A concurrent member reply or Staff claim wins the guarded transition; skip this case.
+      this.logger.warn(`Auto-close skipped conversation ${candidate.id}: ${errorMessage(error)}`);
+      return false;
+    }
+    try {
+      await this.notifications.notify([candidate.memberId], {
+        type: NOTIFICATION_TYPE.SUPPORT_CASE_CLOSED,
+        title: 'Yêu cầu hỗ trợ đã tự động đóng',
+        body: rule.notice,
+        link: `/support/conversations/${candidate.id}`,
+        payload: { conversationId: candidate.id, closeReason: SupportCloseReason.INACTIVITY },
+      });
+    } catch (error) {
+      // The case is closed already; only the notice failed.
+      this.logger.warn(`Closed conversation ${candidate.id} but could not notify the member: ${errorMessage(error)}`);
+    }
+    return true;
   }
 }
 

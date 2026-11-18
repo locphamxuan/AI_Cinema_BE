@@ -64,24 +64,52 @@ describe('ResolutionService', () => {
     );
   });
 
-  it('keeps the first resolved time and writes the staff note when Staff closes', async () => {
+  it('closes a case Staff resolved once the member confirms it, keeping the first resolved time', async () => {
     const resolvedAt = new Date('2026-11-10T03:00:00Z');
     conversations.findById.mockResolvedValue(conversationIn(SupportStatus.RESOLVED, { resolvedAt }));
     conversations.move.mockResolvedValue({ conversation: conversationIn(SupportStatus.CLOSED), changed: true });
 
-    await service.staffClose('c1', 'staff-1', 'Đã hoàn Coin');
+    await service.staffResolutionConfirmed('c1', 'm1');
 
     expect(conversations.move).toHaveBeenCalledWith(
       'c1',
-      [SupportStatus.RESOLVED, SupportStatus.STAFF_HANDLING],
+      [SupportStatus.RESOLVED],
       SupportStatus.CLOSED,
-      expect.objectContaining({
-        resolvedAt,
-        resolutionNote: 'Đã hoàn Coin',
-        closeReason: SupportCloseReason.STAFF_RESOLVED,
-      }),
+      expect.objectContaining({ resolvedAt, closeReason: SupportCloseReason.STAFF_RESOLVED }),
       tx,
     );
+  });
+
+  it('puts a resolved case back in the Staff queue when the member still needs help', async () => {
+    conversations.move.mockResolvedValue({
+      conversation: conversationIn(SupportStatus.WAITING_FOR_STAFF),
+      changed: true,
+    });
+
+    const { changed } = await service.reopen('c1', 'm1');
+
+    expect(changed).toBe(true);
+    expect(conversations.move).toHaveBeenCalledWith(
+      'c1',
+      SupportStatus.RESOLVED,
+      SupportStatus.WAITING_FOR_STAFF,
+      { resolvedAt: null, assignedAgentId: null },
+      tx,
+    );
+    expect(messages.create).toHaveBeenCalledWith(expect.objectContaining({ senderType: SupportSenderType.SYSTEM }), tx);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: CONTENT_EVENT.SUPPORT_CASE_ESCALATED, payload: { reopened: true } }),
+      tx,
+    );
+  });
+
+  it('writes nothing more when the case was already reopened', async () => {
+    conversations.move.mockResolvedValue({
+      conversation: conversationIn(SupportStatus.WAITING_FOR_STAFF),
+      changed: false,
+    });
+    await expect(service.reopen('c1', 'm1')).resolves.toMatchObject({ changed: false });
+    expect(messages.create).not.toHaveBeenCalled();
   });
 
   it('lets a member close a case still waiting for Staff', async () => {

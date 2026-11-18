@@ -8,6 +8,10 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { SupportConversationService } from './support-conversation.service';
 import { SupportMessageService } from './support-message.service';
 
+/** What the member is told once Staff marks the case resolved: how it ends from there. */
+export const RESOLVED_HINT =
+  'Chọn "Đã giải quyết" để đóng, hoặc "Vẫn cần hỗ trợ" để nhân viên xử lý tiếp; yêu cầu tự đóng nếu bạn không phản hồi.';
+
 /**
  * The closing half of the lifecycle (plan §7). Closing never deletes the conversation: the
  * transcript stays readable in the member's support history.
@@ -33,6 +37,52 @@ export class ResolutionService {
       actorId,
       'Cảm ơn bạn đã xác nhận. Yêu cầu hỗ trợ đã được đóng.',
     );
+  }
+
+  /** Member confirms the work Staff marked resolved: RESOLVED → CLOSED (STAFF_RESOLVED). */
+  staffResolutionConfirmed(conversationId: string, memberId: string): Promise<SupportConversation> {
+    return this.close(
+      conversationId,
+      [SupportStatus.RESOLVED],
+      SupportCloseReason.STAFF_RESOLVED,
+      memberId,
+      'Cảm ơn bạn đã xác nhận. Yêu cầu hỗ trợ đã được đóng.',
+    );
+  }
+
+  /** Member says the problem is not solved: RESOLVED → WAITING_FOR_STAFF, back in the Staff queue. */
+  reopen(conversationId: string, memberId: string): Promise<{ conversation: SupportConversation; changed: boolean }> {
+    return this.prisma.$transaction(async (tx) => {
+      const moved = await this.conversations.move(
+        conversationId,
+        SupportStatus.RESOLVED,
+        SupportStatus.WAITING_FOR_STAFF,
+        { resolvedAt: null, assignedAgentId: null },
+        tx,
+      );
+      if (!moved.changed) return moved;
+      await this.messages.create(
+        {
+          conversationId,
+          senderType: SupportSenderType.SYSTEM,
+          content: 'Bạn cho biết vẫn cần hỗ trợ. Yêu cầu đã được chuyển lại cho nhân viên.',
+          isInternal: false,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          action: CONTENT_EVENT.SUPPORT_CASE_ESCALATED,
+          entityType: 'SupportConversation',
+          entityId: conversationId,
+          projectId: null,
+          actorId: memberId,
+          payload: { reopened: true },
+        },
+        tx,
+      );
+      return moved;
+    });
   }
 
   /** Member closes their own case, whatever stage it is in. */
@@ -64,7 +114,7 @@ export class ResolutionService {
         {
           conversationId,
           senderType: SupportSenderType.SYSTEM,
-          content: note ? `Nhân viên đã xử lý yêu cầu của bạn: ${note}` : 'Nhân viên đã xử lý yêu cầu của bạn.',
+          content: `${note ? `Nhân viên đã xử lý yêu cầu của bạn: ${note}` : 'Nhân viên đã xử lý yêu cầu của bạn.'} ${RESOLVED_HINT}`,
           isInternal: false,
         },
         tx,
@@ -92,25 +142,12 @@ export class ResolutionService {
     return result.conversation;
   }
 
-  /** Staff final step: RESOLVED (or STAFF_HANDLING) → CLOSED (STAFF_RESOLVED). */
-  staffClose(conversationId: string, staffId: string, note?: string): Promise<SupportConversation> {
-    return this.close(
-      conversationId,
-      [SupportStatus.RESOLVED, SupportStatus.STAFF_HANDLING],
-      SupportCloseReason.STAFF_RESOLVED,
-      staffId,
-      note ?? 'Nhân viên đã đóng yêu cầu hỗ trợ. Cảm ơn bạn đã liên hệ.',
-      note,
-    );
-  }
-
   private async close(
     conversationId: string,
     from: SupportStatus[],
     closeReason: SupportCloseReason,
     actorId: string,
     memberNotice: string,
-    resolutionNote?: string,
   ): Promise<SupportConversation> {
     const now = new Date();
     const { conversation, replayed } = await this.prisma.$transaction(async (tx) => {
@@ -126,7 +163,6 @@ export class ResolutionService {
           closedAt: now,
           resolvedAt: current.resolvedAt ?? now,
           closeReason,
-          ...(resolutionNote !== undefined ? { resolutionNote } : {}),
         },
         tx,
       );

@@ -113,17 +113,9 @@ export class StaffSupportController {
   @Post('conversations/:id/resolve')
   @HttpCode(HttpStatus.OK)
   @RequirePermission(PERMISSION.SUPPORT_CASE_MANAGE)
-  @ApiOperation({ summary: 'Mark the case resolved' })
+  @ApiOperation({ summary: 'Mark the case resolved; the member confirms or reopens it, or it closes on its own' })
   resolve(@CurrentUser('id') staffId: string, @Param('id', ID) id: string, @Body() dto?: ResolveSupportCaseRequestDto) {
     return this.staff.resolve(id, staffId, dto?.note);
-  }
-
-  @Post('conversations/:id/close')
-  @HttpCode(HttpStatus.OK)
-  @RequirePermission(PERMISSION.SUPPORT_CASE_MANAGE)
-  @ApiOperation({ summary: 'Close the case; the transcript stays readable' })
-  close(@CurrentUser('id') staffId: string, @Param('id', ID) id: string, @Body() dto?: ResolveSupportCaseRequestDto) {
-    return this.staff.close(id, staffId, dto?.note);
   }
 
   @Post('conversations/:id/assign')
