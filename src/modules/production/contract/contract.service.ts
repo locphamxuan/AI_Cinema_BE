@@ -176,7 +176,7 @@ export class ContractService {
   /**
    * The Admin uploads the contract PDF for a cost, already carrying AI Cinema's signature, which opens a new
    * round the studio answers by uploading its own signed copy. Works on the studio's offer (a counter) and,
-   * for the demo order "Admin signs first", straight on the unpriced template the studio has not answered.
+   * for the demo order "Admin signs first", straight on the template (priced at the budget ceiling) the studio has not answered.
    */
   async counter(
     contractId: string,
