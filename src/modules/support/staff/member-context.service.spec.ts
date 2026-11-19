@@ -21,6 +21,7 @@ function buildService(held: Set<PermissionKey>) {
     episodeAccess: { findMany: jest.fn().mockResolvedValue([{ source: 'COIN_UNLOCK' }]) },
     userDevice: { findMany: jest.fn().mockResolvedValue([{ name: 'iPhone 15' }]) },
     streamingSession: { findMany: jest.fn().mockResolvedValue([{ status: 'ENDED' }]) },
+    watchProgress: { findMany: jest.fn().mockResolvedValue([{ positionSeconds: 754, completed: false }]) },
   };
   const accessControl = { permissionsOf: jest.fn().mockResolvedValue(held) };
   const service = new MemberContextService(
@@ -97,6 +98,7 @@ describe('MemberContextService.getContext', () => {
       'Transactions',
       'EpisodeAccess',
       'Devices',
+      'WatchHistory',
     ]);
     for (const section of Object.keys(result.sections)) {
       expect(result.sections[section].data).toBeNull();
@@ -113,6 +115,7 @@ describe('MemberContextService.getContext', () => {
     expect(prisma.episodeAccess.findMany).not.toHaveBeenCalled();
     expect(prisma.userDevice.findMany).not.toHaveBeenCalled();
     expect(prisma.streamingSession.findMany).not.toHaveBeenCalled();
+    expect(prisma.watchProgress.findMany).not.toHaveBeenCalled();
   });
 
   it('accepts either wallet permission (some-of-set semantics)', async () => {
@@ -145,6 +148,17 @@ describe('MemberContextService.getContext', () => {
     expect(result.sections.Account.restricted).toBe(false);
     expect(result.sections.Devices.restricted).toBe(false);
     expect(result.sections.Subscription.restricted).toBe(true);
+  });
+
+  it('shows Staff where the member stopped in each episode, newest first', async () => {
+    const { service, prisma } = buildService(new Set([PERMISSION.MEMBER_OPS_READ]));
+
+    const result = await service.getContext(CONVERSATION_ID, STAFF, 'WatchHistory');
+
+    expect(result.sections.WatchHistory.data).toEqual([{ positionSeconds: 754, completed: false }]);
+    expect(prisma.watchProgress.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: MEMBER_ID }, orderBy: { lastWatchedAt: 'desc' }, take: 20 }),
+    );
   });
 
   it('loads only the requested section and still gates it', async () => {

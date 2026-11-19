@@ -11,6 +11,7 @@ export const MEMBER_CONTEXT_SECTION = {
   TRANSACTIONS: 'Transactions',
   EPISODE_ACCESS: 'EpisodeAccess',
   DEVICES: 'Devices',
+  WATCH_HISTORY: 'WatchHistory',
 } as const;
 
 export type MemberContextSection = (typeof MEMBER_CONTEXT_SECTION)[keyof typeof MEMBER_CONTEXT_SECTION];
@@ -25,6 +26,7 @@ const SECTION_PERMISSIONS: Record<MemberContextSection, PermissionKey[]> = {
   Transactions: [PERMISSION.COIN_TRANSACTION_READ],
   EpisodeAccess: [PERMISSION.ACCESS_EPISODE_READ],
   Devices: [PERMISSION.MEMBER_OPS_READ, PERMISSION.USER_READ],
+  WatchHistory: [PERMISSION.MEMBER_OPS_READ, PERMISSION.USER_READ],
 };
 
 export interface MemberContextSectionResult {
@@ -177,6 +179,21 @@ export class MemberContextService {
             },
           }),
         ]).then(([devices, sessions]) => ({ devices, sessions }));
+
+      // Where the member stopped in each episode, newest first: "it stops at 12:34" questions.
+      case MEMBER_CONTEXT_SECTION.WATCH_HISTORY:
+        return this.prisma.watchProgress.findMany({
+          where: { userId: memberId },
+          orderBy: { lastWatchedAt: 'desc' },
+          take: 20,
+          select: {
+            positionSeconds: true,
+            durationSeconds: true,
+            completed: true,
+            lastWatchedAt: true,
+            episode: { select: { episodeNumber: true, title: true, movie: { select: { title: true } } } },
+          },
+        });
 
       default:
         return Promise.resolve(null);
