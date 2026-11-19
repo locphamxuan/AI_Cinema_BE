@@ -318,7 +318,12 @@ describe('PlaybackUrlService', () => {
   it('falls back to the direct URL when signing is disabled or the asset is external', () => {
     const off = new PlaybackUrlService(prisma as unknown as PrismaService, storage as unknown as ObjectStorage, {
       ...config,
-      playback: { urlSecret: undefined, urlTtlSeconds: 3600, sessionRetentionDays: 90, allowedDevicePlatforms: ['ANDROID'] },
+      playback: {
+        urlSecret: undefined,
+        urlTtlSeconds: 3600,
+        sessionRetentionDays: 90,
+        allowedDevicePlatforms: ['ANDROID'],
+      },
     });
     expect(off.masterUrl(SESSION_ID, { id: ASSET_ID, streamUrl: asset.streamUrl, isSelfHosted: true })).toBe(
       asset.streamUrl,
