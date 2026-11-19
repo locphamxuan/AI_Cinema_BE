@@ -103,6 +103,11 @@ export interface AppConfig {
      * keep the window longer than any report that reads session rows.
      */
     sessionRetentionDays: number;
+    /**
+     * Platforms a member account may be watched on (BR-83): Android phones only in production.
+     * DEVICE_ALLOWED_PLATFORMS=ANDROID,WEB lets developers test the member app in a browser.
+     */
+    allowedDevicePlatforms: string[];
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
   google: { clientIds: string[] };
@@ -237,6 +242,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       urlSecret: read.optional('PLAYBACK_URL_SECRET'),
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
+      allowedDevicePlatforms: platformsOf(read.optional('DEVICE_ALLOWED_PLATFORMS')),
     },
     support: supportConfig(read),
     oauth: { codeTtlSeconds: read.int('OAUTH_CODE_TTL_SECONDS', DEFAULT_CODE_TTL_SECONDS, 30) },
@@ -274,4 +280,13 @@ function productionRules(config: AppConfig): string[] {
     rules.push('PLAYBACK_URL_SECRET is required in production with STORAGE_DRIVER=s3 (signed stream URLs)');
   }
   return rules;
+}
+
+/** "android, web" → ["ANDROID", "WEB"]; unset or empty keeps the production rule, Android phones only. */
+export function platformsOf(value: string | undefined): string[] {
+  const list = (value ?? '')
+    .split(',')
+    .map((p) => p.trim().toUpperCase())
+    .filter(Boolean);
+  return list.length ? [...new Set(list)] : ['ANDROID'];
 }

@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { StreamingEndReason, StreamingSessionStatus } from '@prisma/client';
 import { isUUID } from 'class-validator';
+import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import type { RunningPlanSnapshot } from 'src/modules/episode-access/subscription/running-plan';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -9,8 +10,6 @@ import { DeviceEligibilityPort, deviceLimitsOf, type DeviceIdentity } from '../p
 import { sessionEnded } from '../streaming-session/playback-events';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
 
-/** The only platform a member account is shared on (BR-34, 17/11/2026): Android phones, no computer or other device. */
-export const SHARED_PLATFORM = 'ANDROID';
 const UNNAMED_DEVICE = 'Thiết bị chưa đặt tên';
 
 /**
@@ -27,6 +26,7 @@ export class DeviceEligibilityService extends DeviceEligibilityPort {
     private readonly settings: PlatformSettingService,
     private readonly audit: AuditLogService,
     private readonly progress: WatchProgressService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {
     super();
   }
@@ -43,7 +43,8 @@ export class DeviceEligibilityService extends DeviceEligibilityPort {
       });
     }
     const platform = device.platform?.trim().toUpperCase() ?? '';
-    if (platform !== SHARED_PLATFORM) {
+    // Android phones only (BR-34, BR-83); a development server may also allow WEB to test in a browser.
+    if (!this.config.playback.allowedDevicePlatforms.includes(platform)) {
       throw new ForbiddenException({
         message: 'Member accounts can only be watched on Android phones',
         details: { reason: 'DEVICE_PLATFORM_NOT_SUPPORTED', platform: platform || null },
