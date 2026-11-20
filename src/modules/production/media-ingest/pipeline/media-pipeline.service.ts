@@ -17,6 +17,10 @@ import { downloadTo, UnsafeUrlError, type UrlPolicy } from 'src/common/security/
 
 export const MEDIA_INGEST_JOB = 'media.ingest';
 
+/** Segments sent to storage at the same time. */
+const UPLOAD_PARALLELISM = 8;
+const MASTER = 'master.m3u8';
+
 /** Video files a studio may deliver. */
 export const VIDEO_KINDS = [FILE_KINDS.mp4, FILE_KINDS.mov];
 
@@ -111,10 +115,27 @@ export class MediaPipelineService implements OnModuleInit, OnApplicationBootstra
       });
       const hls = await this.processor.transcode(source, path.join(workDir, 'hls'), probed);
       const prefix = `hls/${asset.id}`;
-      for (const file of await filesUnder(hls.outputDir)) {
+      const put = (file: string) => {
         const relative = path.relative(hls.outputDir, file).split(path.sep).join('/');
-        await this.storage.putFile(`${prefix}/${relative}`, file, contentTypeOf(file), 'public');
-      }
+        return this.storage.putFile(`${prefix}/${relative}`, file, contentTypeOf(file), 'public');
+      };
+      // Hundreds of small segments: several at a time, playlists last so none names a missing segment.
+      const files = await filesUnder(hls.outputDir);
+      await inParallel(
+        files.filter((file) => !file.endsWith('.m3u8')),
+        UPLOAD_PARALLELISM,
+        put,
+      );
+      await inParallel(
+        files.filter((file) => file.endsWith('.m3u8') && !file.endsWith(MASTER)),
+        UPLOAD_PARALLELISM,
+        put,
+      );
+      await inParallel(
+        files.filter((file) => file.endsWith(MASTER)),
+        1,
+        put,
+      );
       return {
         streamUrl: this.storage.publicUrl(`${prefix}/master.m3u8`),
         qualities: hls.qualities,
@@ -185,4 +206,13 @@ export class MediaPipelineService implements OnModuleInit, OnApplicationBootstra
 async function filesUnder(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true, recursive: true });
   return entries.filter((e) => e.isFile()).map((e) => path.join(e.parentPath, e.name));
+}
+
+/** Runs `work` on every item, at most `limit` at a time; rejects with the first failure. */
+export async function inParallel<T>(items: T[], limit: number, work: (item: T) => Promise<unknown>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await work(items[next++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
