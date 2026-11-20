@@ -1,7 +1,7 @@
 import { BadRequestException, NotImplementedException } from '@nestjs/common';
 import type { AppConfig } from 'src/config/app-config';
 import type { ObjectStorage } from 'src/infrastructure/storage/object-storage';
-import { DirectUploadService, UPLOAD_TTL_SECONDS } from './direct-upload.service';
+import { COMPLETE_TTL_SECONDS, DirectUploadService, UPLOAD_TTL_SECONDS } from './direct-upload.service';
 import type { MediaIngestService } from './media-ingest.service';
 
 const MP4_HEAD = Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0]);
@@ -85,6 +85,13 @@ describe('DirectUploadService', () => {
     expect(ingest.registerUpload).not.toHaveBeenCalled();
   });
 
+  it('still completes a long upload that finished after the URL itself expired', async () => {
+    const { uploadToken } = await started();
+    jest.useFakeTimers({ now: Date.now() + (UPLOAD_TTL_SECONDS + 60) * 1000 });
+    await expect(complete(uploadToken)).resolves.toEqual({ id: 'asset' });
+    jest.useRealTimers();
+  });
+
   it('refuses an upload that never arrived, a forged or foreign token, and an expired one', async () => {
     const { uploadToken } = await started();
     storage.stat.mockResolvedValueOnce(null);
@@ -93,7 +100,7 @@ describe('DirectUploadService', () => {
     await expect(complete('garbage')).rejects.toThrow(/not valid/);
     await expect(complete(uploadToken, 'ep-2')).rejects.toThrow(/not valid/);
     await expect(complete(uploadToken, 'ep-1', { id: 'other', role: 'STUDIO' } as never)).rejects.toThrow(/not valid/);
-    jest.useFakeTimers({ now: Date.now() + (UPLOAD_TTL_SECONDS + 1) * 1000 });
+    jest.useFakeTimers({ now: Date.now() + (COMPLETE_TTL_SECONDS + 1) * 1000 });
     await expect(complete(uploadToken)).rejects.toThrow(/expired/);
   });
 });

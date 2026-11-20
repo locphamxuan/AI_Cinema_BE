@@ -9,8 +9,13 @@ import type { CompleteDirectUploadRequestDto, StartDirectUploadRequestDto } from
 import { MediaIngestService } from './media-ingest.service';
 import { VIDEO_KINDS } from './pipeline/media-pipeline.service';
 
-/** How long the signed PUT URL and its token stay valid. */
+/** How long the signed PUT URL may be used to start the upload (S3 checks it when the PUT begins). */
 export const UPLOAD_TTL_SECONDS = 15 * 60;
+/**
+ * How long the token still completes the upload: a film of gigabytes can take far longer than the URL TTL to
+ * send, so it lasts as long as the staged object itself (the one-day lifecycle rule on `uploads/`).
+ */
+export const COMPLETE_TTL_SECONDS = 24 * 60 * 60;
 /**
  * Where browser uploads land before they are checked. The bucket expires this prefix after a day (R2 lifecycle
  * rule on `private/uploads/`), so an upload the studio never completed does not stay behind.
@@ -51,7 +56,7 @@ export class DirectUploadService {
       userId: user.id,
       ext: kind.extensions[0],
       sizeBytes: dto.sizeBytes,
-      exp: Date.now() + UPLOAD_TTL_SECONDS * 1000,
+      exp: Date.now() + COMPLETE_TTL_SECONDS * 1000,
     };
     const uploadUrl = await this.storage.presignPut(stagingKey(claim), kind.mimeType, 'private', UPLOAD_TTL_SECONDS);
     if (!uploadUrl) {
@@ -65,7 +70,7 @@ export class DirectUploadService {
       uploadUrl,
       headers: { 'Content-Type': kind.mimeType },
       uploadToken: this.sign(claim),
-      expiresAt: new Date(claim.exp).toISOString(),
+      expiresAt: new Date(Date.now() + UPLOAD_TTL_SECONDS * 1000).toISOString(),
     };
   }
 
