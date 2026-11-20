@@ -15,6 +15,8 @@ export interface ProbedFile {
   audioCodec?: string;
   /** Bits per second of the video stream (or of the whole file when the stream does not say). */
   videoBitrate?: number;
+  /** The picture carries a rotation (phone footage): HLS segments cannot keep it, so it must be encoded. */
+  rotated?: boolean;
 }
 
 export interface TranscodedHls {
@@ -53,6 +55,7 @@ export function copiesTopRung(probed: ProbedFile): boolean {
   const top = ladderFor(probed.height)[0];
   return (
     probed.videoCodec === 'h264' &&
+    !probed.rotated &&
     probed.pixelFormat === 'yuv420p' &&
     probed.height === top.height &&
     (probed.videoBitrate ?? 0) > 0 &&
@@ -97,7 +100,15 @@ export function hlsArguments(inputPath: string, probed: ProbedFile): string[] {
 
 interface FfprobeOutput {
   format?: { duration?: string; bit_rate?: string };
-  streams?: { codec_type?: string; codec_name?: string; pix_fmt?: string; height?: number; bit_rate?: string }[];
+  streams?: {
+    codec_type?: string;
+    codec_name?: string;
+    pix_fmt?: string;
+    height?: number;
+    bit_rate?: string;
+    tags?: { rotate?: string };
+    side_data_list?: { rotation?: number }[];
+  }[];
 }
 
 export function parseFfprobe(json: string): ProbedFile {
@@ -116,6 +127,7 @@ export function parseFfprobe(json: string): ProbedFile {
     pixelFormat: video.pix_fmt,
     audioCodec: audio?.codec_name,
     videoBitrate: bitrate > 0 ? bitrate : undefined,
+    rotated: Boolean(Number(video.tags?.rotate) || video.side_data_list?.some((data) => Number(data.rotation))),
   };
 }
 

@@ -34,7 +34,7 @@ describe('ffprobe output', () => {
       format: { duration: '612.48' },
       streams: [{ codec_type: 'video', height: 1080 }, { codec_type: 'audio' }],
     });
-    expect(parseFfprobe(json)).toEqual({ durationSeconds: 612, height: 1080, hasAudio: true });
+    expect(parseFfprobe(json)).toMatchObject({ durationSeconds: 612, height: 1080, hasAudio: true, rotated: false });
   });
 
   it('refuses a file without a video stream', () => {
@@ -61,6 +61,7 @@ describe('stream copy of the top rung', () => {
     expect(copiesTopRung({ ...h264, height: 1088 })).toBe(false);
     expect(copiesTopRung({ ...h264, videoBitrate: 20_000_000 })).toBe(false);
     expect(copiesTopRung({ ...h264, videoBitrate: undefined })).toBe(false);
+    expect(copiesTopRung({ ...h264, rotated: true })).toBe(false);
   });
 
   it('copies video and AAC sound of the top rung and encodes only the lower ones', () => {
@@ -100,5 +101,10 @@ describe('ffprobe codecs', () => {
     });
     const silent = JSON.stringify({ format: { duration: '10' }, streams: [{ codec_type: 'video', height: 720 }] });
     expect(parseFfprobe(silent).videoBitrate).toBeUndefined();
+    const phone = (stream: object) =>
+      JSON.stringify({ format: { duration: '10' }, streams: [{ codec_type: 'video', height: 1080, ...stream }] });
+    expect(parseFfprobe(phone({ side_data_list: [{ rotation: -90 }] })).rotated).toBe(true);
+    expect(parseFfprobe(phone({ tags: { rotate: '90' } })).rotated).toBe(true);
+    expect(parseFfprobe(phone({ side_data_list: [{ rotation: 0 }] })).rotated).toBe(false);
   });
 });
