@@ -16,7 +16,7 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RoomInviteService } from './room-invite.service';
 import { RoomCluster } from './room-cluster';
-import { handshakeTokenOf, liveStateOf, socketErrorOf, assertActiveAccount } from './room-socket-utils';
+import { liveStateOf, socketErrorOf, assertActiveAccount, socketAuth } from './room-socket-utils';
 import { SignedInSocketGuard } from './room-socket.guard';
 import { RoomTerminationService } from './room-termination.service';
 import { WatchRoomService } from './watch-room.service';
@@ -60,30 +60,37 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
   }
 
   afterInit(server: Server): void {
-    this.cluster.attach(server as unknown as Namespace);
+    const namespace = server as unknown as Namespace;
+    namespace.use(socketAuth((token) => this.memberOf(token)));
+    this.cluster.attach(namespace);
   }
 
   onModuleInit(): void {
     this.termination.register((roomIds, reason) => this.broadcastTermination(roomIds, reason));
   }
 
-  /** The socket is admitted only with a valid access token; the member id comes from it alone. */
-  async handleConnection(client: Socket): Promise<void> {
-    try {
-      const payload = await this.jwt.verifyAsync<AccessTokenPayload>(handshakeTokenOf(client), {
-        algorithms: [JWT_ALGORITHM],
-        issuer: this.config.jwt.issuer,
-        audience: this.config.jwt.audience,
-      });
-      if (payload.type !== 'access') throw new Error('not an access token');
-      await assertActiveAccount(this.prisma, payload.sub);
-      (client.data as SocketData).userId = payload.sub;
-      this.seats.connect(payload.sub, client);
-      void client.join(USER_CHANNEL(payload.sub));
-    } catch {
+  /** The member of a handshake token: a valid access token of an active Member account (BR-69), else it throws. */
+  private async memberOf(token: string): Promise<string> {
+    const payload = await this.jwt.verifyAsync<AccessTokenPayload>(token, {
+      algorithms: [JWT_ALGORITHM],
+      issuer: this.config.jwt.issuer,
+      audience: this.config.jwt.audience,
+    });
+    if (payload.type !== 'access') throw new Error('not an access token');
+    await assertActiveAccount(this.prisma, payload.sub);
+    return payload.sub;
+  }
+
+  /** The handshake middleware (socketAuth) already admitted the member; the id comes from the token alone. */
+  handleConnection(client: Socket): void {
+    const userId = (client.data as SocketData).userId;
+    if (!userId) {
       client.emit(ROOM_EVENT.ERROR, { reason: 'UNAUTHENTICATED' });
       client.disconnect(true);
+      return;
     }
+    this.seats.connect(userId, client);
+    void client.join(USER_CHANNEL(userId));
   }
 
   handleDisconnect(client: Socket): void {
