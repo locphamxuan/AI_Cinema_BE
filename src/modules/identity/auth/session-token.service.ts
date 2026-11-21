@@ -19,6 +19,9 @@ export interface TokenPair {
  * used; presenting a token that was already replaced means it leaked, so every session of
  * that account is revoked.
  */
+/** How long after a swap the old refresh token may still be retried once (its answer was lost on the way). */
+export const REUSE_GRACE_MS = 60_000;
+
 @Injectable()
 export class SessionTokenService {
   constructor(
@@ -36,7 +39,7 @@ export class SessionTokenService {
   }
 
   /** Swaps a valid refresh token for a new pair; returns the account it belongs to. */
-  async rotate(refreshToken: string): Promise<{ userId: string; tokens: TokenPair }> {
+  async rotate(refreshToken: string, retry = true): Promise<{ userId: string; tokens: TokenPair }> {
     const stored = await this.prisma.refreshToken.findUnique({
       where: { tokenHash: hashRefreshToken(refreshToken) },
       include: { user: { select: { id: true, role: true, isActive: true } } },
@@ -44,6 +47,13 @@ export class SessionTokenService {
     if (!stored) throw new UnauthorizedException('Invalid refresh token');
     // A token the OAuth endpoint issued keeps its scopes; swapping it here would drop them.
     if (stored.oauthClientId) throw new UnauthorizedException('Invalid refresh token');
+    // A retry of a refresh whose answer never reached the app (weak network, app sent to the background) comes right
+    // after the swap: it carries on from the token that replaced it. Any later reuse still reads as theft.
+    const retried =
+      stored.revokedAt && stored.replacedById && Date.now() - stored.revokedAt.getTime() <= REUSE_GRACE_MS;
+    if (retried && stored.expiresAt > new Date() && stored.user.isActive) {
+      return { userId: stored.userId, tokens: await this.swap(stored.replacedById!, stored.user) };
+    }
     if (stored.revokedAt) {
       await this.revokeAll(stored.userId);
       throw new UnauthorizedException('This refresh token was already used; every session has been signed out');
@@ -52,27 +62,29 @@ export class SessionTokenService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    try {
+      return { userId: stored.userId, tokens: await this.swap(stored.id, stored.user) };
+    } catch (error) {
+      // Two refreshes of the same token at once: the loser reads it again and carries on from the winner's swap.
+      if (retry && error instanceof UnauthorizedException) return this.rotate(refreshToken, false);
+      throw error;
+    }
+  }
+
+  /** Replaces one live refresh token with a new pair; only the request that revokes it first wins a double refresh. */
+  private async swap(tokenId: string, user: Pick<User, 'id' | 'role'>): Promise<TokenPair> {
     const next = newRefreshToken();
     await this.prisma.$transaction(async (tx) => {
       const created = await tx.refreshToken.create({
-        data: { userId: stored.userId, tokenHash: hashRefreshToken(next), expiresAt: this.refreshExpiry() },
+        data: { userId: user.id, tokenHash: hashRefreshToken(next), expiresAt: this.refreshExpiry() },
       });
-      // Only the request that revokes the token first wins a concurrent double refresh.
       const { count } = await tx.refreshToken.updateMany({
-        where: { id: stored.id, revokedAt: null },
+        where: { id: tokenId, revokedAt: null },
         data: { revokedAt: new Date(), replacedById: created.id },
       });
       if (count === 0) throw new UnauthorizedException('Invalid refresh token');
     });
-
-    return {
-      userId: stored.userId,
-      tokens: {
-        accessToken: await this.signAccess(stored.user),
-        refreshToken: next,
-        accessTokenExpiresIn: this.accessTtl,
-      },
-    };
+    return { accessToken: await this.signAccess(user), refreshToken: next, accessTokenExpiresIn: this.accessTtl };
   }
 
   /** Signs out the session of this refresh token; unknown tokens are ignored. */
