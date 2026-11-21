@@ -63,7 +63,15 @@ export class DeviceEligibilityService extends DeviceEligibilityPort {
         return known.id;
       }
       const { maxRegisteredDevices } = deviceLimitsOf(memberPlan);
-      const registeredDevices = await tx.userDevice.count({ where: { userId } });
+      // A computer or iPhone registered before BR-83 can never play again, so it does not hold a slot.
+      const registeredDevices = await tx.userDevice.count({
+        where: {
+          userId,
+          OR: this.config.playback.allowedDevicePlatforms.map((allowed) => ({
+            platform: { equals: allowed, mode: 'insensitive' as const },
+          })),
+        },
+      });
       if (registeredDevices >= maxRegisteredDevices) {
         throw new ForbiddenException({
           message: 'Too many registered devices for this plan',

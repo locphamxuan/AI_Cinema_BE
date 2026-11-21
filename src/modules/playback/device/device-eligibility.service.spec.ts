@@ -265,4 +265,15 @@ describe('DeviceEligibilityService.register (MF-4 §4.4.1)', () => {
     });
     expect(tx.userDevice.create).not.toHaveBeenCalled();
   });
+
+  it('counts only devices that may still play, so an old computer does not hold a slot', async () => {
+    tx.userDevice.findUnique.mockResolvedValue(null);
+    tx.userDevice.count.mockResolvedValue(0);
+    tx.userDevice.create.mockResolvedValue({ id: 'd-new' });
+
+    await expect(service.register('u-1', { key: KEY, platform: 'android' }, plan)).resolves.toBe('d-new');
+    expect(tx.userDevice.count).toHaveBeenCalledWith({
+      where: { userId: 'u-1', OR: [{ platform: { equals: 'ANDROID', mode: 'insensitive' } }] },
+    });
+  });
 });
