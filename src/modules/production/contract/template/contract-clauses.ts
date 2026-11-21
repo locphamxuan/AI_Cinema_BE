@@ -1,5 +1,8 @@
-/** Content of the demo production contract (MF-1). Parties, numbers and addresses are fictional demo data. */
-export interface Party {
+/**
+ * Text of the MF-1 production contract. The same 14 articles make the unsigned contract the studio receives once
+ * the Admin approves the Final Script, priced at the budget ceiling, and every demo PDF built from it.
+ */
+export interface ContractParty {
   name: string;
   address: string;
   taxCode: string;
@@ -10,26 +13,33 @@ export interface Party {
   title: string;
 }
 
-export interface SampleEpisode {
+export interface ContractEpisode {
   number: number;
   title: string;
   minutes: number;
+  /** dd/mm/yyyy, or '-' when the episode has no deadline yet. */
   dueDate: string;
 }
 
-export interface SampleContract {
+export interface ContractDraft {
   contractNo: string;
   day: string;
   place: string;
   movieTitle: string;
   genre: string;
   ageRating: string;
-  episodes: SampleEpisode[];
+  episodes: ContractEpisode[];
+  /** Value of the contract: the budget ceiling until a side proposes another cost. */
   costVnd: number;
-  costInWords: string;
-  partyA: Party;
-  partyB: Party;
+  costInWords?: string;
+  /** Most the studio may ask for: the project's budget left for this contract (VND). */
+  budgetVnd: number;
+  partyA: ContractParty;
+  partyB: ContractParty;
 }
+
+/** Printed where the platform holds no value yet, for the signer to fill in by hand. */
+export const BLANK = '....................................';
 
 export const money = (amount: number) => `${new Intl.NumberFormat('vi-VN').format(amount)} đồng`;
 
@@ -49,22 +59,30 @@ export const PAYMENTS: [number, string][] = [
   [0.3, 'trong 15 ngày làm việc kể từ ngày Bên A nghiệm thu tập cuối cùng và hai bên ký biên bản thanh lý'],
 ];
 
+function value(c: ContractDraft): string[] {
+  const words = c.costInWords ? ` (Bằng chữ: ${c.costInWords})` : '';
+  const atCeiling = c.costVnd === c.budgetVnd ? ', bằng ngân sách trần Bên A dành cho Hợp đồng này' : '';
+  return [
+    `3.1. Giá trị Hợp đồng là ${money(c.costVnd)}${words}${atCeiling}, là chi phí sản xuất trọn gói, đã bao gồm thuế giá trị ` +
+      'gia tăng và mọi chi phí để Bên B hoàn thành công việc.',
+    `3.2. Ngân sách trần Bên A dành cho Hợp đồng này là ${money(c.budgetVnd)}. Bên B được đề xuất giá trị thấp hơn trên ` +
+      'Hệ thống AI Cinema; hệ thống từ chối mọi đề xuất vượt ngân sách trần.',
+    '3.3. Bên A thanh toán cho Bên B thành ba đợt:',
+    ...PAYMENTS.map(
+      ([share, when], i) =>
+        `     - Đợt ${i + 1}: ${Math.round(share * 100)}% giá trị Hợp đồng, tương đương ${money(Math.round(c.costVnd * share))}, ${when}.`,
+    ),
+  ];
+}
+
 /** Articles of the contract: heading and its numbered paragraphs. */
-export function articles(c: SampleContract): [string, string[]][] {
-  const total = money(c.costVnd);
+export function articles(c: ContractDraft): [string, string[]][] {
   return [
     [
       'Điều 1. Định nghĩa',
       [
-        '1.1. "Phim" là bộ phim "' +
-          c.movieTitle +
-          '" thể loại ' +
-          c.genre +
-          ', phân loại ' +
-          c.ageRating +
-          ', gồm ' +
-          c.episodes.length +
-          ' tập do Bên B sản xuất theo Hợp đồng này.',
+        `1.1. "Phim" là bộ phim "${c.movieTitle}" thể loại ${c.genre}, phân loại ${c.ageRating}, gồm ${c.episodes.length} tập do Bên B ` +
+          'sản xuất theo Hợp đồng này.',
         '1.2. "Kịch bản Final" là phiên bản kịch bản cuối cùng đã được Bên A phê duyệt trên hệ thống AI Cinema trước ngày ký Hợp đồng.',
         '1.3. "Hệ thống AI Cinema" là nền tảng của Bên A, gồm trang quản trị và trang Studio Web mà Bên B dùng để nhận tài liệu, ' +
           'thương lượng, ký hợp đồng và nộp phim.',
@@ -84,20 +102,10 @@ export function articles(c: SampleContract): [string, string[]][] {
     [
       'Điều 3. Giá trị Hợp đồng và phương thức thanh toán',
       [
-        '3.1. Giá trị Hợp đồng là ' +
-          total +
-          ' (Bằng chữ: ' +
-          c.costInWords +
-          '), là chi phí sản xuất trọn gói, đã bao gồm thuế giá trị gia ' +
-          'tăng và mọi chi phí để Bên B hoàn thành công việc. Giá trị này là mức hai bên đã thống nhất qua thương lượng trên Hệ thống AI Cinema.',
-        '3.2. Bên A thanh toán cho Bên B thành ba đợt:',
-        ...PAYMENTS.map(
-          ([share, when], i) =>
-            `     - Đợt ${i + 1}: ${Math.round(share * 100)}% giá trị Hợp đồng, tương đương ${money(Math.round(c.costVnd * share))}, ${when}.`,
-        ),
-        '3.3. Thanh toán bằng chuyển khoản vào tài khoản của Bên B nêu tại phần thông tin các bên. Bên B xuất hóa đơn giá trị gia tăng hợp lệ ' +
+        ...value(c),
+        '3.4. Thanh toán bằng chuyển khoản vào tài khoản của Bên B nêu tại phần thông tin các bên. Bên B xuất hóa đơn giá trị gia tăng hợp lệ ' +
           'trước mỗi đợt thanh toán.',
-        '3.4. Giá trị Hợp đồng không thay đổi trong suốt thời gian thực hiện, trừ khi hai bên ký phụ lục điều chỉnh.',
+        '3.5. Giá trị Hợp đồng không thay đổi trong suốt thời gian thực hiện, trừ khi hai bên ký phụ lục điều chỉnh.',
       ],
     ],
     [
@@ -181,9 +189,7 @@ export function articles(c: SampleContract): [string, string[]][] {
       'Điều 13. Giải quyết tranh chấp',
       [
         '13.1. Tranh chấp phát sinh được giải quyết trước hết bằng thương lượng, hòa giải.',
-        '13.2. Nếu không thương lượng được trong 30 ngày, một bên có quyền đưa tranh chấp ra Tòa án nhân dân có thẩm quyền tại ' +
-          c.place +
-          '.',
+        `13.2. Nếu không thương lượng được trong 30 ngày, một bên có quyền đưa tranh chấp ra Tòa án nhân dân có thẩm quyền tại ${c.place}.`,
       ],
     ],
     [

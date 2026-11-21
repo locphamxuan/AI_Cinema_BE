@@ -269,11 +269,6 @@ export class StaffSupportService {
     return staffCaseView(await this.caseById(id));
   }
 
-  async close(id: string, staffId: string, note?: string): Promise<SupportStaffCaseView> {
-    await this.resolution.staffClose(id, staffId, note);
-    return staffCaseView(await this.caseById(id));
-  }
-
   /** Plan A8.4 dashboard; the counts are of the whole platform, not one operator. */
   stats() {
     return this.supportStats.stats();

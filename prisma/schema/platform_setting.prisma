@@ -8,8 +8,6 @@ model PlatformSetting {
   /// BR-47: valid Coin price of one episode; a price outside it alerts the Admin.
   episodeCoinPriceMin             Int      @default(1) @map("episode_coin_price_min")
   episodeCoinPriceMax             Int      @default(50) @map("episode_coin_price_max")
-  /// BR-28, BR-52
-  bonusCoinExpiryDays             Int      @default(30) @map("bonus_coin_expiry_days")
   /// BR-36
   playbackHeartbeatTimeoutSeconds Int      @default(90) @map("playback_heartbeat_timeout_seconds")
   /// Hours before the renewal date a member may still stop auto-renew; a later request is
@@ -30,6 +28,18 @@ model PlatformSetting {
   /// MF-3 step 13: how many random mid-roll cues an episode gets when the Admin has not placed
   /// its cues by hand (episode_ad_slots).
   adMaxBreaksPerEpisode           Int      @default(2) @map("ad_max_breaks_per_episode")
+  /// MF-1 contract, Bên A: the legal identity the platform signs production contracts under.
+  /// The Admin keeps it in the settings; a field left empty prints as a blank to fill in by hand.
+  contractCompanyName             String?  @map("contract_company_name") @db.VarChar(255)
+  contractAddress                 String?  @map("contract_address") @db.VarChar(500)
+  contractTaxCode                 String?  @map("contract_tax_code") @db.VarChar(50)
+  contractPhone                   String?  @map("contract_phone") @db.VarChar(30)
+  contractEmail                   String?  @map("contract_email") @db.VarChar(255)
+  contractBankAccount             String?  @map("contract_bank_account") @db.VarChar(255)
+  contractRepresentative          String?  @map("contract_representative") @db.VarChar(255)
+  contractRepresentativeTitle     String?  @map("contract_representative_title") @db.VarChar(100)
+  /// City the contracts are signed in and whose court settles disputes.
+  contractPlace                   String?  @map("contract_place") @db.VarChar(255)
   updatedById                     String?  @map("updated_by") @db.Uuid
   updatedAt                       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

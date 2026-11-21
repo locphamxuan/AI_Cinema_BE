@@ -22,7 +22,7 @@ describe('ContractHandoffService', () => {
     episode: { findMany: jest.fn(), update: jest.fn() },
     contract: { update: jest.fn() },
   };
-  const costs = { assertAffordable: jest.fn() };
+  const costs = { assertAffordable: jest.fn(), summary: jest.fn() };
   const service = new ContractHandoffService(costs as unknown as ProductionCostService);
   const run = (round: SignedRound = ROUND) => service.open(tx as unknown as PrismaTx, round);
 
@@ -40,6 +40,30 @@ describe('ContractHandoffService', () => {
     await service.assertAffordable(tx as unknown as PrismaTx, 'p1', 1_000);
     expect(costs.assertAffordable).toHaveBeenCalledWith(tx, 'p1', 1_000);
     expect(tx.studioHandoff.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  describe('budget ceiling', () => {
+    const db = tx as unknown as PrismaTx;
+    beforeEach(() =>
+      costs.summary.mockResolvedValue({ budgetVnd: 300_000_000, committedVnd: 100_000_000, remainingVnd: 200_000_000 }),
+    );
+
+    it('is the budget left when no hand-off holds a fee', async () => {
+      await expect(service.ceiling(db, 'p1')).resolves.toBe(200_000_000);
+      expect(costs.summary).toHaveBeenCalledWith('p1', db);
+      expect(tx.studioHandoff.findUniqueOrThrow).not.toHaveBeenCalled();
+    });
+
+    it('adds back the fee a waiting hand-off already holds', async () => {
+      await expect(service.ceiling(db, 'p1', 'h1')).resolves.toBe(230_000_000);
+    });
+
+    it('is the ceiling for an open round and the signed cost for a closed one', async () => {
+      const round = { projectId: 'p1', handoffId: null, costVnd: 170_000_000n };
+      await expect(service.budgetOf(db, { ...round, status: 'SENT' })).resolves.toBe(200_000_000);
+      await expect(service.budgetOf(db, { ...round, status: 'SIGNED' })).resolves.toBe(170_000_000);
+      await expect(service.budgetOf(db, { ...round, costVnd: null, status: 'SUPERSEDED' })).resolves.toBe(200_000_000);
+    });
   });
 
   it('hands the whole project to the studio at the signed cost, already in progress', async () => {

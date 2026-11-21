@@ -155,7 +155,12 @@ export class SupportAgentService {
       for (const call of result.toolCalls) {
         const execution = await this.executeTool(turn.memberId, call);
         toolCalls.push(execution.metadata);
-        messages.push({ role: 'tool', toolCallId: call.id, content: JSON.stringify(execution.payload) });
+        messages.push({
+          role: 'tool',
+          toolCallId: call.id,
+          toolName: call.name,
+          content: JSON.stringify(execution.payload),
+        });
       }
       result = await this.supportChat(client, messages);
       this.addUsage(usage, result);

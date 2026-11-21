@@ -19,6 +19,7 @@ import { ContractDocumentService } from './contract-document.service';
 import { ContractService } from './contract.service';
 import { ContractCostRequestDto, CreateContractRequestDto } from './dto/contract.request.dto';
 import { SignedPdfUpload } from './signed-pdf-upload';
+import { ContractTemplateService } from './template/contract-template.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 const SIDE = new ParseEnumPipe(ContractDocumentSide);
@@ -31,6 +32,7 @@ export class ContractController {
   constructor(
     private readonly contracts: ContractService,
     private readonly documents: ContractDocumentService,
+    private readonly templates: ContractTemplateService,
   ) {}
 
   @Post('projects/:projectId/contracts')
@@ -71,7 +73,7 @@ export class ContractController {
   @Post('contracts/:contractId/counter')
   @HttpCode(200)
   @RequirePermission(PERMISSION.CONTRACT_MANAGE)
-  @SignedPdfUpload(true)
+  @SignedPdfUpload('required')
   @ApiOperation({
     summary:
       'Admin: send a cost with the contract PDF already signed by AI Cinema (on the template or on the studio offer); the studio then uploads its signed copy',
@@ -90,6 +92,15 @@ export class ContractController {
   @ApiOperation({ summary: 'The signed PDFs of a round: the Admin side, the studio side and the merged document' })
   documentsOf(@Param('contractId', ID) contractId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.documents.list(contractId, user);
+  }
+
+  @Get('contracts/:contractId/template')
+  @RequirePermission(PERMISSION.CONTRACT_DOCUMENT_READ)
+  @ApiOperation({
+    summary: 'Download the unsigned template of a round, filled with the project and its budget ceiling',
+  })
+  template(@Param('contractId', ID) contractId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.templates.forStaff(contractId, user);
   }
 
   @Get('contracts/:contractId/documents/:side/content')

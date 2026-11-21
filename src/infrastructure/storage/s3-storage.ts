@@ -1,7 +1,16 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  NotFound,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { AppConfig } from 'src/config/app-config';
 import { assertSafeKey, cacheControlOf, ObjectStorage, type Visibility } from './object-storage';
 
@@ -68,6 +77,50 @@ export class S3ObjectStorage extends ObjectStorage {
 
   publicUrl(key: string): string {
     return `${this.config.publicBaseUrl}/${this.objectKey(key, 'public')}`;
+  }
+
+  presignPut(key: string, contentType: string, visibility: Visibility, expiresInSeconds: number): Promise<string> {
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: this.objectKey(key, visibility),
+      ContentType: contentType,
+    });
+    return getSignedUrl(this.client, command, { expiresIn: expiresInSeconds });
+  }
+
+  async stat(key: string, visibility: Visibility): Promise<{ size: number } | null> {
+    try {
+      const head = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: this.objectKey(key, visibility) }),
+      );
+      return { size: Number(head.ContentLength ?? 0) };
+    } catch (error) {
+      if (error instanceof NotFound || (error as { name?: string }).name === 'NotFound') return null;
+      throw error;
+    }
+  }
+
+  async readHead(key: string, visibility: Visibility, bytes: number): Promise<Buffer> {
+    const { Body } = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: this.objectKey(key, visibility),
+        Range: `bytes=0-${bytes - 1}`,
+      }),
+    );
+    return Body ? Buffer.from(await Body.transformToByteArray()) : Buffer.alloc(0);
+  }
+
+  async move(fromKey: string, toKey: string, visibility: Visibility): Promise<void> {
+    const source = this.objectKey(fromKey, visibility);
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        Key: this.objectKey(toKey, visibility),
+        CopySource: `${this.bucket}/${source}`,
+      }),
+    );
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: source }));
   }
 
   private async body(key: string, visibility: Visibility) {

@@ -1,3 +1,4 @@
+import { platformsOf, type AppConfig } from 'src/config/app-config';
 import { ForbiddenException } from '@nestjs/common';
 import { StreamingEndReason, StreamingSessionStatus } from '@prisma/client';
 import type { PrismaService, PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -7,6 +8,8 @@ import type { PlatformSettingService } from 'src/modules/platform/platform-setti
 import { DEFAULT_MAX_CONCURRENT_STREAMS } from '../playback-access/device-eligibility.port';
 import type { WatchProgressService } from '../watch-progress/watch-progress.service';
 import { DeviceEligibilityService } from './device-eligibility.service';
+
+const ANDROID_ONLY = { playback: { allowedDevicePlatforms: ['ANDROID'] } } as AppConfig;
 
 describe('DeviceEligibilityService.check (hardening #13, P4-5)', () => {
   const prisma = {
@@ -20,6 +23,7 @@ describe('DeviceEligibilityService.check (hardening #13, P4-5)', () => {
     settings as unknown as PlatformSettingService,
     audit as unknown as AuditLogService,
     progress as unknown as WatchProgressService,
+    ANDROID_ONLY,
   );
 
   const runningPlan = (features: unknown = {}) => ({ code: 'MONTHLY', features }) as unknown as RunningPlanSnapshot;
@@ -172,6 +176,7 @@ describe('DeviceEligibilityService.register (MF-4 §4.4.1)', () => {
     {} as PlatformSettingService,
     {} as AuditLogService,
     {} as WatchProgressService,
+    ANDROID_ONLY,
   );
   const plan = { code: 'FREE', features: { maxRegisteredDevices: 2 } } as unknown as RunningPlanSnapshot;
 
@@ -209,22 +214,66 @@ describe('DeviceEligibilityService.register (MF-4 §4.4.1)', () => {
   it('registers a new device while the plan has room, serialized per member', async () => {
     tx.userDevice.count.mockResolvedValue(1);
 
-    await expect(service.register('u-1', { key: KEY, platform: 'tv' }, plan)).resolves.toBe('dev-new');
+    await expect(service.register('u-1', { key: KEY, platform: 'ANDROID' }, plan)).resolves.toBe('dev-new');
 
     expect(tx.$executeRaw).toHaveBeenCalled();
     expect(tx.userDevice.create).toHaveBeenCalledWith({
-      data: { userId: 'u-1', deviceKey: KEY, name: 'Thiết bị chưa đặt tên', platform: 'OTHER' },
+      data: { userId: 'u-1', deviceKey: KEY, name: 'Thiết bị chưa đặt tên', platform: 'ANDROID' },
     });
+  });
+
+  it.each([
+    ['WEB', 'WEB'],
+    [' ios ', 'IOS'],
+    ['tv', 'TV'],
+    [undefined, null],
+  ])('refuses %p: only Android phones may share the account', async (platform, reported) => {
+    tx.userDevice.findUnique.mockResolvedValue({ id: 'dev-old-web' });
+
+    await expect(service.register('u-1', { key: KEY, platform }, plan)).rejects.toMatchObject({
+      status: 403,
+      response: expect.objectContaining({ details: { reason: 'DEVICE_PLATFORM_NOT_SUPPORTED', platform: reported } }),
+    });
+    // Refused before the lock: even a computer registered before the rule cannot play again.
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.userDevice.update).not.toHaveBeenCalled();
+  });
+
+  it('lets a development server allow the web app, so the member app can be tested in a browser', async () => {
+    const dev = new DeviceEligibilityService(
+      prisma as unknown as PrismaService,
+      {} as PlatformSettingService,
+      {} as AuditLogService,
+      {} as WatchProgressService,
+      {
+        playback: { allowedDevicePlatforms: platformsOf('android, web') },
+      } as AppConfig,
+    );
+    tx.userDevice.findUnique.mockResolvedValue({ id: 'dev-web' });
+    await expect(dev.register('u-1', { key: KEY, platform: 'web' }, plan)).resolves.toBe('dev-web');
+    expect(platformsOf(undefined)).toEqual(['ANDROID']);
+    expect(platformsOf(' , ')).toEqual(['ANDROID']);
   });
 
   it('refuses a new device at the plan limit with the numbers on the error', async () => {
     tx.userDevice.count.mockResolvedValue(2);
 
-    await expect(service.register('u-1', { key: KEY }, plan)).rejects.toMatchObject({
+    await expect(service.register('u-1', { key: KEY, platform: 'android' }, plan)).rejects.toMatchObject({
       response: expect.objectContaining({
         details: { reason: 'DEVICE_LIMIT_REACHED', maxRegisteredDevices: 2, registeredDevices: 2 },
       }),
     });
     expect(tx.userDevice.create).not.toHaveBeenCalled();
+  });
+
+  it('counts only devices that may still play, so an old computer does not hold a slot', async () => {
+    tx.userDevice.findUnique.mockResolvedValue(null);
+    tx.userDevice.count.mockResolvedValue(0);
+    tx.userDevice.create.mockResolvedValue({ id: 'd-new' });
+
+    await expect(service.register('u-1', { key: KEY, platform: 'android' }, plan)).resolves.toBe('d-new');
+    expect(tx.userDevice.count).toHaveBeenCalledWith({
+      where: { userId: 'u-1', OR: [{ platform: { equals: 'ANDROID', mode: 'insensitive' } }] },
+    });
   });
 });

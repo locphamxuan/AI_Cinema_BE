@@ -1,8 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { ContractPartySettingsDto } from './contract-party-settings.dto';
 
-/** Only the fields sent are changed. */
-export class UpdatePlatformSettingRequestDto {
+/** Only the fields sent are changed; the contract party of the platform (Bên A) is part of the settings. */
+export class UpdatePlatformSettingRequestDto extends ContractPartySettingsDto {
   @ApiPropertyOptional({
     example: 2,
     description: 'First episodes of every movie Guests and Free members watch (BR-03).',
@@ -30,12 +31,6 @@ export class UpdatePlatformSettingRequestDto {
   @Min(0)
   @IsOptional()
   episodeCoinPriceMax?: number;
-
-  @ApiPropertyOptional({ example: 30, description: 'Days a bonus coin lot stays usable (BR-28).' })
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  bonusCoinExpiryDays?: number;
 
   @ApiPropertyOptional({
     example: 90,

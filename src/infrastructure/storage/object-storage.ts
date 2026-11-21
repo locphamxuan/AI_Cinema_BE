@@ -21,6 +21,26 @@ export abstract class ObjectStorage {
 
   /** Where players load a public object from. */
   abstract publicUrl(key: string): string;
+
+  /**
+   * A URL the browser PUTs the object to itself, valid `expiresInSeconds`; null when the driver cannot sign one
+   * (local disk), so the caller falls back to uploading through the API.
+   */
+  abstract presignPut(
+    key: string,
+    contentType: string,
+    visibility: Visibility,
+    expiresInSeconds: number,
+  ): Promise<string | null>;
+
+  /** The size of an object, or null when there is none. */
+  abstract stat(key: string, visibility: Visibility): Promise<{ size: number } | null>;
+
+  /** The first `bytes` of an object: enough to check what kind of file it really is. */
+  abstract readHead(key: string, visibility: Visibility, bytes: number): Promise<Buffer>;
+
+  /** Moves an object to another key inside the bucket, without downloading it. */
+  abstract move(fromKey: string, toKey: string, visibility: Visibility): Promise<void>;
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {

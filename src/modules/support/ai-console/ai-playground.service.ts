@@ -85,7 +85,7 @@ export class AiPlaygroundService {
     const s = await this.settings.get();
     return {
       coinRateVnd: s.coinRateVnd,
-      bonusCoinExpiryDays: s.bonusCoinExpiryDays,
+      bonusCoinsNeverExpire: true,
       subscriptionCancelWindowHours: s.subscriptionCancelWindowHours,
       refundOnRemoval: s.refundOnRemoval,
     };

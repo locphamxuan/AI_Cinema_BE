@@ -41,13 +41,13 @@ Mỗi gói hiển thị thời hạn, quyền lợi và giá Coin hiện tại t
 AI Cinema dùng hai loại Coin trong cùng một ví:
 
 - **Coin chính**: Coin bạn nhận từ việc nạp tiền. Coin chính không hết hạn.
-- **Coin thưởng**: Coin tặng từ khuyến mãi, điểm danh, vòng quay may mắn hoặc các chương trình ưu đãi. Mỗi lô Coin thưởng có hạn dùng riêng.
+- **Coin thưởng**: Coin tặng từ khuyến mãi, điểm danh, vòng quay may mắn hoặc các chương trình ưu đãi. Coin thưởng không bao giờ hết hạn.
 
 ## Thứ tự sử dụng
-Khi mua tập phim hoặc thanh toán gói, hệ thống dùng Coin chính trước, sau đó mới đến Coin thưởng. Coin thưởng sắp hết hạn được dùng trước các lô còn hạn lâu hơn.
+Khi mua tập phim hoặc thanh toán gói, hệ thống dùng Coin chính trước, sau đó mới đến Coin thưởng. Coin thưởng nhận trước được dùng trước.
 
-## Coin thưởng hết hạn
-Coin thưởng hết hạn sẽ bị trừ khỏi ví và không được hoàn lại. Bạn xem hạn dùng của từng lô trong mục Ví Coin. Số ngày hết hạn của Coin thưởng do chính sách nền tảng quy định và có thể thay đổi theo từng chương trình.
+## Coin thưởng có hết hạn không?
+Không. Cả Coin chính và Coin thưởng đều không hết hạn: Coin thưởng ở lại trong ví cho đến khi bạn dùng.
 
 ## Kiểm tra số dư
 Số dư Coin chính, Coin thưởng và hạn dùng của từng lô luôn hiển thị trong mục Ví Coin của ứng dụng. Nếu số dư hiển thị không khớp với giao dịch gần đây, hãy liên hệ nhân viên hỗ trợ kèm thời điểm và số Coin dự kiến.`,

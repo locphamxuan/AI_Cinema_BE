@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Readable } from 'node:stream';
 import { assertSafeKey, ObjectStorage, type Visibility } from './object-storage';
@@ -45,6 +45,32 @@ export class LocalObjectStorage extends ObjectStorage {
   publicUrl(key: string): string {
     assertSafeKey(key);
     return `${this.publicBaseUrl}/${key}`;
+  }
+
+  /** Local disk has no signed URLs: the studio uploads through the API instead. */
+  presignPut(): Promise<null> {
+    return Promise.resolve(null);
+  }
+
+  async stat(key: string, visibility: Visibility): Promise<{ size: number } | null> {
+    const found = await stat(this.pathOf(key, visibility)).catch(() => null);
+    return found ? { size: found.size } : null;
+  }
+
+  async readHead(key: string, visibility: Visibility, bytes: number): Promise<Buffer> {
+    const file = await open(this.pathOf(key, visibility), 'r');
+    try {
+      const head = Buffer.alloc(bytes);
+      const { bytesRead } = await file.read(head, 0, bytes, 0);
+      return head.subarray(0, bytesRead);
+    } finally {
+      await file.close();
+    }
+  }
+
+  async move(fromKey: string, toKey: string, visibility: Visibility): Promise<void> {
+    const target = await this.prepare(toKey, visibility);
+    await rename(this.pathOf(fromKey, visibility), target);
   }
 
   private pathOf(key: string, visibility: Visibility): string {

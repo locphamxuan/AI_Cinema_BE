@@ -83,10 +83,10 @@ export class SupportTools {
         mainBalance: true,
         bonusBalance: true,
         lots: {
-          where: { remainingAmount: { gt: 0 }, expiresAt: { gt: new Date() } },
-          orderBy: { expiresAt: 'asc' },
+          where: { remainingAmount: { gt: 0 }, closedAt: null },
+          orderBy: { grantedAt: 'asc' },
           take: 3,
-          select: { remainingAmount: true, expiresAt: true },
+          select: { remainingAmount: true, grantedAt: true },
         },
       },
     });
@@ -275,7 +275,7 @@ export class SupportTools {
       ok: true,
       data: {
         coinRateVnd: setting.coinRateVnd,
-        bonusCoinExpiryDays: setting.bonusCoinExpiryDays,
+        bonusCoinsNeverExpire: true,
         coinTopUpMinVnd: setting.coinTopUpMinVnd,
         coinTopUpMaxVnd: setting.coinTopUpMaxVnd,
         subscriptionCancelWindowHours: setting.subscriptionCancelWindowHours,

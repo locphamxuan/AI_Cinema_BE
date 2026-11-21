@@ -1,48 +1,30 @@
 import PDFDocument from 'pdfkit';
-import { pdfText, unicodeFontPath } from '../src/infrastructure/pdf/unicode-font';
-import { articles, LEGAL_BASES, money, type Party, type SampleContract } from './sample-contract-clauses';
+import { pdfText } from 'src/infrastructure/pdf/unicode-font';
+import { articles, LEGAL_BASES, money, type ContractDraft, type ContractParty } from './contract-clauses';
 
-export type { SampleContract } from './sample-contract-clauses';
-
-/** Who signs a counterpart: only that side's box carries a signature and stamp, the other stays empty. */
-export type SampleSide = 'ADMIN' | 'STUDIO';
-
+export type ContractSide = 'ADMIN' | 'STUDIO';
 type Text = (value: string) => string;
+
+/** Draws one side's signature and seal inside its box (demo signing only; the contract the studio gets is unsigned). */
+export interface SignatureMark {
+  side: ContractSide;
+  draw: (doc: PDFKit.PDFDocument, box: { x: number; y: number; partyName: string }, text: Text) => void;
+}
+
 const LEFT = 56;
 const WIDTH = 483;
+const RIGHT_BOX = 320;
 
-/** A drawn placeholder squiggle — obviously a sample, never an imitation of a real signature. */
-function drawSignature(doc: PDFKit.PDFDocument, x: number, y: number): void {
-  doc
-    .save()
-    .lineWidth(1.2)
-    .strokeColor('#1a3d8f')
-    .moveTo(x, y + 14)
-    .bezierCurveTo(x + 18, y - 6, x + 30, y + 26, x + 48, y + 6)
-    .bezierCurveTo(x + 62, y - 8, x + 74, y + 20, x + 96, y + 2)
-    .stroke()
-    .moveTo(x + 6, y + 20)
-    .lineTo(x + 86, y + 18)
-    .stroke()
-    .restore();
-}
+/**
+ * The PDF names the project it belongs to in its keywords, so an upload of another project's contract is refused.
+ * PDF readers keep the keywords when a signer adds a signature; a scanned copy has none and is accepted as is.
+ */
+export const PROJECT_MARKER = 'aicinema-project:';
+export const CONTRACT_MARKER = 'aicinema-contract:';
+export const contractKeywords = (projectId: string, contractId: string) =>
+  `${PROJECT_MARKER}${projectId} ${CONTRACT_MARKER}${contractId}`;
 
-/** A round red stamp reading "MẪU DEMO": shows where the seal goes without copying any real seal. */
-function drawStamp(doc: PDFKit.PDFDocument, x: number, y: number, name: string, text: Text): void {
-  doc.save().lineWidth(1.5).strokeColor('#c0392b').fillColor('#c0392b');
-  doc.circle(x, y, 34).stroke().circle(x, y, 28).stroke();
-  // The seal shows the short trade name: "Công ty TNHH Lumen Studio (giả lập)" -> "LUMEN STUDIO".
-  const short = name
-    .replace(/^Công ty TNHH\s*/i, '')
-    .replace(/\(.*\)/, '')
-    .replace(/^Nền tảng Phim\s*/i, '')
-    .trim();
-  doc.fontSize(7).text(text(short.toUpperCase()), x - 26, y - 12, { width: 52, align: 'center' });
-  doc.fontSize(8).text(text('MẪU DEMO'), x - 26, y + 4, { width: 52, align: 'center' });
-  doc.restore();
-}
-
-function party(doc: PDFKit.PDFDocument, label: string, p: Party, text: Text): void {
+function party(doc: PDFKit.PDFDocument, label: string, p: ContractParty, text: Text): void {
   doc
     .moveDown(0.5)
     .fontSize(11)
@@ -59,59 +41,61 @@ function party(doc: PDFKit.PDFDocument, label: string, p: Party, text: Text): vo
   }
 }
 
-function annex(doc: PDFKit.PDFDocument, c: SampleContract, text: Text): void {
+function annex(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text): void {
   doc.addPage();
   doc.fontSize(13).text(text('PHỤ LỤC 01'), { align: 'center' });
   doc.fontSize(11).text(text(`DANH SÁCH TẬP PHIM VÀ HẠN GIAO (kèm Hợp đồng số ${c.contractNo})`), { align: 'center' });
   doc.moveDown();
   const cols = [LEFT, LEFT + 50, LEFT + 260, LEFT + 360];
-  const head = ['Tập', 'Tên tập', 'Thời lượng', 'Hạn giao'];
   const row = (cells: string[], y: number) =>
     cells.forEach((cell, i) => doc.text(text(cell), cols[i] + 4, y + 5, { width: 200 }));
   const tableTop = doc.y;
   let y = tableTop;
   doc.fontSize(10);
   doc.rect(LEFT, y, WIDTH, 22).stroke();
-  row(head, y);
+  row(['Tập', 'Tên tập', 'Thời lượng', 'Hạn giao'], y);
   for (const e of c.episodes) {
     y += 22;
     doc.rect(LEFT, y, WIDTH, 22).stroke();
     row([String(e.number), e.title, `${e.minutes} phút`, e.dueDate], y);
   }
-  cols.slice(1).forEach((x) =>
+  for (const x of cols.slice(1))
     doc
       .moveTo(x, tableTop)
       .lineTo(x, y + 22)
-      .stroke(),
+      .stroke();
+  doc.text(
+    text(
+      `Tổng số tập: ${c.episodes.length}. Giá trị Hợp đồng: ${money(c.costVnd)}. Ngân sách trần: ${money(c.budgetVnd)}.`,
+    ),
+    LEFT,
+    y + 34,
+    { width: WIDTH },
   );
-  doc.text(text(`Tổng số tập: ${c.episodes.length}. Giá trị Hợp đồng: ${money(c.costVnd)}.`), LEFT, y + 34, {
-    width: WIDTH,
-  });
 }
 
-function signatures(doc: PDFKit.PDFDocument, c: SampleContract, side: SampleSide, text: Text): void {
+function signatures(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text, marks: SignatureMark[]): void {
   if (doc.y > 600) doc.addPage();
   const top = doc.y + 24;
-  const right = 320;
   doc.fontSize(11);
   doc.text(text('ĐẠI DIỆN BÊN A'), LEFT, top, { width: 220, align: 'center' });
-  doc.text(text('ĐẠI DIỆN BÊN B'), right, top, { width: 220, align: 'center' });
+  doc.text(text('ĐẠI DIỆN BÊN B'), RIGHT_BOX, top, { width: 220, align: 'center' });
   doc.fontSize(9).fillColor('#555555');
   doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), LEFT, top + 15, { width: 220, align: 'center' });
-  doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), right, top + 15, { width: 220, align: 'center' });
+  doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), RIGHT_BOX, top + 15, { width: 220, align: 'center' });
   doc.fillColor('#000000');
-  const x = side === 'ADMIN' ? LEFT : right;
-  const signer = side === 'ADMIN' ? c.partyA : c.partyB;
-  drawStamp(doc, x + 70, top + 70, signer.name, text);
-  drawSignature(doc, x + 90, top + 52);
+  for (const mark of marks) {
+    const admin = mark.side === 'ADMIN';
+    mark.draw(doc, { x: admin ? LEFT : RIGHT_BOX, y: top, partyName: admin ? c.partyA.name : c.partyB.name }, text);
+  }
   doc.fontSize(11);
   doc.text(text(c.partyA.representative), LEFT, top + 120, { width: 220, align: 'center' });
-  doc.text(text(c.partyB.representative), right, top + 120, { width: 220, align: 'center' });
+  doc.text(text(c.partyB.representative), RIGHT_BOX, top + 120, { width: 220, align: 'center' });
   doc.fontSize(9).text(text(c.partyA.title), LEFT, top + 136, { width: 220, align: 'center' });
-  doc.text(text(c.partyB.title), right, top + 136, { width: 220, align: 'center' });
+  doc.text(text(c.partyB.title), RIGHT_BOX, top + 136, { width: 220, align: 'center' });
 }
 
-function footers(doc: PDFKit.PDFDocument, c: SampleContract, text: Text): void {
+function footers(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text, note: string): void {
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
@@ -119,35 +103,36 @@ function footers(doc: PDFKit.PDFDocument, c: SampleContract, text: Text): void {
     const bottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
     doc.fontSize(8).fillColor('#777777');
-    doc.text(text(`Hợp đồng số ${c.contractNo} — Trang ${i + 1}/${range.count}`), LEFT, 800, {
-      width: WIDTH,
-      align: 'center',
-      lineBreak: false,
-    });
-    doc.text(
-      text('Văn bản mẫu phục vụ demo đồ án; tên đơn vị, mã số thuế, chữ ký và con dấu đều là dữ liệu giả lập.'),
-      LEFT,
-      812,
-      {
-        width: WIDTH,
-        align: 'center',
-        lineBreak: false,
-      },
-    );
+    const line = { width: WIDTH, align: 'center', lineBreak: false } as const;
+    doc.text(text(`Hợp đồng số ${c.contractNo} - Trang ${i + 1}/${range.count}`), LEFT, 800, line);
+    doc.text(text(note), LEFT, 812, line);
     doc.fillColor('#000000');
     doc.page.margins.bottom = bottom;
   }
 }
 
-/** One counterpart of the demo contract: the same document, signed and stamped by one side only. */
-export function renderSampleContract(c: SampleContract, side: SampleSide): Promise<Buffer> {
-  const fontPath = unicodeFontPath(null);
+export interface RenderOptions {
+  fontPath: string | null;
+  /** Printed under every page number. */
+  footnote: string;
+  /** Written into the PDF keywords: see contractKeywords. */
+  keywords?: string;
+  /** Signatures already on the copy: none on the contract the studio receives. */
+  marks?: SignatureMark[];
+}
+
+/** The production contract as a PDF: unsigned unless marks are given, which is what the studio receives. */
+export function renderContractPdf(c: ContractDraft, options: RenderOptions): Promise<Buffer> {
+  const { fontPath } = options;
   const text = pdfText(fontPath);
   const doc = new PDFDocument({
     size: 'A4',
     margins: { top: 56, bottom: 70, left: LEFT, right: LEFT },
     bufferPages: true,
-    info: { Title: `Hop dong san xuat phim ${c.contractNo}` },
+    info: {
+      Title: `Hop dong san xuat phim ${c.contractNo}`,
+      ...(options.keywords ? { Keywords: options.keywords } : {}),
+    },
   });
   if (fontPath) doc.font(fontPath);
   const chunks: Buffer[] = [];
@@ -181,9 +166,9 @@ export function renderSampleContract(c: SampleContract, side: SampleSide): Promi
     doc.fontSize(10);
     for (const p of paragraphs) doc.text(text(p), { align: 'justify' });
   }
-  signatures(doc, c, side, text);
+  signatures(doc, c, text, options.marks ?? []);
   annex(doc, c, text);
-  footers(doc, c, text);
+  footers(doc, c, text, options.footnote);
   doc.end();
   return done;
 }

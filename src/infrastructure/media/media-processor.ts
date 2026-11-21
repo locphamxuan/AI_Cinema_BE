@@ -9,6 +9,14 @@ export interface ProbedFile {
   durationSeconds: number;
   height: number;
   hasAudio: boolean;
+  /** ffprobe codec names, e.g. 'h264' / 'aac'; absent when unknown. */
+  videoCodec?: string;
+  pixelFormat?: string;
+  audioCodec?: string;
+  /** Bits per second of the video stream (or of the whole file when the stream does not say). */
+  videoBitrate?: number;
+  /** The picture carries a rotation (phone footage): HLS segments cannot keep it, so it must be encoded. */
+  rotated?: boolean;
 }
 
 export interface TranscodedHls {
@@ -33,6 +41,28 @@ export function ladderFor(sourceHeight: number) {
   return rungs.length ? rungs : HLS_LADDER.slice(-1);
 }
 
+/** A copied stream may run at most this much above the bitrate of its rung, so phones can still play it. */
+const COPY_BITRATE_HEADROOM = 1.6;
+
+const bitsPerSecond = (bitrate: string) => Number.parseInt(bitrate, 10) * 1000;
+
+/**
+ * Whether the top rung can be the source video as it is, without encoding it again: H.264 in 8-bit
+ * 4:2:0 (what most editors export), exactly the height of the rung and not far above its bitrate.
+ * Encoding the top rung is most of the work, so a delivery like that is ready several times sooner.
+ */
+export function copiesTopRung(probed: ProbedFile): boolean {
+  const top = ladderFor(probed.height)[0];
+  return (
+    probed.videoCodec === 'h264' &&
+    !probed.rotated &&
+    probed.pixelFormat === 'yuv420p' &&
+    probed.height === top.height &&
+    (probed.videoBitrate ?? 0) > 0 &&
+    probed.videoBitrate! <= bitsPerSecond(top.bitrate) * COPY_BITRATE_HEADROOM
+  );
+}
+
 /**
  * FFmpeg arguments that encode one input into an HLS VOD master playlist with one rendition
  * per rung. Keyframes are forced every segment so every rendition switches cleanly.
@@ -40,19 +70,27 @@ export function ladderFor(sourceHeight: number) {
  */
 export function hlsArguments(inputPath: string, probed: ProbedFile): string[] {
   const rungs = ladderFor(probed.height);
-  const split = `[0:v]split=${rungs.length}${rungs.map((_, i) => `[s${i}]`).join('')}`;
-  const scaled = rungs.map((rung, i) => `[s${i}]scale=-2:${rung.height}[o${i}]`);
+  const copied = copiesTopRung(probed) ? 1 : 0;
+  // Output stream i is rung i; the copied one (if any) is 0 and the rest are scaled from the source.
+  const encoded = rungs.map((_, i) => i).slice(copied);
+  const split = `[0:v]split=${encoded.length}${encoded.map((i) => `[s${i}]`).join('')}`;
+  const scaled = encoded.map((i) => `[s${i}]scale=-2:${rungs[i].height}[o${i}]`);
   const audio = probed.hasAudio;
+  const encode = (i: number) => [
+    ...['-map', `[o${i}]`, `-c:v:${i}`, 'libx264', `-b:v:${i}`, rungs[i].bitrate],
+    ...[`-preset:v:${i}`, 'veryfast', `-pix_fmt:v:${i}`, 'yuv420p', `-sc_threshold:v:${i}`, '0'],
+    ...[`-force_key_frames:v:${i}`, `expr:gte(t,n_forced*${SEGMENT_SECONDS})`],
+  ];
 
   return [
     '-y',
     ...['-i', inputPath],
-    ...['-filter_complex', [split, ...scaled].join(';')],
-    ...rungs.flatMap((rung, i) => ['-map', `[o${i}]`, `-c:v:${i}`, 'libx264', `-b:v:${i}`, rung.bitrate]),
+    ...(encoded.length ? ['-filter_complex', [split, ...scaled].join(';')] : []),
+    ...(copied ? ['-map', '0:v:0', '-c:v:0', 'copy'] : []),
+    ...encoded.flatMap(encode),
     ...(audio ? rungs.flatMap(() => ['-map', '0:a:0']) : []),
-    ...(audio ? ['-c:a', 'aac', '-b:a', '128k', '-ac', '2'] : []),
-    ...['-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-sc_threshold', '0'],
-    ...['-force_key_frames', `expr:gte(t,n_forced*${SEGMENT_SECONDS})`],
+    ...(audio && probed.audioCodec === 'aac' ? ['-c:a', 'copy'] : []),
+    ...(audio && probed.audioCodec !== 'aac' ? ['-c:a', 'aac', '-b:a', '128k', '-ac', '2'] : []),
     ...['-f', 'hls', '-hls_time', String(SEGMENT_SECONDS), '-hls_playlist_type', 'vod'],
     ...['-hls_segment_filename', '%v/seg_%03d.ts', '-master_pl_name', 'master.m3u8'],
     ...['-var_stream_map', rungs.map((r, i) => `v:${i},${audio ? `a:${i},` : ''}name:${r.name}`).join(' ')],
@@ -61,8 +99,16 @@ export function hlsArguments(inputPath: string, probed: ProbedFile): string[] {
 }
 
 interface FfprobeOutput {
-  format?: { duration?: string };
-  streams?: { codec_type?: string; height?: number }[];
+  format?: { duration?: string; bit_rate?: string };
+  streams?: {
+    codec_type?: string;
+    codec_name?: string;
+    pix_fmt?: string;
+    height?: number;
+    bit_rate?: string;
+    tags?: { rotate?: string };
+    side_data_list?: { rotation?: number }[];
+  }[];
 }
 
 export function parseFfprobe(json: string): ProbedFile {
@@ -71,10 +117,17 @@ export function parseFfprobe(json: string): ProbedFile {
   const duration = Number(output.format?.duration);
   if (!video?.height) throw new Error('The file holds no video stream');
   if (!(duration > 0)) throw new Error('The duration of the video cannot be read');
+  const audio = output.streams?.find((stream) => stream.codec_type === 'audio');
+  const bitrate = Number(video.bit_rate ?? output.format?.bit_rate);
   return {
     durationSeconds: Math.round(duration),
     height: video.height,
-    hasAudio: Boolean(output.streams?.some((stream) => stream.codec_type === 'audio')),
+    hasAudio: Boolean(audio),
+    videoCodec: video.codec_name,
+    pixelFormat: video.pix_fmt,
+    audioCodec: audio?.codec_name,
+    videoBitrate: bitrate > 0 ? bitrate : undefined,
+    rotated: Boolean(Number(video.tags?.rotate) || video.side_data_list?.some((data) => Number(data.rotation))),
   };
 }
 

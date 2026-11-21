@@ -16,6 +16,8 @@ export interface SupportConfig {
   /** Must match the `vector(N)` column in the migration (768 for gemini-embedding-001 with dimensions=768). */
   aiEmbeddingDimensions: number;
   aiTimeoutMs: number;
+  /** Most one AI answer may take, every model call and tool round included; past it the member gets no answer this time. */
+  aiTurnDeadlineMs: number;
   aiMaxOutputTokens: number;
   aiTemperature: number;
   aiMaxToolRounds: number;
@@ -39,6 +41,7 @@ export function supportConfig(read: EnvReader): SupportConfig {
     aiEmbeddingModel: read.string('AI_EMBEDDING_MODEL', 'gemini-embedding-001'),
     aiEmbeddingDimensions: read.int('AI_EMBEDDING_DIMENSIONS', 768, 1),
     aiTimeoutMs: read.int('AI_TIMEOUT_MS', 30_000, 1000),
+    aiTurnDeadlineMs: read.int('AI_TURN_DEADLINE_MS', 45_000, 1000),
     aiMaxOutputTokens: read.int('AI_MAX_OUTPUT_TOKENS', 800, 1),
     aiTemperature: read.float('AI_TEMPERATURE', 0.2, 0),
     aiMaxToolRounds: read.int('AI_MAX_TOOL_ROUNDS', 4, 1),

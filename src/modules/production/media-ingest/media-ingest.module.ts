@@ -1,3 +1,4 @@
+import { DirectUploadService } from './direct-upload.service';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Module } from '@nestjs/common';
@@ -23,7 +24,7 @@ export const EpisodeUploadMulter = MulterModule.registerAsync({
 @Module({
   imports: [EpisodeUploadMulter, MediaProcessorModule],
   controllers: [MediaIngestController],
-  providers: [MediaIngestService, MediaPipelineService, MediaOutcomeService, HlsLinkCheckJob],
-  exports: [MediaIngestService],
+  providers: [MediaIngestService, DirectUploadService, MediaPipelineService, MediaOutcomeService, HlsLinkCheckJob],
+  exports: [MediaIngestService, DirectUploadService],
 })
 export class MediaIngestModule {}

@@ -26,6 +26,8 @@ export interface ChatMessage {
   content: string;
   /** Set on a `tool` message: the call it answers. */
   toolCallId?: string;
+  /** Tool messages: the function answered. Gemini refuses a function response without its name. */
+  toolName?: string;
   /** Set on an `assistant` message that asked for tools. */
   toolCalls?: ChatToolCall[];
 }

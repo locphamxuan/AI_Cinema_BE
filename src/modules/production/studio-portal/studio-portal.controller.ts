@@ -20,13 +20,22 @@ import { RequirePermission } from 'src/common/decorators/require-permission.deco
 import { RemoveTempUploadInterceptor } from 'src/common/http/remove-temp-upload.interceptor';
 import { ContractDocumentService } from 'src/modules/production/contract/contract-document.service';
 import { StudioContractService, type StudioActor } from 'src/modules/production/contract/contract-studio.service';
-import { ContractCostRequestDto } from 'src/modules/production/contract/dto/contract.request.dto';
+import {
+  ContractCostRequestDto,
+  ProposeContractRequestDto,
+} from 'src/modules/production/contract/dto/contract.request.dto';
 import { SignedPdfUpload } from 'src/modules/production/contract/signed-pdf-upload';
+import { ContractTemplateService } from 'src/modules/production/contract/template/contract-template.service';
 import {
   parseAiDisclosure,
   SubmitMediaLinkRequestDto,
   SubmitMediaUploadRequestDto,
 } from 'src/modules/production/media-ingest/dto/submit-media.request.dto';
+import { DirectUploadService } from 'src/modules/production/media-ingest/direct-upload.service';
+import {
+  CompleteDirectUploadRequestDto,
+  StartDirectUploadRequestDto,
+} from 'src/modules/production/media-ingest/dto/direct-upload.request.dto';
 import { MediaIngestService } from 'src/modules/production/media-ingest/media-ingest.service';
 import { StudioPortalService } from './studio-portal.service';
 
@@ -46,7 +55,9 @@ export class StudioPortalController {
     private readonly portal: StudioPortalService,
     private readonly contracts: StudioContractService,
     private readonly documents: ContractDocumentService,
+    private readonly templates: ContractTemplateService,
     private readonly media: MediaIngestService,
+    private readonly uploads: DirectUploadService,
   ) {}
 
   @Get('me')
@@ -61,6 +72,12 @@ export class StudioPortalController {
     return this.contracts.forStudio(await this.portal.studioOf(user));
   }
 
+  @Get('contracts/:contractId/template')
+  @ApiOperation({ summary: 'Download the unsigned contract template with the budget ceiling, to check before quoting' })
+  async downloadTemplate(@Param('contractId', ID) contractId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.templates.forStudio(contractId, await this.portal.studioOf(user));
+  }
+
   @Get('contracts/:contractId/documents/:side/content')
   @ApiOperation({ summary: 'Download the Admin-signed, the studio-signed or the merged FINAL contract PDF' })
   async downloadContract(
@@ -73,14 +90,15 @@ export class StudioPortalController {
 
   @Post('contracts/:contractId/propose')
   @HttpCode(200)
-  @SignedPdfUpload(true)
+  @SignedPdfUpload('optional')
   @ApiOperation({
-    summary: 'Fill the production cost into the template and upload the contract PDF signed by the studio',
+    summary:
+      'Upload the contract PDF signed by the studio: at the budget ceiling it was sent with, or at a lower cost it proposes',
   })
   async propose(
     @Param('contractId', ID) contractId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Body() dto: ContractCostRequestDto,
+    @Body() dto: ProposeContractRequestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.contracts.propose(contractId, dto.costVnd, await this.actor(user), file);
@@ -103,7 +121,7 @@ export class StudioPortalController {
 
   @Post('contracts/:contractId/counter')
   @HttpCode(200)
-  @SignedPdfUpload(true)
+  @SignedPdfUpload('required')
   @ApiOperation({ summary: "Disagree with the Admin's cost: propose another one with the contract PDF signed for it" })
   async counter(
     @Param('contractId', ID) contractId: string,
@@ -147,6 +165,29 @@ export class StudioPortalController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.media.submitUpload(episodeId, file, dto, parseAiDisclosure(dto.aiDisclosure), user);
+  }
+
+  @Post('episodes/:episodeId/media/uploads')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Start a direct upload: a signed URL the browser PUTs the MP4/MOV to, bypassing the API (15 minutes)',
+  })
+  startUpload(
+    @Param('episodeId', ID) episodeId: string,
+    @Body() dto: StartDirectUploadRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.uploads.start(episodeId, dto, user);
+  }
+
+  @Post('episodes/:episodeId/media/uploads/complete')
+  @ApiOperation({ summary: 'Finish a direct upload: checks the stored film and sends it to the Reviewer' })
+  completeUpload(
+    @Param('episodeId', ID) episodeId: string,
+    @Body() dto: CompleteDirectUploadRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.uploads.complete(episodeId, dto, user);
   }
 
   @Post('media-assets/:mediaAssetId/retry')

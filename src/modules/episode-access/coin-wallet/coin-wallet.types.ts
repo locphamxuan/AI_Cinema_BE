@@ -20,14 +20,12 @@ export interface SpendRequest {
   description?: string;
 }
 
-/** What a caller wants to add. Bonus Coins always land in a lot so their expiry stays known. */
+/** What a caller wants to add. Bonus Coins always land in a lot so their source stays known. */
 export interface CreditRequest {
   entryType: CoinEntryType;
   mainAmount?: number;
   bonusAmount?: number;
   lotSource: CoinLotSource;
-  /** Days the new lot stays usable; the platform setting when omitted. */
-  expiresInDays?: number;
   /** Set when the caller created the lot itself. */
   lotId?: string;
   rateVnd?: number;

@@ -225,7 +225,7 @@ describe('AI Customer Support E2E (AI_MODE=mock)', () => {
     );
   });
 
-  it('staff resolve then close ends the case but keeps the transcript (#8)', async () => {
+  it('staff resolve then the member confirmation ends the case but keeps the transcript (#8)', async () => {
     const resolved = await staffA.post<Row>(
       `/admin/support/conversations/${caseId}/resolve`,
       {
@@ -235,13 +235,9 @@ describe('AI Customer Support E2E (AI_MODE=mock)', () => {
     );
     expect(resolved.status).toBe(SupportStatus.RESOLVED);
 
-    const closed = await staffA.post<Row>(
-      `/admin/support/conversations/${caseId}/close`,
-      {
-        note: 'Đóng sau khi xác nhận với thành viên.',
-      },
-      200,
-    );
+    // Staff never closes a case: the member confirms the work, or the inactivity sweep closes it.
+    await staffA.post(`/admin/support/conversations/${caseId}/close`, {}, 404);
+    const closed = await member.post<Row>(`/support/conversations/${caseId}/confirm-resolved`, {}, 200);
     expect(closed.status).toBe(SupportStatus.CLOSED);
 
     const detail = await member.get<{ conversation: ConversationRow; messages: Row[] }>(

@@ -94,21 +94,11 @@ describe('WalletService.view', () => {
     {} as unknown as CoinSpendService,
   );
 
-  it('shows the two balances apart, with what runs out first', async () => {
+  it('shows the two balances apart: bonus Coins never expire, so there is nothing to count down', async () => {
     prisma.coinWallet.upsert.mockResolvedValue({ id: 'w1', mainBalance: 120, bonusBalance: 40, version: 7 });
-    prisma.coinLot.findMany.mockResolvedValue([
-      { id: 'lot-1', remainingAmount: 40, expiresAt: new Date('2026-11-04T00:00:00.000Z') },
-    ]);
 
-    await expect(service.view('u1')).resolves.toEqual({
-      mainBalance: 120,
-      bonusBalance: 40,
-      version: 7,
-      expiringBonus: [{ lotId: 'lot-1', amount: 40, expiresAt: new Date('2026-11-04T00:00:00.000Z') }],
-    });
-    expect(prisma.coinLot.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ walletId: 'w1' }) }),
-    );
+    await expect(service.view('u1')).resolves.toEqual({ mainBalance: 120, bonusBalance: 40, version: 7 });
+    expect(prisma.coinLot.findMany).not.toHaveBeenCalled();
   });
 });
 

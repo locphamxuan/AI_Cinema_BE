@@ -7,16 +7,19 @@ import { SupportStatus } from '@prisma/client';
  * ```
  * AI_HANDLING ──member confirms──▶ CLOSED (AI_RESOLVED)
  * AI_HANDLING ──escalate─────────▶ WAITING_FOR_STAFF ──claim/reply──▶ STAFF_HANDLING
- * STAFF_HANDLING ──staff resolve─▶ RESOLVED ──staff close──▶ CLOSED (STAFF_RESOLVED)
- * AI_HANDLING / WAITING_FOR_STAFF ──member closes──▶ CLOSED (MEMBER_CLOSED)
- * AI_HANDLING ──AI resolved + inactivity──▶ CLOSED (INACTIVITY)
+ * STAFF_HANDLING ──staff resolve─▶ RESOLVED ──member confirms──▶ CLOSED (STAFF_RESOLVED)
+ * RESOLVED ──member still needs help──▶ WAITING_FOR_STAFF
+ * AI_HANDLING / WAITING_FOR_STAFF / STAFF_HANDLING ──member closes──▶ CLOSED (MEMBER_CLOSED)
+ * AI_HANDLING (AI resolved) / RESOLVED ──no member reply for autoCloseHours──▶ CLOSED (INACTIVITY)
  * ```
+ *
+ * Staff never closes a case (18/11/2026): it marks the case resolved, then the member or the clock closes it.
  */
 export const SUPPORT_STATUS_TRANSITIONS: Record<SupportStatus, readonly SupportStatus[]> = {
   [SupportStatus.AI_HANDLING]: [SupportStatus.WAITING_FOR_STAFF, SupportStatus.CLOSED],
   [SupportStatus.WAITING_FOR_STAFF]: [SupportStatus.STAFF_HANDLING, SupportStatus.RESOLVED, SupportStatus.CLOSED],
   [SupportStatus.STAFF_HANDLING]: [SupportStatus.WAITING_FOR_STAFF, SupportStatus.RESOLVED, SupportStatus.CLOSED],
-  [SupportStatus.RESOLVED]: [SupportStatus.CLOSED],
+  [SupportStatus.RESOLVED]: [SupportStatus.CLOSED, SupportStatus.WAITING_FOR_STAFF],
   [SupportStatus.CLOSED]: [],
 };
 

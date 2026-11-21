@@ -5,6 +5,7 @@ import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.s
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
 import type { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import type { ContractCompletionService } from './contract-completion.service';
+import type { ContractHandoffService } from './contract-handoff.service';
 import type { ContractSignatureService, PreparedSignature } from './contract-signature.service';
 import { StudioContractService } from './contract-studio.service';
 
@@ -62,6 +63,7 @@ describe('StudioContractService', () => {
   const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
   const auditLog = { record: jest.fn() };
   const mails = { queue: jest.fn(), dispatch: jest.fn() };
+  const handoffs = { assertAffordable: jest.fn(), budgetOf: jest.fn(), ceiling: jest.fn() };
   const service = new StudioContractService(
     prisma as unknown as PrismaService,
     signatures as unknown as ContractSignatureService,
@@ -69,6 +71,7 @@ describe('StudioContractService', () => {
     notifications as unknown as NotificationService,
     auditLog as unknown as AuditLogService,
     mails as unknown as StudioMailService,
+    handoffs as unknown as ContractHandoffService,
   );
   const file = { buffer: Buffer.from('%PDF-1.7'), originalname: 'ky.pdf', size: 8 } as Express.Multer.File;
 
@@ -79,6 +82,49 @@ describe('StudioContractService', () => {
     db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1', project: { status: 'ASSIGNED' } });
     signatures.prepare.mockResolvedValue(PREPARED);
     completion.complete.mockImplementation((_tx, id: string) => Promise.resolve(contract({ id, status: 'SIGNED' })));
+  });
+
+  it('lists the rounds of the studio, each with its budget', async () => {
+    db.contract.findMany.mockResolvedValue([contract(), contract({ id: 'c2', status: ContractStatus.SIGNED })]);
+    handoffs.budgetOf.mockResolvedValueOnce(200_000_000).mockResolvedValueOnce(170_000_000);
+
+    const rounds = await service.forStudio('s1');
+
+    expect(db.contract.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { studioId: 's1' } }));
+    expect(rounds.map((r) => [r.id, r.budgetVnd])).toEqual([
+      ['c1', 200_000_000],
+      ['c2', 170_000_000],
+    ]);
+    expect(handoffs.budgetOf).toHaveBeenCalledWith(prisma, expect.objectContaining({ id: 'c1' }));
+  });
+
+  it('refuses a quote above the budget ceiling and keeps nothing it stored', async () => {
+    db.contract.findFirst.mockResolvedValue(contract());
+    db.contract.findUniqueOrThrow.mockResolvedValue(contract());
+    handoffs.assertAffordable.mockRejectedValueOnce(new ConflictException('over budget'));
+
+    await expect(service.propose('c1', 999_000_000, ACTOR, file)).rejects.toThrow('over budget');
+
+    expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 999_000_000, null);
+    expect(db.contract.update).not.toHaveBeenCalled();
+    expect(signatures.discard).toHaveBeenCalledWith(PREPARED);
+  });
+
+  it('signs at the budget ceiling printed on the contract when the studio sends no cost', async () => {
+    db.contract.findFirst.mockResolvedValue(contract());
+    db.contract.findUniqueOrThrow
+      .mockResolvedValueOnce(contract())
+      .mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED }));
+    handoffs.ceiling.mockResolvedValue(200_000_000);
+
+    await service.propose('c1', undefined, ACTOR, file);
+
+    expect(signatures.prepare).toHaveBeenCalledWith(expect.objectContaining({ costVnd: null }), file, prisma);
+    expect(handoffs.ceiling).toHaveBeenCalledWith(db, 'p1', null);
+    expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 200_000_000, null);
+    expect(db.contract.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ costVnd: 200_000_000n }) }),
+    );
   });
 
   it('fills in the cost and records the studio-signed PDF on the template', async () => {
@@ -149,6 +195,7 @@ describe('StudioContractService', () => {
 
     const next = await service.studioCounter('c1', 180_000_000, ACTOR, file);
 
+    expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 180_000_000, null);
     expect(db.contract.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ studioSignedAt: SIGNED_AT, round: 2 }) }),
     );

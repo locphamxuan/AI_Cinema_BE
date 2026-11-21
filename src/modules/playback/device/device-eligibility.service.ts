@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { StreamingEndReason, StreamingSessionStatus } from '@prisma/client';
 import { isUUID } from 'class-validator';
+import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import type { RunningPlanSnapshot } from 'src/modules/episode-access/subscription/running-plan';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -9,19 +10,14 @@ import { DeviceEligibilityPort, deviceLimitsOf, type DeviceIdentity } from '../p
 import { sessionEnded } from '../streaming-session/playback-events';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
 
-const PLATFORMS = new Set(['IOS', 'ANDROID', 'WEB']);
 const UNNAMED_DEVICE = 'Thiết bị chưa đặt tên';
-
-/** How the device list shows the platform: one of the known ones, else OTHER. */
-function platformOf(raw: string | undefined): string {
-  const platform = raw?.trim().toUpperCase() ?? '';
-  return PLATFORMS.has(platform) ? platform : 'OTHER';
-}
 
 /**
  * MF-4 for a member opening a stream: registers the device against the plan's
  * `maxRegisteredDevices`, then counts live sessions against `maxConcurrentStreams` (BR-34).
- * A session whose heartbeat already timed out does not occupy a slot; the expiry sweep closes it.
+ * Only Android phones are registered; a computer, an iPhone or any other device is refused with
+ * DEVICE_PLATFORM_NOT_SUPPORTED. A session whose heartbeat already timed out does not occupy a slot;
+ * the expiry sweep closes it.
  */
 @Injectable()
 export class DeviceEligibilityService extends DeviceEligibilityPort {
@@ -30,6 +26,7 @@ export class DeviceEligibilityService extends DeviceEligibilityPort {
     private readonly settings: PlatformSettingService,
     private readonly audit: AuditLogService,
     private readonly progress: WatchProgressService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {
     super();
   }
@@ -45,8 +42,15 @@ export class DeviceEligibilityService extends DeviceEligibilityPort {
         details: { reason: 'DEVICE_ID_REQUIRED' },
       });
     }
+    const platform = device.platform?.trim().toUpperCase() ?? '';
+    // Android phones only (BR-34, BR-83); a development server may also allow WEB to test in a browser.
+    if (!this.config.playback.allowedDevicePlatforms.includes(platform)) {
+      throw new ForbiddenException({
+        message: 'Member accounts can only be watched on Android phones',
+        details: { reason: 'DEVICE_PLATFORM_NOT_SUPPORTED', platform: platform || null },
+      });
+    }
     const name = device.name?.trim().slice(0, 120) || undefined;
-    const platform = platformOf(device.platform);
     // Two first plays from new devices must not both slip under the limit.
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'devices:' + userId}))`;
@@ -59,7 +63,15 @@ export class DeviceEligibilityService extends DeviceEligibilityPort {
         return known.id;
       }
       const { maxRegisteredDevices } = deviceLimitsOf(memberPlan);
-      const registeredDevices = await tx.userDevice.count({ where: { userId } });
+      // A computer or iPhone registered before BR-83 can never play again, so it does not hold a slot.
+      const registeredDevices = await tx.userDevice.count({
+        where: {
+          userId,
+          OR: this.config.playback.allowedDevicePlatforms.map((allowed) => ({
+            platform: { equals: allowed, mode: 'insensitive' as const },
+          })),
+        },
+      });
       if (registeredDevices >= maxRegisteredDevices) {
         throw new ForbiddenException({
           message: 'Too many registered devices for this plan',
