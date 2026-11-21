@@ -31,11 +31,11 @@ export class WatchRoomService {
   ) {}
 
   /** The Host, too, passes the paywall gate: a room never starts on an episode its Host cannot watch. */
-  async create(userId: string, dto: { episodeId: string }): Promise<WatchRoomResponseDto> {
+  async create(userId: string, dto: { episodeId: string }, deviceKey?: string): Promise<WatchRoomResponseDto> {
     const episode = await this.prisma.episode.findUnique({ where: { id: dto.episodeId } });
     if (!episode)
       throw new NotFoundException({ message: 'Episode not found', details: { reason: 'EPISODE_NOT_FOUND' } });
-    await this.guard.assertMayJoin(userId, dto.episodeId);
+    await this.guard.assertMayJoin(userId, dto.episodeId, undefined, deviceKey);
 
     const roomCode = await this.uniqueRoomCode();
     const room = await this.prisma.watchRoom.create({
@@ -62,14 +62,14 @@ export class WatchRoomService {
     throw new ConflictException({ message: 'Could not generate a room code', details: { reason: 'CODE_COLLISION' } });
   }
 
-  async join(userId: string, roomId: string): Promise<WatchRoomResponseDto> {
+  async join(userId: string, roomId: string, deviceKey?: string): Promise<WatchRoomResponseDto> {
     const room = await this.findRoom(roomId);
     if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
-    return this.admit(userId, room);
+    return this.admit(userId, room, deviceKey);
   }
 
   /** Edge 4.1 — join by the code on the invite; wrong guesses are counted and locked out. */
-  async joinByCode(userId: string, rawCode: string): Promise<WatchRoomResponseDto> {
+  async joinByCode(userId: string, rawCode: string, deviceKey?: string): Promise<WatchRoomResponseDto> {
     this.codeGuesses.assertNotLocked(userId);
     const code = normalizeRoomCode(rawCode);
     const room = await this.prisma.watchRoom.findUnique({ where: { roomCode: code }, include: { participants: true } });
@@ -78,11 +78,11 @@ export class WatchRoomService {
       throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
     }
     this.codeGuesses.recordSuccess(userId);
-    return this.admit(userId, room);
+    return this.admit(userId, room, deviceKey);
   }
 
   /** The door of the room: status, expiry, then every gate of RoomJoinGuard (edges 1.1–7.3). */
-  private async admit(userId: string, room: RoomWithParticipants): Promise<WatchRoomResponseDto> {
+  private async admit(userId: string, room: RoomWithParticipants, deviceKey?: string): Promise<WatchRoomResponseDto> {
     if (!OPEN_STATUSES.includes(room.status)) {
       throw new ConflictException({ message: 'Room is closed', details: { reason: 'ROOM_CLOSED' } });
     }
@@ -90,7 +90,7 @@ export class WatchRoomService {
       await this.close(room.id);
       throw new ConflictException({ message: 'Room has expired', details: { reason: 'ROOM_EXPIRED' } });
     }
-    await this.guard.assertMayJoin(userId, room.episodeId, room);
+    await this.guard.assertMayJoin(userId, room.episodeId, room, deviceKey);
 
     const already = room.participants.find((p) => p.userId === userId);
     if (already) {

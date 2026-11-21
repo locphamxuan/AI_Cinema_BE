@@ -3,7 +3,8 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { hashPassword } from 'src/modules/identity/auth/credentials';
+import { hashPassword, hashRefreshToken } from 'src/modules/identity/auth/credentials';
+import { REUSE_GRACE_MS } from 'src/modules/identity/auth/session-token.service';
 import type { AuthSessionDto } from 'src/modules/identity/auth/dto/auth-session.dto';
 import { bootApp } from './support/api';
 
@@ -56,9 +57,20 @@ describe('Auth (e2e)', () => {
       .body as AuthSessionDto;
     expect(rotated.refreshToken).not.toBe(login.refreshToken);
 
-    // The first token was already used: replaying it revokes the rotated one too.
+    // Replayed right away (the app lost the answer): it carries on from the rotated one, which is now used up.
+    const retried = (await api().post('/api/auth/refresh').send({ refreshToken: login.refreshToken }).expect(200))
+      .body as AuthSessionDto;
+    expect(retried.refreshToken).not.toBe(rotated.refreshToken);
+    await api().post('/api/auth/refresh').send({ refreshToken: rotated.refreshToken }).expect(200);
+
+    // Replayed after the grace window: theft, so every session of the account is signed out.
+    const prisma = app.get(PrismaService);
+    await prisma.refreshToken.update({
+      where: { tokenHash: hashRefreshToken(login.refreshToken) },
+      data: { revokedAt: new Date(Date.now() - REUSE_GRACE_MS - 1_000) },
+    });
     await api().post('/api/auth/refresh').send({ refreshToken: login.refreshToken }).expect(401);
-    await api().post('/api/auth/refresh').send({ refreshToken: rotated.refreshToken }).expect(401);
+    await api().post('/api/auth/refresh').send({ refreshToken: retried.refreshToken }).expect(401);
   });
 
   it('logs out by revoking the refresh token', async () => {

@@ -39,3 +39,22 @@ export async function assertActiveAccount(
   // 2026-11-13: watch rooms are a Member feature only.
   if (account.role !== 'MEMBER') throw new Error('members only');
 }
+
+type HandshakeSocket = Parameters<typeof handshakeTokenOf>[0] & { data: { userId?: string } };
+
+/**
+ * Socket.io middleware of the /watch namespace: a socket connects only once its token and account are checked, so
+ * the client's `connect` (and the JOIN it sends at once) never reaches a gateway that does not know the member yet.
+ * A refused handshake reaches the client as `connect_error` with the message `UNAUTHENTICATED`.
+ */
+export function socketAuth(userOf: (token: string) => Promise<string>) {
+  return (socket: HandshakeSocket, next: (error?: Error) => void): void => {
+    userOf(handshakeTokenOf(socket)).then(
+      (userId) => {
+        socket.data.userId = userId;
+        next();
+      },
+      () => next(Object.assign(new Error('UNAUTHENTICATED'), { data: { reason: 'UNAUTHENTICATED' } })),
+    );
+  };
+}
