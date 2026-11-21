@@ -72,6 +72,7 @@ export const CONTENT_EVENT = {
   REWARD_RULE_UPDATED: 'UPDATED',
   REWARD_PRIZE_CREATED: 'CREATED',
   REWARD_PRIZE_UPDATED: 'UPDATED',
+  REWARD_PRIZE_REMOVED: 'REMOVED',
   REWARD_SPIN_USED: 'USED',
   // MF-3 — playback sessions (hardening #12); kept off the movie timeline, see playback-events.ts
   PLAYBACK_SESSION_STARTED: 'PLAYBACK_SESSION_STARTED',
