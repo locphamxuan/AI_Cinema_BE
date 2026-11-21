@@ -1,6 +1,6 @@
 import { PERMISSION } from 'src/common/auth/permissions';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -26,24 +26,36 @@ export class WatchRoomController {
   @Post()
   @ApiOperation({ summary: 'Create a watch room for an episode; the Host passes the paywall gate too (BR-69)' })
   @ApiOkResponse({ type: WatchRoomResponseDto })
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateWatchRoomDto) {
-    return this.rooms.create(user.id, dto);
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateWatchRoomDto,
+    @Headers('x-device-id') device?: string,
+  ) {
+    return this.rooms.create(user.id, dto, device);
   }
 
   @Post('join')
   @HttpCode(200)
   @ApiOperation({ summary: 'Join by the invite code; wrong guesses are rate-limited (edge 4.1)' })
   @ApiOkResponse({ type: WatchRoomResponseDto })
-  joinByCode(@CurrentUser() user: AuthenticatedUser, @Body() dto: JoinByCodeDto) {
-    return this.rooms.joinByCode(user.id, dto.roomCode);
+  joinByCode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: JoinByCodeDto,
+    @Headers('x-device-id') device?: string,
+  ) {
+    return this.rooms.joinByCode(user.id, dto.roomCode, device);
   }
 
   @Post(':roomId/join')
   @HttpCode(200)
   @ApiOperation({ summary: 'Join by id (deep link); every gate of the room door applies (edges 1.1–7.3)' })
   @ApiOkResponse({ type: WatchRoomResponseDto })
-  join(@CurrentUser() user: AuthenticatedUser, @Param('roomId', ID) roomId: string) {
-    return this.rooms.join(user.id, roomId);
+  join(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('roomId', ID) roomId: string,
+    @Headers('x-device-id') device?: string,
+  ) {
+    return this.rooms.join(user.id, roomId, device);
   }
 
   @Get(':roomId')

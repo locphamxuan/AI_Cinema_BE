@@ -31,6 +31,7 @@ export class RoomJoinGuard {
     userId: string,
     episodeId: string,
     room?: { hostUserId: string | null; participants: { userId: string; leftAt: Date | null }[] },
+    deviceKey?: string,
   ): Promise<void> {
     await this.assertEntitled(userId, episodeId);
     await this.assertOldEnough(userId, episodeId);
@@ -38,7 +39,7 @@ export class RoomJoinGuard {
       this.assertCapacity(room.participants, userId);
       await this.assertNotBlocked(userId, room.hostUserId);
     }
-    await this.assertDeviceSlotFree(userId);
+    await this.assertDeviceSlotFree(userId, deviceKey);
   }
 
   /**
@@ -104,13 +105,28 @@ export class RoomJoinGuard {
    * refused with 409 DEVICE_LIMIT_EXCEEDED and the devices still playing, so the client can offer
    * a remote sign-out instead of a dead end.
    */
-  private async assertDeviceSlotFree(userId: string): Promise<void> {
+  /**
+   * The stream of the phone opening or joining the room is replaced by the room's own session (MF-4 stops what a
+   * device plays before it starts again), so it does not hold a slot here: only the member's other devices count.
+   */
+  private async assertDeviceSlotFree(userId: string, deviceKey?: string): Promise<void> {
     const plan = (await this.playbackAccess.runningPlanOf(userId)) ?? (await this.playbackAccess.freePlanOf());
     const { maxConcurrentStreams } = deviceLimitsOf(plan);
     const { playbackHeartbeatTimeoutSeconds } = await this.settings.get();
     const aliveSince = new Date(Date.now() - playbackHeartbeatTimeoutSeconds * 1000);
+    const own = deviceKey
+      ? await this.prisma.userDevice.findUnique({
+          where: { userId_deviceKey: { userId, deviceKey } },
+          select: { id: true },
+        })
+      : null;
     const live = await this.prisma.streamingSession.findMany({
-      where: { userId, status: StreamingSessionStatus.ACTIVE, lastHeartbeatAt: { gt: aliveSince } },
+      where: {
+        userId,
+        status: StreamingSessionStatus.ACTIVE,
+        lastHeartbeatAt: { gt: aliveSince },
+        ...(own ? { OR: [{ deviceId: null }, { deviceId: { not: own.id } }] } : {}),
+      },
       select: { deviceId: true, device: { select: { id: true, name: true, platform: true } } },
     });
     if (live.length < maxConcurrentStreams) return;

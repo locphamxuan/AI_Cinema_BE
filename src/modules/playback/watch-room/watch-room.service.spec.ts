@@ -54,7 +54,7 @@ describe('WatchRoomService', () => {
     prisma.watchRoom.create.mockResolvedValue(room());
     prisma.roomParticipant.create.mockResolvedValue({});
     const res = await newService().create('u1', { episodeId: 'ep-1' });
-    expect(guard.assertMayJoin).toHaveBeenCalledWith('u1', 'ep-1');
+    expect(guard.assertMayJoin).toHaveBeenCalledWith('u1', 'ep-1', undefined, undefined);
     expect(res).toBeInstanceOf(WatchRoomResponseDto);
     expect(res.participantCount).toBe(1);
   });
@@ -69,7 +69,7 @@ describe('WatchRoomService', () => {
     prisma.watchRoom.findUnique.mockResolvedValueOnce(room({ participants: [host, member] }));
     prisma.roomParticipant.create.mockResolvedValue({});
     const res = await newService().join('u2', 'r1');
-    expect(guard.assertMayJoin).toHaveBeenCalledWith('u2', 'ep-1', expect.objectContaining({ id: 'r1' }));
+    expect(guard.assertMayJoin).toHaveBeenCalledWith('u2', 'ep-1', expect.objectContaining({ id: 'r1' }), undefined);
     expect(res.participantCount).toBe(2);
     expect(res.serverTimestamp).toEqual(expect.any(Number));
   });

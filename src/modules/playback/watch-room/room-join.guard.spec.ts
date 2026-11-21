@@ -12,6 +12,7 @@ describe('RoomJoinGuard', () => {
     user: { findUnique: jest.fn() },
     friendship: { count: jest.fn() },
     streamingSession: { findMany: jest.fn() },
+    userDevice: { findUnique: jest.fn() },
   };
   const entitlement = { canWatch: jest.fn() };
   const playbackAccess = { runningPlanOf: jest.fn(), freePlanOf: jest.fn() };
@@ -79,5 +80,26 @@ describe('RoomJoinGuard', () => {
     expect(err.getResponse()).toMatchObject({
       details: { reason: 'DEVICE_LIMIT_EXCEEDED', maxConcurrentStreams: 2, devices: [{ id: 'd1' }, { id: 'd2' }] },
     });
+  });
+
+  it('leaves out the stream of the phone opening the room, which the room session replaces', async () => {
+    prisma.userDevice.findUnique.mockResolvedValue({ id: 'own' });
+    await guard.assertMayJoin('u1', 'ep', undefined, 'key-1');
+    expect(prisma.userDevice.findUnique).toHaveBeenCalledWith({
+      where: { userId_deviceKey: { userId: 'u1', deviceKey: 'key-1' } },
+      select: { id: true },
+    });
+    expect(prisma.streamingSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ OR: [{ deviceId: null }, { deviceId: { not: 'own' } }] }) as unknown,
+      }),
+    );
+  });
+
+  it('counts every live stream when the phone is not known yet', async () => {
+    prisma.userDevice.findUnique.mockResolvedValue(null);
+    await guard.assertMayJoin('u1', 'ep', undefined, 'new-key');
+    const [{ where }] = prisma.streamingSession.findMany.mock.calls[0] as [{ where: object }];
+    expect(where).not.toHaveProperty('OR');
   });
 });
