@@ -79,7 +79,6 @@ export interface AppConfig {
       hashSecret?: string;
       payUrl: string;
       returnUrl?: string;
-      ipnUrl?: string;
       apiUrl: string;
     };
   };
@@ -156,7 +155,6 @@ function paymentConfig(read: EnvReader): AppConfig['payments'] {
       hashSecret: read.optional('VNPAY_HASH_SECRET'),
       payUrl: read.string('VNPAY_PAY_URL', 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'),
       returnUrl: read.optional('VNPAY_RETURN_URL'),
-      ipnUrl: read.optional('VNPAY_IPN_URL'),
       apiUrl: read.string('VNPAY_API_URL', 'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction'),
     },
   };

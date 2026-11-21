@@ -88,7 +88,6 @@ describe('Coin top-up through VNPay (e2e)', () => {
       VNPAY_HASH_SECRET: VNPAY_SECRET,
       VNPAY_PAY_URL: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
       VNPAY_RETURN_URL: 'http://localhost:3001/api/payments/vnpay/return',
-      VNPAY_IPN_URL: 'http://localhost:3001/api/payments/vnpay/callback',
       VNPAY_API_URL: `${base}/vnpay/query`,
     });
     app = await bootApp();

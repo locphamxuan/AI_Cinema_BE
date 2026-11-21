@@ -8,7 +8,6 @@ const VNPAY = {
   hashSecret: 'vnpay-hash-secret-for-tests',
   payUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
   returnUrl: 'https://api.example.com/api/payments/vnpay/return',
-  ipnUrl: 'https://api.example.com/api/payments/vnpay/callback',
   apiUrl: 'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction',
 };
 
@@ -61,6 +60,36 @@ describe('PaymentGatewayService.createPaymentUrl', () => {
     expect(url).toContain('vnp_TxnRef=VNPAY-A');
     expect(url).toContain('vnp_IpAddr=203.0.113.7');
     expect(url).toMatch(/vnp_SecureHash=[0-9a-f]{128}$/);
+  });
+
+  it('sends exactly the parameters VNPay documents, and nothing else', () => {
+    const url = serviceWith().createPaymentUrl({
+      provider: PaymentProvider.VNPAY,
+      providerTxnId: 'VNPAY-A',
+      amountVnd: 50000,
+      clientIp: '203.0.113.7',
+    });
+
+    // VNPay computes its checksum over this fixed set: one extra key (`vnp_IpUrl` was
+    // the culprit) makes every link answer "Sai chữ ký".
+    expect([...new URL(url).searchParams.keys()].sort()).toEqual(
+      [
+        'vnp_Amount',
+        'vnp_Command',
+        'vnp_CreateDate',
+        'vnp_CurrCode',
+        'vnp_ExpireDate',
+        'vnp_IpAddr',
+        'vnp_Locale',
+        'vnp_OrderInfo',
+        'vnp_OrderType',
+        'vnp_ReturnUrl',
+        'vnp_SecureHash',
+        'vnp_TmnCode',
+        'vnp_TxnRef',
+        'vnp_Version',
+      ].sort(),
+    );
   });
 
   it('refuses a VNPay order with no return URL configured', () => {

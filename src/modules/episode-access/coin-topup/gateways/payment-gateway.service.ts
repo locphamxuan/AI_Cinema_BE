@@ -100,6 +100,9 @@ export class PaymentGatewayService {
       });
     }
     const now = new Date();
+    // VNPay signs a fixed set of parameters: anything else (an `vnp_IpUrl`, say) is left
+    // out of its checksum and turns every payment link into "Sai chữ ký". The IPN URL is
+    // registered in the merchant portal, never sent here.
     const params: Record<string, string> = {
       vnp_Version: '2.1.0',
       vnp_Command: 'pay',
@@ -115,7 +118,6 @@ export class PaymentGatewayService {
       vnp_CreateDate: formatVnpDateTime(now),
       vnp_ExpireDate: formatVnpDateTime(input.expiresAt ?? new Date(now.getTime() + 15 * 60_000)),
     };
-    if (cfg.ipnUrl) params.vnp_IpUrl = cfg.ipnUrl;
     return buildVnpayPayUrl(cfg.payUrl, params, cfg.hashSecret as string);
   }
 
