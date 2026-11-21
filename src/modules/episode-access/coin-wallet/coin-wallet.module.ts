@@ -3,6 +3,7 @@ import { NotificationModule } from 'src/modules/platform/notification/notificati
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
 import { CoinAdjustService } from './coin-adjust.service';
+import { CoinRefundController } from './coin-refund.controller';
 import { CoinSpendService } from './coin-spend.service';
 import { WalletController } from './wallet.controller';
 import { AdminWalletController } from './statement/admin-wallet.controller';
@@ -17,7 +18,7 @@ import { AdminWalletService } from './statement/admin-wallet.service';
  */
 @Module({
   imports: [PlatformSettingModule, NotificationModule, AuditLogModule],
-  controllers: [WalletController, StatementController, AdminWalletController],
+  controllers: [WalletController, CoinRefundController, StatementController, AdminWalletController],
   providers: [WalletService, CoinSpendService, CoinAdjustService, StatementService, AdminWalletService],
   exports: [WalletService, CoinSpendService, CoinAdjustService, StatementService],
 })

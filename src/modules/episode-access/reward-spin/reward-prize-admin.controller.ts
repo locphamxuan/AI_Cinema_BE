@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -32,5 +32,11 @@ export class RewardPrizeAdminController {
   @ApiOperation({ summary: 'Edit a prize, its weight, or take it off the wheel' })
   update(@Param('id', ID) id: string, @CurrentUser('id') actorId: string, @Body() dto: UpdateRewardPrizeRequestDto) {
     return this.prizes.update(id, actorId, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Take a prize off the wheel (keeps history)' })
+  delete(@Param('id', ID) id: string, @CurrentUser('id') actorId: string) {
+    return this.prizes.remove(id, actorId);
   }
 }

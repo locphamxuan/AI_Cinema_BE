@@ -9,6 +9,7 @@ import { SubscriptionView } from 'src/modules/episode-access/subscription/dto/su
 import { SubscriptionIntentView } from 'src/modules/episode-access/subscription/dto/subscription-intent-view.dto';
 import { SubscribeRequestDto } from 'src/modules/episode-access/subscription/dto/subscribe.request.dto';
 import { SubscriptionActivationView } from 'src/modules/episode-access/subscription/dto/subscription-activation-view.dto';
+import { CancelSubscriptionRequestDto } from 'src/modules/episode-access/subscription/dto/cancel-subscription.request.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
@@ -69,5 +70,17 @@ export class SubscriptionController {
   @ApiOperation({ summary: 'Change the mind before the period ends' })
   resume(@CurrentUser('id') userId: string, @Param('id', ID) subscriptionId: string) {
     return this.autoRenew.resumeAutoRenew(userId, subscriptionId);
+  }
+
+  @Post(':id/cancel')
+  @RequirePermission(PERMISSION.SUBSCRIPTION_SELF_MANAGE)
+  @ApiOperation({ summary: 'Member ends their own plan right now; access stops immediately' })
+  @ApiOkResponse({ type: SubscriptionView })
+  cancelMember(
+    @CurrentUser('id') userId: string,
+    @Param('id', ID) subscriptionId: string,
+    @Body() dto: CancelSubscriptionRequestDto,
+  ) {
+    return this.subscriptions.cancel(userId, subscriptionId, dto.reason);
   }
 }

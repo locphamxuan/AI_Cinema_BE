@@ -326,7 +326,7 @@ Kiểm tra ngày sinh trong hồ sơ. Khách chưa đăng nhập không xem đư
 Mỗi ngày (theo giờ Việt Nam) bạn điểm danh một lần để nhận Coin thưởng theo chuỗi ngày liên tiếp. Bỏ một ngày thì chuỗi bắt đầu lại từ ngày 1.
 
 ## Vòng quay
-Đạt mốc chuỗi điểm danh sẽ được lượt quay. Giải thưởng là Coin thưởng, có hạn dùng; Coin thưởng được dùng sau Coin chính khi mở khóa tập.
+Đạt mốc chuỗi điểm danh sẽ được lượt quay. Giải thưởng là Coin thưởng (không hết hạn); Coin thưởng được dùng sau Coin chính khi mở khóa tập.
 
 ## Kiểm tra
 Trợ lý AI có thể cho bạn biết hôm nay đã điểm danh chưa, chuỗi hiện tại và số lượt quay còn lại.`,
