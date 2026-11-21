@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { MediaIngestStatus, MediaSourceMethod } from '@prisma/client';
 import { inParallel, MediaPipelineService } from './media-pipeline.service';
+import { readableReason } from './media-outcome.service';
 
 describe('inParallel', () => {
   it('keeps at most `limit` running and finishes every item', async () => {
@@ -77,5 +78,12 @@ describe('MediaPipelineService upload of an encoded delivery', () => {
       asset,
       expect.objectContaining({ streamUrl: 'https://cdn.test/hls/a1/master.m3u8' }),
     );
+  });
+});
+
+describe('readableReason', () => {
+  it('quotes a Vietnamese reason and points to the version history for an English one', () => {
+    expect(readableReason('Studio đã gỡ file')).toBe('Studio đã gỡ file. ');
+    expect(readableReason('The file holds no video stream')).toBe('Xem lý do trong lịch sử bản phim của tập. ');
   });
 });

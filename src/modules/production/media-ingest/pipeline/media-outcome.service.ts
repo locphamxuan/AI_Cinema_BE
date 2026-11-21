@@ -142,7 +142,7 @@ export class MediaOutcomeService {
         {
           type: NOTIFICATION_TYPE.MEDIA_FAILED,
           title: `Không xử lý được tập ${asset.episode.episodeNumber} của phim "${movie.title}"`,
-          body: `${reason} Hãy giao lại tập hoặc xử lý lại khi nguồn đã được sửa.`,
+          body: `${readableReason(reason)}Hãy giao lại tập hoặc xử lý lại khi nguồn đã được sửa.`,
           link: `/projects/${movie.id}/episodes/${asset.episodeId}`,
           payload: { projectId: movie.id, episodeId: asset.episodeId, mediaAssetId: asset.id },
         },
@@ -172,4 +172,14 @@ export class MediaOutcomeService {
 function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+}
+
+/**
+ * A failure reason as the notification may quote it: the pipeline explains in English for the logs and the version
+ * history (where the apps word it in Vietnamese, BR-87), so only a reason already in Vietnamese is quoted.
+ */
+export function readableReason(reason: string): string {
+  return /[àáảãạăắằẳẵặâấầẩẫậđèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵ]/i.test(reason)
+    ? `${reason.trim().replace(/\.?$/, '.')} `
+    : 'Xem lý do trong lịch sử bản phim của tập. ';
 }
