@@ -23,12 +23,12 @@
     "start:prod": "node dist/main",
     "seed:catalog": "tsx prisma/seed-catalog.ts",
     "seed:prune-movies": "tsx prisma/prune-non-r2-movies.ts",
-    "seed:mf1-demo": "nest build && node dist/cli/seed-mf1-demo.js",
+    "seed:mf1-demo": "nest build && node dist/cli/mf1-demo/seed-mf1-demo.main.js",
     "seed:platform-setting": "tsx prisma/seed-platform-setting.ts",
     "seed:membership-plans": "tsx prisma/seed-membership-plans.ts",
     "seed:support-knowledge": "tsx prisma/seed-support-knowledge.ts",
     "eval:rag": "tsx prisma/eval-rag.ts",
-    "contracts:samples": "tsx scripts/make-sample-contracts.ts",
+    "contracts:sign-demo": "nest build && node dist/cli/mf1-demo/sign-demo-contract.main.js",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1140.0",
+    "@aws-sdk/s3-request-presigner": "^3.1140.0",
     "@nestarc/pagination": "^0.3.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
@@ -117,7 +118,8 @@
       "!**/*.spec.ts",
       "!**/dto/**",
       "!**/*.module.ts",
-      "!main.ts"
+      "!main.ts",
+      "!**/*.main.ts"
     ],
     "coverageDirectory": "../coverage",
     "coverageReporters": [
@@ -132,6 +134,7 @@
     },
     "multer": "^2.5.0",
     "mysql2": "^3.24.5",
-    "deepmerge-ts": "^8.0.2"
+    "deepmerge-ts": "^8.0.2",
+    "effect": "3.22.1"
   }
 }

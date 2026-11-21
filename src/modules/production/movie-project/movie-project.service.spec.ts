@@ -35,7 +35,7 @@ describe('MovieProjectService', () => {
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn(), readableWhere: jest.fn() };
-  const costs = { summary: jest.fn() };
+  const costs = { summary: jest.fn(), addEntry: jest.fn() };
   const studios = { assertUsable: jest.fn() };
   const lifecycle = {
     assertActive: jest.fn(),
@@ -89,6 +89,18 @@ describe('MovieProjectService', () => {
       );
       expect(lifecycle.announceReviewer).toHaveBeenCalledWith('p1');
       expect(lifecycle.assignCreator).not.toHaveBeenCalled();
+    });
+
+    it('writes the budget entered with the project as the first entry of its cost ledger', async () => {
+      await service.create({ ...NEW_PROJECT, budgetVnd: 200_000_000 }, ADMIN);
+      expect(costs.addEntry).toHaveBeenCalledWith(
+        'p1',
+        { entryType: 'BUDGET', amountVnd: 200_000_000, reason: 'Ngân sách sản xuất khi tạo dự án' },
+        ADMIN,
+      );
+      costs.addEntry.mockClear();
+      await service.create(NEW_PROJECT, ADMIN);
+      expect(costs.addEntry).not.toHaveBeenCalled();
     });
 
     it('numbers episodes across seasons and assigns the Creator after the transaction', async () => {

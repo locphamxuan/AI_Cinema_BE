@@ -6,6 +6,7 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { ContractCompletionService, vnd } from './contract-completion.service';
+import { ContractHandoffService } from './contract-handoff.service';
 import { recordContractEvent, tellContractUpdate } from './contract-notice';
 import {
   assertContractStatus,
@@ -38,30 +39,42 @@ export class StudioContractService {
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
     private readonly mails: StudioMailService,
+    private readonly handoffs: ContractHandoffService,
   ) {}
 
-  /** Every round sent to one studio, newest first (the studio's own view). */
-  forStudio(studioId: string) {
-    return this.prisma.contract.findMany({
+  /**
+   * Every round sent to one studio, newest first (the studio's own view), each with its budget: the ceiling the
+   * studio may quote up to while the round is open, the signed cost once it is closed.
+   */
+  async forStudio(studioId: string) {
+    const rounds = await this.prisma.contract.findMany({
       where: { studioId },
       orderBy: [{ updatedAt: 'desc' }],
       include: CONTRACT_DETAIL,
     });
+    return Promise.all(
+      rounds.map(async (round) => ({ ...round, budgetVnd: await this.handoffs.budgetOf(this.prisma, round) })),
+    );
   }
 
-  /** Studio: fills in the cost of the freshly sent template and uploads its signed PDF of it. */
+  /**
+   * Studio: uploads its signed PDF of the contract it was sent. Without a cost it signs at the value printed on
+   * it, the budget ceiling; with one it proposes a lower cost. Either way the Admin countersigns next.
+   */
   async propose(
     contractId: string,
-    costVnd: number,
+    proposedVnd: number | undefined,
     actor: StudioActor,
     file?: Express.Multer.File,
   ): Promise<Detailed> {
     const round = await this.own(contractId, actor.studioId);
-    assertContractStatus(round, ContractStatus.SENT, 'fill in');
-    const prepared = await this.prepare(round, false, BigInt(costVnd), file);
+    assertContractStatus(round, ContractStatus.SENT, 'sign');
+    const prepared = await this.prepare(round, false, proposedVnd === undefined ? null : BigInt(proposedVnd), file);
     return this.signing(prepared, async (tx) => {
       const contract = await lockedContract(tx, contractId, actor.studioId);
-      assertContractStatus(contract, ContractStatus.SENT, 'fill in');
+      assertContractStatus(contract, ContractStatus.SENT, 'sign');
+      const costVnd = proposedVnd ?? (await this.handoffs.ceiling(tx, contract.projectId, contract.handoffId));
+      await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
       await tx.contract.update({
         where: { id: contractId },
         data: {
@@ -114,6 +127,7 @@ export class StudioContractService {
     return this.signing(prepared, async (tx) => {
       const contract = await lockedContract(tx, contractId, actor.studioId);
       assertContractStatus(contract, ContractStatus.ADMIN_COUNTERED, 'answer with another price');
+      await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
       const opened = await openNextRound(tx, contract, {
         costVnd: BigInt(costVnd),
         proposedBy: ContractProposedBy.STUDIO,

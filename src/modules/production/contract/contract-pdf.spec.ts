@@ -7,9 +7,10 @@ import {
   type SignedSummary,
 } from './contract-pdf';
 
-async function pdfWith(pages: number): Promise<Buffer> {
+async function pdfWith(pages: number, keywords?: string[]): Promise<Buffer> {
   const doc = await PDFDocument.create();
   for (let i = 0; i < pages; i += 1) doc.addPage([300, 300]);
+  if (keywords) doc.setKeywords(keywords);
   return Buffer.from(await doc.save());
 }
 
@@ -58,5 +59,13 @@ describe('contract PDF merge', () => {
     const long = await pdfWith(MAX_CONTRACT_PAGES + 1);
     await expect(assertUsableCounterpart(long, 'Studio')).rejects.toThrow(/at most 40/);
     await expect(assertUsableCounterpart(await pdfWith(1), 'Studio')).resolves.toBe(1);
+  });
+
+  it('refuses the contract of another project, and accepts a copy that names none (a scan)', async () => {
+    const other = await pdfWith(1, ['aicinema-project:p2', 'aicinema-contract:c9']);
+    await expect(assertUsableCounterpart(other, 'Studio', 'p1')).rejects.toThrow(/another project/);
+    await expect(assertUsableCounterpart(await pdfWith(1, ['aicinema-project:p1']), 'Studio', 'p1')).resolves.toBe(1);
+    await expect(assertUsableCounterpart(await pdfWith(1, ['scan']), 'Admin', 'p1')).resolves.toBe(1);
+    await expect(assertUsableCounterpart(other, 'Admin')).resolves.toBe(1);
   });
 });

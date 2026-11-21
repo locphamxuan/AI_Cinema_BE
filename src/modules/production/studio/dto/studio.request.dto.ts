@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { BlankAsNull } from 'src/common/validation/trim';
 
 const trimmed = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -18,7 +19,7 @@ export class CreateStudioRequestDto {
   @MaxLength(255)
   email: string;
 
-  @ApiPropertyOptional({ example: 'Chị Lan' })
+  @ApiPropertyOptional({ example: 'Chị Lan', description: 'Legal representative who signs the contract (Bên B).' })
   @Transform(trimmed)
   @IsString()
   @MaxLength(255)
@@ -36,6 +37,34 @@ export class CreateStudioRequestDto {
   @MaxLength(2000)
   @IsOptional()
   note?: string;
+
+  @ApiPropertyOptional({ example: '12 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh' })
+  @BlankAsNull()
+  @IsString()
+  @MaxLength(500)
+  @IsOptional()
+  address?: string | null;
+
+  @ApiPropertyOptional({ example: '0319876543' })
+  @BlankAsNull()
+  @IsString()
+  @MaxLength(50)
+  @IsOptional()
+  taxCode?: string | null;
+
+  @ApiPropertyOptional({ example: '0987654321 - Ngân hàng TMCP Á Châu, CN Quận 1' })
+  @BlankAsNull()
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  bankAccount?: string | null;
+
+  @ApiPropertyOptional({ example: 'Giám đốc', description: 'Title of the representative on the contract.' })
+  @BlankAsNull()
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  representativeTitle?: string | null;
 }
 
 export class UpdateStudioRequestDto extends PartialType(CreateStudioRequestDto) {

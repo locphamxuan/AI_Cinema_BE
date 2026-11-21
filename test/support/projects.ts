@@ -28,11 +28,18 @@ export async function fundProject(anyActor: Actor, projectId: string, amountVnd 
 
 const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 
-/** A studio of the catalog (BR-59) with a unique email; only the Admin manages studios (12/11/2026). */
+/** A studio of the catalog (BR-59) with a unique email and one login account; only the Admin manages studios (12/11/2026). */
 export async function newStudio(anyActor: Actor, name = 'Studio Ánh Trăng'): Promise<Row> {
   admins.set(anyActor, admins.get(anyActor) ?? anyActor.signInAs(ADMIN_EMAIL));
   const admin = await admins.get(anyActor)!;
-  return admin.post('/studios', { name, email: `studio-${randomUUID()}@anhtrang.example` });
+  const studio = await admin.post<Row>('/studios', { name, email: `studio-${randomUUID()}@anhtrang.example` });
+  // A contract only goes to a studio that can sign in to Studio Web (STUDIO_HAS_NO_LOGIN).
+  await admin.post(`/studios/${studio.id}/accounts`, {
+    email: `owner-${randomUUID()}@studio.example`,
+    fullName: 'Studio owner e2e',
+    password: SEED_USER_PASSWORD,
+  });
+  return studio;
 }
 
 /** One Admin sign-in per actor: signing the Admin in again on every call would end its earlier sessions. */

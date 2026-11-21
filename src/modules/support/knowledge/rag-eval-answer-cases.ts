@@ -30,8 +30,8 @@ export const RAG_EVAL_ANSWER_CASES: RagEvalCase[] = [
     question: 'Coin thưởng có hết hạn không?',
     expect: 'answer',
     expectedSlugs: ['coin-main-va-coin-thuong'],
-    expectedReplyContains: ['hết hạn'],
-    notes: 'Short phrasing of the expiry rule.',
+    expectedReplyContains: ['không'],
+    notes: 'Short phrasing of the rule: bonus Coins never expire.',
   },
   {
     id: 'rag-answers-05',

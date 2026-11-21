@@ -23,8 +23,6 @@ const PLATFORM_SETTING_SEED = {
   // BR-47: valid Coin price of one episode; outside it alerts the Admin.
   episodeCoinPriceMin: 1,
   episodeCoinPriceMax: 50,
-  // BR-28, BR-52: days a bonus Coin lot stays usable.
-  bonusCoinExpiryDays: 30,
   // BR-36: seconds without a heartbeat before a playback session times out.
   playbackHeartbeatTimeoutSeconds: 90,
   // Hours before the renewal date a member may still stop auto-renew.

@@ -23,6 +23,17 @@ export class ContractCostRequestDto {
   costVnd: number;
 }
 
+/**
+ * The studio signing the contract it received: without a cost it signs at the value printed on it, the budget
+ * ceiling; with one it proposes a lower cost, carried by the PDF it signed for that cost.
+ */
+export class ProposeContractRequestDto {
+  @ApiPropertyOptional({ example: 170_000_000, description: 'Left out: sign at the budget ceiling' })
+  @IsVnd()
+  @IsOptional()
+  costVnd?: number;
+}
+
 /** The multipart body of every signing endpoint: one `file` field holding the signed contract PDF. */
 export const SIGNED_PDF_BODY: ApiBodyOptions = {
   schema: {
@@ -32,14 +43,17 @@ export const SIGNED_PDF_BODY: ApiBodyOptions = {
   },
 };
 
+const COST_FIELDS = {
+  file: { type: 'string', format: 'binary', description: 'Signed contract PDF (≤ 10 MB)' },
+  costVnd: { type: 'integer', example: 170_000_000, description: 'Production cost in whole thousands of VND' },
+};
+
 /** The same, with the cost the sender signed for. */
 export const SIGNED_PDF_WITH_COST_BODY: ApiBodyOptions = {
-  schema: {
-    type: 'object',
-    required: ['file', 'costVnd'],
-    properties: {
-      file: { type: 'string', format: 'binary', description: 'Signed contract PDF (≤ 10 MB)' },
-      costVnd: { type: 'integer', example: 170_000_000, description: 'Production cost in whole thousands of VND' },
-    },
-  },
+  schema: { type: 'object', required: ['file', 'costVnd'], properties: COST_FIELDS },
+};
+
+/** The same, where the cost may be left out to sign at the budget ceiling. */
+export const SIGNED_PDF_OPTIONAL_COST_BODY: ApiBodyOptions = {
+  schema: { type: 'object', required: ['file'], properties: COST_FIELDS },
 };

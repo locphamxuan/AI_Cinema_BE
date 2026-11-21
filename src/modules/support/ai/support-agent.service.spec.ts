@@ -125,6 +125,7 @@ describe('SupportAgentService (live)', () => {
     expect(client.calls[1].messages.at(-1)).toMatchObject({
       role: 'tool',
       toolCallId: 'call_get_member_wallet',
+      toolName: 'get_member_wallet',
     });
     expect(client.calls[2].tools).toEqual([FINAL_ANSWER_TOOL]);
     expect(client.calls[2].toolChoice).toEqual({ type: 'function', function: { name: FINAL_ANSWER_TOOL_NAME } });

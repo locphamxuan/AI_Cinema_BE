@@ -22,6 +22,7 @@ import { LANGUAGE_CODE } from 'src/common/validation/language-code';
 import { AGE_RATINGS } from './update-movie-project.request.dto';
 
 import { Trim } from 'src/common/validation/trim';
+import { IsVnd } from 'src/modules/production/production-cost/dto/vnd';
 
 /** BR-31: any length the Reviewer wants; the bound only catches typos (12 h). */
 export const MAX_TARGET_DURATION_SECONDS = 12 * 60 * 60;
@@ -161,6 +162,15 @@ export class CreateMovieProjectRequestDto {
   @IsUUID('4')
   @IsOptional()
   studioId?: string;
+
+  @ApiPropertyOptional({
+    example: 200_000_000,
+    description:
+      'Production budget (BR-45), in whole thousands of VND: the ceiling of the contract the studio receives.',
+  })
+  @IsVnd()
+  @IsOptional()
+  budgetVnd?: number;
 
   @ApiProperty({ description: 'Content Reviewer in charge of the project (MF-1, chosen by the Admin).' })
   @IsUUID('4')

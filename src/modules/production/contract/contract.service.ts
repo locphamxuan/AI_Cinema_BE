@@ -9,6 +9,7 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { ContractCompletionService, vnd } from './contract-completion.service';
 import { ContractHandoffService } from './contract-handoff.service';
+import { assertStudioCanSign } from './studio-login';
 import { queueContractMail, recordContractEvent, tellContractUpdate } from './contract-notice';
 import {
   assertContractStatus,
@@ -65,6 +66,7 @@ export class ContractService {
     if (open) throw new ConflictException('This project already has a contract');
     const contract = await this.openRound(tx, { projectId, studioId: project.studioId, actorId, terms });
     const title = contract.project.movie.title;
+    const ceiling = await this.handoffs.ceiling(tx, projectId, contract.handoffId);
     const mailId = await queueContractMail(
       this.mails,
       tx,
@@ -74,7 +76,9 @@ export class ContractService {
       '/contracts',
       [
         `Kịch bản Final của phim "${title}" đã được duyệt và hợp đồng mẫu đã sẵn sàng.`,
-        'Vui lòng đăng nhập Studio Web để xem điều khoản, điền chi phí sản xuất và tải lên bản PDF hợp đồng đã có chữ ký của Studio.',
+        `Ngân sách trần cho hợp đồng: ${vnd(ceiling)}. Chi phí Studio đề xuất không được vượt mức này.`,
+        'Vui lòng đăng nhập Studio Web, tải bản hợp đồng mẫu chưa ký (đã điền thông tin dự án và ngân sách trần) để kiểm tra, ' +
+          'rồi điền chi phí sản xuất và tải lên bản PDF hợp đồng đã có chữ ký của Studio.',
       ],
     );
     return { contract, mailId };
@@ -102,6 +106,8 @@ export class ContractService {
     round: { projectId: string; studioId: string; actorId: string; terms?: string; handoffId?: string },
   ): Promise<Detailed> {
     const { projectId, studioId, actorId, terms, handoffId } = round;
+    const studio = await tx.studio.findUniqueOrThrow({ where: { id: studioId }, select: { name: true } });
+    await assertStudioCanSign(tx, studioId, studio.name);
     const contract = await tx.contract.create({
       data: { projectId, studioId, handoffId, terms: terms?.trim() || STANDARD_TERMS, createdById: actorId },
       include: CONTRACT_DETAIL,
@@ -170,7 +176,7 @@ export class ContractService {
   /**
    * The Admin uploads the contract PDF for a cost, already carrying AI Cinema's signature, which opens a new
    * round the studio answers by uploading its own signed copy. Works on the studio's offer (a counter) and,
-   * for the demo order "Admin signs first", straight on the unpriced template the studio has not answered.
+   * for the demo order "Admin signs first", straight on the template (priced at the budget ceiling) the studio has not answered.
    */
   async counter(
     contractId: string,

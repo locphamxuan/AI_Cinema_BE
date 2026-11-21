@@ -91,12 +91,26 @@ export class MediaIngestService {
     // Stored before the version row exists (its CHECK needs the key); copying gigabytes inside
     // a transaction would hold the episode lock far too long.
     await this.storage.putFile(storageKey, file.path, kind.mimeType, 'private');
+    return this.registerUpload(episodeId, user, { id, storageKey, sizeBytes: file.size }, dto, disclosure);
+  }
 
+  /**
+   * The version of a film already stored under `stored.storageKey`, whether it came through the API or straight
+   * from the browser (DirectUploadService); the object is removed when no version can point at it.
+   */
+  async registerUpload(
+    episodeId: string,
+    user: AuthenticatedUser,
+    stored: { id: string; storageKey: string; sizeBytes: number },
+    dto: Pick<SubmitMediaUploadRequestDto, 'proposedLabelType' | 'submissionNote'>,
+    disclosure: AiDisclosureDto,
+  ) {
+    const { id, storageKey } = stored;
     const asset = await this.createVersion(episodeId, user, {
       id,
       sourceMethod: MediaSourceMethod.UPLOAD,
       storageKey,
-      fileSizeBytes: BigInt(file.size),
+      fileSizeBytes: BigInt(stored.sizeBytes),
       isSelfHosted: true,
       aiDisclosure: disclosure,
       proposedLabelType: dto.proposedLabelType,
@@ -154,7 +168,7 @@ export class MediaIngestService {
   }
 
   /** Only the studio delivers its episodes, under a contract both sides signed (MF-1, 08/11/2026). */
-  private async assertCanSubmit(episodeId: string, user: AuthenticatedUser) {
+  async assertCanSubmit(episodeId: string, user: AuthenticatedUser) {
     const episode = await this.access.studioEpisode(episodeId, await this.studioIdOf(user), true);
     assertProjectStatus(episode.project.status, DELIVERY_PROJECT_STATUSES, 'deliver media');
     if (episode.status === EpisodeStatus.PROCESSING) {

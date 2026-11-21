@@ -14,13 +14,13 @@ export function lockWallet(tx: PrismaTx, walletId: string): Promise<unknown> {
 }
 
 /**
- * Bonus lots that may still be spent, the one expiring first first. Every open lot is returned, so
- * a wallet that collected many small promotions is not reported as short of Coins.
+ * Bonus lots that may still be spent, the oldest first (bonus Coins never expire). Every open lot is
+ * returned, so a wallet that collected many small promotions is not reported as short of Coins.
  */
-export function spendableLots(tx: PrismaTx, walletId: string, now: Date): Promise<CoinLot[]> {
+export function spendableLots(tx: PrismaTx, walletId: string): Promise<CoinLot[]> {
   return tx.coinLot.findMany({
-    where: { walletId, remainingAmount: { gt: 0 }, closedAt: null, expiresAt: { gt: now } },
-    orderBy: [{ expiresAt: 'asc' }, { grantedAt: 'asc' }],
+    where: { walletId, remainingAmount: { gt: 0 }, closedAt: null },
+    orderBy: [{ grantedAt: 'asc' }, { id: 'asc' }],
   });
 }
 
@@ -30,7 +30,7 @@ export function bonusOf(lots: { remainingAmount: number }[]): number {
 }
 
 /**
- * Takes `amount` out of the given lots, the one expiring first first, and closes a lot once its
+ * Takes `amount` out of the given lots, the oldest first, and closes a lot once its
  * last Coin is gone. `amount` must not exceed what the lots hold.
  */
 export async function consumeLots(

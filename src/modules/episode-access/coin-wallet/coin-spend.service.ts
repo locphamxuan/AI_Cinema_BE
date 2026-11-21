@@ -1,6 +1,5 @@
 import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { CoinEntryType, type CoinTransaction, type Prisma } from '@prisma/client';
-import { businessDate } from 'src/common/time/business-day';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
@@ -33,7 +32,7 @@ export class CoinSpendService {
 
     const mainCoins = Math.min(wallet.mainBalance, request.amountCoins);
     const bonusCoins = request.amountCoins - mainCoins;
-    const lots = await spendableLots(tx, walletId, now);
+    const lots = await spendableLots(tx, walletId);
     const available = bonusOf(lots);
     if (available < bonusCoins) {
       throw new UnprocessableEntityException({
@@ -142,42 +141,6 @@ export class CoinSpendService {
     return movement;
   }
 
-  /**
-   * BR-28: the Coins of an expired lot leave the wallet. The lot is closed by the caller in the
-   * same transaction; this writes the single BONUS_EXPIRY row that keeps the ledger complete.
-   */
-  async expireBonus(
-    tx: PrismaTx,
-    walletId: string,
-    lot: { id: string; amount: number; expiresAt: Date },
-  ): Promise<CoinMovement> {
-    const wallet = await this.locked(tx, walletId);
-    const bonusBalance = wallet.bonusBalance - lot.amount;
-    const [entry] = await tx.coinTransaction.createManyAndReturn({
-      data: [
-        {
-          walletId,
-          entryType: CoinEntryType.BONUS_EXPIRY,
-          mainAmount: 0,
-          bonusAmount: -lot.amount,
-          rateVnd: (await this.settings.get()).coinRateVnd,
-          lotId: lot.id,
-          mainBalanceAfter: wallet.mainBalance,
-          bonusBalanceAfter: bonusBalance,
-          description: `Bonus Coins expired on ${businessDate(lot.expiresAt)}`,
-        },
-      ],
-    });
-    await bumpWallet(tx, walletId, wallet.mainBalance, bonusBalance);
-    return {
-      transactionId: entry.id,
-      mainCoins: 0,
-      bonusCoins: lot.amount,
-      mainBalance: wallet.mainBalance,
-      bonusBalance,
-    };
-  }
-
   /** Opens the lot a bonus credit lands in; null when no bonus Coins are credited. */
   private async openLot(
     tx: PrismaTx,
@@ -187,7 +150,6 @@ export class CoinSpendService {
     now: Date,
   ): Promise<string | null> {
     if (bonusAmount <= 0) return null;
-    const days = request.expiresInDays ?? (await this.settings.get()).bonusCoinExpiryDays;
     const lot = await tx.coinLot.create({
       data: {
         walletId,
@@ -195,7 +157,6 @@ export class CoinSpendService {
         originalAmount: bonusAmount,
         remainingAmount: bonusAmount,
         grantedAt: now,
-        expiresAt: new Date(now.getTime() + days * 86_400_000),
       },
     });
     return lot.id;

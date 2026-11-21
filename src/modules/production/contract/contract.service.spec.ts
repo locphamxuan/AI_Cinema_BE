@@ -56,7 +56,8 @@ const contract = (overrides: Record<string, unknown> = {}) => ({
 describe('ContractService', () => {
   const db = {
     movieProject: { findUniqueOrThrow: jest.fn() },
-    user: { findUniqueOrThrow: jest.fn() },
+    user: { findUniqueOrThrow: jest.fn(), count: jest.fn().mockResolvedValue(1) },
+    studio: { findUniqueOrThrow: jest.fn().mockResolvedValue({ name: 'Studio A' }) },
     contract: {
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(),
@@ -70,7 +71,7 @@ describe('ContractService', () => {
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn() };
-  const handoffs = { open: jest.fn(), assertAffordable: jest.fn() };
+  const handoffs = { open: jest.fn(), assertAffordable: jest.fn(), ceiling: jest.fn() };
   const signatures = { prepare: jest.fn(), attach: jest.fn(), discard: jest.fn() };
   const completion = { complete: jest.fn() };
   const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
@@ -104,7 +105,15 @@ describe('ContractService', () => {
   it("sends the project's studio a template with no cost and tells the studio accounts", async () => {
     db.contract.count.mockResolvedValue(0);
     db.contract.create.mockResolvedValue(contract());
+    handoffs.ceiling.mockResolvedValue(200_000_000);
     await expect(service.sendTemplate(db as never, 'p1', 'admin')).resolves.toMatchObject({ mailId: 'm1' });
+    expect(handoffs.ceiling).toHaveBeenCalledWith(db, 'p1', null);
+    expect(mails.queue).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        lines: expect.arrayContaining([expect.stringContaining('Ngân sách trần cho hợp đồng: 200.000.000')]),
+      }),
+    );
     expect(db.contract.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ projectId: 'p1', studioId: 's1' }) }),
     );
@@ -113,6 +122,16 @@ describe('ContractService', () => {
       expect.objectContaining({ link: '/contracts' }),
       db,
     );
+  });
+
+  it('sends nothing to a studio that has no Studio Web login yet', async () => {
+    db.contract.count.mockResolvedValue(0);
+    db.user.count.mockResolvedValueOnce(0);
+    await expect(service.sendTemplate(db as never, 'p1', 'admin')).rejects.toMatchObject({
+      response: { details: { reason: 'STUDIO_HAS_NO_LOGIN', studioId: 's1' } },
+    });
+    expect(db.contract.create).not.toHaveBeenCalled();
+    expect(mails.queue).not.toHaveBeenCalled();
   });
 
   it('supersedes the open rounds and sends the new studio a template tied to its waiting hand-off', async () => {

@@ -8,10 +8,6 @@ import { LADDER_LENGTH } from './reward-ladder';
 
 const DAY_MS = 86_400_000;
 
-/** Up to three bonus lots that run out within a week, so the check-in screen can warn about them. */
-const EXPIRING_HORIZON_DAYS = 7;
-const EXPIRING_LIMIT = 3;
-
 export const CHECKIN_REASON = { ALREADY_TODAY: 'ALREADY_CHECKED_IN_TODAY' } as const;
 
 /** What one streak day pays (bonus Coins only, BR-05) and whether it is the spin milestone (BR-09). */
@@ -33,25 +29,14 @@ export class DailyRewardService {
     private readonly wallets: WalletService,
   ) {}
 
-  /** What the check-in screen shows: today's state, the ladder and what runs out soon. */
+  /** What the check-in screen shows: today's state, the ladder and the balances. */
   async status(userId: string) {
     const today = businessDay();
     const wallet = await this.wallets.walletOf(userId);
-    const [todayCheckIn, lastCheckIn, rules, expiringBonus, availableSpins] = await Promise.all([
+    const [todayCheckIn, lastCheckIn, rules, availableSpins] = await Promise.all([
       this.prisma.dailyCheckIn.findUnique({ where: { userId_checkInDate: { userId, checkInDate: today } } }),
       this.prisma.dailyCheckIn.findFirst({ where: { userId }, orderBy: { checkInDate: 'desc' } }),
       this.prisma.rewardRule.findMany({ where: { isActive: true }, orderBy: { streakDay: 'asc' } }),
-      this.prisma.coinLot.findMany({
-        where: {
-          walletId: wallet.id,
-          remainingAmount: { gt: 0 },
-          closedAt: null,
-          expiresAt: { gt: new Date(), lte: new Date(Date.now() + EXPIRING_HORIZON_DAYS * DAY_MS) },
-        },
-        orderBy: { expiresAt: 'asc' },
-        take: EXPIRING_LIMIT,
-        select: { id: true, remainingAmount: true, expiresAt: true },
-      }),
       this.prisma.rewardSpin.count({ where: { userId, status: RewardSpinStatus.AVAILABLE } }),
     ]);
     const streakDay =
@@ -70,11 +55,6 @@ export class DailyRewardService {
       availableSpins,
       mainBalance: wallet.mainBalance,
       bonusBalance: wallet.bonusBalance,
-      expiringBonus: expiringBonus.map(({ id, remainingAmount, expiresAt }) => ({
-        lotId: id,
-        amount: remainingAmount,
-        expiresAt,
-      })),
     };
   }
 

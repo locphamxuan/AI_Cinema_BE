@@ -57,7 +57,6 @@ export interface AppConfig {
     hlsCheckMs: number;
     /** MF-2: subscription auto-renew, bonus lot expiry, top-up expiry and reconciliation. */
     subscriptionRenewalSweepMs: number;
-    coinExpirySweepMs: number;
     coinTopUpSweepMs: number;
     emailRedeliverySweepMs: number;
     paymentReconcileSweepMs: number;
@@ -104,6 +103,11 @@ export interface AppConfig {
      * keep the window longer than any report that reads session rows.
      */
     sessionRetentionDays: number;
+    /**
+     * Platforms a member account may be watched on (BR-83): Android phones only in production.
+     * DEVICE_ALLOWED_PLATFORMS=ANDROID,WEB lets developers test the member app in a browser.
+     */
+    allowedDevicePlatforms: string[];
   };
   /** Google Sign-In (OIDC). Empty clientIds = provider disabled. */
   google: { clientIds: string[] };
@@ -222,7 +226,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
       overdueSweepMs: read.int('OVERDUE_SWEEP_MS', 60 * 60_000),
       hlsCheckMs: read.int('HLS_CHECK_MS', 6 * 60 * 60_000),
       subscriptionRenewalSweepMs: read.int('SUBSCRIPTION_RENEWAL_SWEEP_MS', 60_000),
-      coinExpirySweepMs: read.int('COIN_EXPIRY_SWEEP_MS', 24 * 60 * 60_000),
       coinTopUpSweepMs: read.int('COIN_TOPUP_SWEEP_MS', 5 * 60_000),
       emailRedeliverySweepMs: read.int('EMAIL_REDELIVERY_SWEEP_MS', 15 * 60_000),
       paymentReconcileSweepMs: read.int('PAYMENT_RECONCILE_SWEEP_MS', 10 * 60_000),
@@ -239,6 +242,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
       urlSecret: read.optional('PLAYBACK_URL_SECRET'),
       urlTtlSeconds: read.int('PLAYBACK_URL_TTL_SECONDS', 3600, 60),
       sessionRetentionDays: read.int('STREAMING_SESSION_RETENTION_DAYS', 90, 0),
+      allowedDevicePlatforms: platformsOf(read.optional('DEVICE_ALLOWED_PLATFORMS')),
     },
     support: supportConfig(read),
     oauth: { codeTtlSeconds: read.int('OAUTH_CODE_TTL_SECONDS', DEFAULT_CODE_TTL_SECONDS, 30) },
@@ -276,4 +280,13 @@ function productionRules(config: AppConfig): string[] {
     rules.push('PLAYBACK_URL_SECRET is required in production with STORAGE_DRIVER=s3 (signed stream URLs)');
   }
   return rules;
+}
+
+/** "android, web" → ["ANDROID", "WEB"]; unset or empty keeps the production rule, Android phones only. */
+export function platformsOf(value: string | undefined): string[] {
+  const list = (value ?? '')
+    .split(',')
+    .map((p) => p.trim().toUpperCase())
+    .filter(Boolean);
+  return list.length ? [...new Set(list)] : ['ANDROID'];
 }

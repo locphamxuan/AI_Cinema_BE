@@ -5,9 +5,6 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { CoinSpendService } from './coin-spend.service';
 import { COIN_REASON, type CoinSplit } from './coin-wallet.types';
 
-/** Bonus lots shown on the wallet screen so a member sees what runs out first. */
-const EXPIRING_LIMIT = 5;
-
 /**
  * The reading side of a wallet: what a member sees on the Coin screen and what every purchase
  * screen asks before offering a price. Only CoinSpendService writes; this service opens wallets
@@ -50,25 +47,10 @@ export class WalletService {
     return wallet;
   }
 
-  /** The Coin screen: the two balances and the bonus batches that run out soonest. */
+  /** The Coin screen: the two balances (bonus Coins never expire). */
   async view(userId: string) {
     const wallet = await this.walletOf(userId);
-    const expiringBonus = await this.prisma.coinLot.findMany({
-      where: { walletId: wallet.id, remainingAmount: { gt: 0 }, closedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { expiresAt: 'asc' },
-      take: EXPIRING_LIMIT,
-      select: { id: true, remainingAmount: true, expiresAt: true },
-    });
-    return {
-      mainBalance: wallet.mainBalance,
-      bonusBalance: wallet.bonusBalance,
-      version: wallet.version,
-      expiringBonus: expiringBonus.map(({ id, remainingAmount, expiresAt }) => ({
-        lotId: id,
-        amount: remainingAmount,
-        expiresAt,
-      })),
-    };
+    return { mainBalance: wallet.mainBalance, bonusBalance: wallet.bonusBalance, version: wallet.version };
   }
 
   /** Step 11 and 14: the balance and exactly how a price would be covered, main Coins first. */
@@ -102,10 +84,10 @@ export class WalletService {
     });
   }
 
-  /** Bonus Coins that may still be spent right now: expired batches are not spendable. */
+  /** Bonus Coins that may be spent: every open batch, since bonus Coins never expire. */
   async spendableBonus(walletId: string, tx?: PrismaTx): Promise<number> {
     const { _sum } = await (tx ?? this.prisma).coinLot.aggregate({
-      where: { walletId, remainingAmount: { gt: 0 }, closedAt: null, expiresAt: { gt: new Date() } },
+      where: { walletId, remainingAmount: { gt: 0 }, closedAt: null },
       _sum: { remainingAmount: true },
     });
     return _sum.remainingAmount ?? 0;
@@ -124,7 +106,7 @@ export class WalletService {
   openLots(walletId: string, where?: Prisma.CoinLotWhereInput) {
     return this.prisma.coinLot.findMany({
       where: { walletId, remainingAmount: { gt: 0 }, closedAt: null, ...where },
-      orderBy: { expiresAt: 'asc' },
+      orderBy: { grantedAt: 'asc' },
     });
   }
 }

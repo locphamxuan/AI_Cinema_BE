@@ -15,7 +15,10 @@ describe('SupportAutoCloseSweep', () => {
   const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000);
   const tx = { supportMessage: { create: jest.fn() } };
   const prisma = {
-    supportConversation: { findMany: jest.fn(), fields: { aiResolutionSuggestedAt: 'ai_resolution_suggested_at' } },
+    supportConversation: {
+      findMany: jest.fn(),
+      fields: { aiResolutionSuggestedAt: 'ai_resolution_suggested_at', resolvedAt: 'resolved_at' },
+    },
     $transaction: jest.fn((fn: (client: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const conversations = { transition: jest.fn() };
@@ -37,9 +40,11 @@ describe('SupportAutoCloseSweep', () => {
     memberId: `member-${id}`,
     aiResolutionSuggestedAt: hoursAgo(50),
     resolvedAt: null,
-    lastMemberMessageAt: hoursAgo(60),
     ...over,
   });
+  /** The AI rule runs first, then the RESOLVED rule. */
+  const found = (aiCases: unknown[], resolvedCases: unknown[] = []) =>
+    prisma.supportConversation.findMany.mockResolvedValueOnce(aiCases).mockResolvedValueOnce(resolvedCases);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -52,31 +57,37 @@ describe('SupportAutoCloseSweep', () => {
     sweep.onModuleInit();
     expect(queue.every).toHaveBeenCalledWith('support.auto-close.sweep', 900_000, expect.any(Function));
 
-    prisma.supportConversation.findMany.mockResolvedValue([]);
+    found([]);
     const handler = (queue.every.mock.calls as unknown[][])[0][2] as () => Promise<unknown>;
     await expect(handler()).resolves.toBeUndefined();
   });
 
-  it('queries only AI-handled cases whose suggestion is older than the cutoff', async () => {
-    prisma.supportConversation.findMany.mockResolvedValue([]);
+  it('queries the cases whose answer is older than the cutoff and the member did not answer since', async () => {
+    found([]);
 
     await expect(sweep.run()).resolves.toEqual({ closed: 0 });
-    expect(prisma.supportConversation.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          status: SupportStatus.AI_HANDLING,
-          aiResolutionSuggestedAt: { not: null, lt: hoursAgo(48) },
-          // Cases the member answered after the suggestion are filtered in SQL, so they cannot fill the batch.
-          OR: [{ lastMemberMessageAt: null }, { lastMemberMessageAt: { lte: 'ai_resolution_suggested_at' } }],
-        },
-        take: 200,
-      }),
-    );
+    const [ai, resolved] = prisma.supportConversation.findMany.mock.calls.map(([query]) => query as { where: unknown });
+    expect(ai).toMatchObject({
+      where: {
+        status: SupportStatus.AI_HANDLING,
+        aiResolutionSuggestedAt: { not: null, lt: hoursAgo(48) },
+        // Filtered in SQL, so cases the member answered cannot fill the batch.
+        OR: [{ lastMemberMessageAt: null }, { lastMemberMessageAt: { lte: 'ai_resolution_suggested_at' } }],
+      },
+      take: 200,
+    });
+    expect(resolved).toMatchObject({
+      where: {
+        status: SupportStatus.RESOLVED,
+        resolvedAt: { not: null, lt: hoursAgo(48) },
+        OR: [{ lastMemberMessageAt: null }, { lastMemberMessageAt: { lte: 'resolved_at' } }],
+      },
+    });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('closes an inactive case for INACTIVITY, posts a system message, audits and notifies', async () => {
-    prisma.supportConversation.findMany.mockResolvedValue([candidate('c1')]);
+  it('closes an inactive AI case for INACTIVITY, posts a system message, audits and notifies', async () => {
+    found([candidate('c1')]);
 
     await expect(sweep.run()).resolves.toEqual({ closed: 1 });
 
@@ -88,19 +99,14 @@ describe('SupportAutoCloseSweep', () => {
       tx,
     );
     expect(tx.supportMessage.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        conversationId: 'c1',
-        senderType: SupportSenderType.SYSTEM,
-        senderId: null,
-        isInternal: false,
-      }),
+      data: expect.objectContaining({ conversationId: 'c1', senderType: SupportSenderType.SYSTEM, isInternal: false }),
     });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: CONTENT_EVENT.SUPPORT_CASE_CLOSED,
         entityId: 'c1',
         actorId: null,
-        payload: { closeReason: SupportCloseReason.INACTIVITY, automatic: true },
+        payload: { closeReason: SupportCloseReason.INACTIVITY, automatic: true, from: SupportStatus.AI_HANDLING },
       }),
       tx,
     );
@@ -110,58 +116,46 @@ describe('SupportAutoCloseSweep', () => {
     );
   });
 
-  it('keeps an existing resolvedAt instead of overwriting it', async () => {
+  it('closes a case Staff resolved once the member let it be, keeping the time it was resolved', async () => {
     const resolvedAt = hoursAgo(55);
-    prisma.supportConversation.findMany.mockResolvedValue([candidate('c1', { resolvedAt })]);
+    found([], [candidate('c2', { aiResolutionSuggestedAt: null, resolvedAt })]);
 
+    await expect(sweep.run()).resolves.toEqual({ closed: 1 });
+
+    expect(conversations.transition).toHaveBeenCalledWith(
+      'c2',
+      SupportStatus.RESOLVED,
+      SupportStatus.CLOSED,
+      expect.objectContaining({ resolvedAt, closeReason: SupportCloseReason.INACTIVITY }),
+      tx,
+    );
+    expect((tx.supportMessage.create.mock.calls as { data: { content: string } }[][])[0][0].data.content).toContain(
+      'nhân viên xử lý xong',
+    );
+  });
+
+  it('falls back to now when a row carries neither time', async () => {
+    found([candidate('c3', { aiResolutionSuggestedAt: null })]);
     await sweep.run();
-    expect((conversations.transition.mock.calls as unknown[][])[0][3]).toMatchObject({ resolvedAt });
-  });
-
-  it('closes a case whose member never wrote at all', async () => {
-    prisma.supportConversation.findMany.mockResolvedValue([candidate('c1', { lastMemberMessageAt: null })]);
-
-    await expect(sweep.run()).resolves.toEqual({ closed: 1 });
-  });
-
-  it('skips a case the member answered after the suggestion (the clock restarts)', async () => {
-    prisma.supportConversation.findMany.mockResolvedValue([candidate('c1', { lastMemberMessageAt: hoursAgo(49) })]);
-
-    await expect(sweep.run()).resolves.toEqual({ closed: 0 });
-    expect(conversations.transition).not.toHaveBeenCalled();
-    expect(notifications.notify).not.toHaveBeenCalled();
-  });
-
-  it('closes a case whose last member message is exactly at the suggestion time', async () => {
-    const at = hoursAgo(50);
-    prisma.supportConversation.findMany.mockResolvedValue([
-      candidate('c1', { aiResolutionSuggestedAt: at, lastMemberMessageAt: new Date(at) }),
-    ]);
-
-    await expect(sweep.run()).resolves.toEqual({ closed: 1 });
-  });
-
-  it('skips a row without a suggestion time defensively', async () => {
-    prisma.supportConversation.findMany.mockResolvedValue([candidate('c1', { aiResolutionSuggestedAt: null })]);
-
-    await expect(sweep.run()).resolves.toEqual({ closed: 0 });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect((conversations.transition.mock.calls as unknown[][])[0][3]).toMatchObject({ resolvedAt: NOW });
   });
 
   it('skips a case a concurrent Staff claim already moved, and still closes the others', async () => {
-    prisma.supportConversation.findMany.mockResolvedValue([candidate('c1'), candidate('c2')]);
+    found([candidate('c1'), candidate('c2')]);
     conversations.transition
       .mockRejectedValueOnce(new ConflictException('Support case cannot move from STAFF_HANDLING to CLOSED'))
+      .mockRejectedValueOnce('not an error')
       .mockResolvedValueOnce({});
+    found([candidate('c3')]);
 
+    await expect(sweep.run()).resolves.toEqual({ closed: 0 });
     await expect(sweep.run()).resolves.toEqual({ closed: 1 });
-    expect(notifications.notify).toHaveBeenCalledTimes(1);
-    expect(notifications.notify).toHaveBeenCalledWith(['member-c2'], expect.anything());
+    expect(notifications.notify).toHaveBeenCalledWith(['member-c3'], expect.anything());
   });
 
   it('still counts a case that closed when only its notification failed', async () => {
-    prisma.supportConversation.findMany.mockResolvedValue([candidate('c1')]);
-    notifications.notify.mockRejectedValueOnce('push down');
+    found([candidate('c1')]);
+    notifications.notify.mockRejectedValueOnce(new Error('push down'));
 
     await expect(sweep.run()).resolves.toEqual({ closed: 1 });
   });
