@@ -37,7 +37,7 @@ export class PolicyService {
         type: dto.type,
         version: dto.version,
         documentReference: dto.documentReference ?? null,
-        content: (dto.content ?? null) as any,
+        content: dto.content ?? null,
         effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : null,
         effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
         isActive: dto.isActive ?? true,
@@ -58,7 +58,7 @@ export class PolicyService {
         ...(dto.version !== undefined && { version: dto.version }),
         ...(dto.documentReference !== undefined && { documentReference: dto.documentReference }),
         ...(dto.content !== undefined && {
-          content: dto.content === null ? ({ set: null } as any) : (dto.content as any),
+          content: dto.content === null ? { set: null } : dto.content,
         }),
         ...(dto.effectiveFrom !== undefined && {
           effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : null,

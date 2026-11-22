@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsJSON, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
+import { IsDateString, IsEnum, IsJSON, IsOptional, IsString, Length } from 'class-validator';
 import { PolicyType } from '@prisma/client';
 import { Type } from 'class-transformer';
 

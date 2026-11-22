@@ -93,7 +93,7 @@ export class CoinSpendService {
     tx: PrismaTx,
     walletId: string,
     original: Pick<CoinTransaction, 'id' | 'mainAmount' | 'bonusAmount' | 'entryType'>,
-    now = new Date(),
+    _now = new Date(),
   ): Promise<CoinMovement> {
     const wallet = await this.locked(tx, walletId);
     const mainAmount = 0 - original.mainAmount;
