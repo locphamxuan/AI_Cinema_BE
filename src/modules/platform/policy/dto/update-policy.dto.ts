@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsJSON, IsOptional, IsString, Length } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsObject, IsOptional, IsString, Length } from 'class-validator';
 import { PolicyType } from '@prisma/client';
-import { Type } from 'class-transformer';
 
 export class UpdatePolicyDto {
   @ApiPropertyOptional({ example: 'AI-Generated Content Labeling Policy' })
@@ -28,7 +27,7 @@ export class UpdatePolicyDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsJSON()
+  @IsObject()
   content?: Record<string, unknown> | null;
 
   @ApiPropertyOptional()
@@ -43,6 +42,6 @@ export class UpdatePolicyDto {
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
-  @Type(() => Boolean)
+  @IsBoolean()
   isActive?: boolean;
 }
