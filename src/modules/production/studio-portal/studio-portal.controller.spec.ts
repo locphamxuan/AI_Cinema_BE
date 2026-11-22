@@ -20,6 +20,7 @@ function portalController() {
     start: jest.fn().mockResolvedValue({ uploadId: 'up1' }),
     complete: jest.fn().mockResolvedValue({ id: 'ma1' }),
   };
+  const posters = { upload: jest.fn().mockResolvedValue({ studioPoster: null }) };
   const controller = new StudioPortalController(
     portal as never,
     contracts as never,
@@ -27,8 +28,9 @@ function portalController() {
     templates as never,
     media as never,
     uploads as never,
+    posters as never,
   );
-  return { controller, portal, contracts, documents, templates, media, uploads };
+  return { controller, portal, contracts, documents, templates, media, uploads, posters };
 }
 
 describe('StudioPortalController', () => {
@@ -62,6 +64,13 @@ describe('StudioPortalController', () => {
     const done = { uploadToken: 't', proposedLabelType: 'AI_GENERATED', aiDisclosure: {} } as never;
     await expect(controller.completeUpload('e1', done, user)).resolves.toEqual({ id: 'ma1' });
     expect(uploads.complete).toHaveBeenCalledWith('e1', done, user);
+  });
+
+  it('sends the poster image of the project for the signed-in studio', async () => {
+    const { controller, posters } = portalController();
+    const image = { originalname: 'poster.png', size: 10 } as Express.Multer.File;
+    await expect(controller.uploadPoster('p1', image, user)).resolves.toEqual({ studioPoster: null });
+    expect(posters.upload).toHaveBeenCalledWith('p1', image, user);
   });
 
   it('passes profile, projects, links and retries through to their services', async () => {

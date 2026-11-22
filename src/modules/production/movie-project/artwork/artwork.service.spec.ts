@@ -19,7 +19,7 @@ describe('ArtworkService', () => {
   const tx: Tx = { movie: { update: jest.fn() }, episode: { update: jest.fn() } };
   const runWrite = (write: (t: Tx) => Promise<void>) => write(tx);
   const prisma = { movie: { findUniqueOrThrow: jest.fn() }, $transaction: jest.fn() };
-  const access = { project: jest.fn(), episode: jest.fn() };
+  const access = { project: jest.fn(), episode: jest.fn(), canPublish: jest.fn().mockResolvedValue(false) };
   const storage = {
     putBuffer: jest.fn(),
     remove: jest.fn(),
@@ -52,6 +52,17 @@ describe('ArtworkService', () => {
       tx,
     );
     expect(storage.remove).toHaveBeenCalledWith('movies/m1/artwork/old.png', 'public');
+  });
+
+  it('lets the Admin who publishes set the poster without being the Reviewer in charge', async () => {
+    access.canPublish.mockResolvedValueOnce(true);
+    await service.uploadPoster('m1', file(), reviewer);
+    expect(access.project).toHaveBeenLastCalledWith('m1', reviewer, 'read');
+  });
+
+  it('asks a Reviewer to be the one in charge of the project', async () => {
+    await service.uploadPoster('m1', file(), reviewer);
+    expect(access.project).toHaveBeenLastCalledWith('m1', reviewer, 'reviewer');
   });
 
   it('keeps a poster that is not one of ours', async () => {

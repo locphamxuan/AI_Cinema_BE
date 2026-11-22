@@ -15,6 +15,7 @@ import { resolveGenreIds } from './genre-resolver';
 import { newEpisodeSchedule, seasonWindow } from './episode-schedule';
 import { StudioService } from 'src/modules/production/studio/studio.service';
 import { ProjectLifecycleService } from './project-lifecycle.service';
+import { studioPosterOf } from 'src/modules/production/studio-portal/poster/studio-poster.view';
 import { lastActivityOf, LIST_ROW, OPEN_CHANGE_REQUESTS, PERSON, PROJECT_PAGE, titledProjects } from './project-list';
 
 /** Reason of the budget entry written with the project. */
@@ -205,11 +206,16 @@ export class MovieProjectService {
     const {
       _count,
       movie: { genres, ...movie },
+      studioPosterKey: _key,
+      studioPosterMimeType: _mime,
+      studioPosterFileName,
+      studioPosterUploadedAt,
       ...rest
     } = project;
     return {
       ...movie,
       ...rest,
+      studioPoster: studioPosterOf({ studioPosterFileName, studioPosterUploadedAt }),
       genres: genres.map(({ genre }) => genre),
       cost: await this.costs.summary(projectId),
       openChangeRequests: _count.changeRequests,

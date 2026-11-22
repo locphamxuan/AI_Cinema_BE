@@ -12,7 +12,10 @@ const ID = new ParseUUIDPipe({ version: '4' });
 @ApiBearerAuth()
 @Controller('admin/coin-transactions')
 export class CoinRefundController {
-  constructor(private readonly coins: CoinSpendService, private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly coins: CoinSpendService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post(':id/refund')
   @RequirePermission(PERMISSION.COIN_ADJUST)
@@ -21,13 +24,19 @@ export class CoinRefundController {
       'Refund a Coin transaction: main Coins go back to main, bonus Coins back to their lot, referencing the original entry',
   })
   @ApiOkResponse()
-  async refund(@Param('id', ID) id: string, @CurrentUser('id') actorId: string) {
+  async refund(@Param('id', ID) id: string, @CurrentUser('id') _actorId: string) {
     const tx = await this.prisma.coinTransaction.findUnique({ where: { id } });
     if (!tx) {
-      throw new NotFoundException({ message: 'Coin transaction not found', details: { reason: 'COIN_TRANSACTION_NOT_FOUND' } });
+      throw new NotFoundException({
+        message: 'Coin transaction not found',
+        details: { reason: 'COIN_TRANSACTION_NOT_FOUND' },
+      });
     }
     if (tx.entryType === 'REFUND') {
-      throw new BadRequestException({ message: 'A refund cannot be refunded', details: { reason: 'CANNOT_REFUND_REFUND' } });
+      throw new BadRequestException({
+        message: 'A refund cannot be refunded',
+        details: { reason: 'CANNOT_REFUND_REFUND' },
+      });
     }
     return this.coins.refund(this.prisma, tx.walletId, tx);
   }

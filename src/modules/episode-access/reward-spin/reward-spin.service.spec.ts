@@ -7,7 +7,7 @@ import type { NotificationService } from 'src/modules/platform/notification/noti
 import type { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import type { WalletService } from '../coin-wallet/wallet.service';
 import type { PlanDaysGrantService } from '../subscription/plan-days-grant.service';
-import { drawPrize, RewardSpinService, SPIN_REASON } from './reward-spin.service';
+import { chancePercent, drawPrize, RewardSpinService, SPIN_REASON } from './reward-spin.service';
 
 describe('drawPrize', () => {
   const prizes = [
@@ -198,5 +198,24 @@ describe('RewardSpinService', () => {
 
     expect(wheel).toMatchObject({ availableSpins: 2, history: [] });
     expect(wheel.prizes[0]).not.toHaveProperty('weight');
+  });
+
+  it('shows each prize with its chance so a member can preview the wheel without a spin', async () => {
+    prisma.rewardSpin.count.mockResolvedValue(0);
+    prisma.rewardPrize.findMany.mockResolvedValue([
+      { ...bonusPrize, id: 'a', weight: 98 },
+      { ...bonusPrize, id: 'b', weight: 2 },
+    ]);
+    prisma.rewardSpin.findMany.mockResolvedValue([]);
+
+    const wheel = await service.mine('u1');
+
+    expect(wheel.availableSpins).toBe(0);
+    expect(wheel.prizes.map((p) => p.chancePercent)).toEqual([98, 2]);
+  });
+
+  it('rounds a chance to one decimal and is zero when no weight is active', () => {
+    expect(chancePercent(1, 3)).toBe(33.3);
+    expect(chancePercent(5, 0)).toBe(0);
   });
 });

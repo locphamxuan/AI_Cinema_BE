@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsJSON, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsObject, IsOptional, IsString, Length } from 'class-validator';
 import { PolicyType } from '@prisma/client';
-import { Type } from 'class-transformer';
 
 export class CreatePolicyDto {
   @ApiProperty({ example: 'AI-Generated Content Labeling Policy', description: 'Name of the policy.' })
@@ -28,7 +27,7 @@ export class CreatePolicyDto {
 
   @ApiPropertyOptional({ description: 'Structured content and requirements of the policy.' })
   @IsOptional()
-  @IsJSON()
+  @IsObject()
   content?: Record<string, unknown>;
 
   @ApiPropertyOptional({ example: '2026-05-01T00:00:00.000Z', description: 'Effective from date.' })
@@ -43,50 +42,6 @@ export class CreatePolicyDto {
 
   @ApiPropertyOptional({ example: true, description: 'Whether the policy is active.' })
   @IsOptional()
-  @Type(() => Boolean)
-  isActive?: boolean;
-}
-
-export class UpdatePolicyDto {
-  @ApiPropertyOptional({ example: 'AI-Generated Content Labeling Policy' })
-  @IsOptional()
-  @IsString()
-  @Length(1, 255)
-  name?: string;
-
-  @ApiPropertyOptional({ enum: PolicyType })
-  @IsOptional()
-  @IsEnum(PolicyType)
-  type?: PolicyType;
-
-  @ApiPropertyOptional({ example: '1.1.0' })
-  @IsOptional()
-  @IsString()
-  @Length(1, 50)
-  version?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  documentReference?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsJSON()
-  content?: Record<string, unknown> | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsDateString()
-  effectiveFrom?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsDateString()
-  effectiveTo?: string | null;
-
-  @ApiPropertyOptional({ example: true })
-  @IsOptional()
-  @Type(() => Boolean)
+  @IsBoolean()
   isActive?: boolean;
 }

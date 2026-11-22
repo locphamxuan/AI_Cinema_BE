@@ -197,6 +197,21 @@ describe('MovieProjectService', () => {
     expect(access.project).toHaveBeenCalledWith('p1', ADMIN, 'read');
   });
 
+  it('shows the poster the studio sent by name and time, never its storage key', async () => {
+    db.movieProject.findUniqueOrThrow.mockResolvedValueOnce({
+      ...detailRow,
+      studioPosterKey: 'movies/p1/studio-poster/x.png',
+      studioPosterMimeType: 'image/png',
+      studioPosterFileName: 'poster.png',
+      studioPosterUploadedAt: new Date(7),
+    });
+    const view = await service.detail('p1', ADMIN);
+    expect(view.studioPoster).toEqual({ fileName: 'poster.png', uploadedAt: new Date(7) });
+    expect(view).not.toHaveProperty('studioPosterKey');
+    expect(view).not.toHaveProperty('studioPosterMimeType');
+    await expect(service.detail('p1', ADMIN)).resolves.toMatchObject({ studioPoster: null });
+  });
+
   describe('update', () => {
     it('writes catalog and project fields to their own tables and leaves genres alone', async () => {
       await service.update('p1', { title: 'Mới', ideaDescription: 'Ý mới' }, ADMIN);
