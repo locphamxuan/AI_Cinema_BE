@@ -37,10 +37,13 @@ import {
   StartDirectUploadRequestDto,
 } from 'src/modules/production/media-ingest/dto/direct-upload.request.dto';
 import { MediaIngestService } from 'src/modules/production/media-ingest/media-ingest.service';
+import { ARTWORK_MAX_BYTES } from 'src/modules/production/movie-project/artwork/artwork.service';
+import { StudioPosterService } from './poster/studio-poster.service';
 import { StudioPortalService } from './studio-portal.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 const SIDE = new ParseEnumPipe(ContractDocumentSide);
+const POSTER = FileInterceptor('file', { limits: { fileSize: ARTWORK_MAX_BYTES, files: 1 } });
 
 /**
  * MF-1 (07/11/2026): the API the Studio Web calls once a studio logged in with its STUDIO account — its
@@ -58,6 +61,7 @@ export class StudioPortalController {
     private readonly templates: ContractTemplateService,
     private readonly media: MediaIngestService,
     private readonly uploads: DirectUploadService,
+    private readonly posters: StudioPosterService,
   ) {}
 
   @Get('me')
@@ -142,6 +146,20 @@ export class StudioPortalController {
   @ApiOperation({ summary: 'A project: Final Script, episodes with deadlines, deliveries and change requests' })
   project(@Param('projectId', ID) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.portal.project(projectId, user);
+  }
+
+  @Post('projects/:projectId/poster')
+  @UseInterceptors(POSTER, RemoveTempUploadInterceptor)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Send the poster image of the movie (PNG, JPEG, WebP, GIF, BMP, AVIF; ≤ 20 MB); a new one replaces it',
+  })
+  uploadPoster(
+    @Param('projectId', ID) projectId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.posters.upload(projectId, file, user);
   }
 
   @Post('episodes/:episodeId/media')

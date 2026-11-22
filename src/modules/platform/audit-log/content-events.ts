@@ -52,6 +52,8 @@ export const CONTENT_EVENT = {
   // Studio Web OAuth (2026-11-12): a studio signed in through the authorization server, or a code was replayed.
   OAUTH_TOKEN_ISSUED: 'OAUTH_TOKEN_ISSUED',
   OAUTH_CODE_REPLAYED: 'OAUTH_CODE_REPLAYED',
+  // 22/11/2026: the studio sent the poster image of the movie with its film.
+  STUDIO_POSTER_UPLOADED: 'STUDIO_POSTER_UPLOADED',
   FINAL_FILM_CONFIRMED: 'FINAL_FILM_CONFIRMED',
   FINAL_FILM_REJECTED: 'FINAL_FILM_REJECTED',
   EPISODE_SCHEDULED: 'EPISODE_SCHEDULED',

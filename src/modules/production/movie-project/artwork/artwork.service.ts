@@ -13,7 +13,7 @@ import { EDITABLE_PROJECT_STATUSES } from '../project-status';
 
 /** Posters and episode thumbnails: any raster image a browser shows (PNG, JPEG, WebP, GIF, BMP, AVIF), at most 20 MB. */
 export const ARTWORK_MAX_BYTES = 20 * 1024 * 1024;
-const ARTWORK_KINDS = [
+export const ARTWORK_KINDS = [
   FILE_KINDS.png,
   FILE_KINDS.jpeg,
   FILE_KINDS.webp,
