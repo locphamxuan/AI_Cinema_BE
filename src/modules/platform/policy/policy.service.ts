@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { paginate, PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -37,7 +38,10 @@ export class PolicyService {
         type: dto.type,
         version: dto.version,
         documentReference: dto.documentReference ?? null,
-        content: dto.content ?? null,
+        content:
+          dto.content === null
+            ? (null as unknown as Prisma.NullableJsonNullValueInput)
+            : (dto.content as Prisma.InputJsonValue),
         effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : null,
         effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
         isActive: dto.isActive ?? true,
@@ -58,7 +62,7 @@ export class PolicyService {
         ...(dto.version !== undefined && { version: dto.version }),
         ...(dto.documentReference !== undefined && { documentReference: dto.documentReference }),
         ...(dto.content !== undefined && {
-          content: dto.content === null ? { set: null } : dto.content,
+          content: dto.content === null ? { set: null } : (dto.content as Prisma.InputJsonValue),
         }),
         ...(dto.effectiveFrom !== undefined && {
           effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : null,
