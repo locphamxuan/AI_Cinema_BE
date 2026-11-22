@@ -19,6 +19,7 @@ export class ArtworkController {
   constructor(private readonly artwork: ArtworkService) {}
 
   @Post('projects/:projectId/poster')
+  @RequirePermission(PERMISSION.PROJECT_MANAGE, PERMISSION.EPISODE_PUBLISH)
   @UseInterceptors(IMAGE)
   @ApiConsumes('multipart/form-data')
   @ApiBody(IMAGE_BODY)

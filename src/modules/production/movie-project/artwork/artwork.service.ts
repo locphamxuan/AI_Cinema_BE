@@ -22,7 +22,7 @@ export const ARTWORK_KINDS = [
   FILE_KINDS.avif,
 ];
 
-/** The poster of a project and the thumbnail of an episode, which the Reviewer uploads (§4.1.10). */
+/** The poster of a project (the Reviewer in charge or the Admin) and the thumbnail of an episode (the Reviewer). */
 @Injectable()
 export class ArtworkService {
   constructor(
@@ -33,7 +33,9 @@ export class ArtworkService {
   ) {}
 
   async uploadPoster(projectId: string, file: Express.Multer.File | undefined, user: AuthenticatedUser) {
-    const project = await this.access.project(projectId, user, 'reviewer');
+    // The Reviewer in charge, or the Admin who publishes (it puts up the poster the studio sent).
+    const role = (await this.access.canPublish(user)) ? 'read' : 'reviewer';
+    const project = await this.access.project(projectId, user, role);
     assertProjectStatus(project.status, EDITABLE_PROJECT_STATUSES, 'change the poster');
     const previous = await this.prisma.movie.findUniqueOrThrow({
       where: { id: projectId },
