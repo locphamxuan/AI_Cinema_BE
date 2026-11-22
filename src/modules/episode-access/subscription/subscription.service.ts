@@ -278,26 +278,21 @@ export class SubscriptionService {
         nextRenewalAt: null,
       },
     });
-    await this.notifications.notify(
-      [userId],
-      {
-        type: NOTIFICATION_TYPE.SUBSCRIPTION_CANCELLED,
-        title: 'Gói đã được hủy',
-        body: reason || 'Bạn đã hủy gói thành viên.',
-        link: '/membership',
-        payload: { subscriptionId: subscription.id },
-      },
-    );
-    await this.auditLog.record(
-      {
-        action: CONTENT_EVENT.SUBSCRIPTION_CANCELLED,
-        entityType: 'Subscription',
-        entityId: subscription.id,
-        projectId: null,
-        actorId: userId,
-        payload: { endReason: SubscriptionEndReason.CANCELLED_BY_MEMBER, note: reason ?? null },
-      },
-    );
+    await this.notifications.notify([userId], {
+      type: NOTIFICATION_TYPE.SUBSCRIPTION_CANCELLED,
+      title: 'Gói đã được hủy',
+      body: reason || 'Bạn đã hủy gói thành viên.',
+      link: '/membership',
+      payload: { subscriptionId: subscription.id },
+    });
+    await this.auditLog.record({
+      action: CONTENT_EVENT.SUBSCRIPTION_CANCELLED,
+      entityType: 'Subscription',
+      entityId: subscription.id,
+      projectId: null,
+      actorId: userId,
+      payload: { endReason: SubscriptionEndReason.CANCELLED_BY_MEMBER, note: reason ?? null },
+    });
     return subscription;
   }
 }

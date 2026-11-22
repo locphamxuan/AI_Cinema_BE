@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
