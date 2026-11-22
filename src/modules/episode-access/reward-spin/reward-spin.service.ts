@@ -47,6 +47,11 @@ const spinView = (spin: RewardSpin & { prize: RewardPrize | null }) => ({
 });
 
 /** Draws one prize with probability weight / total weight, from a CSPRNG. */
+/** A weight's share of the active weights, in percent with one decimal. */
+export function chancePercent(weight: number, total: number): number {
+  return total > 0 ? Math.round((weight / total) * 1000) / 10 : 0;
+}
+
 export function drawPrize<T extends { weight: number }>(prizes: T[], pick = randomInt): T {
   const total = prizes.reduce((sum, prize) => sum + prize.weight, 0);
   let ticket = pick(total);
@@ -85,7 +90,13 @@ export class RewardSpinService {
         include: { prize: true },
       }),
     ]);
-    return { availableSpins: available, prizes: prizes.map(prizeView), history: history.map(spinView) };
+    // The member may see the odds (BR-09 transparency), never the raw weights the Admin set.
+    const total = prizes.reduce((sum, prize) => sum + prize.weight, 0);
+    return {
+      availableSpins: available,
+      prizes: prizes.map((prize) => ({ ...prizeView(prize), chancePercent: chancePercent(prize.weight, total) })),
+      history: history.map(spinView),
+    };
   }
 
   /** Uses the member's oldest spin. Replaying the same Idempotency-Key answers the first result. */
