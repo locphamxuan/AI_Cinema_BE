@@ -26,6 +26,8 @@ describe('StudioPortalService', () => {
     status: 'IN_PRODUCTION',
     ideaDescription: 'Ý tưởng',
     handedOffAt: null,
+    studioPosterFileName: scriptStatus ? 'poster.png' : null,
+    studioPosterUploadedAt: scriptStatus ? new Date(5) : null,
     movie: { title: 'Phim', synopsis: 'Tóm tắt', ageRating: 'T13', defaultLanguage: 'vi' },
     script: scriptStatus
       ? { status: scriptStatus, finalizedAt: null, currentVersion: 2, versions: [{ version: 2, content: 'Bản 2' }] }
@@ -101,8 +103,10 @@ describe('StudioPortalService', () => {
       synopsis: 'Tóm tắt',
       finalScript: { version: 2, content: 'Bản 2' },
       contracts: [{ id: 'c1' }],
+      studioPoster: { fileName: 'poster.png', uploadedAt: new Date(5) },
     });
     expect(view).not.toHaveProperty('script');
+    expect(view).not.toHaveProperty('studioPosterFileName');
     expect(view.episodes[0].latestDelivery).toEqual({
       id: 'm2',
       version: 2,
@@ -123,7 +127,7 @@ describe('StudioPortalService', () => {
     prisma.movieProject.findUniqueOrThrow.mockResolvedValue(projectRow(ScriptStatus.REVIEWER_APPROVED));
     await expect(service.project('p1', STUDIO_USER)).resolves.toMatchObject({ finalScript: null });
     prisma.movieProject.findUniqueOrThrow.mockResolvedValue(projectRow(null));
-    await expect(service.project('p1', STUDIO_USER)).resolves.toMatchObject({ finalScript: null });
+    await expect(service.project('p1', STUDIO_USER)).resolves.toMatchObject({ finalScript: null, studioPoster: null });
   });
 
   it('never reads a project the studio has no part in', async () => {
