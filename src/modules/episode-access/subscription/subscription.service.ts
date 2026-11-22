@@ -253,4 +253,46 @@ export class SubscriptionService {
       });
     }
   }
+
+  /**
+   * Member ends their own open plan right now (not just stopping auto-renew). Access stops
+   * immediately; Coins already paid for this cycle are not refunded.
+   */
+  async cancel(userId: string, subscriptionId: string, reason?: string) {
+    const intent = await findOwnSubscription(this.prisma, userId, subscriptionId);
+    if (intent.status === SubscriptionStatus.CANCELLED) {
+      throw new ConflictException({
+        message: 'This plan has already ended',
+        details: { reason: SUB_REASON.ENDED },
+      });
+    }
+    const now = new Date();
+    const subscription = await this.prisma.subscription.update({
+      where: { id: intent.id },
+      data: {
+        status: SubscriptionStatus.CANCELLED,
+        autoRenew: false,
+        cancelledAt: now,
+        endedAt: now,
+        endReason: SubscriptionEndReason.CANCELLED_BY_MEMBER,
+        nextRenewalAt: null,
+      },
+    });
+    await this.notifications.notify([userId], {
+      type: NOTIFICATION_TYPE.SUBSCRIPTION_CANCELLED,
+      title: 'Gói đã được hủy',
+      body: reason || 'Bạn đã hủy gói thành viên.',
+      link: '/membership',
+      payload: { subscriptionId: subscription.id },
+    });
+    await this.auditLog.record({
+      action: CONTENT_EVENT.SUBSCRIPTION_CANCELLED,
+      entityType: 'Subscription',
+      entityId: subscription.id,
+      projectId: null,
+      actorId: userId,
+      payload: { endReason: SubscriptionEndReason.CANCELLED_BY_MEMBER, note: reason ?? null },
+    });
+    return subscription;
+  }
 }

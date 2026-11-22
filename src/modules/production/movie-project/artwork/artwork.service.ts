@@ -13,7 +13,7 @@ import { EDITABLE_PROJECT_STATUSES } from '../project-status';
 
 /** Posters and episode thumbnails: any raster image a browser shows (PNG, JPEG, WebP, GIF, BMP, AVIF), at most 20 MB. */
 export const ARTWORK_MAX_BYTES = 20 * 1024 * 1024;
-const ARTWORK_KINDS = [
+export const ARTWORK_KINDS = [
   FILE_KINDS.png,
   FILE_KINDS.jpeg,
   FILE_KINDS.webp,
@@ -22,7 +22,7 @@ const ARTWORK_KINDS = [
   FILE_KINDS.avif,
 ];
 
-/** The poster of a project and the thumbnail of an episode, which the Reviewer uploads (§4.1.10). */
+/** The poster of a project (the Reviewer in charge or the Admin) and the thumbnail of an episode (the Reviewer). */
 @Injectable()
 export class ArtworkService {
   constructor(
@@ -33,7 +33,9 @@ export class ArtworkService {
   ) {}
 
   async uploadPoster(projectId: string, file: Express.Multer.File | undefined, user: AuthenticatedUser) {
-    const project = await this.access.project(projectId, user, 'reviewer');
+    // The Reviewer in charge, or the Admin who publishes (it puts up the poster the studio sent).
+    const role = (await this.access.canPublish(user)) ? 'read' : 'reviewer';
+    const project = await this.access.project(projectId, user, role);
     assertProjectStatus(project.status, EDITABLE_PROJECT_STATUSES, 'change the poster');
     const previous = await this.prisma.movie.findUniqueOrThrow({
       where: { id: projectId },

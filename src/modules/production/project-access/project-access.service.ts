@@ -120,6 +120,11 @@ export class ProjectAccessService {
     return project.reviewerId === user.id || (await this.isOnTeam(project, user.id, tx)) || this.readsAll(user);
   }
 
+  /** The Admin (who publishes) also sets the poster, e.g. the one the studio sent (22/11/2026). */
+  async canPublish(user: AuthenticatedUser): Promise<boolean> {
+    return (await this.accessControl.permissionsOf(user.role)).has(PERMISSION.EPISODE_PUBLISH);
+  }
+
   private async readsAll(user: AuthenticatedUser): Promise<boolean> {
     return (await this.accessControl.permissionsOf(user.role)).has(PERMISSION.PROJECT_READ_ALL);
   }

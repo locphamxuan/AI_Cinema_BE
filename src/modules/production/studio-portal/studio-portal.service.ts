@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { StudioAccountService } from 'src/modules/production/studio/studio-account.service';
+import { STUDIO_POSTER_FIELDS, studioPosterOf } from './poster/studio-poster.view';
 
 /**
  * What a logged-in studio sees (MF-1, 07/11/2026): the projects it was sent a contract for, their Final Script,
@@ -66,6 +67,7 @@ export class StudioPortalService {
         status: true,
         ideaDescription: true,
         handedOffAt: true,
+        ...STUDIO_POSTER_FIELDS,
         movie: { select: { title: true, synopsis: true, ageRating: true, defaultLanguage: true } },
         script: {
           select: {
@@ -109,12 +111,13 @@ export class StudioPortalService {
         },
       },
     });
-    const { movie, script, ...rest } = project;
+    const { movie, script, studioPosterFileName, studioPosterUploadedAt, ...rest } = project;
     const finalScript = script?.status === ScriptStatus.FINAL ? (script.versions[0] ?? null) : null;
     return {
       ...rest,
       ...movie,
       finalScript,
+      studioPoster: studioPosterOf({ studioPosterFileName, studioPosterUploadedAt }),
       episodes: episodes.map(({ mediaAssets, ...episode }) => {
         const latest = mediaAssets[0];
         return {

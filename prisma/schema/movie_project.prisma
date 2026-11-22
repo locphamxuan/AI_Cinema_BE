@@ -24,6 +24,11 @@ model MovieProject {
   handedOffAt     DateTime?     @map("handed_off_at") @db.Timestamptz(6)
   completedAt     DateTime?     @map("completed_at") @db.Timestamptz(6)
   cancelledAt     DateTime?     @map("cancelled_at") @db.Timestamptz(6)
+  /// The poster image the studio sent with its film (private object); the Reviewer downloads it and sets the movie poster.
+  studioPosterKey        String?   @map("studio_poster_key") @db.VarChar(500)
+  studioPosterFileName   String?   @map("studio_poster_file_name") @db.VarChar(255)
+  studioPosterMimeType   String?   @map("studio_poster_mime_type") @db.VarChar(100)
+  studioPosterUploadedAt DateTime? @map("studio_poster_uploaded_at") @db.Timestamptz(6)
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 

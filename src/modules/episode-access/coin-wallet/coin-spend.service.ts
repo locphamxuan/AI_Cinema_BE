@@ -88,6 +88,49 @@ export class CoinSpendService {
     return movement;
   }
 
+  /** Puts Coins back where they came from: main back to main, bonus back to its lot. */
+  async refund(
+    tx: PrismaTx,
+    walletId: string,
+    original: Pick<CoinTransaction, 'id' | 'mainAmount' | 'bonusAmount' | 'entryType'>,
+    _now = new Date(),
+  ): Promise<CoinMovement> {
+    const wallet = await this.locked(tx, walletId);
+    const mainAmount = 0 - original.mainAmount;
+    const bonusAmount = 0 - original.bonusAmount;
+    if (mainAmount === 0 && bonusAmount === 0) {
+      throw new ConflictException({ message: 'Nothing to refund' });
+    }
+    const settings = await this.settings.get();
+    const [entry] = await tx.coinTransaction.createManyAndReturn({
+      data: [
+        {
+          walletId,
+          entryType: CoinEntryType.REFUND,
+          mainAmount,
+          bonusAmount,
+          rateVnd: settings.coinRateVnd,
+          reversesId: original.id,
+          idempotencyKey: null,
+          mainBalanceAfter: wallet.mainBalance + mainAmount,
+          bonusBalanceAfter: wallet.bonusBalance + bonusAmount,
+          description: `Refund of ${original.entryType} ${original.id}`,
+          createdById: undefined,
+        },
+      ],
+    });
+    await bumpWallet(tx, walletId, wallet.mainBalance + mainAmount, wallet.bonusBalance + bonusAmount);
+    const movement = {
+      transactionId: entry.id,
+      mainCoins: mainAmount,
+      bonusCoins: bonusAmount,
+      mainBalance: wallet.mainBalance + mainAmount,
+      bonusBalance: wallet.bonusBalance + bonusAmount,
+    };
+    await noticeReceived(this.notifications, tx, walletId, CoinEntryType.REFUND, movement);
+    return movement;
+  }
+
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */
   async credit(tx: PrismaTx, walletId: string, request: CreditRequest, now = new Date()): Promise<CoinMovement> {
     const wallet = await this.locked(tx, walletId);
