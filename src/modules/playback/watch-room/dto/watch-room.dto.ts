@@ -61,6 +61,10 @@ export class WatchRoomResponseDto {
   @ApiPropertyOptional({ example: 2 })
   participantCount?: number;
 
+  /** The members currently in the room (host sees who is watching together). */
+  @ApiPropertyOptional()
+  participants?: ParticipantDto[];
+
   @ApiPropertyOptional({ example: 1767000000000, description: 'Server clock at the snapshot, ms since epoch' })
   serverTimestamp?: number;
 
@@ -78,6 +82,7 @@ export class WatchRoomResponseDto {
       currentPositionSeconds: number;
     },
     participantCount: number,
+    participants?: ParticipantDto[],
   ): WatchRoomResponseDto {
     return new WatchRoomResponseDto({
       id: room.id,
@@ -87,6 +92,12 @@ export class WatchRoomResponseDto {
       status: room.status.toString(),
       currentPositionSeconds: room.currentPositionSeconds,
       participantCount,
+      participants,
     });
   }
+}
+
+export interface ParticipantDto {
+  userId: string;
+  fullName: string;
 }

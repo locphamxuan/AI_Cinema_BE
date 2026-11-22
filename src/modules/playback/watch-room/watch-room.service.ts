@@ -5,7 +5,7 @@ import { WatchEntitlementService } from 'src/modules/episode-access/access-decis
 import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
 import { CodeGuessLimiter, generateRoomCode, normalizeRoomCode } from './room-codes';
 import { RoomJoinGuard } from './room-join.guard';
-import { WatchRoomResponseDto } from './dto/watch-room.dto';
+import { WatchRoomResponseDto, ParticipantDto } from './dto/watch-room.dto';
 
 /** The room closes 15 min after the episode ends or the Host leaves (BR-69); every Host sync extends it. */
 const ROOM_TTL_MS = 15 * 60 * 1000;
@@ -50,7 +50,7 @@ export class WatchRoomService {
       include: { participants: true },
     });
     await this.prisma.roomParticipant.create({ data: { roomId: room.id, userId, role: 'HOST' } });
-    return WatchRoomResponseDto.from(room, 1);
+    return WatchRoomResponseDto.from(room, 1, undefined);
   }
 
   private async uniqueRoomCode(): Promise<string> {
@@ -72,7 +72,10 @@ export class WatchRoomService {
   async joinByCode(userId: string, rawCode: string, deviceKey?: string): Promise<WatchRoomResponseDto> {
     this.codeGuesses.assertNotLocked(userId);
     const code = normalizeRoomCode(rawCode);
-    const room = await this.prisma.watchRoom.findUnique({ where: { roomCode: code }, include: { participants: true } });
+    const room = await this.prisma.watchRoom.findUnique({
+      where: { roomCode: code },
+      include: { participants: { include: { participant: { select: { fullName: true } } } } },
+    });
     if (!room) {
       this.codeGuesses.recordFailure(userId);
       throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
@@ -128,7 +131,7 @@ export class WatchRoomService {
     const updated = await this.prisma.watchRoom.update({
       where: { id: roomId },
       data: { status: dto.state, currentPositionSeconds: dto.positionSeconds, lastHostPingAt: new Date(), expiresAt },
-      include: { participants: true },
+      include: { participants: { include: { participant: { select: { fullName: true } } } } },
     });
     return this.snapshot(updated);
   }
@@ -231,7 +234,7 @@ export class WatchRoomService {
         lastHostPingAt: new Date(),
         expiresAt: new Date(Date.now() + ROOM_TTL_MS),
       },
-      include: { participants: true },
+      include: { participants: { include: { participant: { select: { fullName: true } } } } },
     });
     return { room: this.snapshot(updated), blockedUserIds: blocked.map(({ p }) => p.userId) };
   }
@@ -259,7 +262,17 @@ export class WatchRoomService {
   }
 
   private findRoom(roomId: string) {
-    return this.prisma.watchRoom.findUnique({ where: { id: roomId }, include: { participants: true } });
+    return this.prisma.watchRoom.findUnique({
+      where: { id: roomId },
+      include: { participants: { include: { participant: { select: { fullName: true } } } } },
+    });
+  }
+
+  /** Flatten the active participants of a room into { userId, fullName }. */
+  private activeParticipants(room: RoomWithParticipants): ParticipantDto[] {
+    return room.participants
+      .filter((p) => !p.leftAt)
+      .map((p) => ({ userId: p.userId, fullName: p.participant?.fullName ?? 'Thành viên' }));
   }
 
   /**
@@ -267,8 +280,8 @@ export class WatchRoomService {
    * while the room plays, and the server clock rides along so the client can offset the transit.
    */
   private snapshot(room: RoomWithParticipants): WatchRoomResponseDto {
-    const activeCount = room.participants.filter((p) => !p.leftAt).length;
-    const dto = WatchRoomResponseDto.from(room, activeCount);
+    const participants = this.activeParticipants(room);
+    const dto = WatchRoomResponseDto.from(room, participants.length, participants);
     dto.serverTimestamp = Date.now();
     if (room.status === WatchRoomStatus.PLAYING && room.lastHostPingAt) {
       dto.currentPositionSeconds =

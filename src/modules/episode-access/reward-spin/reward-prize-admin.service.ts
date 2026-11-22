@@ -90,4 +90,30 @@ export class RewardPrizeAdminService {
       return prize;
     });
   }
+
+  /** Take a prize off the wheel; keeps history, just switches it off. */
+  async remove(id: string, actorId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.rewardPrize.findUnique({ where: { id } });
+      if (!current) {
+        throw new NotFoundException({
+          message: 'Reward prize not found',
+          details: { reason: 'REWARD_PRIZE_NOT_FOUND' },
+        });
+      }
+      const prize = await tx.rewardPrize.update({ where: { id }, data: { isActive: false } });
+      await this.auditLog.record(
+        {
+          action: CONTENT_EVENT.REWARD_PRIZE_REMOVED,
+          entityType: 'RewardPrize',
+          entityId: prize.id,
+          projectId: null,
+          actorId,
+          payload: { id: prize.id, code: prize.code, isActive: false },
+        },
+        tx,
+      );
+      return prize;
+    });
+  }
 }
