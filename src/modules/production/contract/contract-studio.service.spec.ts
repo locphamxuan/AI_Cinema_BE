@@ -142,6 +142,19 @@ describe('StudioContractService', () => {
     );
   });
 
+  it('refuses to sign at the ceiling when no budget is left, keeping nothing it stored', async () => {
+    db.contract.findFirst.mockResolvedValue(contract());
+    db.contract.findUniqueOrThrow.mockResolvedValue(contract());
+    handoffs.ceiling.mockResolvedValue(0);
+
+    await expect(service.propose('c1', undefined, ACTOR, file)).rejects.toMatchObject({
+      response: { details: { reason: 'NO_BUDGET_LEFT' } },
+    });
+
+    expect(db.contract.update).not.toHaveBeenCalled();
+    expect(signatures.discard).toHaveBeenCalledWith(PREPARED);
+  });
+
   it('blocks signing until the studio legal profile is complete, storing nothing', async () => {
     db.contract.findFirst.mockResolvedValue(contract());
     db.studio.findUniqueOrThrow.mockResolvedValue({ ...PROFILE, address: null, representativeTitle: '' });

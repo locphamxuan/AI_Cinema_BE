@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContractDocumentSide, ContractProposedBy, ContractStatus } from '@prisma/client';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -75,6 +75,13 @@ export class StudioContractService {
       const contract = await lockedContract(tx, contractId, actor.studioId);
       assertContractStatus(contract, ContractStatus.SENT, 'sign');
       const costVnd = proposedVnd ?? (await this.handoffs.ceiling(tx, contract.projectId, contract.handoffId));
+      // Signing at the ceiling needs one: an unfunded or fully committed budget leaves nothing to sign for.
+      if (costVnd <= 0) {
+        throw new ConflictException({
+          message: 'The project has no production budget left to sign this contract for; ask the Admin to add budget',
+          details: { reason: 'NO_BUDGET_LEFT' },
+        });
+      }
       await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
       await tx.contract.update({
         where: { id: contractId },

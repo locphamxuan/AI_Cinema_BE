@@ -57,6 +57,8 @@ export class ContractService {
 
   /** The system sends the project's studio its template contract (no cost yet); also the Admin's resend. */
   async sendTemplate(tx: PrismaTx, projectId: string, actorId: string, terms?: string): Promise<SentTemplate> {
+    // Two sends at once (a double click on resend) would each count no contract and open two rounds.
+    await tx.$queryRaw`SELECT id FROM movie_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
     const project = await tx.movieProject.findUniqueOrThrow({ where: { id: projectId } });
     if (!project.studioId) throw new ConflictException('Pick the studio of the project before sending its contract');
     if (project.status !== ProjectStatus.ASSIGNED) {

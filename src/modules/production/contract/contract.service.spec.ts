@@ -137,6 +137,13 @@ describe('ContractService', () => {
     );
   });
 
+  it('locks the project row first, so two sends at once cannot open two rounds', async () => {
+    db.contract.count.mockResolvedValue(1);
+    await expect(service.sendTemplate(db as never, 'p1', 'admin')).rejects.toThrow(ConflictException);
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(db.contract.count.mock.invocationCallOrder[0]);
+  });
+
   it('sends nothing to a studio that has no Studio Web login yet', async () => {
     db.contract.count.mockResolvedValue(0);
     db.user.count.mockResolvedValueOnce(0);
