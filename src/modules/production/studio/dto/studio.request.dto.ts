@@ -1,10 +1,13 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
-import { BlankAsNull } from 'src/common/validation/trim';
 
 const trimmed = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
+/**
+ * What the Admin records about a partner studio. Its legal profile (address, tax code, bank account, title of
+ * the representative) is filled in by the studio itself on Studio Web since 22/11/2026, never here.
+ */
 export class CreateStudioRequestDto {
   @ApiProperty({ example: 'Studio Ánh Trăng' })
   @Transform(trimmed)
@@ -37,34 +40,6 @@ export class CreateStudioRequestDto {
   @MaxLength(2000)
   @IsOptional()
   note?: string;
-
-  @ApiPropertyOptional({ example: '12 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh' })
-  @BlankAsNull()
-  @IsString()
-  @MaxLength(500)
-  @IsOptional()
-  address?: string | null;
-
-  @ApiPropertyOptional({ example: '0319876543' })
-  @BlankAsNull()
-  @IsString()
-  @MaxLength(50)
-  @IsOptional()
-  taxCode?: string | null;
-
-  @ApiPropertyOptional({ example: '0987654321 - Ngân hàng TMCP Á Châu, CN Quận 1' })
-  @BlankAsNull()
-  @IsString()
-  @MaxLength(255)
-  @IsOptional()
-  bankAccount?: string | null;
-
-  @ApiPropertyOptional({ example: 'Giám đốc', description: 'Title of the representative on the contract.' })
-  @BlankAsNull()
-  @IsString()
-  @MaxLength(100)
-  @IsOptional()
-  representativeTitle?: string | null;
 }
 
 export class UpdateStudioRequestDto extends PartialType(CreateStudioRequestDto) {
