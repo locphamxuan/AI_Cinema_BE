@@ -7,8 +7,8 @@ import type { ContractHandoffService } from '../contract-handoff.service';
 import { BLANK } from './contract-clauses';
 import { PLATFORM, STUDIO } from './template.fixtures';
 import * as pdf from './contract-template-pdf';
-import { ContractTemplateService, longVnDay, vnDay } from './contract-template.service';
-import { demoMark } from './demo-signature';
+import { vnDay } from './contract-template-pdf';
+import { ContractTemplateService, longVnDay } from './contract-template.service';
 
 const SOURCE = {
   id: '9f2b4c6e-0000-4000-8000-000000000001',
@@ -89,7 +89,7 @@ describe('ContractTemplateService', () => {
     });
     expect(draftOf().partyA.name).toBe('Công ty TNHH AI Cinema');
     expect(draftOf().partyB).toMatchObject({ name: 'Lumen Studio', representative: 'Nguyễn Thị Lan' });
-    expect(optionsOf()).toMatchObject({ keywords: `aicinema-project:p1 aicinema-contract:${SOURCE.id}`, marks: [] });
+    expect(optionsOf()).toMatchObject({ keywords: `aicinema-project:p1 aicinema-contract:${SOURCE.id}`, stamps: [] });
     expect(file.getHeaders()).toMatchObject({
       type: 'application/pdf',
       length: 8,
@@ -115,10 +115,35 @@ describe('ContractTemplateService', () => {
     });
   });
 
-  it('draws the given signatures into the copy used for demo signing', async () => {
-    const marks = [demoMark('STUDIO')];
-    await expect(service.signedCopy(SOURCE.id, marks)).resolves.toEqual(Buffer.from('%PDF-1.7'));
-    expect(optionsOf().marks).toBe(marks);
+  it('renders a signed copy through the signing transaction with the given signatures drawn in', async () => {
+    const tx = { contract: { findFirst: jest.fn().mockResolvedValue(SOURCE) } };
+    const stamps = [
+      {
+        side: 'STUDIO' as const,
+        image: Buffer.from('png'),
+        signerName: 'Lan',
+        signerTitle: 'GĐ',
+        signedAt: new Date(),
+      },
+    ];
+
+    await expect(service.signedCopy(tx as never, SOURCE.id, stamps)).resolves.toEqual(Buffer.from('%PDF-1.7'));
+
+    expect(tx.contract.findFirst).toHaveBeenCalled();
+    expect(prisma.contract.findFirst).not.toHaveBeenCalled();
+    expect(handoffs.budgetOf).toHaveBeenCalledWith(tx, SOURCE);
+    expect(optionsOf().stamps).toBe(stamps);
+  });
+
+  it('names the signer of each side as the contract prints it', async () => {
+    await expect(service.signer(prisma as never, SOURCE.id, 'ADMIN')).resolves.toEqual({
+      name: 'Nguyễn Văn An',
+      title: 'Giám đốc',
+    });
+    await expect(service.signer(prisma as never, SOURCE.id, 'STUDIO')).resolves.toEqual({
+      name: 'Nguyễn Thị Lan',
+      title: BLANK,
+    });
   });
 
   it('answers 404 for an unknown round or a round of another studio', async () => {

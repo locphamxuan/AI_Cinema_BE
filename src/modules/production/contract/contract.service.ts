@@ -6,6 +6,7 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
+import { assertLegalProfileComplete } from 'src/modules/production/studio/studio-legal-profile';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { ContractCompletionService, vnd } from './contract-completion.service';
 import { ContractHandoffService } from './contract-handoff.service';
@@ -30,11 +31,12 @@ export interface SentTemplate {
 }
 
 /**
- * MF-1 §3–4 contract negotiation, by signed PDF since 10/11/2026: once the Admin approves the Final Script the
- * system sends the project's studio a template with no cost (round 1); the studio fills the cost in and uploads
- * its signed PDF, then the Admin uploads its own signed PDF to agree (`sign`) or counter-proposes a new cost
- * with its signed PDF (`counter`), which opens a new round. A round is complete only once both counterparts are
- * in and the system merged them into one final document; completing it hands the project off to the studio.
+ * MF-1 §3–4 contract negotiation: once the Admin approves the Final Script the system sends the project's studio
+ * the unsigned contract (round 1); the studio signs it by uploading its signature image, at the budget ceiling or
+ * a lower cost, then the Admin uploads its own signature image to agree (`sign`) or counter-proposes a new cost
+ * with it (`counter`), which opens a new round. Each signature is drawn into the same contract template (since
+ * 22/11/2026); a round is complete once both are in and the FINAL copy carrying them is rendered, which hands
+ * the project off to the studio.
  * The studio side of the same negotiation lives in StudioContractService.
  */
 /** The rounds the Admin may answer with a signed offer: the studio's signed cost, or the unanswered template. */
@@ -77,8 +79,8 @@ export class ContractService {
       [
         `Kịch bản Final của phim "${title}" đã được duyệt và hợp đồng mẫu đã sẵn sàng.`,
         `Ngân sách trần cho hợp đồng: ${vnd(ceiling)}. Chi phí Studio đề xuất không được vượt mức này.`,
-        'Vui lòng đăng nhập Studio Web, tải bản hợp đồng mẫu chưa ký (đã điền thông tin dự án và ngân sách trần) để kiểm tra, ' +
-          'rồi điền chi phí sản xuất và tải lên bản PDF hợp đồng đã có chữ ký của Studio.',
+        'Vui lòng đăng nhập Studio Web, hoàn thiện hồ sơ pháp lý của Studio (nếu chưa có), tải bản hợp đồng chưa ký ' +
+          '(đã điền thông tin dự án và ngân sách trần) để kiểm tra, rồi tải lên ảnh chữ ký để ký hợp đồng.',
       ],
     );
     return { contract, mailId };
@@ -140,43 +142,30 @@ export class ContractService {
   }
 
   /**
-   * Admin agrees with the cost the studio proposed and uploads the contract PDF carrying the Admin's
-   * signature: the round now holds both counterparts, the system merges them and the project is handed off.
+   * Admin agrees with the cost the studio proposed and uploads AI Cinema's signature image: the round now holds
+   * both signatures, the system renders the FINAL copy with them and the project is handed off.
    */
   async sign(contractId: string, admin: AuthenticatedUser, file?: Express.Multer.File): Promise<Detailed> {
     const round = await this.readable(contractId, admin);
     assertContractStatus(round, ContractStatus.STUDIO_SIGNED, 'countersign');
-    const { fullName } = await this.prisma.user.findUniqueOrThrow({
-      where: { id: admin.id },
-      select: { fullName: true },
-    });
-    const prepared = await this.signatures.prepare(
-      {
-        contract: round,
-        side: ContractDocumentSide.ADMIN,
-        completes: true,
-        signerName: fullName,
-        costVnd: round.costVnd,
-      },
-      file,
-      this.prisma,
-    );
+    const prepared = await this.signatures.prepare(round.projectId, ContractDocumentSide.ADMIN, file);
     return this.signing(prepared, async (tx, mailIds) => {
       const contract = await lockedContract(tx, contractId);
       assertContractStatus(contract, ContractStatus.STUDIO_SIGNED, 'countersign');
+      // Rendered while the round is still open, so the FINAL copy prints the same ceiling as the studio's copy.
+      await this.signatures.attach(tx, contractId, prepared, admin.id, true);
       await tx.contract.update({
         where: { id: contractId },
         data: { status: ContractStatus.SIGNED, adminSignedAt: prepared.signedAt, adminSignedById: admin.id },
       });
-      await this.signatures.attach(tx, contractId, prepared, admin.id);
       return this.completion.complete(tx, contractId, admin.id, mailIds);
     });
   }
 
   /**
-   * The Admin uploads the contract PDF for a cost, already carrying AI Cinema's signature, which opens a new
-   * round the studio answers by uploading its own signed copy. Works on the studio's offer (a counter) and,
-   * for the demo order "Admin signs first", straight on the template (priced at the budget ceiling) the studio has not answered.
+   * The Admin signs the contract for a new cost with AI Cinema's signature image, which opens a new round the
+   * studio answers with its own signature. Works on the studio's offer (a counter) and, for the order "Admin
+   * signs first", straight on the template the studio has not answered yet.
    */
   async counter(
     contractId: string,
@@ -186,11 +175,9 @@ export class ContractService {
   ): Promise<Detailed> {
     const round = await this.readable(contractId, admin);
     assertContractStatus(round, ADMIN_OFFER_FROM, 'counter');
-    const prepared = await this.signatures.prepare(
-      { contract: round, side: ContractDocumentSide.ADMIN, completes: false, signerName: '', costVnd: BigInt(costVnd) },
-      file,
-      this.prisma,
-    );
+    // The copy the Admin signs prints Bên B: it must be complete before anyone signs.
+    await assertLegalProfileComplete(this.prisma, round.studioId);
+    const prepared = await this.signatures.prepare(round.projectId, ContractDocumentSide.ADMIN, file);
     return this.signing(prepared, async (tx, mailIds) => {
       const contract = await lockedContract(tx, contractId);
       assertContractStatus(contract, ADMIN_OFFER_FROM, 'counter');
@@ -202,14 +189,14 @@ export class ContractService {
         adminSignedAt: prepared.signedAt,
         adminSignedById: admin.id,
       });
-      await this.signatures.attach(tx, opened.id, prepared, admin.id);
+      await this.signatures.attach(tx, opened.id, prepared, admin.id, false);
       const next = await reloadContract(tx, opened.id);
       await recordContractEvent(this.auditLog, tx, next, CONTENT_EVENT.CONTRACT_COUNTERED, admin.id, { costVnd });
       await tellContractUpdate(
         this.notifications,
         tx,
         next,
-        `Admin đề xuất giá mới ${vnd(costVnd)} kèm bản hợp đồng đã ký, chờ studio "${next.studio.name}".`,
+        `Admin đề xuất giá mới ${vnd(costVnd)} và đã ký hợp đồng, chờ studio "${next.studio.name}".`,
       );
       const title = next.project.movie.title;
       mailIds.push(
@@ -221,8 +208,8 @@ export class ContractService {
           `Hợp đồng phim "${title}": Admin đề xuất chi phí mới`,
           '/contracts',
           [
-            `Admin đề xuất chi phí sản xuất ${vnd(costVnd)} cho phim "${title}" và đã tải lên bản hợp đồng có chữ ký của AI Cinema.`,
-            'Vui lòng đăng nhập Studio Web để tải bản đó về, ký và tải lên bản PDF có chữ ký của Studio, hoặc đề xuất mức chi phí khác.',
+            `Admin đề xuất chi phí sản xuất ${vnd(costVnd)} cho phim "${title}" và đã ký hợp đồng thay mặt AI Cinema.`,
+            'Vui lòng đăng nhập Studio Web để xem bản hợp đồng Admin đã ký, rồi tải lên ảnh chữ ký của Studio để ký, hoặc đề xuất mức chi phí khác.',
           ],
         ),
       );
@@ -245,8 +232,8 @@ export class ContractService {
   }
 
   /**
-   * The signing transaction: emails it queued go out once it committed, and a failure takes back the PDFs
-   * already written to storage, so no object is ever left without its row.
+   * The signing transaction: emails it queued go out once it committed, and a failure takes back the signature
+   * image and the copies already written to storage, so no object is ever left without its row.
    */
   private async signing<T>(
     prepared: PreparedSignature,

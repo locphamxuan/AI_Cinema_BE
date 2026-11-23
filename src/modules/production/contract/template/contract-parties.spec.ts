@@ -21,7 +21,14 @@ describe('contract parties', () => {
     expect(Object.values(platformParty({ ...empty, contractAddress: '   ' }))).toEqual(Array(8).fill(BLANK));
   });
 
-  it('takes Bên B from the studio catalogue, its contact as the representative', () => {
+  it('names the bank of the studio account after its number', () => {
+    expect(studioParty({ ...STUDIO, bankAccount: '0123456789', bankName: 'Vietcombank' }).bankAccount).toBe(
+      '0123456789 tại Vietcombank',
+    );
+    expect(studioParty({ ...STUDIO, bankAccount: '0123456789', bankName: ' ' }).bankAccount).toBe('0123456789');
+  });
+
+  it('takes Bên B from the studio legal profile, its contact as the representative', () => {
     expect(studioParty(STUDIO)).toEqual({
       name: 'Lumen Studio',
       address: BLANK,

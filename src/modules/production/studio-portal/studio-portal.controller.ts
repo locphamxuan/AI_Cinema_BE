@@ -24,7 +24,7 @@ import {
   ContractCostRequestDto,
   ProposeContractRequestDto,
 } from 'src/modules/production/contract/dto/contract.request.dto';
-import { SignedPdfUpload } from 'src/modules/production/contract/signed-pdf-upload';
+import { SignatureUpload } from 'src/modules/production/contract/signature-upload';
 import { ContractTemplateService } from 'src/modules/production/contract/template/contract-template.service';
 import {
   parseAiDisclosure,
@@ -83,7 +83,7 @@ export class StudioPortalController {
   }
 
   @Get('contracts/:contractId/documents/:side/content')
-  @ApiOperation({ summary: 'Download the Admin-signed, the studio-signed or the merged FINAL contract PDF' })
+  @ApiOperation({ summary: 'Download the Admin-signed, the studio-signed or the FINAL copy signed by both' })
   async downloadContract(
     @Param('contractId', ID) contractId: string,
     @Param('side', SIDE) side: ContractDocumentSide,
@@ -94,10 +94,10 @@ export class StudioPortalController {
 
   @Post('contracts/:contractId/propose')
   @HttpCode(200)
-  @SignedPdfUpload('optional')
+  @SignatureUpload('optional')
   @ApiOperation({
     summary:
-      'Upload the contract PDF signed by the studio: at the budget ceiling it was sent with, or at a lower cost it proposes',
+      'Sign the contract with the studio signature image: at the budget ceiling it was sent with, or at a lower cost it proposes',
   })
   async propose(
     @Param('contractId', ID) contractId: string,
@@ -110,10 +110,10 @@ export class StudioPortalController {
 
   @Post('contracts/:contractId/sign')
   @HttpCode(200)
-  @SignedPdfUpload()
+  @SignatureUpload()
   @ApiOperation({
     summary:
-      "Agree with the Admin's cost by uploading the contract PDF signed by the studio: both signatures complete the contract and production starts",
+      "Agree with the Admin's cost by uploading the studio signature image: both signatures complete the contract and production starts",
   })
   async sign(
     @Param('contractId', ID) contractId: string,
@@ -125,8 +125,10 @@ export class StudioPortalController {
 
   @Post('contracts/:contractId/counter')
   @HttpCode(200)
-  @SignedPdfUpload('required')
-  @ApiOperation({ summary: "Disagree with the Admin's cost: propose another one with the contract PDF signed for it" })
+  @SignatureUpload('required')
+  @ApiOperation({
+    summary: "Disagree with the Admin's cost: propose another one, signed with the studio signature image",
+  })
   async counter(
     @Param('contractId', ID) contractId: string,
     @UploadedFile() file: Express.Multer.File | undefined,

@@ -17,7 +17,15 @@ export type PlatformPartySource = Pick<
 
 export type StudioPartySource = Pick<
   Studio,
-  'name' | 'email' | 'phone' | 'contactName' | 'address' | 'taxCode' | 'bankAccount' | 'representativeTitle'
+  | 'name'
+  | 'email'
+  | 'phone'
+  | 'contactName'
+  | 'address'
+  | 'taxCode'
+  | 'bankAccount'
+  | 'bankName'
+  | 'representativeTitle'
 >;
 
 /** Bên A as the Admin keeps it in the platform settings; what is not filled in prints as a blank. */
@@ -34,7 +42,18 @@ export function platformParty(settings: PlatformPartySource): ContractParty {
   };
 }
 
-/** Bên B from the studio catalogue: its legal profile and the representative (contactName) who signs. */
+/** "0123456789 tại Ngân hàng X", or just the number when the bank is not named. */
+function studioBank({ bankAccount, bankName }: Pick<StudioPartySource, 'bankAccount' | 'bankName'>): string {
+  const account = bankAccount?.trim();
+  if (!account) return BLANK;
+  const bank = bankName?.trim();
+  return bank ? `${account} tại ${bank}` : account;
+}
+
+/**
+ * Bên B from the legal profile the studio keeps on Studio Web and the representative (contactName) the Admin
+ * records; read when the contract is rendered, so a copy is never filled with an older profile.
+ */
 export function studioParty(studio: StudioPartySource): ContractParty {
   return {
     name: studio.name,
@@ -42,7 +61,7 @@ export function studioParty(studio: StudioPartySource): ContractParty {
     taxCode: orBlank(studio.taxCode),
     phone: orBlank(studio.phone),
     email: studio.email,
-    bankAccount: orBlank(studio.bankAccount),
+    bankAccount: studioBank(studio),
     representative: orBlank(studio.contactName),
     title: orBlank(studio.representativeTitle),
   };

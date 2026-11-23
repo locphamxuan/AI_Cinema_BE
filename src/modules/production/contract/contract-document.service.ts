@@ -16,7 +16,7 @@ const METADATA = {
 } as const;
 
 /**
- * Reading the signed contract PDFs. The objects are private and have unguessable keys, so a download always
+ * Reading the signed contract copies. The objects are private and have unguessable keys, so a download always
  * goes through here: the Admin and the Reviewer of the project reach them with contract:document.read, and
  * the studio of the contract reaches its own through /studio-portal. Nobody else, including other studios.
  */
@@ -28,7 +28,7 @@ export class ContractDocumentService {
     private readonly storage: ObjectStorage,
   ) {}
 
-  /** What a round holds, without storage keys: the Admin's PDF, the studio's, and the merged final one. */
+  /** What a round holds, without storage keys: the copy the Admin signed, the studio's, and the FINAL one. */
   async list(contractId: string, user: AuthenticatedUser) {
     const contract = await this.prisma.contract.findUnique({
       where: { id: contractId },
@@ -43,7 +43,7 @@ export class ContractDocumentService {
     });
   }
 
-  /** Admin or the Reviewer in charge downloads one side's PDF, or the merged document. */
+  /** Admin or the Reviewer in charge downloads one side's signed copy, or the FINAL one. */
   async download(contractId: string, side: ContractDocumentSide, user: AuthenticatedUser): Promise<StreamableFile> {
     const contract = await this.prisma.contract.findUnique({
       where: { id: contractId },

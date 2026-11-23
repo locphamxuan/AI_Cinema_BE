@@ -12,15 +12,28 @@ import { StudioContractService } from './contract-studio.service';
 const ACTOR = { studioId: 's1', userId: 'studio-user' };
 const SIGNED_AT = new Date('2026-11-10T06:00:00.000Z');
 const PREPARED: PreparedSignature = {
+  projectId: 'p1',
+  side: ContractDocumentSide.STUDIO,
   signedAt: SIGNED_AT,
-  counterpart: {
-    side: ContractDocumentSide.STUDIO,
-    storageKey: 'contracts/p1/studio-k.pdf',
-    fileName: 'hop-dong.pdf',
-    sizeBytes: 512,
+  image: {
+    buffer: Buffer.from('png'),
+    mimeType: 'image/png',
+    extension: 'png',
+    width: 300,
+    height: 100,
+    storageKey: 'contracts/p1/signature-studio-k.png',
     checksum: 'b'.repeat(64),
   },
-  final: null,
+  written: ['contracts/p1/signature-studio-k.png'],
+};
+
+const PROFILE = {
+  contactName: 'Lan',
+  address: '12 Nguyễn Huệ, Quận 1',
+  taxCode: '0312345678-001',
+  bankAccount: '0123456789',
+  bankName: 'ACB',
+  representativeTitle: 'Giám đốc',
 };
 
 const contract = (overrides: Record<string, unknown> = {}) => ({
@@ -55,6 +68,7 @@ describe('StudioContractService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    studio: { findUniqueOrThrow: jest.fn() },
     $queryRaw: jest.fn(),
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
@@ -73,7 +87,7 @@ describe('StudioContractService', () => {
     mails as unknown as StudioMailService,
     handoffs as unknown as ContractHandoffService,
   );
-  const file = { buffer: Buffer.from('%PDF-1.7'), originalname: 'ky.pdf', size: 8 } as Express.Multer.File;
+  const file = { buffer: Buffer.from('png'), originalname: 'chu-ky.png', size: 3 } as Express.Multer.File;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -81,6 +95,7 @@ describe('StudioContractService', () => {
     notifications.studioAccountIds.mockResolvedValue(['studio-user']);
     db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1', project: { status: 'ASSIGNED' } });
     signatures.prepare.mockResolvedValue(PREPARED);
+    db.studio.findUniqueOrThrow.mockResolvedValue(PROFILE);
     completion.complete.mockImplementation((_tx, id: string) => Promise.resolve(contract({ id, status: 'SIGNED' })));
   });
 
@@ -119,7 +134,7 @@ describe('StudioContractService', () => {
 
     await service.propose('c1', undefined, ACTOR, file);
 
-    expect(signatures.prepare).toHaveBeenCalledWith(expect.objectContaining({ costVnd: null }), file, prisma);
+    expect(signatures.prepare).toHaveBeenCalledWith('p1', ContractDocumentSide.STUDIO, file);
     expect(handoffs.ceiling).toHaveBeenCalledWith(db, 'p1', null);
     expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 200_000_000, null);
     expect(db.contract.update).toHaveBeenCalledWith(
@@ -127,7 +142,18 @@ describe('StudioContractService', () => {
     );
   });
 
-  it('fills in the cost and records the studio-signed PDF on the template', async () => {
+  it('blocks signing until the studio legal profile is complete, storing nothing', async () => {
+    db.contract.findFirst.mockResolvedValue(contract());
+    db.studio.findUniqueOrThrow.mockResolvedValue({ ...PROFILE, address: null, representativeTitle: '' });
+
+    await expect(service.propose('c1', undefined, ACTOR, file)).rejects.toMatchObject({
+      response: { details: { reason: 'STUDIO_PROFILE_INCOMPLETE', missing: ['address', 'representativeTitle'] } },
+    });
+    expect(db.studio.findUniqueOrThrow).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 's1' } }));
+    expect(signatures.prepare).not.toHaveBeenCalled();
+  });
+
+  it('fills in the cost and records the studio signature on the template', async () => {
     db.contract.findFirst.mockResolvedValue(contract());
     db.contract.findUniqueOrThrow
       .mockResolvedValueOnce(contract())
@@ -135,17 +161,13 @@ describe('StudioContractService', () => {
 
     const proposed = await service.propose('c1', 150_000_000, ACTOR, file);
 
-    expect(signatures.prepare).toHaveBeenCalledWith(
-      expect.objectContaining({ side: ContractDocumentSide.STUDIO, completes: false }),
-      file,
-      prisma,
-    );
+    expect(signatures.prepare).toHaveBeenCalledWith('p1', ContractDocumentSide.STUDIO, file);
     expect(db.contract.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: ContractStatus.STUDIO_SIGNED, studioSignedAt: SIGNED_AT }),
       }),
     );
-    expect(signatures.attach).toHaveBeenCalledWith(db, 'c1', PREPARED, 'studio-user');
+    expect(signatures.attach).toHaveBeenCalledWith(db, 'c1', PREPARED, 'studio-user', false);
     expect(proposed.status).toBe(ContractStatus.STUDIO_SIGNED);
     expect(completion.complete).not.toHaveBeenCalled();
   });
@@ -158,19 +180,15 @@ describe('StudioContractService', () => {
     expect(signatures.prepare).not.toHaveBeenCalled();
   });
 
-  it("completes the contract when the studio signs the Admin's counter with its own PDF", async () => {
+  it("completes the contract when the studio signs the Admin's counter with its signature", async () => {
     const countered = contract({ status: ContractStatus.ADMIN_COUNTERED, costVnd: 160_000_000n });
     db.contract.findFirst.mockResolvedValue(countered);
     db.contract.findUniqueOrThrow.mockResolvedValue(countered);
-    signatures.prepare.mockResolvedValue({ ...PREPARED, final: { ...PREPARED.counterpart, side: 'FINAL' } });
 
     await service.studioSign('c1', ACTOR, file);
 
-    expect(signatures.prepare).toHaveBeenCalledWith(
-      expect.objectContaining({ completes: true, costVnd: 160_000_000n }),
-      file,
-      prisma,
-    );
+    expect(signatures.attach).toHaveBeenCalledWith(db, 'c1', PREPARED, 'studio-user', true);
+    expect(signatures.attach.mock.invocationCallOrder[0]).toBeLessThan(db.contract.update.mock.invocationCallOrder[0]);
     expect(db.contract.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
       data: { status: ContractStatus.SIGNED, studioSignedAt: SIGNED_AT },
@@ -185,7 +203,7 @@ describe('StudioContractService', () => {
     expect(signatures.prepare).not.toHaveBeenCalled();
   });
 
-  it("answers the Admin's counter with another price in a new round carrying the studio PDF", async () => {
+  it("answers the Admin's counter with another price in a new round the studio signed", async () => {
     const countered = contract({ status: ContractStatus.ADMIN_COUNTERED, costVnd: 160_000_000n });
     db.contract.findFirst.mockResolvedValue(countered);
     db.contract.findUniqueOrThrow
@@ -199,14 +217,14 @@ describe('StudioContractService', () => {
     expect(db.contract.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ studioSignedAt: SIGNED_AT, round: 2 }) }),
     );
-    expect(signatures.attach).toHaveBeenCalledWith(db, 'c3', PREPARED, 'studio-user');
+    expect(signatures.attach).toHaveBeenCalledWith(db, 'c3', PREPARED, 'studio-user', false);
     expect(next.status).toBe(ContractStatus.STUDIO_SIGNED);
     expect(completion.complete).not.toHaveBeenCalled();
     // The studio just acted: the Admin hears about it in the app, nothing is mailed back to the studio.
     expect(mails.queue).not.toHaveBeenCalled();
   });
 
-  it('takes the stored PDF back when the transaction fails', async () => {
+  it('takes the stored objects back when the transaction fails', async () => {
     db.contract.findFirst.mockResolvedValue(contract());
     db.contract.findUniqueOrThrow.mockResolvedValue(contract({ status: ContractStatus.SIGNED }));
     await expect(service.propose('c1', 1_000, ACTOR, file)).rejects.toBeInstanceOf(ConflictException);

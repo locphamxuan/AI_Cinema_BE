@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
-import { adminCounter, adminSign, proposeCost, signedPdf, studioSign } from './support/contracts';
+import { adminCounter, adminSign, proposeCost, SIGNATURE_PNG, studioSign } from './support/contracts';
 import { DISCLOSURE, MP4 } from './support/media';
 import {
   assignedProject,
@@ -22,11 +22,12 @@ interface Contract extends Row {
 }
 
 /**
- * MF-1 (10/11/2026): a contract is signed by uploading a PDF, not by clicking. Each side uploads the contract
- * carrying its own signature and the system merges both into one FINAL document; only then is the contract
- * complete. This suite walks a whole negotiation through the two portals and checks who may read what.
+ * MF-1 (22/11/2026): a contract is signed by uploading a signature image, not by clicking. The system draws each
+ * signature into the same contract template the unsigned copy comes from, and renders the FINAL copy once both
+ * are in; only then is the contract complete. This suite walks a whole negotiation through the two portals and
+ * checks who may read what.
  */
-describe('Signed contract PDFs (e2e)', () => {
+describe('Contract signing by signature image (e2e)', () => {
   let app: INestApplication<App>;
   let reviewer: Actor;
   let creator: Actor;
@@ -52,17 +53,17 @@ describe('Signed contract PDFs (e2e)', () => {
 
   const rounds = () => admin.get<Contract[]>(`/projects/${project.id}/contracts`);
 
-  it('refuses anything that is not a readable PDF, and stores nothing for it', async () => {
+  it('refuses anything that is not a signature image, and stores nothing for it', async () => {
     await studio.upload(
       `/studio-portal/contracts/${contractId}/propose`,
-      { field: 'file', name: 'hop-dong.pdf', content: Buffer.from('Toi ky bang Word') },
+      { field: 'file', name: 'hop-dong.pdf', content: Buffer.from('%PDF-1.7 ban ky') },
       { costVnd: String(HANDOFF_FEE_VND) },
       400,
     );
-    // A real PDF under a name that claims another type is refused the same way.
+    // A real PNG under a name that claims another type is refused the same way.
     await studio.upload(
       `/studio-portal/contracts/${contractId}/propose`,
-      { field: 'file', name: 'hop-dong.docx', content: await signedPdf('Ban ky') },
+      { field: 'file', name: 'chu-ky.jpg', content: SIGNATURE_PNG },
       { costVnd: String(HANDOFF_FEE_VND) },
       400,
     );
@@ -70,13 +71,13 @@ describe('Signed contract PDFs (e2e)', () => {
     expect(template).toMatchObject({ status: 'SENT', costVnd: null, documents: [] });
   });
 
-  it('keeps the round open until both counterparts are in', async () => {
+  it('keeps the round open until both signatures are in', async () => {
     const proposed = (await proposeCost(studio, contractId, HANDOFF_FEE_VND)) as Contract;
 
     expect(proposed.status).toBe('STUDIO_SIGNED');
     expect(proposed.documents.map((document) => document.side)).toEqual(['STUDIO']);
     expect(proposed.documents[0].checksum).toMatch(/^[0-9a-f]{64}$/);
-    // Still no film: production waits for both signatures, one counterpart is not enough.
+    // Still no film: production waits for both signatures, one signature is not enough.
     await studio.upload(
       `/studio-portal/episodes/${episodesOf(project)[0].id}/media/upload`,
       { field: 'file', name: 'tap.mp4', content: MP4 },
@@ -85,7 +86,7 @@ describe('Signed contract PDFs (e2e)', () => {
     );
   });
 
-  it('carries the Admin counterpart over to the next round when the Admin counters', async () => {
+  it('opens the next round with the Admin signature when the Admin counters', async () => {
     const countered = (await adminCounter(admin, contractId, HANDOFF_FEE_VND - 5_000_000)) as Contract;
 
     expect(countered).toMatchObject({ round: 2, status: 'ADMIN_COUNTERED' });
@@ -95,16 +96,16 @@ describe('Signed contract PDFs (e2e)', () => {
     expect(all.map((round) => round.status)).toEqual(['SUPERSEDED', 'ADMIN_COUNTERED']);
   });
 
-  it('merges both counterparts into one final document when the studio signs', async () => {
+  it('renders the FINAL copy on the very pages of the unsigned contract when the studio signs', async () => {
+    const unsigned = await studio.download(`/studio-portal/contracts/${contractId}/template`);
     const signed = (await studioSign(studio, contractId)) as Contract;
 
     expect(signed.status).toBe('SIGNED');
     expect(signed.documents.map((document) => document.side).sort()).toEqual(['ADMIN', 'FINAL', 'STUDIO']);
     const final = await admin.download(`/contracts/${contractId}/documents/FINAL/content`);
     expect(final.type).toContain('application/pdf');
-    const merged = await PDFDocument.load(final.body, { updateMetadata: false });
-    // 1 Admin page + 1 studio page + the page the system draws with both signature blocks.
-    expect(merged.getPageCount()).toBe(3);
+    const pages = async (pdf: Buffer) => (await PDFDocument.load(pdf, { updateMetadata: false })).getPageCount();
+    expect(await pages(final.body)).toBe(await pages(unsigned.body));
     expect((await reviewer.get<ProjectDetail>(`/projects/${project.id}`)).status).toBe('IN_PRODUCTION');
   });
 

@@ -1,8 +1,7 @@
 import { PDFDocument } from 'pdf-lib';
 import { unicodeFontPath } from 'src/infrastructure/pdf/unicode-font';
-import { DRAFT } from './template.fixtures';
-import { contractKeywords, renderContractPdf, type SignatureMark } from './contract-template-pdf';
-import { demoMark, sealName } from './demo-signature';
+import { DRAFT, pngImage } from './template.fixtures';
+import { contractKeywords, renderContractPdf, vnDay, type SignatureStamp } from './contract-template-pdf';
 
 const load = (pdf: Buffer) => PDFDocument.load(pdf, { updateMetadata: false });
 
@@ -33,30 +32,23 @@ describe('contract template PDF', () => {
     expect(new Set(counts).size).toBeGreaterThan(1);
   });
 
-  it('draws each mark in the box of its side', async () => {
-    const draw = jest.fn<void, Parameters<SignatureMark['draw']>>();
-    await renderContractPdf(DRAFT, {
-      fontPath: unicodeFontPath(null),
-      footnote: 'x',
-      marks: [
-        { side: 'STUDIO', draw },
-        { side: 'ADMIN', draw },
-      ],
+  it('renders a signed copy on exactly the pages of the unsigned one, with each signature in its block', async () => {
+    const stamp = (side: SignatureStamp['side']): SignatureStamp => ({
+      side,
+      image: pngImage(),
+      signerName: side === 'ADMIN' ? 'Nguyễn Văn An' : 'Nguyễn Thị Lan',
+      signerTitle: 'Giám đốc',
+      signedAt: new Date('2026-11-21T18:30:00Z'),
     });
-    expect(draw.mock.calls.map(([, box]) => [box.x, box.partyName])).toEqual([
-      [320, 'Lumen Studio'],
-      [56, 'Công ty TNHH AI Cinema'],
-    ]);
-  });
+    const options = { fontPath: unicodeFontPath(null), footnote: 'x', keywords: contractKeywords('p1', 'c1') };
+    const unsigned = await load(await renderContractPdf(DRAFT, options));
+    const studio = await load(await renderContractPdf(DRAFT, { ...options, stamps: [stamp('STUDIO')] }));
+    const both = await load(await renderContractPdf(DRAFT, { ...options, stamps: [stamp('STUDIO'), stamp('ADMIN')] }));
 
-  it('draws the demo signature and seal, the seal naming the short trade name', async () => {
-    const pdf = await renderContractPdf(DRAFT, {
-      fontPath: null,
-      footnote: '',
-      marks: [demoMark('STUDIO'), demoMark('ADMIN')],
-    });
-    expect((await load(pdf)).getPageCount()).toBeGreaterThanOrEqual(2);
-    expect(sealName('Công ty TNHH Lumen Studio (giả lập)')).toBe('LUMEN STUDIO');
-    expect(sealName('Công ty Cổ phần Phim Việt')).toBe('PHIM VIỆT');
+    expect(studio.getPageCount()).toBe(unsigned.getPageCount());
+    expect(both.getPageCount()).toBe(unsigned.getPageCount());
+    expect(both.getKeywords()).toBe(unsigned.getKeywords());
+    // 18:30 UTC is already the next day in Vietnam.
+    expect(vnDay(new Date('2026-11-21T18:30:00Z'))).toBe('22/11/2026');
   });
 });
