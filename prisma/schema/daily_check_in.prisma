@@ -1,6 +1,5 @@
 /// One day's check-in, keyed by the business day in Vietnam so a reward can be claimed once a day
-/// whatever the client's clock says. The Coins are bonus Coins: they carry the expiry of the lot
-/// the ledger entry created.
+/// whatever the client's clock says. The Coins are bonus Coins, which never expire.
 model DailyCheckIn {
   id                String   @id @default(uuid()) @db.Uuid
   userId            String   @map("user_id") @db.Uuid

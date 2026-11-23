@@ -122,7 +122,7 @@ export class EntitlementService {
 
   /**
    * Pays a purchase back exactly as it was paid (BR-52): the main Coins to the main balance, the
-   * bonus Coins to a new bonus lot with the default expiry, so a refund never turns promotion
+   * bonus Coins back as bonus Coins, so a refund never turns promotion
    * Coins into main Coins. Returns the ledger entry that did it.
    */
   private async refund(

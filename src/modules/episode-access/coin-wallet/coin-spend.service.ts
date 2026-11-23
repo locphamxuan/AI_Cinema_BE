@@ -21,7 +21,7 @@ export class CoinSpendService {
     @Optional() private readonly notifications?: NotificationService,
   ) {}
 
-  /** Takes Coins out: main first, then the bonus lots that expire first. */
+  /** Takes Coins out: main first, then bonus Coins for the rest (BR-01). */
   async spend(tx: PrismaTx, walletId: string, request: SpendRequest, now = new Date()): Promise<CoinMovement> {
     // The key is looked up under the wallet lock: a concurrent retry with the same key waits for the
     // first attempt to commit and then replays it, instead of failing on the unique key.

@@ -14,14 +14,13 @@ export class WalletController {
 
   @Get()
   @RequirePermission(PERMISSION.WALLET_READ)
-  @ApiOperation({ summary: 'Coin balance of the caller: main and bonus apart, plus what expires soon' })
+  @ApiOperation({ summary: 'Coin balance of the caller: main and bonus apart' })
   @ApiOkResponse({
     schema: {
       example: {
         mainBalance: 120,
         bonusBalance: 40,
         version: 7,
-        expiringBonus: [{ lotId: '6b1e...', amount: 40, expiresAt: '2026-11-04T03:10:00.000Z' }],
       },
     },
   })
