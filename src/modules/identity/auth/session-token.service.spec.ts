@@ -88,4 +88,16 @@ describe('SessionTokenService.rotate', () => {
       expect.objectContaining({ where: { id: 'winner', revokedAt: null } }),
     );
   });
+
+  it('opens one more session on each login and never ends the sessions of other accounts or windows', async () => {
+    // The owner signs in as Creator, Reviewer and Admin in three windows: three independent token families.
+    prisma.refreshToken.create.mockResolvedValue({});
+    const pairs = await Promise.all(
+      ['u-creator', 'u-reviewer', 'u-admin'].map((id) => service.issue({ id, role: 'ADMIN' })),
+    );
+
+    expect(new Set(pairs.map((pair) => pair.refreshToken)).size).toBe(3);
+    expect(prisma.refreshToken.create).toHaveBeenCalledTimes(3);
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+  });
 });
