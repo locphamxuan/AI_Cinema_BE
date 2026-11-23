@@ -15,7 +15,7 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
 import { WalletService } from '../coin-wallet/wallet.service';
 import { PLAN_REASON, purchasablePlan } from '../membership-plan/membership-plan.service';
-import { findOwnSubscription, planOf, SUB_REASON, windowEndOf } from './subscription-rules';
+import { findOwnSubscription, OPEN_STATUSES, planOf, SUB_REASON, windowEndOf } from './subscription-rules';
 import { businessDate } from 'src/common/time/business-day';
 
 const DAY_MS = 86_400_000;
@@ -260,15 +260,10 @@ export class SubscriptionService {
    */
   async cancel(userId: string, subscriptionId: string, reason?: string) {
     const intent = await findOwnSubscription(this.prisma, userId, subscriptionId);
-    if (intent.status === SubscriptionStatus.CANCELLED) {
-      throw new ConflictException({
-        message: 'This plan has already ended',
-        details: { reason: SUB_REASON.ENDED },
-      });
-    }
     const now = new Date();
-    const subscription = await this.prisma.subscription.update({
-      where: { id: intent.id },
+    // Only an open plan ends here: an expired one keeps its history, and a double tap ends it once.
+    const ended = await this.prisma.subscription.updateMany({
+      where: { id: intent.id, status: { in: OPEN_STATUSES } },
       data: {
         status: SubscriptionStatus.CANCELLED,
         autoRenew: false,
@@ -278,6 +273,10 @@ export class SubscriptionService {
         nextRenewalAt: null,
       },
     });
+    if (!ended.count) {
+      throw new ConflictException({ message: 'This plan has already ended', details: { reason: SUB_REASON.ENDED } });
+    }
+    const subscription = await this.prisma.subscription.findUniqueOrThrow({ where: { id: intent.id } });
     await this.notifications.notify([userId], {
       type: NOTIFICATION_TYPE.SUBSCRIPTION_CANCELLED,
       title: 'Gói đã được hủy',
