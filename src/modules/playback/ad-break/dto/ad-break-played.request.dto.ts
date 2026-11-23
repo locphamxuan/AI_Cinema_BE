@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, Min } from 'class-validator';
+import { IsInt, Max, Min } from 'class-validator';
+import { MAX_POSITION_SECONDS } from 'src/modules/playback/watch-progress/dto/position-limit';
 
 /**
  * The player pauses the episode at a cue and reports where the playhead actually is.
@@ -14,5 +15,6 @@ export class AdBreakPlayedRequestDto {
   })
   @IsInt()
   @Min(0)
+  @Max(MAX_POSITION_SECONDS)
   positionSeconds: number;
 }

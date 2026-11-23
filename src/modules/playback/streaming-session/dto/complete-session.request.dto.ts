@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { MAX_POSITION_SECONDS } from 'src/modules/playback/watch-progress/dto/position-limit';
 
 /**
  * The player reports that playback ended. The position is only a hint for where it
@@ -14,5 +15,6 @@ export class CompleteSessionRequestDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(MAX_POSITION_SECONDS)
   positionSeconds?: number;
 }
