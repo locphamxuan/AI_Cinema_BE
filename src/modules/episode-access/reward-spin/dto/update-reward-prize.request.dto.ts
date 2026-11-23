@@ -29,7 +29,10 @@ export class UpdateRewardPrizeRequestDto {
   @IsOptional()
   weight?: number;
 
-  @ApiPropertyOptional({ description: 'Take the prize off the wheel (false) or put it back (true)' })
+  @ApiPropertyOptional({
+    description:
+      'Switch the prize off the wheel (false) or back on (true); refused for the last active prize while members hold spins',
+  })
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;

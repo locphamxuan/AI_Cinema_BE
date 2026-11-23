@@ -36,22 +36,34 @@ const prizeView = (prize: Pick<RewardPrize, 'id' | 'code' | 'name' | 'type' | 'b
   planDays: prize.planDays,
 });
 
-const spinView = (spin: RewardSpin & { prize: RewardPrize | null }) => ({
+/**
+ * A spin as the member sees it. The prize comes from the copy kept on the spin, so a prize the
+ * Admin later renamed or deleted still shows what was won; `id` is null once it is deleted.
+ */
+const spinView = (spin: RewardSpin) => ({
   id: spin.id,
   status: spin.status,
   grantedAt: spin.grantedAt,
   spunAt: spin.spunAt,
-  prize: spin.prize ? prizeView(spin.prize) : null,
+  prize: spin.prizeType
+    ? {
+        id: spin.prizeId,
+        name: spin.prizeName ?? '',
+        type: spin.prizeType,
+        bonusCoins: spin.bonusCoins,
+        planDays: spin.planDays,
+      }
+    : null,
   bonusCoins: spin.bonusCoins,
   planDays: spin.planDays,
 });
 
-/** Draws one prize with probability weight / total weight, from a CSPRNG. */
 /** A weight's share of the active weights, in percent with one decimal. */
 export function chancePercent(weight: number, total: number): number {
   return total > 0 ? Math.round((weight / total) * 1000) / 10 : 0;
 }
 
+/** Draws one prize with probability weight / total weight, from a CSPRNG. */
 export function drawPrize<T extends { weight: number }>(prizes: T[], pick = randomInt): T {
   const total = prizes.reduce((sum, prize) => sum + prize.weight, 0);
   let ticket = pick(total);
@@ -87,7 +99,6 @@ export class RewardSpinService {
         where: { userId, status: RewardSpinStatus.USED },
         orderBy: { spunAt: 'desc' },
         take: HISTORY_LIMIT,
-        include: { prize: true },
       }),
     ]);
     // The member may see the odds (BR-09 transparency), never the raw weights the Admin set.
@@ -102,7 +113,7 @@ export class RewardSpinService {
   /** Uses the member's oldest spin. Replaying the same Idempotency-Key answers the first result. */
   async spin(userId: string, idempotencyKey?: string) {
     if (idempotencyKey) {
-      const done = await this.prisma.rewardSpin.findUnique({ where: { idempotencyKey }, include: { prize: true } });
+      const done = await this.prisma.rewardSpin.findUnique({ where: { idempotencyKey } });
       if (done && done.userId === userId) return this.resultOf(done);
       if (done) {
         throw new ConflictException({
@@ -128,22 +139,37 @@ export class RewardSpinService {
       // Claiming the row on its status makes a double tap use the spin once.
       const claimed = await tx.rewardSpin.updateMany({
         where: { id: spin.id, status: RewardSpinStatus.AVAILABLE },
-        data: { status: RewardSpinStatus.USED, spunAt: now, prizeId: prize.id, prizeType: prize.type, idempotencyKey },
+        data: {
+          status: RewardSpinStatus.USED,
+          spunAt: now,
+          prizeId: prize.id,
+          prizeName: prize.name,
+          prizeType: prize.type,
+          idempotencyKey,
+        },
       });
       if (!claimed.count) {
         throw new ConflictException({ message: 'This spin was just used', details: { reason: SPIN_REASON.TAKEN } });
       }
       const payout = await this.payOut(tx, userId, spin.id, prize, now);
-      const row = await tx.rewardSpin.update({ where: { id: spin.id }, data: payout, include: { prize: true } });
+      const row = await tx.rewardSpin.update({ where: { id: spin.id }, data: payout });
       await this.record(tx, userId, row, prize);
       return row;
     });
     return this.resultOf(used);
   }
 
-  /** Active prizes; plan days only when the member could actually receive them. */
+  /**
+   * Active prizes; plan days only when the member could actually receive them. The rows are locked
+   * FOR SHARE until the spin commits, so an Admin deleting or switching off the drawn prize waits
+   * for it instead of breaking the payout; a prize deleted just before is simply not drawn.
+   */
   private async eligiblePrizes(tx: PrismaTx, userId: string): Promise<RewardPrize[]> {
-    const prizes = await tx.rewardPrize.findMany({ where: { isActive: true } });
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "reward_prizes" WHERE "is_active" = true ORDER BY "id" FOR SHARE`;
+    const prizes = locked.length
+      ? await tx.rewardPrize.findMany({ where: { id: { in: locked.map((row) => row.id) }, isActive: true } })
+      : [];
     const planPossible =
       prizes.some((p) => p.type === RewardPrizeType.PLAN_DAYS) &&
       Boolean((await this.planDays.openPlan(tx, userId)) ?? (await this.planDays.giftPlan(tx)));
@@ -225,7 +251,7 @@ export class RewardSpinService {
     );
   }
 
-  private async resultOf(spin: RewardSpin & { prize: RewardPrize | null }) {
+  private async resultOf(spin: RewardSpin) {
     const [balance, plan, availableSpins] = await Promise.all([
       this.wallets.walletOf(spin.userId),
       spin.subscriptionId

@@ -1,6 +1,6 @@
 /// What a reward spin can win (BR-09).
 enum RewardPrizeType {
-  /// Bonus Coins, in a lot that expires like any bonus.
+  /// Bonus Coins.
   BONUS_COIN
   /// Days of the monthly plan: added to a running plan, or a plan of that many days that does not
   /// auto-renew. Their value is a promotion cost, never revenue (BR-49).
@@ -37,7 +37,8 @@ enum RewardSpinStatus {
 }
 
 /// One spin a member earned on a milestone check-in (BR-09). Spinning draws a prize and keeps a
-/// copy of what it paid, so a later edit of the prize does not rewrite history.
+/// copy of what it paid (name, type, amount), so a later edit or deletion of the prize does not
+/// rewrite history: deleting a prize only clears `prizeId`.
 model RewardSpin {
   id                String           @id @default(uuid()) @db.Uuid
   userId            String           @map("user_id") @db.Uuid
@@ -47,6 +48,8 @@ model RewardSpin {
   grantedAt         DateTime         @default(now()) @map("granted_at") @db.Timestamptz(6)
   spunAt            DateTime?        @map("spun_at") @db.Timestamptz(6)
   prizeId           String?          @map("prize_id") @db.Uuid
+  /// The prize's name when it was won; stays after the prize is deleted.
+  prizeName         String?          @map("prize_name") @db.VarChar(255)
   prizeType         RewardPrizeType? @map("prize_type")
   bonusCoins        Int?             @map("bonus_coins")
   planDays          Int?             @map("plan_days")
@@ -61,7 +64,7 @@ model RewardSpin {
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   checkIn         DailyCheckIn     @relation(fields: [checkInId], references: [id], onDelete: Cascade)
-  prize           RewardPrize?     @relation(fields: [prizeId], references: [id], onDelete: Restrict)
+  prize           RewardPrize?     @relation(fields: [prizeId], references: [id], onDelete: SetNull)
   coinTransaction CoinTransaction? @relation(fields: [coinTransactionId], references: [id], onDelete: Restrict)
   subscription    Subscription?    @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
 

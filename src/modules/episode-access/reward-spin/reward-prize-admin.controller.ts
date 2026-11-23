@@ -29,13 +29,16 @@ export class RewardPrizeAdminController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Edit a prize, its weight, or take it off the wheel' })
+  @ApiOperation({ summary: 'Edit a prize, its weight, or switch it on/off the wheel' })
   update(@Param('id', ID) id: string, @CurrentUser('id') actorId: string, @Body() dto: UpdateRewardPrizeRequestDto) {
     return this.prizes.update(id, actorId, dto);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Take a prize off the wheel (keeps history)' })
+  @ApiOperation({
+    summary: 'Delete a prize for good; past spins keep a copy of what they won',
+    description: '409 REWARD_PRIZE_LAST_ACTIVE when it is the last active prize and members still hold spins',
+  })
   delete(@Param('id', ID) id: string, @CurrentUser('id') actorId: string) {
     return this.prizes.remove(id, actorId);
   }

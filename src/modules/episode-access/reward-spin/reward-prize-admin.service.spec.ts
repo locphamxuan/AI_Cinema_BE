@@ -2,10 +2,14 @@ import { RewardPrizeType } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
-import { RewardPrizeAdminService } from './reward-prize-admin.service';
+import { PRIZE_REASON, RewardPrizeAdminService } from './reward-prize-admin.service';
 
 describe('RewardPrizeAdminService', () => {
-  const tx = { rewardPrize: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() } };
+  const tx = {
+    $queryRaw: jest.fn(),
+    rewardPrize: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn(), count: jest.fn() },
+    rewardSpin: { count: jest.fn() },
+  };
   const prisma = { $transaction: jest.fn((work: (t: typeof tx) => Promise<unknown>) => work(tx)) };
   const auditLog = { record: jest.fn() };
   const service = new RewardPrizeAdminService(
@@ -18,6 +22,8 @@ describe('RewardPrizeAdminService', () => {
     tx.rewardPrize.findUnique.mockResolvedValue(null);
     tx.rewardPrize.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: 'p1', ...data }));
     tx.rewardPrize.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: 'p1', ...data }));
+    tx.rewardPrize.count.mockResolvedValue(1);
+    tx.rewardSpin.count.mockResolvedValue(0);
   });
 
   it('keeps only the amount the prize type uses', async () => {
@@ -64,7 +70,7 @@ describe('RewardPrizeAdminService', () => {
   });
 
   it('edits the weight or takes the prize off the wheel, and logs it', async () => {
-    tx.rewardPrize.findUnique.mockResolvedValue({ id: 'p1', type: RewardPrizeType.BONUS_COIN });
+    tx.rewardPrize.findUnique.mockResolvedValue({ id: 'p1', type: RewardPrizeType.BONUS_COIN, isActive: true });
 
     await service.update('p1', 'admin-1', { weight: 9, isActive: false });
 
@@ -73,5 +79,62 @@ describe('RewardPrizeAdminService', () => {
       expect.objectContaining({ action: CONTENT_EVENT.REWARD_PRIZE_UPDATED }),
       tx,
     );
+  });
+
+  const prize = {
+    id: 'p1',
+    code: 'bonus_50',
+    name: '50 Coin',
+    type: RewardPrizeType.BONUS_COIN,
+    bonusCoins: 50,
+    planDays: null,
+    weight: 10,
+    isActive: true,
+  };
+
+  it('deletes a prize for good and logs what it was', async () => {
+    tx.rewardPrize.findUnique.mockResolvedValue(prize);
+
+    await expect(service.remove('p1', 'admin-1')).resolves.toEqual({ id: 'p1', deleted: true });
+
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    expect(tx.rewardPrize.delete).toHaveBeenCalledWith({ where: { id: 'p1' } });
+    expect(tx.rewardPrize.update).not.toHaveBeenCalled();
+    expect(auditLog.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: CONTENT_EVENT.REWARD_PRIZE_REMOVED,
+        payload: expect.objectContaining({ code: 'bonus_50', name: '50 Coin', bonusCoins: 50, wasActive: true }),
+      }),
+      tx,
+    );
+  });
+
+  it('404s a prize that is already gone', async () => {
+    await expect(service.remove('p9', 'admin-1')).rejects.toMatchObject({ status: 404 });
+    expect(tx.rewardPrize.delete).not.toHaveBeenCalled();
+  });
+
+  it('will not delete or switch off the last active prize while members hold spins', async () => {
+    tx.rewardPrize.findUnique.mockResolvedValue(prize);
+    tx.rewardPrize.count.mockResolvedValue(0);
+    tx.rewardSpin.count.mockResolvedValue(3);
+
+    await expect(service.remove('p1', 'admin-1')).rejects.toMatchObject({
+      status: 409,
+      response: { details: { reason: PRIZE_REASON.LAST_ACTIVE, waitingSpins: 3 } },
+    });
+    await expect(service.update('p1', 'admin-1', { isActive: false })).rejects.toMatchObject({ status: 409 });
+    expect(tx.rewardPrize.delete).not.toHaveBeenCalled();
+    expect(tx.rewardPrize.update).not.toHaveBeenCalled();
+  });
+
+  it('may empty the wheel when no member is waiting to spin, and always delete a switched-off prize', async () => {
+    tx.rewardPrize.findUnique.mockResolvedValue(prize);
+    tx.rewardPrize.count.mockResolvedValue(0);
+    await expect(service.remove('p1', 'admin-1')).resolves.toMatchObject({ deleted: true });
+
+    tx.rewardSpin.count.mockResolvedValue(5);
+    tx.rewardPrize.findUnique.mockResolvedValue({ ...prize, isActive: false });
+    await expect(service.remove('p1', 'admin-1')).resolves.toMatchObject({ deleted: true });
   });
 });
