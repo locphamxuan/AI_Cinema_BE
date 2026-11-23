@@ -6,13 +6,13 @@ import { ComplianceService } from 'src/modules/production/content-review/complia
 import { ContentReviewService } from 'src/modules/production/content-review/content-review.service';
 import { StudioContractService } from 'src/modules/production/contract/contract-studio.service';
 import { ContractService } from 'src/modules/production/contract/contract.service';
-import { ContractTemplateService } from 'src/modules/production/contract/template/contract-template.service';
 import { MovieProjectService } from 'src/modules/production/movie-project/movie-project.service';
 import { ProjectNoteService } from 'src/modules/production/movie-project/project-note/project-note.service';
 import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { FinalFilmService } from 'src/modules/production/publishing/final-film.service';
 import { ScriptService } from 'src/modules/production/script/script.service';
 import { StudioService } from 'src/modules/production/studio/studio.service';
+import { StudioProfileService } from 'src/modules/production/studio-portal/profile/studio-profile.service';
 import { removeMovie } from '../movie-removal';
 import { loadDemoData } from './demo-data';
 import { seedMf1Demo } from './mf1-demo-seeder';
@@ -42,14 +42,11 @@ function fakeApp() {
     [PrismaService, prisma as never],
     [PlatformSettingService, { update: jest.fn() }],
     [StudioService, { update: jest.fn() }],
+    [StudioProfileService, { update: jest.fn() }],
     [MovieProjectService, { create: jest.fn(() => Promise.resolve({ id: `p${(project += 1)}` })) }],
     [ProductionCostService, { addEntry: jest.fn() }],
     [ProjectNoteService, { send: jest.fn() }],
     [ScriptService, { submit: jest.fn(), review: jest.fn(), finalReview: jest.fn() }],
-    [
-      ContractTemplateService,
-      { signedCopy: jest.fn((_id: string, marks: unknown[]) => Promise.resolve(Buffer.from(`%PDF ${marks.length}`))) },
-    ],
     [StudioContractService, { propose: jest.fn() }],
     [ContractService, { sign: jest.fn() }],
     [ContentReviewService, { review: jest.fn() }],
@@ -74,8 +71,13 @@ describe('seedMf1Demo', () => {
     expect(of(PlatformSettingService).update).toHaveBeenCalledWith(demo.data.platformParty, 'admin');
     expect(of(StudioService).update).toHaveBeenCalledWith(
       's1',
-      demo.data.studioProfile,
+      demo.data.studioContact,
       expect.objectContaining({ id: 'admin' }),
+    );
+    // The studio fills in its own legal profile, as on Studio Web.
+    expect(of(StudioProfileService).update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'stu', role: 'STUDIO' }),
+      demo.data.studioLegalProfile,
     );
     expect(removeMovie).toHaveBeenCalledWith('tx', 'old-movie');
     expect(of(MovieProjectService).create).toHaveBeenCalledTimes(demo.data.stages.length);
@@ -87,17 +89,17 @@ describe('seedMf1Demo', () => {
     expect(of(FinalFilmService).confirm).toHaveBeenCalledTimes(demo.data.stages.length - 5);
   });
 
-  it('uploads the contract the system generated: the studio signs at the ceiling, the Admin signs that copy', async () => {
+  it('signs with the demo signature images: the studio at the ceiling, then the Admin', async () => {
     const { app, of } = fakeApp();
 
     await seedMf1Demo(app, demo);
 
     const [contractId, cost, studio, upload] = of(StudioContractService).propose.mock.calls[0];
     expect([contractId, cost, studio]).toEqual(['contract-1', undefined, { studioId: 's1', userId: 'stu' }]);
-    expect((upload as Express.Multer.File).buffer.toString()).toBe('%PDF 1');
+    expect(upload).toMatchObject({ originalname: demo.data.signatures.studio, mimetype: 'image/png' });
     const [, admin, adminUpload] = of(ContractService).sign.mock.calls[0];
     expect(admin).toMatchObject({ id: 'admin' });
-    expect((adminUpload as Express.Multer.File).buffer.toString()).toBe('%PDF 2');
+    expect(adminUpload).toMatchObject({ originalname: demo.data.signatures.admin, mimetype: 'image/png' });
   });
 
   it('asks for the base seed when the studio login is missing', async () => {

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ContractPartySettingsDto } from 'src/modules/platform/platform-setting/dto/contract-party-settings.dto';
 import type { UpdateStudioRequestDto } from 'src/modules/production/studio/dto/studio.request.dto';
+import type { UpdateStudioLegalProfileRequestDto } from 'src/modules/production/studio-portal/profile/dto/studio-legal-profile.request.dto';
 
 /** One film of the team's R2 catalogue (AI_Film/CATALOG.json): what the demo project is named after and delivers. */
 export interface CatalogEpisode {
@@ -25,7 +26,12 @@ export interface Mf1DemoData {
   prefix: string;
   people: { admin: string; reviewer: string; creator: string; studio: string };
   platformParty: ContractPartySettingsDto;
-  studioProfile: UpdateStudioRequestDto;
+  /** What the Admin keeps about the demo studio. */
+  studioContact: UpdateStudioRequestDto;
+  /** The legal profile the demo studio fills in itself on Studio Web. */
+  studioLegalProfile: UpdateStudioLegalProfileRequestDto;
+  /** Signature images (files next to mf1-demo.json) each side uploads to sign. */
+  signatures: { studio: string; admin: string };
   project: {
     budgetVnd: number;
     budgetReason: string;
@@ -64,6 +70,8 @@ export function loadDemoData(): { data: Mf1DemoData; film: CatalogMovie } {
 /** yyyy-mm-dd, `days` from today. */
 export const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 
-/** The signed PDF as multer hands it to the signing services. */
-export const asUpload = (buffer: Buffer, name: string) =>
-  ({ buffer, originalname: name, mimetype: 'application/pdf', size: buffer.length }) as Express.Multer.File;
+/** A demo signature image (prisma/demo/<name>) as multer hands it to the signing services. */
+export function signatureUpload(name: string): Express.Multer.File {
+  const buffer = readFileSync(join(process.cwd(), 'prisma', 'demo', name));
+  return { buffer, originalname: name, mimetype: 'image/png', size: buffer.length } as Express.Multer.File;
+}

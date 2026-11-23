@@ -8,23 +8,22 @@ import { ComplianceService } from 'src/modules/production/content-review/complia
 import { ContentReviewService } from 'src/modules/production/content-review/content-review.service';
 import { StudioContractService } from 'src/modules/production/contract/contract-studio.service';
 import { ContractService } from 'src/modules/production/contract/contract.service';
-import { demoMark } from 'src/modules/production/contract/template/demo-signature';
-import { ContractTemplateService } from 'src/modules/production/contract/template/contract-template.service';
 import { MovieProjectService } from 'src/modules/production/movie-project/movie-project.service';
 import { ProjectNoteService } from 'src/modules/production/movie-project/project-note/project-note.service';
 import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { FinalFilmService } from 'src/modules/production/publishing/final-film.service';
 import { ScriptService } from 'src/modules/production/script/script.service';
 import { StudioService } from 'src/modules/production/studio/studio.service';
+import { StudioProfileService } from 'src/modules/production/studio-portal/profile/studio-profile.service';
 import { removeMovie } from '../movie-removal';
-import { asUpload, inDays, loadDemoData } from './demo-data';
+import { inDays, loadDemoData, signatureUpload } from './demo-data';
 import { deliverFromR2 } from './deliver-from-r2';
 
 /**
  * MF-1 demo: one project per milestone, each built through the real services (rules, triggers, notifications)
- * from prisma/demo/mf1-demo.json and a film of the team's R2 catalogue. The contracts are the ones the system
- * generates for each project; the signed copies uploaded are those same PDFs with a demo signature drawn in, so
- * every PDF names the right film, studio and budget. Run again to rebuild it.
+ * from prisma/demo/mf1-demo.json and a film of the team's R2 catalogue. Each side signs by uploading the demo
+ * signature image next to that file, so the signed copies are the system's own contract with it drawn in, naming
+ * the right film, studio and budget. Run again to rebuild it.
  * Answers what it built. Run by `npm run seed:mf1-demo` (seed-mf1-demo.main.ts).
  */
 export async function seedMf1Demo(
@@ -45,9 +44,10 @@ export async function seedMf1Demo(
   if (studioUser.role !== UserRole.STUDIO || !studioUser.studioId) throw new Error('Run `npx prisma db seed` first');
   const studio = { studioId: studioUser.studioId, userId: studioUser.id };
 
-  // Step 0, done once by the Admin: the legal identity of both parties the contract is filled with.
+  // Step 0, done once: the Admin fills in Bên A and the studio contact, the studio its own legal profile (Bên B).
   await app.get(PlatformSettingService).update(data.platformParty, admin.id);
-  await app.get(StudioService).update(studio.studioId, data.studioProfile, admin);
+  await app.get(StudioService).update(studio.studioId, data.studioContact, admin);
+  await app.get(StudioProfileService).update(studioUser, data.studioLegalProfile);
 
   for (const old of await prisma.movie.findMany({
     where: { title: { startsWith: data.prefix } },
@@ -118,16 +118,11 @@ async function buildStage(app: INestApplicationContext, index: number, [stage, s
   await scripts.finalReview(projectId, { approve: true, comment: p.finalComment }, by.admin);
   if (index === 1) return;
 
-  const templates = app.get(ContractTemplateService);
   const sent = await prisma.contract.findFirstOrThrow({ where: { projectId }, orderBy: { round: 'desc' } });
-  const studioCopy = await templates.signedCopy(sent.id, [demoMark('STUDIO')]);
-  await app
-    .get(StudioContractService)
-    .propose(sent.id, undefined, by.studio, asUpload(studioCopy, 'hop-dong-studio-da-ky.pdf'));
+  await app.get(StudioContractService).propose(sent.id, undefined, by.studio, signatureUpload(data.signatures.studio));
   if (index === 2) return;
 
-  const bothSigned = await templates.signedCopy(sent.id, [demoMark('STUDIO'), demoMark('ADMIN')]);
-  await app.get(ContractService).sign(sent.id, by.admin, asUpload(bothSigned, 'hop-dong-admin-da-ky.pdf'));
+  await app.get(ContractService).sign(sent.id, by.admin, signatureUpload(data.signatures.admin));
   if (index === 3) return;
 
   const episode = await prisma.episode.findFirstOrThrow({ where: { movieId: projectId, episodeNumber: 1 } });

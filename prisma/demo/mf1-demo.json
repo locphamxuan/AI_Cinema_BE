@@ -1,5 +1,5 @@
 {
-  "$comment": "MF-1 demo data for `npm run seed:mf1-demo`. Every value the demo shows lives here; the code holds none. Company names, tax codes and accounts are fictional demo data.",
+  "$comment": "MF-1 demo data for `npm run seed:mf1-demo`. Every value the demo shows lives here; the code holds none. Company names, tax codes, accounts and the signature images next to this file are fictional demo data.",
   "prefix": "[Demo MF-1]",
   "people": {
     "admin": "admin@gmail.com",
@@ -18,13 +18,20 @@
     "contractRepresentativeTitle": "Giám đốc",
     "contractPlace": "Thành phố Hồ Chí Minh"
   },
-  "studioProfile": {
+  "studioContact": {
     "contactName": "Nguyễn Thị Lan",
-    "phone": "028 0000 0002",
+    "phone": "028 0000 0002"
+  },
+  "studioLegalProfile": {
     "address": "00 Đường Số 1, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh",
-    "taxCode": "0000000002 (giả lập)",
-    "bankAccount": "0000 0000 0002 - Ngân hàng giả lập, chi nhánh Quận 1",
+    "taxCode": "0000000002",
+    "bankAccount": "000000000002",
+    "bankName": "Ngân hàng giả lập, chi nhánh Quận 1",
     "representativeTitle": "Giám đốc"
+  },
+  "signatures": {
+    "studio": "signature-studio.png",
+    "admin": "signature-admin.png"
   },
   "project": {
     "budgetVnd": 200000000,
@@ -51,8 +58,8 @@
       "2. Hợp đồng",
       "Admin đã duyệt Kịch bản Final; hệ thống đã gửi Studio hợp đồng chưa ký kèm ngân sách, chờ Studio ký."
     ],
-    ["3. Chờ Admin ký", "Studio đã tải hợp đồng về, ký và tải lên bản có chữ ký Studio, chờ Admin ký."],
-    ["4. Giao phim", "Hợp đồng đủ 2 chữ ký PDF, Studio đang sản xuất, chờ giao tập."],
+    ["3. Chờ Admin ký", "Studio đã hoàn thiện hồ sơ pháp lý và ký hợp đồng bằng ảnh chữ ký, chờ Admin ký."],
+    ["4. Giao phim", "Hợp đồng đủ chữ ký hai bên, Studio đang sản xuất, chờ giao tập."],
     ["5. Duyệt nội dung", "Studio đã giao tập 1 (phim trên R2), chờ Reviewer duyệt, gắn nhãn AI, kiểm tra tuân thủ."],
     ["6. Định giá & phát hành", "Reviewer đã xác nhận Final Film tập 1, chờ Admin đặt giá, tập khoá / mở và publish."]
   ]
