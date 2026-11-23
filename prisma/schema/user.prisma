@@ -45,6 +45,7 @@ model User {
   contractsCreated        Contract[]                 @relation("ContractCreatedBy")
   contractsSignedAsAdmin  Contract[]                 @relation("ContractAdminSignedBy")
   contractDocuments       ContractDocument[]         @relation("ContractDocumentUploadedBy")
+  contractSignatures      ContractSignature[]        @relation("ContractSignatureUploadedBy")
   costRequestsMade        ProductionCostRequest[]    @relation("CostRequestRequestedBy")
   costRequestsResolved    ProductionCostRequest[]    @relation("CostRequestResolvedBy")
   movieLikes              MovieLike[]
@@ -93,8 +94,8 @@ model User {
   roomParticipations  RoomParticipant[] @relation("RoomParticipantUser")
 
   /// Forgot password: the latest e-mailed OTP is the only live one.
-  passwordResetOtps PasswordResetOtp[]
-  reviewedTransactionFlags TransactionFlag[] @relation("TransactionFlagReviewedBy")
+  passwordResetOtps        PasswordResetOtp[]
+  reviewedTransactionFlags TransactionFlag[]  @relation("TransactionFlagReviewedBy")
 
   @@index([role])
   @@index([studioId])

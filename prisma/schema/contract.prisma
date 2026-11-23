@@ -5,8 +5,8 @@ enum ContractProposedBy {
 }
 
 /// SENT: template sent to the studio, no cost yet. STUDIO_SIGNED: the studio filled the cost and uploaded its
-/// signed PDF, waiting on the Admin. ADMIN_COUNTERED: the Admin proposed a new cost and uploaded its signed PDF,
-/// waiting on the studio. SIGNED: both counterparts are in and merged — complete. SUPERSEDED: replaced by the
+/// signature, waiting on the Admin. ADMIN_COUNTERED: the Admin proposed a new cost and uploaded its signature,
+/// waiting on the studio. SIGNED: both signatures are in and the FINAL copy is rendered. SUPERSEDED: replaced by the
 /// next round of the same negotiation.
 enum ContractStatus {
   SENT
@@ -34,23 +34,24 @@ model Contract {
   proposedBy      ContractProposedBy? @map("proposed_by")
   status          ContractStatus      @default(SENT)
   terms           String              @db.Text
-  /// When the Admin uploaded its signed PDF of this round (no click-to-sign since 10/11/2026).
+  /// When the Admin uploaded its signature for this round (no click-to-sign since 10/11/2026).
   adminSignedAt   DateTime?           @map("admin_signed_at") @db.Timestamptz(6)
   adminSignedById String?             @map("admin_signed_by_id") @db.Uuid
-  /// When the studio uploaded its signed PDF of this round.
+  /// When the studio uploaded its signature for this round.
   studioSignedAt  DateTime?           @map("studio_signed_at") @db.Timestamptz(6)
   createdById     String              @map("created_by_id") @db.Uuid
   createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project       MovieProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  studio        Studio         @relation(fields: [studioId], references: [id], onDelete: Restrict)
-  handoff       StudioHandoff? @relation(fields: [handoffId], references: [id], onDelete: Cascade)
-  previous      Contract?      @relation("ContractRound", fields: [previousId], references: [id], onDelete: SetNull)
-  next          Contract?      @relation("ContractRound")
-  adminSignedBy User?          @relation("ContractAdminSignedBy", fields: [adminSignedById], references: [id], onDelete: SetNull)
-  createdBy     User               @relation("ContractCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  project       MovieProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  studio        Studio              @relation(fields: [studioId], references: [id], onDelete: Restrict)
+  handoff       StudioHandoff?      @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  previous      Contract?           @relation("ContractRound", fields: [previousId], references: [id], onDelete: SetNull)
+  next          Contract?           @relation("ContractRound")
+  adminSignedBy User?               @relation("ContractAdminSignedBy", fields: [adminSignedById], references: [id], onDelete: SetNull)
+  createdBy     User                @relation("ContractCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   documents     ContractDocument[]
+  signatures    ContractSignature[]
 
   @@index([projectId, createdAt])
   @@index([handoffId, round])
@@ -58,31 +59,31 @@ model Contract {
   @@map("contracts")
 }
 
-/// Which signed counterpart a stored PDF is: the Admin's, the studio's, or the FINAL document the system
-/// merged out of both once the round was complete.
+/// Which signed copy a stored PDF is: the contract with the Admin's signature, with the studio's, or the FINAL
+/// one the system renders with both once the round is complete.
 enum ContractDocumentSide {
   ADMIN
   STUDIO
   FINAL
 }
 
-/// MF-1 (10/11/2026): a contract is no longer signed by clicking. Each side uploads a PDF of the contract
-/// carrying its own signature; once both counterparts of the agreed cost are in, the system merges them into
-/// one FINAL document holding both signatures. One row per side per round; the objects are private and only
-/// streamed to the Admin, the Reviewer of the project and the studio of the contract.
+/// MF-1 (22/11/2026): the signed copies of a round, all rendered by the system from the same contract template
+/// as the unsigned one, with the uploaded signature image(s) drawn in the signature block (see ContractSignature).
+/// One row per side per round; the objects are private and only streamed to the Admin, the Reviewer of the
+/// project and the studio of the contract.
 model ContractDocument {
   id           String               @id @default(uuid()) @db.Uuid
   contractId   String               @map("contract_id") @db.Uuid
   side         ContractDocumentSide
   /// Private object key, unguessable: contracts/<contractId>/<side>-<uuid>.pdf
   storageKey   String               @map("storage_key")
-  /// Sanitised name the uploader sent, shown on download.
+  /// Name given on download.
   fileName     String               @map("file_name")
   mimeType     String               @default("application/pdf") @map("mime_type")
   sizeBytes    BigInt               @map("size_bytes")
-  /// SHA-256 of the stored bytes, so a counterpart can be checked against what was signed.
+  /// SHA-256 of the stored bytes, so a signed copy can be checked against what was issued.
   checksum     String
-  /// The account that uploaded it; null for the FINAL document, which the system builds.
+  /// The account whose signature made this copy; null for the FINAL document, which the system builds.
   uploadedById String?              @map("uploaded_by_id") @db.Uuid
   uploadedAt   DateTime             @default(now()) @map("uploaded_at") @db.Timestamptz(6)
 
@@ -91,4 +92,32 @@ model ContractDocument {
 
   @@unique([contractId, side])
   @@map("contract_documents")
+}
+
+/// MF-1 (22/11/2026): the signature image (PNG/JPEG) one side uploaded for a round. The system draws it into that
+/// side's signature block of the contract template, with the signer's name, title and the signing date, so every
+/// signed copy has exactly the layout of the unsigned contract. One per side (ADMIN or STUDIO) per round.
+model ContractSignature {
+  id           String               @id @default(uuid()) @db.Uuid
+  contractId   String               @map("contract_id") @db.Uuid
+  side         ContractDocumentSide
+  /// Private object key, unguessable: contracts/<projectId>/signature-<side>-<uuid>.<png|jpg>
+  storageKey   String               @map("storage_key")
+  mimeType     String               @map("mime_type")
+  sizeBytes    Int                  @map("size_bytes")
+  width        Int
+  height       Int
+  /// SHA-256 of the image bytes.
+  checksum     String
+  /// Printed under the signature: the party's representative and title when it signed.
+  signerName   String               @map("signer_name") @db.VarChar(255)
+  signerTitle  String               @map("signer_title") @db.VarChar(100)
+  signedAt     DateTime             @map("signed_at") @db.Timestamptz(6)
+  uploadedById String?              @map("uploaded_by_id") @db.Uuid
+
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation("ContractSignatureUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@unique([contractId, side])
+  @@map("contract_signatures")
 }
