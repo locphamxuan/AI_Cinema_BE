@@ -1,15 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RewardPrizeType } from '@prisma/client';
 import { IsEnum, IsInt, IsString, Length, Max, Min, ValidateIf } from 'class-validator';
+import { Trim } from 'src/common/validation/trim';
+import { MAX_REWARD_BONUS_COINS } from '../../daily-reward/reward-ladder';
 
 /** One slot of the reward wheel (BR-09): bonus Coins or days of the monthly plan, with a weight. */
 export class CreateRewardPrizeRequestDto {
   @ApiProperty({ example: 'bonus_50', description: 'Short key of the prize, unique' })
+  @Trim()
   @IsString()
   @Length(3, 50)
   code: string;
 
   @ApiProperty({ example: '50 Coin thưởng' })
+  @Trim()
   @IsString()
   @Length(1, 255)
   name: string;
@@ -22,6 +26,7 @@ export class CreateRewardPrizeRequestDto {
   @ValidateIf((dto: CreateRewardPrizeRequestDto) => dto.type === RewardPrizeType.BONUS_COIN)
   @IsInt()
   @Min(1)
+  @Max(MAX_REWARD_BONUS_COINS)
   bonusCoins?: number;
 
   @ApiPropertyOptional({ example: 3, description: 'Required for PLAN_DAYS, ignored otherwise' })

@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsDate, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { MAX_PLAN_PRICE_COINS } from './plan-rules';
 
 export class SetPlanPriceRequestDto {
@@ -14,7 +14,8 @@ export class SetPlanPriceRequestDto {
     example: '2026-11-01T00:00:00.000Z',
     description: 'When the new price starts; now when omitted. Never in the past.',
   })
-  @IsDateString()
+  // Converted to a Date before validation, so the check is on the Date (an ISO string check always failed).
+  @IsDate()
   @IsOptional()
   @Type(() => Date)
   effectiveFrom?: Date;

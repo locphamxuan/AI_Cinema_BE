@@ -60,4 +60,13 @@ describe('membership plan requests', () => {
     expect(await refused(SetPlanPriceRequestDto, { priceCoins: 0 })).toEqual(['priceCoins']);
     expect(await refused(SetPlanPriceRequestDto, { priceCoins: 100_001 })).toEqual(['priceCoins']);
   });
+
+  it('reads an ISO start date as a Date and refuses one that is not a date', async () => {
+    const body = { priceCoins: 300, effectiveFrom: '2027-01-01T00:00:00.000Z' };
+    expect(await refused(SetPlanPriceRequestDto, body)).toEqual([]);
+    expect(plainToInstance(SetPlanPriceRequestDto, body).effectiveFrom).toEqual(new Date(body.effectiveFrom));
+    expect(await refused(SetPlanPriceRequestDto, { priceCoins: 300, effectiveFrom: 'soon' })).toEqual([
+      'effectiveFrom',
+    ]);
+  });
 });

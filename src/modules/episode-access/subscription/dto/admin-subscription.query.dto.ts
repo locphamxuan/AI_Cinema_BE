@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { SubscriptionStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, IsDateString } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { PageQueryDto } from 'src/common/validation/page-query.dto';
 import { EmptyAsUnset } from 'src/common/validation/trim';
 
@@ -14,13 +14,13 @@ export class AdminSubscriptionQueryDto extends PageQueryDto {
 
   @ApiPropertyOptional()
   @EmptyAsUnset()
-  @IsString()
+  @IsUUID()
   @IsOptional()
   planId?: string;
 
   @ApiPropertyOptional()
   @EmptyAsUnset()
-  @IsString()
+  @IsUUID()
   @IsOptional()
   userId?: string;
 

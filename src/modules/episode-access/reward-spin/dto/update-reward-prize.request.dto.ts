@@ -1,9 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { Trim } from 'src/common/validation/trim';
+import { MAX_REWARD_BONUS_COINS } from '../../daily-reward/reward-ladder';
 
 /** Edits a prize; its type stays, so the amount edited must be the one that type uses. */
 export class UpdateRewardPrizeRequestDto {
   @ApiPropertyOptional({ example: '80 Coin thưởng' })
+  @Trim()
   @IsString()
   @Length(1, 255)
   @IsOptional()
@@ -12,6 +15,7 @@ export class UpdateRewardPrizeRequestDto {
   @ApiPropertyOptional({ description: 'Only for a BONUS_COIN prize' })
   @IsInt()
   @Min(1)
+  @Max(MAX_REWARD_BONUS_COINS)
   @IsOptional()
   bonusCoins?: number;
 

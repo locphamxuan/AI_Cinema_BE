@@ -21,4 +21,9 @@ describe('AdminSubscriptionQueryDto', () => {
     expect(await check({ status: 'NOPE' })).toHaveLength(1);
     expect(await check({ planCode: 'x' })).toHaveLength(1);
   });
+
+  it('refuses a plan or member filter that is not an id, instead of failing in the database', async () => {
+    expect((await check({ planId: 'premium' })).map((e) => e.property)).toEqual(['planId']);
+    expect((await check({ userId: '42' })).map((e) => e.property)).toEqual(['userId']);
+  });
 });
