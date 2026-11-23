@@ -15,40 +15,44 @@ export const SEED_ACCOUNTS: SeedAccount[] = [
   },
 ];
 
-/** The legal texts AI labels and the compliance checks refer to (BR-40, BR-42). */
+/** The rules the Reviewer follows when labelling and checking a version (BR-40, BR-42), as plain text. */
 export const SEED_POLICIES = [
   {
-    name: 'AI-Generated Content Labeling Policy',
+    name: 'Quy định gắn nhãn nội dung do AI tạo',
     type: PolicyType.AI_LABELING,
     version: '1.0.0',
     documentReference: 'Điều 44 Luật số 134/2025/QH15 và Điều 18 Nghị định số 142/2026/NĐ-CP',
-    content: {
-      summary:
-        'Mọi nội dung do AI tạo ra hoặc chỉnh sửa khi phát hành cho công chúng phải được ghi nhãn rõ ràng theo Điều 44 Luật số 134/2025/QH15.',
-      requirements: [
-        'Visible on-screen label on every published episode.',
-        'A persistent metadata tag on every catalog item.',
-        'Label verification before an episode becomes public.',
-        'An audit log of labeling actions.',
-      ],
-    },
+    content: [
+      'Mọi tập phim có phần do AI tạo hoặc chỉnh sửa phải được gắn nhãn rõ ràng khi phát cho người xem (Điều 44 Luật số 134/2025/QH15).',
+      '- Nhãn hiện trên màn hình ở mọi tập đã phát hành.',
+      '- Thông tin phim trong danh mục luôn ghi rõ là nội dung do AI tạo.',
+      '- Reviewer kiểm tra nhãn trước khi tập được công khai.',
+      '- Mọi lần gắn hoặc đổi nhãn đều được ghi lại.',
+    ].join('\n'),
   },
   {
-    name: 'Decree 142 Misleading-Content Notice',
+    name: 'Thông báo theo Nghị định 142 và người, sự kiện có thật',
     type: PolicyType.LEGAL,
     version: '1.0.0',
     documentReference: 'Nghị định số 142/2026/NĐ-CP',
-    content: {
-      summary:
-        'Nội dung có khả năng gây nhầm lẫn với người thật, sự kiện thật phải kèm thông báo rõ ràng; không mô phỏng người có danh tính thật.',
-    },
+    content: [
+      'Nội dung dễ khiến người xem nhầm với người thật hoặc sự kiện thật phải kèm thông báo rõ ràng (Nghị định số 142/2026/NĐ-CP).',
+      '- Không mô phỏng người có danh tính thật.',
+      '- Nếu tập có chi tiết dễ gây hiểu nhầm, ghi rõ chỗ đó khi kiểm tra.',
+    ].join('\n'),
   },
   {
-    name: 'Content Safety Policy',
+    name: 'Quy định an toàn nội dung',
     type: PolicyType.CONTENT_POLICY,
     version: '1.0.0',
     documentReference: 'Luật An ninh mạng 2018 và quy định nội dung số',
-    content: { summary: 'Không bạo lực cực đoan, nội dung khiêu dâm, kích động thù hận hay vi phạm pháp luật.' },
+    content: [
+      'Tập phim không được chứa:',
+      '- Bạo lực cực đoan.',
+      '- Nội dung khiêu dâm.',
+      '- Lời lẽ kích động thù hận.',
+      '- Nội dung vi phạm pháp luật.',
+    ].join('\n'),
   },
 ];
 

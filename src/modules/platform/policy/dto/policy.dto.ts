@@ -9,7 +9,7 @@ export class PolicyDto {
   id: string;
 
   @ApiProperty({
-    example: 'AI-Generated Content Labeling Policy',
+    example: 'Quy định gắn nhãn nội dung do AI tạo',
     description: 'Name of the policy.',
   })
   name: string;
@@ -33,11 +33,11 @@ export class PolicyDto {
   })
   documentReference?: string;
 
-  @ApiPropertyOptional({
-    description: 'Structured content and requirements of the policy.',
-    type: Object,
+  @ApiProperty({
+    example: 'Mọi tập có phần do AI tạo phải gắn nhãn.\n- Nhãn hiện trên màn hình ở mọi tập.',
+    description: 'Plain text the Reviewer reads; line breaks and "- " bullets are kept.',
   })
-  content?: Record<string, unknown>;
+  content: string;
 
   @ApiPropertyOptional({
     example: '2026-05-01T00:00:00.000Z',
@@ -62,4 +62,7 @@ export class PolicyDto {
     description: 'Date when the policy was created.',
   })
   createdAt: Date;
+
+  @ApiProperty({ example: '2026-11-22T00:00:00.000Z', description: 'Date when the policy was last changed.' })
+  updatedAt: Date;
 }

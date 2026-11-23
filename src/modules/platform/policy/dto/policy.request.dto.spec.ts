@@ -4,33 +4,51 @@ import { CreatePolicyDto } from './create-policy.dto';
 import { UpdatePolicyDto } from './update-policy.dto';
 
 const valid = {
-  name: 'Chính sách gắn nhãn nội dung AI',
+  name: '  Quy định gắn nhãn AI  ',
   type: 'AI_LABELING',
   version: '1.0.0',
-  content: { requiredLabelText: 'Nội dung do AI tạo', mandatory: true },
+  content: '  Mọi tập phải gắn nhãn.\n- Nhãn hiện trên màn hình.  ',
 };
 
-async function refused<T extends object>(cls: new () => T, body: object): Promise<string[]> {
-  const errors = await validate(plainToInstance(cls, body), { whitelist: true, forbidNonWhitelisted: true });
-  return errors.map((e) => e.property);
+async function check<T extends object>(cls: new () => T, body: object) {
+  const dto = plainToInstance(cls, body);
+  const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: true });
+  return { dto, refused: errors.map((e) => e.property) };
 }
 
 describe('policy requests', () => {
-  it('accepts structured content sent as a JSON object, as the web form sends it', async () => {
-    expect(await refused(CreatePolicyDto, valid)).toEqual([]);
-    expect(await refused(UpdatePolicyDto, { content: valid.content })).toEqual([]);
+  it('accepts plain text content and trims the title and the text', async () => {
+    const { dto, refused } = await check(CreatePolicyDto, valid);
+    expect(refused).toEqual([]);
+    expect(dto.name).toBe('Quy định gắn nhãn AI');
+    expect(dto.content).toBe('Mọi tập phải gắn nhãn.\n- Nhãn hiện trên màn hình.');
+  });
+
+  it('requires a title and content, and refuses JSON objects and the dropped types', async () => {
+    expect((await check(CreatePolicyDto, { ...valid, name: '   ', content: '  ' })).refused).toEqual([
+      'name',
+      'content',
+    ]);
+    expect((await check(CreatePolicyDto, { ...valid, content: { a: 1 } })).refused).toEqual(['content']);
+    expect((await check(CreatePolicyDto, { ...valid, type: 'COPYRIGHT' })).refused).toEqual(['type']);
+  });
+
+  it('refuses content over 20000 characters', async () => {
+    expect((await check(CreatePolicyDto, { ...valid, content: 'a'.repeat(20001) })).refused).toEqual(['content']);
   });
 
   it('accepts a PATCH that only switches the policy on or off', async () => {
-    expect(await refused(UpdatePolicyDto, { isActive: false })).toEqual([]);
+    expect((await check(UpdatePolicyDto, { isActive: false })).refused).toEqual([]);
   });
 
-  it('accepts clearing the content and the validity dates with null', async () => {
-    expect(await refused(UpdatePolicyDto, { content: null, effectiveFrom: null, effectiveTo: null })).toEqual([]);
+  it('clears the legal reference and the dates with null or blank, but never the content or title', async () => {
+    const cleared = await check(UpdatePolicyDto, { documentReference: '  ', effectiveFrom: null, effectiveTo: null });
+    expect(cleared.refused).toEqual([]);
+    expect(cleared.dto.documentReference).toBeNull();
+    expect((await check(UpdatePolicyDto, { content: null, name: null })).refused).toEqual(['name', 'content']);
   });
 
-  it('refuses content that is not an object, and an isActive that is not a boolean', async () => {
-    expect(await refused(CreatePolicyDto, { ...valid, content: '{"a":1}' })).toEqual(['content']);
-    expect(await refused(UpdatePolicyDto, { isActive: 'yes' })).toEqual(['isActive']);
+  it('refuses an isActive that is not a boolean', async () => {
+    expect((await check(UpdatePolicyDto, { isActive: 'yes' })).refused).toEqual(['isActive']);
   });
 });
