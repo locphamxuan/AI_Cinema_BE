@@ -40,7 +40,8 @@ export function splitPool(poolVnd: bigint, watches: MovieWatch[]): AllocationSha
 /**
  * BR-48: the Monthly-plan revenue of a month belongs to no movie; once the month is over it is shared across
  * movies by the watch seconds of plan members (streaming sessions opened with SUBSCRIPTION access). The pool
- * counts main Coins only, at the rate of each payment (BR-49, BR-50). Re-running a month replaces its rows.
+ * counts main Coins only, at the rate of each payment (BR-49, BR-50). Only the monthly job runs it; the Financial
+ * Dashboard reads the shares per film (FilmFinanceService).
  */
 @Injectable()
 export class RevenueAllocationService {
@@ -49,7 +50,16 @@ export class RevenueAllocationService {
     private readonly audit: AuditLogService,
   ) {}
 
-  async allocate(period: string, actorId: string | null, now = new Date()) {
+  /** The scheduler: shares a finished month once, as soon as it has Monthly-plan payments. */
+  async allocateIfMissing(period: string, now = new Date()): Promise<boolean> {
+    if (await this.prisma.revenueAllocation.count({ where: { period } })) return false;
+    if ((await this.pool(periodRange(period))) === 0n) return false;
+    await this.allocate(period, now);
+    return true;
+  }
+
+  /** Shares one finished month; its old rows, if any, are replaced, never doubled. */
+  private async allocate(period: string, now: Date): Promise<void> {
     const range = periodRange(period);
     if (period >= periodOf(now)) throw new ConflictException('Only a month that is over can be allocated');
     const [poolVnd, watches] = await Promise.all([this.pool(range), this.watches(range)]);
@@ -76,44 +86,12 @@ export class RevenueAllocationService {
           // audit_logs.entity_id is a UUID: each run gets its own id, the month travels in the payload.
           entityId: randomUUID(),
           projectId: null,
-          actorId,
+          actorId: null,
           payload: { period, poolVnd: poolVnd.toString(), movies: shares.length },
         },
         tx,
       );
     });
-    return this.list(period);
-  }
-
-  /** The scheduler: allocates a finished month once, as soon as it has Monthly-plan payments. */
-  async allocateIfMissing(period: string, now = new Date()): Promise<boolean> {
-    if (await this.prisma.revenueAllocation.count({ where: { period } })) return false;
-    if ((await this.pool(periodRange(period))) === 0n) return false;
-    await this.allocate(period, null, now);
-    return true;
-  }
-
-  async list(period: string) {
-    periodRange(period);
-    const rows = await this.prisma.revenueAllocation.findMany({
-      where: { period },
-      include: { movie: { select: { id: true, title: true } } },
-      orderBy: { allocatedVnd: 'desc' },
-    });
-    const first = rows[0];
-    return {
-      period,
-      monthlyPoolVnd: Number(first?.monthlyPoolVnd ?? 0n),
-      totalWatchSeconds: Number(first?.totalWatchSeconds ?? 0n),
-      allocatedAt: first?.createdAt ?? null,
-      movies: rows.map((r) => ({
-        movieId: r.movieId,
-        title: r.movie.title,
-        watchSeconds: Number(r.movieWatchSeconds),
-        sharePercent: r.totalWatchSeconds ? Number((r.movieWatchSeconds * 10000n) / r.totalWatchSeconds) / 100 : 0,
-        allocatedVnd: Number(r.allocatedVnd),
-      })),
-    };
   }
 
   /** Main Coins paid for Monthly plans in the month, in VND (bonus Coins are promotion cost, BR-49). */

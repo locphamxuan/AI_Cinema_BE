@@ -46,7 +46,6 @@ export const PERMISSION = {
   ANALYTICS_CHURN_READ: 'analytics.churn.read',
   // MF-5 — Admin only: profit / ROI, BR-48 revenue sharing, risky transactions
   FINANCE_REPORT_READ: 'finance:report.read',
-  FINANCE_ALLOCATION_RUN: 'finance:allocation.run',
   RISK_FLAG_MANAGE: 'risk:flag.manage',
   // MF-3 — mid-roll ads
   AD_MANAGE: 'ad.manage',
@@ -157,10 +156,6 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
     area: 'finance',
     description: 'Read profit, ROI and the Monthly-plan revenue shared per movie',
   },
-  'finance:allocation.run': {
-    area: 'finance',
-    description: "Share a past month's Monthly-plan revenue across movies again",
-  },
   'risk:flag.manage': {
     area: 'finance',
     description: 'Scan the Coin ledger and confirm or dismiss risky transactions',
@@ -259,9 +254,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.REWARD_RULE_MANAGE,
     PERMISSION.ANALYTICS_REVENUE_READ,
     PERMISSION.ANALYTICS_CHURN_READ,
-    // MF-5: profit / ROI per movie, BR-48 revenue sharing and risky transactions stay with the Admin.
+    // MF-5: profit / ROI per movie (BR-48 share included) and risky transactions stay with the Admin.
     PERMISSION.FINANCE_REPORT_READ,
-    PERMISSION.FINANCE_ALLOCATION_RUN,
     PERMISSION.RISK_FLAG_MANAGE,
     // MF-3: mid-roll ads shown to ad-supported plans.
     PERMISSION.AD_MANAGE,

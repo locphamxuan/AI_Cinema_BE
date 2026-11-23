@@ -42,7 +42,7 @@ describe('RevenueAllocationService', () => {
   const prisma = {
     $queryRaw: jest.fn(),
     $transaction: jest.fn((work: (t: unknown) => Promise<unknown>) => work(tx)),
-    revenueAllocation: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn() },
+    revenueAllocation: { count: jest.fn() },
   };
   const audit = { record: jest.fn() };
   const service = new RevenueAllocationService(prisma as never, audit as never);
@@ -50,12 +50,16 @@ describe('RevenueAllocationService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('replaces the rows of the month with the new shares and audits the run', async () => {
-    prisma.$queryRaw.mockResolvedValueOnce([{ vnd: 1_000_000n }]).mockResolvedValueOnce([
-      { movie_id: 'm1', seconds: 300n },
-      { movie_id: 'm2', seconds: 100n },
-    ]);
-    await service.allocate('2026-10', 'admin', NOW);
+  it('shares a finished month by watch seconds and audits the run', async () => {
+    prisma.revenueAllocation.count.mockResolvedValueOnce(0);
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ vnd: 1_000_000n }])
+      .mockResolvedValueOnce([{ vnd: 1_000_000n }])
+      .mockResolvedValueOnce([
+        { movie_id: 'm1', seconds: 300n },
+        { movie_id: 'm2', seconds: 100n },
+      ]);
+    await expect(service.allocateIfMissing('2026-10', NOW)).resolves.toBe(true);
     expect(tx.revenueAllocation.deleteMany).toHaveBeenCalledWith({ where: { period: '2026-10' } });
     expect(tx.revenueAllocation.createMany).toHaveBeenCalledWith({
       data: [
@@ -63,14 +67,19 @@ describe('RevenueAllocationService', () => {
         expect.objectContaining({ movieId: 'm2', allocatedVnd: 250_000n, monthlyPoolVnd: 1_000_000n }),
       ],
     });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'REVENUE_ALLOCATED' }), tx);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'REVENUE_ALLOCATED', actorId: null }),
+      tx,
+    );
   });
 
   it('refuses the current month, which is not over yet', async () => {
-    await expect(service.allocate('2026-11', 'admin', NOW)).rejects.toThrow(ConflictException);
+    prisma.revenueAllocation.count.mockResolvedValueOnce(0);
+    prisma.$queryRaw.mockResolvedValueOnce([{ vnd: 5_000n }]);
+    await expect(service.allocateIfMissing('2026-11', NOW)).rejects.toThrow(ConflictException);
   });
 
-  it('lets the scheduler allocate a month only once', async () => {
+  it('shares a month only once, and not at all without plan payments', async () => {
     prisma.revenueAllocation.count.mockResolvedValueOnce(3);
     await expect(service.allocateIfMissing('2026-10', NOW)).resolves.toBe(false);
     prisma.revenueAllocation.count.mockResolvedValueOnce(0);

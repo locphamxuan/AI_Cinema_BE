@@ -1,14 +1,12 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { PeriodQueryDto, ReviewTransactionFlagRequestDto } from './dto/finance.request.dto';
+import { ReviewTransactionFlagRequestDto } from './dto/finance.request.dto';
 import { FilmFinanceService } from './film-finance.service';
-import { previousPeriod } from './finance-period';
-import { RevenueAllocationService } from './revenue-allocation.service';
 import { RiskFlagService } from './risk-flag.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -20,30 +18,14 @@ const ID = new ParseUUIDPipe({ version: '4' });
 export class FinanceController {
   constructor(
     private readonly films: FilmFinanceService,
-    private readonly allocations: RevenueAllocationService,
     private readonly risk: RiskFlagService,
   ) {}
 
   @Get('films')
   @RequirePermission(PERMISSION.FINANCE_REPORT_READ)
-  @ApiOperation({ summary: 'Per movie: production cost, unlock revenue less refunds, Monthly-plan share, profit, ROI' })
+  @ApiOperation({ summary: 'Per movie: cost, episode sales less refunds, Monthly-plan share, profit, ROI' })
   filmFinance() {
     return this.films.films();
-  }
-
-  @Get('revenue-allocations')
-  @RequirePermission(PERMISSION.FINANCE_REPORT_READ)
-  @ApiOperation({ summary: 'BR-48: how a month of Monthly-plan revenue was shared across movies by watch time' })
-  allocation(@Query() query: PeriodQueryDto) {
-    return this.allocations.list(query.period ?? previousPeriod(new Date()));
-  }
-
-  @Post('revenue-allocations/:period/run')
-  @HttpCode(200)
-  @RequirePermission(PERMISSION.FINANCE_ALLOCATION_RUN)
-  @ApiOperation({ summary: 'Share a finished month again (replaces its rows, never doubles them)' })
-  runAllocation(@Param('period') period: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.allocations.allocate(period, user.id);
   }
 
   @Get('risk/rules')

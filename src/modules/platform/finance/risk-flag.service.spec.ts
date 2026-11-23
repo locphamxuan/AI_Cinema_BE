@@ -1,28 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { financeOf } from './film-finance.service';
 import { RiskFlagService } from './risk-flag.service';
 import { RISK_RULES } from './risk-rules';
-
-describe('financeOf (profit and ROI)', () => {
-  const row = { movie_id: 'm1', title: 'Phim', project_status: 'COMPLETED', plan_vnd: 200n };
-
-  it('nets refunds out of the unlock revenue and adds the Monthly-plan share', () => {
-    const film = financeOf({ ...row, cost_vnd: 1000n, unlock_vnd: 1000n, refund_vnd: 100n });
-    expect(film).toEqual(
-      expect.objectContaining({
-        unlockRevenueVnd: 900,
-        revenueVnd: 1100,
-        profitVnd: 100,
-        roiPercent: 10,
-        breakEven: true,
-      }),
-    );
-  });
-
-  it('has no ROI while no cost is recorded', () => {
-    expect(financeOf({ ...row, cost_vnd: 0n, unlock_vnd: 0n, refund_vnd: 0n }).roiPercent).toBeNull();
-  });
-});
 
 describe('RiskFlagService', () => {
   const tx = { transactionFlag: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() } };

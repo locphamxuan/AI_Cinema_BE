@@ -5,7 +5,7 @@ import { FinanceJobs } from './finance.jobs';
 import { RevenueAllocationService } from './revenue-allocation.service';
 import { RiskFlagService } from './risk-flag.service';
 
-/** MF-5, Admin only: profit / ROI per movie, BR-48 revenue sharing by watch time, risky Coin transactions. */
+/** MF-5, Admin only: profit / ROI per movie (with its BR-48 Monthly-plan share by watch time), risky Coin transactions. */
 @Module({
   controllers: [FinanceController],
   providers: [FilmFinanceService, RevenueAllocationService, RiskFlagService, FinanceJobs],

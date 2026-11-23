@@ -1,6 +1,5 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
-import { previousPeriod } from 'src/modules/platform/finance/finance-period';
 import { Actor, bootApp, signIn } from './support/api';
 import { registerMember } from './support/members';
 
@@ -8,7 +7,7 @@ interface FlagPage {
   data: { id: string; ruleCode: string; status: string; coinTransaction: { entryType: string } }[];
 }
 
-/** MF-5, Admin only: profit / ROI per movie, BR-48 revenue sharing by watch time and risky Coin transactions. */
+/** MF-5, Admin only: profit / ROI per movie (BR-48 plan share included) and risky Coin transactions. */
 describe('Finance and risk (e2e)', () => {
   let app: INestApplication<App>;
   let admin: Actor;
@@ -23,21 +22,16 @@ describe('Finance and risk (e2e)', () => {
   afterAll(() => app.close());
 
   it('reads profit and ROI for every movie', async () => {
-    const body = await admin.get<{ totals: { productionCostVnd: number }; films: { roiPercent: number | null }[] }>(
-      '/admin/finance/films',
-    );
+    const body = await admin.get<{
+      currentPeriod: string;
+      totals: { productionCostVnd: number; episodeSalesVnd: number; planShareVnd: number };
+      films: { roiPercent: number | null; breakEven: string }[];
+    }>('/admin/finance/films');
+    expect(body.currentPeriod).toMatch(/^\d{4}-\d{2}$/);
     expect(body.totals.productionCostVnd).toEqual(expect.any(Number));
+    expect(body.totals.episodeSalesVnd).toEqual(expect.any(Number));
     expect(Array.isArray(body.films)).toBe(true);
-  });
-
-  it('shares last month again without doubling, and refuses the current month', async () => {
-    const period = previousPeriod(new Date());
-    const first = await admin.post<{ period: string }>(`/admin/finance/revenue-allocations/${period}/run`, {}, 200);
-    const again = await admin.post<{ movies: unknown[] }>(`/admin/finance/revenue-allocations/${period}/run`, {}, 200);
-    const listed = await admin.get<{ movies: unknown[] }>(`/admin/finance/revenue-allocations?period=${period}`);
-    expect(first.period).toBe(period);
-    expect(listed.movies).toHaveLength(again.movies.length);
-    await admin.post('/admin/finance/revenue-allocations/2999-01/run', {}, 409);
+    await admin.post('/admin/finance/revenue-allocations/2026-01/run', {}, 404);
   });
 
   it('flags a large hand correction and lets the Admin dismiss it once', async () => {
