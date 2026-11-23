@@ -314,10 +314,23 @@ describe('StaffSupportService.resolve / close / detail', () => {
   it('resolves then views the updated case', async () => {
     const { service, resolution } = buildService();
 
-    const view = await service.resolve(CASE_ID, STAFF.id, 'Đã xử lý xong');
+    const view = await service.resolve(CASE_ID, STAFF, 'Đã xử lý xong');
 
     expect(resolution.staffResolve).toHaveBeenCalledWith(CASE_ID, STAFF.id, 'Đã xử lý xong');
     expect(view.memberId).toBe(MEMBER_ID);
+  });
+
+  it('lets only the assignee or an Admin resolve a case another Staff member handles', async () => {
+    const { service, conversations, resolution } = buildService();
+    conversations.findById.mockResolvedValue(
+      conversationRow({ status: SupportStatus.STAFF_HANDLING, assignedAgentId: OTHER_STAFF.id }),
+    );
+
+    await expect(service.resolve(CASE_ID, STAFF, null)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(resolution.staffResolve).not.toHaveBeenCalled();
+
+    await expect(service.resolve(CASE_ID, ADMIN, null)).resolves.toBeDefined();
+    expect(resolution.staffResolve).toHaveBeenCalledWith(CASE_ID, ADMIN.id, undefined);
   });
 
   it('serves the detail with internal notes and marks the case read by staff', async () => {
