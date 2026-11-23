@@ -232,3 +232,61 @@ describe('CoinSpendService.credit', () => {
     ).rejects.toThrow(ConflictException);
   });
 });
+
+describe('CoinSpendService.refund', () => {
+  const tx = {
+    $queryRaw: jest.fn(),
+    coinWallet: {
+      findUniqueOrThrow: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    coinLot: { create: jest.fn().mockResolvedValue({ id: 'lot-r' }) },
+    coinTransaction: {
+      count: jest.fn(),
+      findUnique: jest.fn().mockResolvedValue(null),
+      createManyAndReturn: jest.fn().mockResolvedValue([{ id: 'tx-r' }]),
+    },
+  };
+  const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000, bonusCoinExpiryDays: 30 }) };
+  const service = new CoinSpendService(settings as unknown as PlatformSettingService);
+  const purchase = { id: 'tx-1', entryType: CoinEntryType.EPISODE_PURCHASE, mainAmount: -10, bonusAmount: -5 };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    tx.coinWallet.findUniqueOrThrow.mockResolvedValue({ id: 'w1', mainBalance: 0, bonusBalance: 0 });
+    tx.coinTransaction.count.mockResolvedValue(0);
+  });
+
+  it('pays a payment back once: main to main, bonus into a refund lot, pointing at the original', async () => {
+    const movement = await service.refund(tx as unknown as PrismaTx, 'w1', purchase, 'admin-1');
+
+    expect(movement).toMatchObject({ transactionId: 'tx-r', mainCoins: 10, bonusCoins: 5 });
+    expect(tx.coinLot.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ source: CoinLotSource.REFUND, originalAmount: 5 }),
+    });
+    expect(tx.coinTransaction.createManyAndReturn).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ entryType: CoinEntryType.REFUND, reversesId: 'tx-1', createdById: 'admin-1' })],
+    });
+  });
+
+  it('refuses a payment that was already refunded', async () => {
+    tx.coinTransaction.count.mockResolvedValue(1);
+
+    await expect(service.refund(tx as unknown as PrismaTx, 'w1', purchase)).rejects.toMatchObject({
+      response: { details: { reason: 'ALREADY_REFUNDED' } },
+    });
+    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { entryType: CoinEntryType.TOP_UP, mainAmount: 50, bonusAmount: 0 },
+    { entryType: CoinEntryType.REFUND, mainAmount: 10, bonusAmount: 0 },
+    { entryType: CoinEntryType.ADJUSTMENT, mainAmount: -10, bonusAmount: 0 },
+    { entryType: CoinEntryType.EPISODE_PURCHASE, mainAmount: 0, bonusAmount: 0 },
+  ])('refuses to refund $entryType moving $mainAmount/$bonusAmount', async (row) => {
+    await expect(service.refund(tx as unknown as PrismaTx, 'w1', { id: 'tx-2', ...row })).rejects.toMatchObject({
+      response: { details: { reason: 'NOT_REFUNDABLE' } },
+    });
+    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+  });
+});

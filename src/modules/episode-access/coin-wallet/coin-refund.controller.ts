@@ -1,4 +1,4 @@
-import { Body, BadRequestException, Controller, NotFoundException, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Controller, NotFoundException, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -21,23 +21,20 @@ export class CoinRefundController {
   @RequirePermission(PERMISSION.COIN_ADJUST)
   @ApiOperation({
     summary:
-      'Refund a Coin transaction: main Coins go back to main, bonus Coins back to their lot, referencing the original entry',
+      'Refund one Coin payment row once: main Coins go back to main, bonus Coins back as a refund lot, referencing the original entry',
   })
   @ApiOkResponse()
-  async refund(@Param('id', ID) id: string, @CurrentUser('id') _actorId: string) {
-    const tx = await this.prisma.coinTransaction.findUnique({ where: { id } });
-    if (!tx) {
-      throw new NotFoundException({
-        message: 'Coin transaction not found',
-        details: { reason: 'COIN_TRANSACTION_NOT_FOUND' },
-      });
-    }
-    if (tx.entryType === 'REFUND') {
-      throw new BadRequestException({
-        message: 'A refund cannot be refunded',
-        details: { reason: 'CANNOT_REFUND_REFUND' },
-      });
-    }
-    return this.coins.refund(this.prisma, tx.walletId, tx);
+  refund(@Param('id', ID) id: string, @CurrentUser('id') actorId: string) {
+    // One transaction: the wallet lock, the already-refunded check and the credit commit together.
+    return this.prisma.$transaction(async (tx) => {
+      const original = await tx.coinTransaction.findUnique({ where: { id } });
+      if (!original) {
+        throw new NotFoundException({
+          message: 'Coin transaction not found',
+          details: { reason: 'COIN_TRANSACTION_NOT_FOUND' },
+        });
+      }
+      return this.coins.refund(tx, original.walletId, original, actorId);
+    });
   }
 }

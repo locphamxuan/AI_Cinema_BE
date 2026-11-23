@@ -1,11 +1,18 @@
 import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
-import { CoinEntryType, type CoinTransaction, type Prisma } from '@prisma/client';
+import { CoinEntryType, CoinLotSource, type CoinTransaction, type Prisma } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { noticeReceived, noticeSpent } from './coin-notices';
 import { COIN_REASON, type CoinMovement, type CreditRequest, type SpendRequest } from './coin-wallet.types';
 import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './lot-usage';
+
+/** The payments an Admin may refund; anything else is corrected with a wallet adjustment. */
+const REFUNDABLE: CoinEntryType[] = [
+  CoinEntryType.EPISODE_PURCHASE,
+  CoinEntryType.PLAN_PAYMENT,
+  CoinEntryType.PLAN_RENEWAL,
+];
 
 /**
  * The only place a Coin balance changes. Every call takes the wallet row with FOR UPDATE,
@@ -88,47 +95,42 @@ export class CoinSpendService {
     return movement;
   }
 
-  /** Puts Coins back where they came from: main back to main, bonus back to its lot. */
+  /**
+   * Admin refund of one Coin payment row: main Coins back to main, bonus Coins back as a REFUND
+   * lot (so the bonus balance stays the sum of its lots). Only a payment is refunded, once; a credit
+   * or a correction is undone with a wallet adjustment instead. A payment that moved nothing (the
+   * empty main row of an all-bonus payment) has nothing to refund.
+   */
   async refund(
     tx: PrismaTx,
     walletId: string,
     original: Pick<CoinTransaction, 'id' | 'mainAmount' | 'bonusAmount' | 'entryType'>,
-    _now = new Date(),
+    createdById?: string,
   ): Promise<CoinMovement> {
-    const wallet = await this.locked(tx, walletId);
-    const mainAmount = 0 - original.mainAmount;
-    const bonusAmount = 0 - original.bonusAmount;
-    if (mainAmount === 0 && bonusAmount === 0) {
-      throw new ConflictException({ message: 'Nothing to refund' });
+    // Checked under the wallet lock, so two refunds of the same row at once pay back once.
+    await this.locked(tx, walletId);
+    const paidNothing = original.mainAmount >= 0 && original.bonusAmount >= 0;
+    if (!REFUNDABLE.includes(original.entryType) || paidNothing) {
+      throw new ConflictException({
+        message: 'Only a Coin payment can be refunded; use a wallet adjustment for anything else',
+        details: { reason: COIN_REASON.NOT_REFUNDABLE, entryType: original.entryType },
+      });
     }
-    const settings = await this.settings.get();
-    const [entry] = await tx.coinTransaction.createManyAndReturn({
-      data: [
-        {
-          walletId,
-          entryType: CoinEntryType.REFUND,
-          mainAmount,
-          bonusAmount,
-          rateVnd: settings.coinRateVnd,
-          reversesId: original.id,
-          idempotencyKey: null,
-          mainBalanceAfter: wallet.mainBalance + mainAmount,
-          bonusBalanceAfter: wallet.bonusBalance + bonusAmount,
-          description: `Refund of ${original.entryType} ${original.id}`,
-          createdById: undefined,
-        },
-      ],
+    if (await tx.coinTransaction.count({ where: { reversesId: original.id } })) {
+      throw new ConflictException({
+        message: 'This Coin payment has already been refunded',
+        details: { reason: COIN_REASON.ALREADY_REFUNDED },
+      });
+    }
+    return this.credit(tx, walletId, {
+      entryType: CoinEntryType.REFUND,
+      mainAmount: 0 - original.mainAmount,
+      bonusAmount: 0 - original.bonusAmount,
+      lotSource: CoinLotSource.REFUND,
+      reversesId: original.id,
+      createdById,
+      description: `Refund of ${original.entryType} ${original.id}`,
     });
-    await bumpWallet(tx, walletId, wallet.mainBalance + mainAmount, wallet.bonusBalance + bonusAmount);
-    const movement = {
-      transactionId: entry.id,
-      mainCoins: mainAmount,
-      bonusCoins: bonusAmount,
-      mainBalance: wallet.mainBalance + mainAmount,
-      bonusBalance: wallet.bonusBalance + bonusAmount,
-    };
-    await noticeReceived(this.notifications, tx, walletId, CoinEntryType.REFUND, movement);
-    return movement;
   }
 
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */
