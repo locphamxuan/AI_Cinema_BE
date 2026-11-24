@@ -1,5 +1,5 @@
 import { freeTierOf } from './episode-free-tier';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ProjectStatus, type Prisma } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -32,6 +32,8 @@ const LISTED_CARD = {
 
 /** How many movies the ranking tab shows. */
 const RANKING_SIZE = 20;
+/** Highest season number a catalog filter accepts. */
+const MAX_SEASON_NUMBER = 1000;
 
 const EPISODE_DETAIL = {
   season: { select: { seasonNumber: true, title: true } },
@@ -132,9 +134,16 @@ export class CatalogService {
   }
 
   async episodes(movieId: string, seasonNumber?: number) {
+    // `?season=` reaches an integer column: a value it cannot hold is a bad request, never a database error.
+    if (seasonNumber !== undefined && (seasonNumber < 1 || seasonNumber > MAX_SEASON_NUMBER)) {
+      throw new BadRequestException({
+        message: `season must be between 1 and ${MAX_SEASON_NUMBER}`,
+        details: { reason: 'SEASON_NUMBER_INVALID' },
+      });
+    }
     await this.assertListed(movieId);
     const episodes = await this.prisma.episode.findMany({
-      where: { movieId, ...VISIBLE_EPISODE, ...(seasonNumber ? { season: { seasonNumber } } : {}) },
+      where: { movieId, ...VISIBLE_EPISODE, ...(seasonNumber !== undefined ? { season: { seasonNumber } } : {}) },
       orderBy: { episodeNumber: 'asc' },
       include: EPISODE_DETAIL,
     });

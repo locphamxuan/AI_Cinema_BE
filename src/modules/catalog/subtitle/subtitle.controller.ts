@@ -21,8 +21,26 @@ export class SubtitleController {
       select: { fileUrl: true },
     });
     if (!subtitle) throw new NotFoundException('Subtitle not found');
-    const response = await fetch(subtitle.fileUrl);
-    if (!response.ok) throw new NotFoundException('Subtitle file is not available');
-    return response.text();
+    return readSubtitleFile(subtitle.fileUrl);
+  }
+}
+
+/** How long the storage may take to hand over a WebVTT file before the player is told it is unavailable. */
+const SUBTITLE_FETCH_TIMEOUT_MS = 10_000;
+
+/** Reads the stored WebVTT; a storage that is down, slow or missing the file answers 404, never a 500 or a hang. */
+export async function readSubtitleFile(fileUrl: string, fetcher: typeof fetch = fetch): Promise<string> {
+  const unavailable = () =>
+    new NotFoundException({
+      message: 'Subtitle file is not available',
+      details: { reason: 'SUBTITLE_FILE_UNAVAILABLE' },
+    });
+  try {
+    const response = await fetcher(fileUrl, { signal: AbortSignal.timeout(SUBTITLE_FETCH_TIMEOUT_MS) });
+    if (!response.ok) throw unavailable();
+    return await response.text();
+  } catch (error) {
+    if (error instanceof NotFoundException) throw error;
+    throw unavailable();
   }
 }
