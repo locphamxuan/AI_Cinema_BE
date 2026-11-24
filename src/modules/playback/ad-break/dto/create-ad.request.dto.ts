@@ -1,10 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Trim } from 'src/common/validation/trim';
 import { MAX_AD_WEIGHT } from '../ad-limits';
 
 export class CreateAdRequestDto {
   @ApiProperty({ example: 'Trà sữa Gong Cha — mua 1 tặng 1' })
+  @Trim()
   @IsString()
+  @MinLength(1)
   @MaxLength(255)
   title: string;
 

@@ -363,8 +363,15 @@ describe('StreamingSessionService.create', () => {
       await expect(service.heartbeat('sess-1', { userId: 'u-2' }, { positionSeconds: 1 })).rejects.toMatchObject({
         response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_OWNER' }) }),
       });
+      await expect(service.heartbeat('sess-1', { guestKey: 'k' }, { positionSeconds: 1 })).rejects.toMatchObject({
+        status: 401,
+      });
+    });
+
+    it('asks a member whose token lapsed to sign in again (401) instead of ending playback', async () => {
       await expect(service.heartbeat('sess-1', {}, { positionSeconds: 1 })).rejects.toMatchObject({
-        response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_OWNER' }) }),
+        status: 401,
+        response: expect.objectContaining({ details: { reason: 'SESSION_SIGN_IN_REQUIRED' } }),
       });
     });
 

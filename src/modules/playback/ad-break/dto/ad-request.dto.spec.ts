@@ -21,6 +21,12 @@ describe('ad request bounds (P4-6)', () => {
     await expect(invalidProperties(UpdateAdRequestDto, { weight: MAX_AD_WEIGHT + 1 })).resolves.toEqual(['weight']);
   });
 
+  it('refuses a blank title and trims the one it keeps', async () => {
+    await expect(invalidProperties(CreateAdRequestDto, { ...base, title: '   ' })).resolves.toEqual(['title']);
+    await expect(invalidProperties(UpdateAdRequestDto, { title: '' })).resolves.toEqual(['title']);
+    expect(plainToInstance(CreateAdRequestDto, { ...base, title: '  Gong Cha  ' }).title).toBe('Gong Cha');
+  });
+
   it('takes a video served by the API itself (local storage has no TLD)', async () => {
     await expect(
       invalidProperties(CreateAdRequestDto, { ...base, mediaUrl: 'http://localhost:3001/media/public/ads/a.mp4' }),

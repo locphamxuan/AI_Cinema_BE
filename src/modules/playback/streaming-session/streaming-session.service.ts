@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { EpisodeStatus, StreamingEndReason, type StreamingSession } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
@@ -201,8 +202,9 @@ export class StreamingSessionService {
    * Access is NOT granted here — the caller hands the id back to Main Flow 2.
    */
   async nextEpisode(episodeId: string): Promise<NextEpisodeView> {
-    const current = await this.prisma.episode.findUnique({
-      where: { id: episodeId },
+    // Public route: an episode viewers cannot see (unreleased, removed) stays unknown, so it leaks no movie id.
+    const current = await this.prisma.episode.findFirst({
+      where: { id: episodeId, ...VISIBLE_EPISODE },
       select: { movieId: true, episodeNumber: true },
     });
     if (!current) {
