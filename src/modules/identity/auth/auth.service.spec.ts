@@ -102,6 +102,16 @@ describe('AuthService', () => {
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
+    it.each(['1899-12-31', '2999-01-01'])(
+      'refuses the impossible birthday %s with DATE_OF_BIRTH_INVALID',
+      async (day) => {
+        await expect(service.register({ ...dto, dateOfBirth: day })).rejects.toMatchObject({
+          response: { details: { reason: 'DATE_OF_BIRTH_INVALID' } },
+        });
+        expect(prisma.user.create).not.toHaveBeenCalled();
+      },
+    );
+
     it('rejects an email that already has an account', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'existing' });
       await expect(service.register(dto)).rejects.toThrow(ConflictException);
@@ -124,6 +134,10 @@ describe('AuthService', () => {
 
     it('refuses a birthday in the future', async () => {
       await expect(service.updateMe(caller, { dateOfBirth: '2999-01-01' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateMe(caller, { dateOfBirth: '1800-05-01' })).rejects.toMatchObject({
+        response: { details: { reason: 'DATE_OF_BIRTH_INVALID' } },
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it('changes the password only with the current one, then signs every other session out', async () => {

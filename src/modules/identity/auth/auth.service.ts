@@ -11,7 +11,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
-import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
+import { hashPassword, isAdult, isPlausibleBirthDate, normalizeEmail, verifyPassword } from './credentials';
 import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
 import type { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
@@ -23,6 +23,17 @@ import { PasswordResetService } from './password-reset.service';
 import { SessionTokenService } from './session-token.service';
 
 const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
+/** Longest full name the users table keeps. */
+const FULL_NAME_MAX = 255;
+
+/** A birthday before 1900 or in the future is a typing error, refused before the age rule runs. */
+function assertBirthDate(dateOfBirth: Date): void {
+  if (isPlausibleBirthDate(dateOfBirth)) return;
+  throw new BadRequestException({
+    message: 'Date of birth must be between 1900-01-01 and today',
+    details: { reason: 'DATE_OF_BIRTH_INVALID' },
+  });
+}
 
 /** Only an active member may use Google; a staff account keeps its password sign-in. */
 function assertGoogleMember(user: Pick<UserProfile, 'role' | 'isActive'>): void {
@@ -48,6 +59,7 @@ export class AuthService {
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
     const dateOfBirth = new Date(dto.dateOfBirth);
+    assertBirthDate(dateOfBirth);
     if (!isAdult(dateOfBirth)) throw new ForbiddenException(ADULTS_ONLY);
     const email = normalizeEmail(dto.email);
     if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
@@ -86,9 +98,9 @@ export class AuthService {
   }
 
   /**
-   * Google sign-in is for members only, in one tap: a linked member signs in, a member account with
-   * that verified email is linked, and a new email opens a member account under the Google name.
-   * Staff accounts (Admin, Reviewer, Creator, Staff) sign in with their password and are never linked.
+   * Google sign-in is for members only, in one tap: a linked member signs in and a new email opens a member
+   * account under the Google name. An email that already has an account is never linked: it signs in with its
+   * password (GOOGLE_EMAIL_REGISTERED). Staff accounts sign in with their password.
    */
   async googleLogin(dto: GoogleLoginRequestDto): Promise<AuthSessionDto> {
     const profile = await this.google.verify(dto.idToken);
@@ -117,8 +129,7 @@ export class AuthService {
 
   async updateMe(caller: AuthenticatedUser, dto: UpdateMyProfileRequestDto): Promise<AuthProfileDto> {
     const dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined;
-    if (dateOfBirth && dateOfBirth.getTime() > Date.now())
-      throw new BadRequestException('Birthday cannot be in the future');
+    if (dateOfBirth) assertBirthDate(dateOfBirth);
     if (dateOfBirth && caller.role === UserRole.MEMBER && !isAdult(dateOfBirth)) {
       throw new ForbiddenException(ADULTS_ONLY);
     }
@@ -184,7 +195,7 @@ export class AuthService {
 
   /** One tap: the member account opens at once under the Google name. */
   private async openGoogleMember(profile: GoogleProfile, email: string): Promise<UserProfile> {
-    const name = profile.name?.trim() ?? '';
+    const name = profile.name?.trim().slice(0, FULL_NAME_MAX) ?? '';
     const fullName = name.length >= 2 ? name : email.split('@')[0].padEnd(2, '_');
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({

@@ -52,6 +52,13 @@ export class UserService {
     }
     const existing = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true, email: true } });
     if (!existing) throw new NotFoundException(`User with id "${userId}" does not exist`);
+    // A Studio login is tied to its studio (users_studio_role_check): it is locked, never moved to another role.
+    if (existing.role === UserRole.STUDIO && dto.role !== undefined && dto.role !== existing.role) {
+      throw new ConflictException({
+        message: 'A Studio login keeps its role; lock it instead',
+        details: { reason: 'STUDIO_ACCOUNT_ROLE_LOCKED' },
+      });
+    }
     const email = dto.email === undefined ? undefined : normalizeEmail(dto.email);
     if (
       email &&
