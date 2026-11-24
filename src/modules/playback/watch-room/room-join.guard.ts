@@ -2,14 +2,11 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { FriendshipStatus, StreamingSessionStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WatchEntitlementService } from 'src/modules/episode-access/access-decision/watch-entitlement.service';
-import { isAdult } from 'src/modules/identity/auth/credentials';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
+import { assertOldEnough } from '../playback-access/age-gate';
 import { deviceLimitsOf } from '../playback-access/device-eligibility.port';
 import { ROOM_CAPACITY } from './room-events';
-
-/** Movie labels only confirmed adults may watch (edge 6.2, Điều 44 Luật Điện ảnh 134/2025/QH15). */
-const ADULT_LABELS = new Set(['T18']);
 
 /**
  * The paywall gate of a watch room (edges 1.1, 4.2, 5.1, 6.2, 7.3): every member is checked at the
@@ -62,13 +59,13 @@ export class RoomJoinGuard {
       where: { id: episodeId },
       select: { movie: { select: { ageRating: true } } },
     });
-    if (!episode || !ADULT_LABELS.has(episode.movie.ageRating ?? '')) return;
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { dateOfBirth: true } });
-    if (user?.dateOfBirth && isAdult(user.dateOfBirth)) return;
-    throw new ForbiddenException({
-      message: 'This episode is for viewers aged 18 or older; this account cannot join',
-      details: { reason: 'AGE_RESTRICTED', ageRating: 'T18' },
-    });
+    if (!episode) return;
+    await assertOldEnough(
+      this.prisma,
+      episode.movie.ageRating,
+      userId,
+      'This episode is for viewers aged 18 or older; this account cannot join',
+    );
   }
 
   /** Edge 4.2 — the room capacity cap; a member already in the room may always come back. */
