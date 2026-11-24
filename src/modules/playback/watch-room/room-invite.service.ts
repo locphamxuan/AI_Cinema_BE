@@ -38,6 +38,7 @@ export class RoomInviteService {
     now = Date.now(),
   ): Promise<InviteOutcome> {
     const key = `${userId}|${friendId}|${roomId}`;
+    this.forgetExpired(now);
     const last = this.sentAt.get(key);
     if (last !== undefined && now - last < INVITE_COOLDOWN_MS) {
       return { ok: false, reason: 'COOLDOWN', retryAfterSeconds: Math.ceil((last + INVITE_COOLDOWN_MS - now) / 1000) };
@@ -56,5 +57,12 @@ export class RoomInviteService {
       payload: { ...invite },
     });
     return { ok: true, invite, deliver: 'NOTIFICATION' };
+  }
+
+  /** A cooldown that ran out no longer decides anything; dropping it keeps the map as small as the last minute. */
+  private forgetExpired(now: number): void {
+    for (const [key, at] of this.sentAt) {
+      if (now - at >= INVITE_COOLDOWN_MS) this.sentAt.delete(key);
+    }
   }
 }

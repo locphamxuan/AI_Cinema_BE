@@ -1,21 +1,18 @@
-import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { WatchRoomStatus } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WatchEntitlementService } from 'src/modules/episode-access/access-decision/watch-entitlement.service';
 import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
 import { CodeGuessLimiter, generateRoomCode, normalizeRoomCode } from './room-codes';
 import { RoomJoinGuard } from './room-join.guard';
-import { WatchRoomResponseDto, ParticipantDto } from './dto/watch-room.dto';
-
-/** The room closes 15 min after the episode ends or the Host leaves (BR-69); every Host sync extends it. */
-const ROOM_TTL_MS = 15 * 60 * 1000;
-
-const OPEN_STATUSES: WatchRoomStatus[] = [
-  WatchRoomStatus.CREATED,
-  WatchRoomStatus.WAITING_FOR_PARTICIPANTS,
-  WatchRoomStatus.PLAYING,
-  WatchRoomStatus.PAUSED,
-];
+import { WatchRoomResponseDto } from './dto/watch-room.dto';
+import { assertOpen, OPEN_STATUSES, ROOM_TTL_MS, roomSnapshot } from './room-state';
 
 type RoomWithParticipants = NonNullable<Awaited<ReturnType<WatchRoomService['findRoom']>>>;
 
@@ -86,9 +83,7 @@ export class WatchRoomService {
 
   /** The door of the room: status, expiry, then every gate of RoomJoinGuard (edges 1.1–7.3). */
   private async admit(userId: string, room: RoomWithParticipants, deviceKey?: string): Promise<WatchRoomResponseDto> {
-    if (!OPEN_STATUSES.includes(room.status)) {
-      throw new ConflictException({ message: 'Room is closed', details: { reason: 'ROOM_CLOSED' } });
-    }
+    assertOpen(room);
     if (room.expiresAt && room.expiresAt.getTime() < Date.now()) {
       await this.close(room.id);
       throw new ConflictException({ message: 'Room has expired', details: { reason: 'ROOM_EXPIRED' } });
@@ -104,7 +99,7 @@ export class WatchRoomService {
       await this.prisma.roomParticipant.create({ data: { roomId: room.id, userId, role: 'PARTICIPANT' } });
     }
     const updated = await this.findRoom(room.id);
-    return this.snapshot(updated!);
+    return roomSnapshot(updated!);
   }
 
   async detail(userId: string, roomId: string): Promise<WatchRoomResponseDto> {
@@ -112,7 +107,7 @@ export class WatchRoomService {
     if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
     const inRoom = room.participants.some((p) => p.userId === userId);
     if (!inRoom) throw new ForbiddenException({ message: 'Not a participant', details: { reason: 'NOT_PARTICIPANT' } });
-    return this.snapshot(room);
+    return roomSnapshot(room);
   }
 
   async hostSync(
@@ -122,18 +117,26 @@ export class WatchRoomService {
   ): Promise<WatchRoomResponseDto> {
     const room = await this.findRoom(roomId);
     if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
-    const host = room.participants.find((p) => p.userId === userId && p.role === 'HOST');
+    const host = room.participants.find((p) => p.userId === userId && p.role === 'HOST' && !p.leftAt);
     if (!host) throw new ForbiddenException({ message: 'Only the Host may sync', details: { reason: 'NOT_HOST' } });
+    // A disbanded or ended room never comes back to life through a late sync.
+    assertOpen(room);
 
     // BR-69: the 15 minutes count from the last sign of the Host (play, pause, seek or the end of the episode),
     // so a room in use never expires mid-episode; it closes 15 min after the episode ends or the Host goes quiet.
     const expiresAt = new Date(Date.now() + ROOM_TTL_MS);
     const updated = await this.prisma.watchRoom.update({
       where: { id: roomId },
-      data: { status: dto.state, currentPositionSeconds: dto.positionSeconds, lastHostPingAt: new Date(), expiresAt },
+      // The Host clock may carry fractions of a second; the column keeps whole seconds.
+      data: {
+        status: dto.state,
+        currentPositionSeconds: Math.floor(dto.positionSeconds),
+        lastHostPingAt: new Date(),
+        expiresAt,
+      },
       include: { participants: { include: { participant: { select: { fullName: true } } } } },
     });
-    return this.snapshot(updated);
+    return roomSnapshot(updated);
   }
 
   /**
@@ -148,6 +151,17 @@ export class WatchRoomService {
     const room = await this.findRoom(roomId);
     if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
     const me = room.participants.find((p) => p.userId === userId);
+    // Checked before the Host steps out: a wrong pick must not close the room for everyone.
+    const handOverTo = opts.action !== 'DISBAND' ? opts.newHostUserId : undefined;
+    if (me?.role === 'HOST' && handOverTo) {
+      const named = room.participants.some((p) => p.userId === handOverTo && !p.leftAt && p.role !== 'HOST');
+      if (!named) {
+        throw new BadRequestException({
+          message: 'The new Host must be a member still in the room',
+          details: { reason: 'NEW_HOST_NOT_IN_ROOM' },
+        });
+      }
+    }
     if (me) await this.prisma.roomParticipant.update({ where: { id: me.id }, data: { leftAt: new Date() } });
     if (me?.role !== 'HOST') return { closed: false, newHostUserId: null };
 
@@ -194,6 +208,7 @@ export class WatchRoomService {
     if (room.hostUserId !== userId) {
       throw new ForbiddenException({ message: 'Only the Host may continue', details: { reason: 'NOT_HOST' } });
     }
+    assertOpen(room);
     const current = await this.prisma.episode.findUnique({
       where: { id: room.episodeId },
       select: { movieId: true, episodeNumber: true },
@@ -216,7 +231,7 @@ export class WatchRoomService {
     const hostCheck = checks.find(({ p }) => p.userId === userId);
     if (hostCheck && !hostCheck.check.allowed) {
       throw new ForbiddenException({
-        message: 'Tập tiếp theo cần mở khóa trước khi phát cho phòng',
+        message: 'Unlock the next episode before playing it for the room',
         details: { reason: 'ENTITLEMENT_REQUIRED', required: hostCheck.check.required },
       });
     }
@@ -236,7 +251,7 @@ export class WatchRoomService {
       },
       include: { participants: { include: { participant: { select: { fullName: true } } } } },
     });
-    return { room: this.snapshot(updated), blockedUserIds: blocked.map(({ p }) => p.userId) };
+    return { room: roomSnapshot(updated), blockedUserIds: blocked.map(({ p }) => p.userId) };
   }
 
   /** Edge 1.4 — the episode was taken down: every open room on it closes at once. */
@@ -266,27 +281,5 @@ export class WatchRoomService {
       where: { id: roomId },
       include: { participants: { include: { participant: { select: { fullName: true } } } } },
     });
-  }
-
-  /** Flatten the active participants of a room into { userId, fullName }. */
-  private activeParticipants(room: RoomWithParticipants): ParticipantDto[] {
-    return room.participants
-      .filter((p) => !p.leftAt)
-      .map((p) => ({ userId: p.userId, fullName: p.participant?.fullName ?? 'Thành viên' }));
-  }
-
-  /**
-   * Edge 2.1 — the late joiner's snapshot: the position is extrapolated from the Host's last ping
-   * while the room plays, and the server clock rides along so the client can offset the transit.
-   */
-  private snapshot(room: RoomWithParticipants): WatchRoomResponseDto {
-    const participants = this.activeParticipants(room);
-    const dto = WatchRoomResponseDto.from(room, participants.length, participants);
-    dto.serverTimestamp = Date.now();
-    if (room.status === WatchRoomStatus.PLAYING && room.lastHostPingAt) {
-      dto.currentPositionSeconds =
-        room.currentPositionSeconds + Math.max(0, (Date.now() - room.lastHostPingAt.getTime()) / 1000);
-    }
-    return dto;
   }
 }

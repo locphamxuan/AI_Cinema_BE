@@ -11,12 +11,12 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Namespace, Server, Socket } from 'socket.io';
-import { type AccessTokenPayload, JWT_ALGORITHM } from 'src/common/auth/authenticated-user';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RoomInviteService } from './room-invite.service';
 import { RoomCluster } from './room-cluster';
-import { liveStateOf, socketErrorOf, assertActiveAccount, socketAuth } from './room-socket-utils';
+import { liveStateOf, memberOfToken, socketErrorOf, socketAuth } from './room-socket-utils';
+import { INVALID_PAYLOAD, inviteOf, playbackOf, roomIdOf } from './room-payload';
 import { SignedInSocketGuard } from './room-socket.guard';
 import { RoomTerminationService } from './room-termination.service';
 import { WatchRoomService } from './watch-room.service';
@@ -26,6 +26,7 @@ import {
   ROOM_CHANNEL,
   ROOM_EVENT,
   ROOM_TERMINATED_REASON,
+  SESSION_REPLACED_REASON,
   USER_CHANNEL,
 } from './room-events';
 
@@ -70,15 +71,8 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
   }
 
   /** The member of a handshake token: a valid access token of an active Member account (BR-69), else it throws. */
-  private async memberOf(token: string): Promise<string> {
-    const payload = await this.jwt.verifyAsync<AccessTokenPayload>(token, {
-      algorithms: [JWT_ALGORITHM],
-      issuer: this.config.jwt.issuer,
-      audience: this.config.jwt.audience,
-    });
-    if (payload.type !== 'access') throw new Error('not an access token');
-    await assertActiveAccount(this.prisma, payload.sub);
-    return payload.sub;
+  private memberOf(token: string): Promise<string> {
+    return memberOfToken(this.jwt, this.config.jwt, this.prisma, token);
   }
 
   /** The handshake middleware (socketAuth) already admitted the member; the id comes from the token alone. */
@@ -103,18 +97,20 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
   }
 
   @SubscribeMessage(ROOM_EVENT.JOIN)
-  async onJoin(@ConnectedSocket() client: Socket, @MessageBody() body: { roomId: string }): Promise<void> {
+  async onJoin(@ConnectedSocket() client: Socket, @MessageBody() body: unknown): Promise<void> {
     const userId = (client.data as SocketData).userId!;
+    const roomId = roomIdOf(body);
+    if (!roomId) return void client.emit(ROOM_EVENT.ERROR, INVALID_PAYLOAD);
     try {
-      const room = await this.rooms.join(userId, body.roomId);
-      this.takeSeat(body.roomId, userId, client);
-      this.live.seed(body.roomId, room.hostUserId, liveStateOf(room.status), room.currentPositionSeconds);
+      const room = await this.rooms.join(userId, roomId);
+      this.takeSeat(roomId, userId, client);
+      this.live.seed(roomId, room.hostUserId, liveStateOf(room.status), room.currentPositionSeconds);
       if (room.hostUserId === userId) {
-        this.cluster.cancelGrace(body.roomId, true);
-        this.cluster.publish({ t: 'hostBack', roomId: body.roomId });
+        this.cluster.cancelGrace(roomId, true);
+        this.cluster.publish({ t: 'hostBack', roomId });
       }
       this.server
-        .to(ROOM_CHANNEL(body.roomId))
+        .to(ROOM_CHANNEL(roomId))
         .emit(ROOM_EVENT.PARTICIPANT_JOINED, { userId, count: room.participantCount });
       client.emit(ROOM_EVENT.JOINED, { room });
     } catch (e) {
@@ -123,11 +119,10 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
   }
 
   @SubscribeMessage(ROOM_EVENT.PLAYBACK)
-  async onPlayback(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() body: { roomId: string; state: 'PLAYING' | 'PAUSED' | 'ENDED'; positionSeconds: number },
-  ): Promise<void> {
+  async onPlayback(@ConnectedSocket() client: Socket, @MessageBody() raw: unknown): Promise<void> {
     const userId = (client.data as SocketData).userId!;
+    const body = playbackOf(raw);
+    if (!body) return void client.emit(ROOM_EVENT.ERROR, INVALID_PAYLOAD);
     try {
       await this.rooms.hostSync(userId, body.roomId, { state: body.state, positionSeconds: body.positionSeconds });
       this.live.sync(body.roomId, body.state, body.positionSeconds);
@@ -157,14 +152,16 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
   }
 
   @SubscribeMessage(ROOM_EVENT.LEAVE)
-  async onLeave(@ConnectedSocket() client: Socket, @MessageBody() body: { roomId: string }): Promise<void> {
+  async onLeave(@ConnectedSocket() client: Socket, @MessageBody() body: unknown): Promise<void> {
     const userId = (client.data as SocketData).userId!;
-    this.seats.release(body.roomId, userId);
-    void client.leave(ROOM_CHANNEL(body.roomId));
+    const roomId = roomIdOf(body);
+    if (!roomId) return void client.emit(ROOM_EVENT.ERROR, INVALID_PAYLOAD);
+    this.seats.release(roomId, userId);
+    void client.leave(ROOM_CHANNEL(roomId));
     (client.data as SocketData).roomId = undefined;
     try {
-      const result = await this.rooms.leave(userId, body.roomId, {});
-      await this.afterMemberLeft(body.roomId, userId, result);
+      const result = await this.rooms.leave(userId, roomId, {});
+      await this.afterMemberLeft(roomId, userId, result);
     } catch (e) {
       client.emit(ROOM_EVENT.ERROR, socketErrorOf(e));
     }
@@ -172,28 +169,29 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
 
   /** Edge 3.3 — a member votes to move the Host seat while the vote is open. */
   @SubscribeMessage(ROOM_EVENT.VOTE_HOST)
-  async onVoteHost(@ConnectedSocket() client: Socket, @MessageBody() body: { roomId: string }): Promise<void> {
+  async onVoteHost(@ConnectedSocket() client: Socket, @MessageBody() body: unknown): Promise<void> {
     const userId = (client.data as SocketData).userId!;
-    if (!this.seats.isSeated(body.roomId, userId)) return void client.emit(ROOM_EVENT.ERROR, { reason: 'NOT_IN_ROOM' });
-    const active = await this.prisma.roomParticipant.count({
-      where: { roomId: body.roomId, leftAt: null, role: 'PARTICIPANT' },
-    });
-    const carried = this.live.vote(body.roomId, userId, active);
-    this.cluster.publish({ t: 'vote', roomId: body.roomId, userId });
+    const roomId = roomIdOf(body);
+    if (!roomId) return void client.emit(ROOM_EVENT.ERROR, INVALID_PAYLOAD);
+    if (!this.seats.isSeated(roomId, userId)) return void client.emit(ROOM_EVENT.ERROR, { reason: 'NOT_IN_ROOM' });
+    const active = await this.prisma.roomParticipant.count({ where: { roomId, leftAt: null, role: 'PARTICIPANT' } });
+    const carried = this.live.vote(roomId, userId, active);
+    this.cluster.publish({ t: 'vote', roomId, userId });
     if (!carried) return;
-    const newHost = await this.rooms.promoteNextHost(body.roomId);
+    const newHost = await this.rooms.promoteNextHost(roomId);
     if (!newHost) return;
-    this.handOver(body.roomId, newHost);
-    this.server.to(ROOM_CHANNEL(body.roomId)).emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: newHost, reason: 'VOTE' });
+    this.handOver(roomId, newHost);
+    this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: newHost, reason: 'VOTE' });
   }
 
   /** Edges 7.1–7.3 — invite an accepted friend: 60 s cooldown, 10 min TTL, offline → notification. */
   @SubscribeMessage(ROOM_EVENT.INVITE)
-  async onInvite(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() body: { roomId: string; friendId: string },
-  ): Promise<void> {
+  async onInvite(@ConnectedSocket() client: Socket, @MessageBody() raw: unknown): Promise<void> {
     const userId = (client.data as SocketData).userId!;
+    const body = inviteOf(raw, userId);
+    if (!body) return void client.emit(ROOM_EVENT.ERROR, INVALID_PAYLOAD);
+    // Only a member sitting in the room hands out its invites: no invite to a room one is not in.
+    if (!this.seats.isSeated(body.roomId, userId)) return void client.emit(ROOM_EVENT.ERROR, { reason: 'NOT_IN_ROOM' });
     const outcome = await this.invites.invite(
       userId,
       body.roomId,
@@ -213,7 +211,7 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
   private takeSeat(roomId: string, userId: string, client: Socket): void {
     const old = this.seats.take(roomId, userId, client);
     if (old) {
-      old.emit(ROOM_EVENT.SESSION_REPLACED, { roomId, reason: 'Bạn đã tham gia phòng này từ một thiết bị khác' });
+      old.emit(ROOM_EVENT.SESSION_REPLACED, { roomId, reason: SESSION_REPLACED_REASON });
       void old.leave(ROOM_CHANNEL(roomId));
       (old.data as SocketData).roomId = undefined;
     }
@@ -232,7 +230,7 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
       await this.prisma.watchRoom.update({ where: { id: roomId }, data: { status: 'PAUSED' } }).catch(() => undefined);
       this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.HOST_DISCONNECTED, {
         graceSeconds: HOST_GRACE_MS / 1000,
-        message: 'Trưởng phòng bị mất kết nối, đang chờ kết nối lại (45s)...',
+        message: 'The Host lost the connection; waiting 45 seconds for them to come back',
       });
       this.cluster.startGrace(roomId, HOST_GRACE_MS, () => void this.onGraceExpired(roomId, userId));
       return;
@@ -279,7 +277,7 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
     const sockets = await this.server.in(ROOM_CHANNEL(roomId)).fetchSockets();
     if (sockets.length === 1) {
       sockets[0].emit(ROOM_EVENT.LAST_ONE_LEFT, {
-        message: 'Các bạn khác đã rời phòng. Bạn có muốn chuyển về chế độ xem cá nhân không?',
+        message: 'Everyone else left the room; switch back to watching alone?',
       });
     }
   }

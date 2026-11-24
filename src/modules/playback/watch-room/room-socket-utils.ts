@@ -1,3 +1,5 @@
+import type { JwtService } from '@nestjs/jwt';
+import { type AccessTokenPayload, JWT_ALGORITHM } from 'src/common/auth/authenticated-user';
 import type { LivePlaybackState } from './room-live-state';
 
 /** The playback state a stored room status starts the live clock in. */
@@ -17,7 +19,8 @@ export function socketErrorOf(e: unknown): { reason: string; details?: unknown }
     const { message, details } = response as { message?: string; details?: unknown };
     return { reason: message ?? 'ROOM_ERROR', details };
   }
-  return { reason: (e as Error).message };
+  // Anything else (a database or network fault) stays on the server: its text is no business of the client.
+  return { reason: 'ROOM_ERROR' };
 }
 
 /** The access JWT a client sends on connect: `auth.token`, else an `Authorization: Bearer` header. */
@@ -38,6 +41,23 @@ export async function assertActiveAccount(
   if (!account?.isActive) throw new Error('account deactivated');
   // 2026-11-13: watch rooms are a Member feature only.
   if (account.role !== 'MEMBER') throw new Error('members only');
+}
+
+/** The member of a handshake token: a valid access token of an active Member account (BR-69), else it throws. */
+export async function memberOfToken(
+  jwt: Pick<JwtService, 'verifyAsync'>,
+  options: { issuer: string; audience: string },
+  prisma: Parameters<typeof assertActiveAccount>[0],
+  token: string,
+): Promise<string> {
+  const payload = await jwt.verifyAsync<AccessTokenPayload>(token, {
+    algorithms: [JWT_ALGORITHM],
+    issuer: options.issuer,
+    audience: options.audience,
+  });
+  if (payload.type !== 'access') throw new Error('not an access token');
+  await assertActiveAccount(prisma, payload.sub);
+  return payload.sub;
 }
 
 type HandshakeSocket = Parameters<typeof handshakeTokenOf>[0] & { data: { userId?: string } };

@@ -1,7 +1,7 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import type { Namespace, Socket } from 'socket.io';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
-import { HEARTBEAT_MS, ROOM_CHANNEL, ROOM_EVENT, USER_CHANNEL } from './room-events';
+import { HEARTBEAT_MS, ROOM_CHANNEL, ROOM_EVENT, SESSION_REPLACED_REASON, USER_CHANNEL } from './room-events';
 import { LiveRooms, PlaybackThrottle, type LivePlaybackState } from './room-live-state';
 import { RoomSeats } from './room-seats';
 import { RoomSharedScreen, type RoomAdState, type RoomChatMessage } from './room-shared-screen';
@@ -129,7 +129,7 @@ export class RoomCluster implements OnModuleDestroy {
     const old = this.seats.holder(roomId, userId);
     if (!old || old.id === keepSocketId) return;
     this.seats.release(roomId, userId);
-    old.emit(ROOM_EVENT.SESSION_REPLACED, { roomId, reason: 'Bạn đã tham gia phòng này từ một thiết bị khác' });
+    old.emit(ROOM_EVENT.SESSION_REPLACED, { roomId, reason: SESSION_REPLACED_REASON });
     void old.leave(ROOM_CHANNEL(roomId));
     (old.data as { roomId?: string }).roomId = undefined;
   }

@@ -35,7 +35,7 @@ export class CodeGuessLimiter {
     const until = this.lockedUntil.get(key);
     if (until && until > now) {
       throw new ForbiddenException({
-        message: 'Nhập sai mã phòng quá nhiều lần, vui lòng thử lại sau 15 phút',
+        message: 'Too many wrong room codes; try again in 15 minutes',
         details: { reason: 'CODE_GUESS_LOCKED', retryAfterSeconds: Math.ceil((until - now) / 1000) },
       });
     }

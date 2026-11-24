@@ -51,7 +51,7 @@ export class RoomJoinGuard {
     const check = await this.entitlement.canWatch(episodeId, userId);
     if (check.allowed) return;
     throw new ForbiddenException({
-      message: 'Tập này cần mở khóa bằng Coin hoặc Gói Hội viên để xem cùng nhóm',
+      message: 'Unlock this episode with Coins or a membership plan to watch it together',
       details: { reason: 'ENTITLEMENT_REQUIRED', nextAction: check.reason, required: check.required },
     });
   }
@@ -66,7 +66,7 @@ export class RoomJoinGuard {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { dateOfBirth: true } });
     if (user?.dateOfBirth && isAdult(user.dateOfBirth)) return;
     throw new ForbiddenException({
-      message: 'Tập phim này dành cho khán giả từ 18 tuổi trở lên. Tài khoản của bạn chưa đủ điều kiện tham gia',
+      message: 'This episode is for viewers aged 18 or older; this account cannot join',
       details: { reason: 'AGE_RESTRICTED', ageRating: 'T18' },
     });
   }
@@ -77,7 +77,7 @@ export class RoomJoinGuard {
     if (active.some((p) => p.userId === userId)) return;
     if (active.length >= ROOM_CAPACITY) {
       throw new ConflictException({
-        message: 'Phòng đã đủ số lượng thành viên tối đa',
+        message: 'The room is full',
         details: { reason: 'ROOM_FULL', capacity: ROOM_CAPACITY },
       });
     }
@@ -131,7 +131,7 @@ export class RoomJoinGuard {
     });
     if (live.length < maxConcurrentStreams) return;
     throw new ConflictException({
-      message: 'Tài khoản đã đạt số thiết bị phát đồng thời tối đa',
+      message: 'This account already plays on as many devices as its plan allows',
       details: {
         reason: 'DEVICE_LIMIT_EXCEEDED',
         maxConcurrentStreams,

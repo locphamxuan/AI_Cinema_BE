@@ -141,6 +141,45 @@ describe('WatchRoomService', () => {
     );
   });
 
+  it('never brings a closed room back through a late Host sync', async () => {
+    prisma.watchRoom.findUnique.mockResolvedValue(room({ status: WatchRoomStatus.DISBANDED }));
+    await expect(newService().hostSync('u1', 'r1', { state: 'PLAYING', positionSeconds: 5 })).rejects.toMatchObject({
+      response: { details: { reason: 'ROOM_CLOSED' } },
+    });
+    // A Host who already left is not the Host any more.
+    prisma.watchRoom.findUnique.mockResolvedValue(room({ participants: [{ ...host, leftAt: new Date() }] }));
+    await expect(newService().hostSync('u1', 'r1', { state: 'PLAYING', positionSeconds: 5 })).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(prisma.watchRoom.update).not.toHaveBeenCalled();
+  });
+
+  it('stores the Host clock in whole seconds (the column is an integer)', async () => {
+    prisma.watchRoom.findUnique.mockResolvedValue(room());
+    prisma.watchRoom.update.mockResolvedValue(room({ status: WatchRoomStatus.PAUSED }));
+    await newService().hostSync('u1', 'r1', { state: 'PAUSED', positionSeconds: 930.7 });
+    expect(prisma.watchRoom.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ currentPositionSeconds: 930 }) }),
+    );
+  });
+
+  it('refuses a hand-over to someone not in the room before the Host steps out', async () => {
+    prisma.watchRoom.findUnique.mockResolvedValue(room({ participants: [host, member] }));
+    await expect(
+      newService().leave('u1', 'r1', { action: 'TRANSFER', newHostUserId: 'stranger' }),
+    ).rejects.toMatchObject({ response: { details: { reason: 'NEW_HOST_NOT_IN_ROOM' } } });
+    expect(prisma.roomParticipant.update).not.toHaveBeenCalled();
+    expect(prisma.watchRoom.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to move a closed room to the next episode', async () => {
+    prisma.watchRoom.findUnique.mockResolvedValue(room({ status: WatchRoomStatus.DISBANDED }));
+    await expect(newService().nextEpisode('u1', 'r1')).rejects.toMatchObject({
+      response: { details: { reason: 'ROOM_CLOSED' } },
+    });
+    expect(prisma.watchRoom.update).not.toHaveBeenCalled();
+  });
+
   it('disbands the room when the Host leaves alone', async () => {
     prisma.watchRoom.findUnique.mockResolvedValue(room());
     prisma.roomParticipant.update.mockResolvedValue({});

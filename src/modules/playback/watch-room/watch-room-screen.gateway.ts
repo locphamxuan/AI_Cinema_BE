@@ -10,6 +10,7 @@ import { Namespace, Server, Socket } from 'socket.io';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RoomCluster } from './room-cluster';
 import { ROOM_CHANNEL, ROOM_EVENT } from './room-events';
+import { optionalUuid, roomIdOf } from './room-payload';
 import { isChatRejection, RoomSharedScreen } from './room-shared-screen';
 
 interface SocketData {
@@ -73,6 +74,7 @@ export class WatchRoomScreenGateway implements OnGatewayInit {
     if (!(await this.isHost(client, body?.roomId))) return;
     const userId = (client.data as SocketData).userId!;
     let ad = { active: false } as Parameters<RoomSharedScreen['setAd']>[1];
+    if (!optionalUuid(body.breakId)) return void client.emit(ROOM_EVENT.ERROR, { reason: 'INVALID_PAYLOAD' });
     if (body.active && body.breakId) {
       const row = await this.prisma.sessionAdBreak.findFirst({
         where: { id: body.breakId, session: { userId } },
@@ -101,7 +103,11 @@ export class WatchRoomScreenGateway implements OnGatewayInit {
   /** The caller is still a participant of an open room; answers the chat author. */
   private async seated(client: Socket, roomId: string | undefined) {
     const userId = (client.data as SocketData).userId;
-    if (!userId || typeof roomId !== 'string') return null;
+    if (!userId) return null;
+    if (!roomIdOf({ roomId })) {
+      client.emit(ROOM_EVENT.ERROR, { reason: 'INVALID_PAYLOAD' });
+      return null;
+    }
     const row = await this.prisma.roomParticipant.findFirst({
       where: { roomId, userId, leftAt: null, room: { status: { not: 'DISBANDED' } } },
       select: { participant: { select: { fullName: true } } },
@@ -115,7 +121,11 @@ export class WatchRoomScreenGateway implements OnGatewayInit {
 
   private async isHost(client: Socket, roomId: string | undefined): Promise<boolean> {
     const userId = (client.data as SocketData).userId;
-    if (!userId || typeof roomId !== 'string') return false;
+    if (!userId) return false;
+    if (!roomIdOf({ roomId })) {
+      client.emit(ROOM_EVENT.ERROR, { reason: 'INVALID_PAYLOAD' });
+      return false;
+    }
     const room = await this.prisma.watchRoom.findUnique({ where: { id: roomId }, select: { hostUserId: true } });
     if (room?.hostUserId === userId) return true;
     client.emit(ROOM_EVENT.ERROR, { reason: 'NOT_HOST' });
