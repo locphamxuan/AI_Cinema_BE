@@ -7,7 +7,11 @@ import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
-import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import {
+  assertProjectStatus,
+  changedMeanwhile,
+  OPEN_PROJECT_STATUSES,
+} from 'src/modules/production/project-access/project-rules';
 import type { AddCreatorRequestDto, DelegateEpisodesRequestDto } from './dto/project-team.request.dto';
 
 const TEAM_EDITABLE = [...OPEN_PROJECT_STATUSES, ProjectStatus.UNDER_REVISION];
@@ -102,10 +106,18 @@ export class ProjectTeamService {
         delegatedFromId: user.id,
         note: dto.note,
       });
-      await tx.episode.updateMany({
-        where: { id: { in: dto.episodeIds } },
+      // Still the caller's: a concurrent delegation or reassignment of one of them refuses the whole hand-over.
+      const { count } = await tx.episode.updateMany({
+        where: {
+          id: { in: dto.episodeIds },
+          movieId: projectId,
+          OR: [{ assignedCreatorId: user.id }, ...(isLead ? [{ assignedCreatorId: null }] : [])],
+        },
         data: { assignedCreatorId: dto.toCreatorId },
       });
+      if (count !== dto.episodeIds.length) {
+        throw changedMeanwhile('An episode was handed to someone else meanwhile; reload the team');
+      }
       await this.record(tx, CONTENT_EVENT.EPISODE_DELEGATED, projectId, user.id, {
         toCreatorId: dto.toCreatorId,
         episodeIds: dto.episodeIds,

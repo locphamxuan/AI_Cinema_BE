@@ -1,4 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+
+const ID = new ParseUUIDPipe({ version: '4' });
 import { PERMISSION } from 'src/common/auth/permissions';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -37,13 +39,13 @@ export class PolicyController {
 
   @Patch(':id')
   @RequirePermission(PERMISSION.PLATFORM_SETTINGS_MANAGE)
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePolicyDto) {
+  async update(@Param('id', ID) id: string, @Body() dto: UpdatePolicyDto) {
     return this.policyService.update(id, dto);
   }
 
   @Delete(':id')
   @RequirePermission(PERMISSION.PLATFORM_SETTINGS_MANAGE)
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
+  async remove(@Param('id', ID) id: string) {
     return this.policyService.remove(id);
   }
 }

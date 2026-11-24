@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { EpisodeStatus, ProjectStatus, UserRole } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import type { NewEpisodeDto } from '../dto/create-movie-project.request.dto';
 import { ProjectStructureService } from './project-structure.service';
@@ -21,13 +22,15 @@ describe('ProjectStructureService', () => {
       findUniqueOrThrow: jest.fn(),
       update: jest.fn(),
     },
-    episode: { aggregate: jest.fn(), create: jest.fn(), update: jest.fn() },
+    episode: { aggregate: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn(), episode: jest.fn() };
+  const auditLog = { record: jest.fn() };
   const service = new ProjectStructureService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
+    auditLog as unknown as AuditLogService,
   );
 
   const episodeRow = (overrides: Record<string, unknown> = {}) => ({
@@ -50,6 +53,7 @@ describe('ProjectStructureService', () => {
     db.season.findUnique.mockResolvedValue({ ...SEASON, episodes: [] });
     db.season.findUniqueOrThrow.mockResolvedValue(SEASON);
     db.episode.aggregate.mockResolvedValue({ _max: { episodeNumber: 7 } });
+    db.episode.count.mockResolvedValue(3);
     db.episode.create.mockImplementation(({ data }: { data: object }) => Promise.resolve({ id: 'new', ...data }));
     db.episode.update.mockResolvedValue({ id: 'e1' });
     db.season.update.mockResolvedValue({ id: 's1' });
@@ -82,7 +86,28 @@ describe('ProjectStructureService', () => {
     });
   });
 
+  it('refuses a 21st season with a stable reason (BR-37)', async () => {
+    db.season.aggregate.mockResolvedValue({ _max: { seasonNumber: 20 } });
+    await expect(service.addSeason('p1', { episodes: [NEW_EPISODE] }, REVIEWER)).rejects.toMatchObject({
+      response: { details: { reason: 'SEASON_LIMIT_REACHED' } },
+    });
+    expect(db.season.create).not.toHaveBeenCalled();
+  });
+
   describe('updateSeason', () => {
+    it('records who changed the season and which fields', async () => {
+      await service.updateSeason('s1', { title: 'Mới' }, REVIEWER);
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'SEASON_UPDATED',
+          entityId: 's1',
+          actorId: 'rev',
+          payload: { fields: ['title'] },
+        }),
+        db,
+      );
+    });
+
     it('saves the title and keeps the window dates not sent', async () => {
       const start = new Date('2099-02-01');
       db.season.findUnique.mockResolvedValue({ ...SEASON, releaseStartDate: start, episodes: [] });
@@ -136,6 +161,15 @@ describe('ProjectStructureService', () => {
       db.season.findUnique.mockResolvedValue(null);
       await expect(service.addEpisode('x', NEW_EPISODE, REVIEWER)).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    it('refuses a 101st episode in the season (BR-37)', async () => {
+      db.season.findUnique.mockResolvedValue(SEASON);
+      db.episode.count.mockResolvedValue(100);
+      await expect(service.addEpisode('s1', NEW_EPISODE, REVIEWER)).rejects.toMatchObject({
+        response: { details: { reason: 'EPISODE_LIMIT_REACHED', max: 100 } },
+      });
+      expect(db.episode.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateEpisode', () => {
@@ -143,6 +177,10 @@ describe('ProjectStructureService', () => {
       await service.updateEpisode('e1', { title: 'Tên' }, REVIEWER);
       expect(db.episode.update).toHaveBeenCalledWith({ where: { id: 'e1' }, data: { title: 'Tên' } });
       expect(db.season.findUniqueOrThrow).not.toHaveBeenCalled();
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'EPISODE_UPDATED', entityType: 'Episode', payload: { fields: ['title'] } }),
+        db,
+      );
     });
 
     it('moves the studio due date with the deadline once handed off', async () => {
@@ -171,7 +209,9 @@ describe('ProjectStructureService', () => {
         ConflictException,
       );
       access.episode.mockResolvedValue(episodeRow({ project: { ...PROJECT, status: ProjectStatus.CANCELLED } }));
-      await expect(service.updateEpisode('e1', { title: 'x' }, REVIEWER)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.updateEpisode('e1', { title: 'x' }, REVIEWER)).rejects.toMatchObject({
+        response: { details: { reason: 'PROJECT_STATUS_NOT_ALLOWED', status: ProjectStatus.CANCELLED } },
+      });
       expect(db.episode.update).not.toHaveBeenCalled();
     });
   });

@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Policy } from '@prisma/client';
+import { PolicyType, type Policy } from '@prisma/client';
 import { paginate, PaginateQuery } from '@nestarc/pagination';
-import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { aBoolean, assertFilterValues, oneOf } from 'src/common/validation/filter-values';
+import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { inForceWhere } from './active-policy';
 import { CreatePolicyDto } from './dto/create-policy.dto';
 import { UpdatePolicyDto } from './dto/update-policy.dto';
@@ -13,6 +14,7 @@ export class PolicyService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(query: PaginateQuery) {
+    assertFilterValues(query, { type: oneOf(Object.values(PolicyType)), isActive: aBoolean });
     return paginate(query, this.prisma.policy, {
       sortableColumns: [
         'name',
@@ -64,10 +66,18 @@ export class PolicyService {
     const effectiveFrom = dto.effectiveFrom !== undefined ? toDate(dto.effectiveFrom) : existing.effectiveFrom;
     const effectiveTo = dto.effectiveTo !== undefined ? toDate(dto.effectiveTo) : existing.effectiveTo;
     assertRange(effectiveFrom, effectiveTo);
-    const leavesType = dto.isActive === false || (dto.type !== undefined && dto.type !== existing.type);
-    if (leavesType && inForceNow(existing)) await this.assertAnotherInForce(existing);
+    // Switched off, moved to another type or dated out of today: the type may lose its last policy in force.
+    const after = { isActive: dto.isActive ?? existing.isActive, effectiveFrom, effectiveTo };
+    const leavesType = !inForceNow(after) || (dto.type !== undefined && dto.type !== existing.type);
 
-    return this.prisma.policy.update({
+    return this.prisma.$transaction(async (tx) => {
+      if (leavesType && inForceNow(existing)) await this.assertAnotherInForce(tx, existing);
+      return this.write(tx, id, dto, effectiveFrom, effectiveTo);
+    });
+  }
+
+  private write(tx: PrismaTx, id: string, dto: UpdatePolicyDto, effectiveFrom: Date | null, effectiveTo: Date | null) {
+    return tx.policy.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -95,8 +105,10 @@ export class PolicyService {
         details: { reason: 'POLICY_IN_USE' },
       });
     }
-    if (inForceNow(existing)) await this.assertAnotherInForce(existing);
-    return this.prisma.policy.delete({ where: { id } });
+    return this.prisma.$transaction(async (tx) => {
+      if (inForceNow(existing)) await this.assertAnotherInForce(tx, existing);
+      return tx.policy.delete({ where: { id } });
+    });
   }
 
   private async find(id: string): Promise<Policy> {
@@ -108,8 +120,10 @@ export class PolicyService {
   }
 
   /** Labelling and compliance checks need one policy of each type in force; the last one cannot leave. */
-  private async assertAnotherInForce(policy: Policy) {
-    const others = await this.prisma.policy.count({
+  private async assertAnotherInForce(tx: PrismaTx, policy: Policy) {
+    // Two Admins switching off the last two policies of a type at once must not both succeed: they queue here.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`policy:${policy.type}`}))`;
+    const others = await tx.policy.count({
       where: { ...inForceWhere(), type: policy.type, id: { not: policy.id } },
     });
     if (others === 0) {

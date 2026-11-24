@@ -13,12 +13,14 @@ function setup(existing: object | null = inForce, { others = 1, used = 0 } = {})
     create: jest.fn().mockImplementation(({ data }: { data: object }) => Promise.resolve({ id: 'p2', ...data })),
     delete: jest.fn().mockResolvedValue(existing),
   };
+  const db = { policy, $executeRaw: jest.fn().mockResolvedValue(1) };
   const prisma = {
-    policy,
+    ...db,
     aiContentLabel: { count: jest.fn().mockResolvedValue(used) },
     complianceCheck: { count: jest.fn().mockResolvedValue(0) },
+    $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)),
   };
-  return { service: new PolicyService(prisma as unknown as PrismaService), policy };
+  return { service: new PolicyService(prisma as unknown as PrismaService), policy, db };
 }
 
 describe('PolicyService', () => {
@@ -52,6 +54,32 @@ describe('PolicyService', () => {
     await expect(service.update('p1', { isActive: false })).rejects.toBeInstanceOf(ConflictException);
     await expect(service.update('p1', { type: 'CONTENT_POLICY' })).rejects.toBeInstanceOf(ConflictException);
     expect(policy.update).not.toHaveBeenCalled();
+  });
+
+  it('serialises the last-in-force check per type, so two Admins cannot both switch off the last two', async () => {
+    const { service, db } = setup();
+    await service.update('p1', { isActive: false });
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to date the last policy of its type out of force, either end', async () => {
+    const { service, policy } = setup(inForce, { others: 0 });
+    for (const dates of [{ effectiveTo: '2020-01-01T00:00:00Z' }, { effectiveFrom: '2999-01-01T00:00:00Z' }]) {
+      await expect(service.update('p1', dates)).rejects.toMatchObject({
+        response: { details: { reason: 'POLICY_LAST_IN_FORCE' } },
+      });
+    }
+    expect(policy.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unknown type or a non-boolean isActive in the list filter', async () => {
+    const { service } = setup();
+    await expect(service.findAll({ path: '/policies', filter: { type: '$eq:COPYRIGHT' } })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.findAll({ path: '/policies', filter: { isActive: '$eq:yes' } })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('switches off a policy that is already out of its dates without the guard', async () => {

@@ -26,6 +26,14 @@ const SCRIPT_DETAIL = {
 /** The Creator may (re)submit before the first review or once the script was sent back. */
 const WRITABLE: (ScriptStatus | null)[] = [null, ScriptStatus.REVISION_REQUESTED];
 
+/** `details.reason` of the 409s of the script workflow. */
+export const SCRIPT_REASON = {
+  /** The script is not in the status the step needs (e.g. reviewed twice, resubmitted before its review). */
+  STATUS: 'SCRIPT_STATUS_NOT_ALLOWED',
+  /** Scripts are written while the project is ASSIGNED, before the studio is contracted. */
+  PROJECT_STATUS: 'PROJECT_STATUS_NOT_ALLOWED',
+} as const;
+
 /**
  * MF-1 §2 (07/11/2026): the lead Creator writes the script; the Reviewer approves it or sends it back (loop);
  * the Admin then approves the Final Script or sends it straight back to the Creator, who resubmits it to the
@@ -58,9 +66,14 @@ export class ScriptService {
     const project = await this.access.project(projectId, user, 'lead');
     this.assertAssigned(project);
     return this.prisma.$transaction(async (tx) => {
+      // Two submissions at once would both take the next version number: they queue on the project row.
+      await tx.$queryRaw`SELECT id FROM movie_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
       const script = await tx.projectScript.findUnique({ where: { projectId } });
       if (!WRITABLE.includes(script?.status ?? null)) {
-        throw new ConflictException(`The script is ${script!.status}; wait for its review`);
+        throw new ConflictException({
+          message: `The script is ${script!.status}; wait for its review`,
+          details: { reason: SCRIPT_REASON.STATUS, status: script!.status },
+        });
       }
       const version = (script?.currentVersion ?? 0) + 1;
       await tx.projectScript.upsert({
@@ -149,7 +162,10 @@ export class ScriptService {
 
   private assertAssigned(project: TitledProject): void {
     if (project.status !== ProjectStatus.ASSIGNED) {
-      throw new ConflictException(`The script is worked on while the project is ASSIGNED, not ${project.status}`);
+      throw new ConflictException({
+        message: `The script is worked on while the project is ASSIGNED, not ${project.status}`,
+        details: { reason: SCRIPT_REASON.PROJECT_STATUS, status: project.status, allowed: [ProjectStatus.ASSIGNED] },
+      });
     }
   }
 
@@ -172,7 +188,10 @@ export class ScriptService {
     await tx.$queryRaw`SELECT project_id FROM project_scripts WHERE project_id = ${projectId}::uuid FOR UPDATE`;
     const script = await tx.projectScript.findUnique({ where: { projectId } });
     if (script?.status !== expected) {
-      throw new ConflictException(`The script is ${script?.status ?? 'not submitted yet'} (expected ${expected})`);
+      throw new ConflictException({
+        message: `The script is ${script?.status ?? 'not submitted yet'} (expected ${expected})`,
+        details: { reason: SCRIPT_REASON.STATUS, status: script?.status ?? null, expected },
+      });
     }
     return script;
   }

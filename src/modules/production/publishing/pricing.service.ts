@@ -1,7 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ProjectStatus, PriceAlertStatus } from '@prisma/client';
 import { paginate, type PaginateQuery } from '@nestarc/pagination';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { assertFilterValues, oneOf } from 'src/common/validation/filter-values';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
@@ -9,7 +10,11 @@ import { NotificationService } from 'src/modules/platform/notification/notificat
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
-import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import {
+  assertProjectStatus,
+  changedMeanwhile,
+  OPEN_PROJECT_STATUSES,
+} from 'src/modules/production/project-access/project-rules';
 import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
 const UNRESOLVED: PriceAlertStatus[] = [PriceAlertStatus.OPEN, PriceAlertStatus.CHANGE_REQUESTED];
@@ -74,6 +79,12 @@ export class PricingService {
     flags: { isFreeForGuest?: boolean; isFreeForMember?: boolean },
     user: AuthenticatedUser,
   ) {
+    if (flags.isFreeForGuest == null && flags.isFreeForMember == null) {
+      throw new BadRequestException({
+        message: 'Send isFreeForGuest, isFreeForMember or both',
+        details: { reason: 'NO_ACCESS_FLAG' },
+      });
+    }
     const episode = await this.access.episode(episodeId, user, 'read');
     assertProjectStatus(
       episode.project.status,
@@ -105,6 +116,7 @@ export class PricingService {
 
   /** Price alerts for the Admin dashboard, open ones first by default. */
   listAlerts(query: PaginateQuery) {
+    assertFilterValues(query, { status: oneOf(Object.values(PriceAlertStatus)) });
     return paginate(query, this.prisma.priceAlert, {
       relations: {
         episode: {
@@ -143,7 +155,8 @@ export class PricingService {
           handledAt: new Date(),
         },
       });
-      if (count === 0) throw new ConflictException('The alert changed meanwhile; reload it');
+      if (count === 0) throw changedMeanwhile('The alert changed meanwhile; reload it');
+      await this.recordAlert(tx, alert, CONTENT_EVENT.PRICE_CHANGE_ASKED, admin.id, { note: note.trim() });
       await this.notifications.notify(
         [project.reviewerId],
         {
@@ -163,12 +176,36 @@ export class PricingService {
   async resolve(alertId: string, admin: AuthenticatedUser) {
     const alert = await this.findAlert(alertId);
     if (!UNRESOLVED.includes(alert.status)) throw new ConflictException('The alert is already resolved');
-    const { count } = await this.prisma.priceAlert.updateMany({
-      where: { id: alertId, status: { in: UNRESOLVED } },
-      data: { status: PriceAlertStatus.RESOLVED, handledById: admin.id, handledAt: new Date() },
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.priceAlert.updateMany({
+        where: { id: alertId, status: { in: UNRESOLVED } },
+        data: { status: PriceAlertStatus.RESOLVED, handledById: admin.id, handledAt: new Date() },
+      });
+      if (count === 0) throw changedMeanwhile('The alert changed meanwhile; reload it');
+      await this.recordAlert(tx, alert, CONTENT_EVENT.PRICE_ALERT_RESOLVED, admin.id, { coinPrice: alert.coinPrice });
+      return tx.priceAlert.findUniqueOrThrow({ where: { id: alertId } });
     });
-    if (count === 0) throw new ConflictException('The alert changed meanwhile; reload it');
-    return this.prisma.priceAlert.findUniqueOrThrow({ where: { id: alertId } });
+  }
+
+  /** The Admin's answer to a price alert stays in the movie history (§4.1.6). */
+  private recordAlert(
+    tx: PrismaTx,
+    alert: { id: string; episodeId: string; episode: { movieId: string } },
+    action: typeof CONTENT_EVENT.PRICE_CHANGE_ASKED | typeof CONTENT_EVENT.PRICE_ALERT_RESOLVED,
+    actorId: string,
+    payload: Record<string, unknown>,
+  ) {
+    return this.auditLog.record(
+      {
+        action,
+        entityType: 'PriceAlert',
+        entityId: alert.id,
+        projectId: alert.episode.movieId,
+        actorId,
+        payload: { episodeId: alert.episodeId, ...payload },
+      },
+      tx,
+    );
   }
 
   private async raiseAlert(

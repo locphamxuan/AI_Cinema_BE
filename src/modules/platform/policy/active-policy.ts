@@ -20,6 +20,11 @@ export async function activePolicyId(tx: PrismaTx, type: PolicyType, now = new D
     orderBy: { createdAt: 'desc' },
     select: { id: true },
   });
-  if (!policy) throw new ConflictException(`No ${type} policy is in force; ask an Admin to activate one`);
+  if (!policy) {
+    throw new ConflictException({
+      message: `No ${type} policy is in force; ask an Admin to activate one`,
+      details: { reason: 'NO_POLICY_IN_FORCE', type },
+    });
+  }
   return policy.id;
 }
