@@ -1,9 +1,10 @@
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
 import { ParseUUIDPipe, Controller, Get, Param, Post, Body, Query } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiHeader, ApiOperation } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { IdempotencyKey } from 'src/common/decorators/idempotency-key.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { AdminWalletService } from 'src/modules/episode-access/coin-wallet/statement/admin-wallet.service';
 import { CoinStatementQueryDto } from 'src/modules/episode-access/coin-wallet/statement/dto/coin-statement-query.dto';
@@ -40,7 +41,12 @@ export class AdminWalletController {
   @ApiOperation({
     summary: 'Correct a wallet by hand; writes an ADJUSTMENT row and an audit event',
   })
-  adjust(@Body() dto: WalletAdjustmentRequestDto, @CurrentUser() admin: AuthenticatedUser) {
-    return this.adminWallets.adjust(dto, admin);
+  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Sending it twice corrects the wallet once' })
+  adjust(
+    @Body() dto: WalletAdjustmentRequestDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @IdempotencyKey() idempotencyKey?: string,
+  ) {
+    return this.adminWallets.adjust(dto, admin, idempotencyKey);
   }
 }

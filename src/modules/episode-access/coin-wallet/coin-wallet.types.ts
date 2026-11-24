@@ -54,6 +54,8 @@ export interface CoinMovement {
   bonusCoins: number;
   mainBalance: number;
   bonusBalance: number;
+  /** True when a retried request found its earlier move and nothing was written. */
+  replayed?: boolean;
 }
 
 /** Reasons travel in `error.details.reason`: error.code already carries the HTTP status. */

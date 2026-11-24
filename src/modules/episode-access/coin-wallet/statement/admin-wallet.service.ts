@@ -48,7 +48,7 @@ export class AdminWalletService {
     );
   }
 
-  async adjust(dto: WalletAdjustmentRequestDto, admin: AuthenticatedUser) {
+  async adjust(dto: WalletAdjustmentRequestDto, admin: AuthenticatedUser, idempotencyKey?: string) {
     const wallet = await this.wallets.walletOf(dto.userId);
 
     const movement = await this.prisma.$transaction(async (tx) => {
@@ -57,7 +57,9 @@ export class AdminWalletService {
         bonusAmount: dto.bonusAmount,
         reason: dto.reason,
         createdById: admin.id,
+        idempotencyKey,
       });
+      if (applied.replayed) return applied;
 
       await this.auditLog.record(
         {

@@ -11,7 +11,7 @@ describe('CoinAdjustService.apply', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     coinLot: { findMany: jest.fn(), update: jest.fn().mockResolvedValue({}), create: jest.fn() },
-    coinTransaction: { createManyAndReturn: jest.fn() },
+    coinTransaction: { createManyAndReturn: jest.fn(), findUnique: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000, bonusCoinExpiryDays: 30 }) };
   const service = new CoinAdjustService(settings as unknown as PlatformSettingService);
@@ -22,6 +22,7 @@ describe('CoinAdjustService.apply', () => {
     tx.coinWallet.findUniqueOrThrow.mockResolvedValue({ id: 'w1', mainBalance: 10, bonusBalance: 5 });
     tx.coinWallet.updateMany.mockResolvedValue({ count: 1 });
     tx.coinTransaction.createManyAndReturn.mockResolvedValue([{ id: 'tx-a' }, { id: 'tx-b' }]);
+    tx.coinTransaction.findUnique.mockResolvedValue(null);
   });
 
   it('refuses a correction that moves nothing (BR-20)', async () => {
@@ -123,5 +124,23 @@ describe('CoinAdjustService.apply', () => {
     expect(tx.coinLot.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ walletId: 'w1', originalAmount: 20, source: 'ADJUSTMENT' }),
     });
+  });
+  it('answers a retried request with its earlier move and writes nothing (Idempotency-Key)', async () => {
+    tx.coinTransaction.findUnique.mockResolvedValue({ id: 'tx-old', walletId: 'w1', entryType: 'ADJUSTMENT' });
+    const movement = await service.apply(tx as unknown as PrismaTx, 'w1', {
+      mainAmount: 100,
+      reason: 'comp',
+      idempotencyKey: 'key-1',
+    });
+    expect(movement).toMatchObject({ transactionId: 'tx-old', mainCoins: 100, replayed: true });
+    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+    expect(tx.coinWallet.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses a key that already belongs to another wallet or kind of move', async () => {
+    tx.coinTransaction.findUnique.mockResolvedValue({ id: 'tx-old', walletId: 'w2', entryType: 'ADJUSTMENT' });
+    await expect(
+      service.apply(tx as unknown as PrismaTx, 'w1', { mainAmount: 100, reason: 'comp', idempotencyKey: 'key-1' }),
+    ).rejects.toMatchObject({ status: 409, response: { details: { reason: 'IDEMPOTENCY_KEY_REUSED' } } });
   });
 });

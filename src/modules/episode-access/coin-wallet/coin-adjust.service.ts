@@ -37,6 +37,11 @@ export class CoinAdjustService {
         details: { reason: COIN_REASON.SPLIT_THE_CORRECTION, mainAmount, bonusAmount },
       });
     }
+    // The key is looked up under the wallet lock: a retry waits for the first attempt to commit and
+    // then gets its answer, so a repeated request never pays the Coins twice.
+    await lockWallet(tx, walletId);
+    const replayed = await this.replayed(tx, walletId, request);
+    if (replayed) return replayed;
     const rateVnd = request.rateVnd ?? (await this.settings.get()).coinRateVnd;
     const wanted = { ...request, rateVnd };
     const movement =
@@ -120,6 +125,28 @@ export class CoinAdjustService {
       bonusCoins: wanted,
       mainBalance: wallet.mainBalance,
       bonusBalance: bonusAfter,
+    };
+  }
+
+  /** The move an earlier request with the same Idempotency-Key already made, or null. */
+  private async replayed(tx: PrismaTx, walletId: string, request: AdjustmentRequest): Promise<CoinMovement | null> {
+    if (!request.idempotencyKey) return null;
+    const earlier = await tx.coinTransaction.findUnique({ where: { idempotencyKey: request.idempotencyKey } });
+    if (!earlier) return null;
+    if (earlier.walletId !== walletId || earlier.entryType !== CoinEntryType.ADJUSTMENT) {
+      throw new ConflictException({
+        message: 'This Idempotency-Key was already used for another request; send a new key',
+        details: { reason: COIN_REASON.IDEMPOTENCY_KEY_REUSED },
+      });
+    }
+    const wallet = await tx.coinWallet.findUniqueOrThrow({ where: { id: walletId } });
+    return {
+      transactionId: earlier.id,
+      mainCoins: request.mainAmount ?? 0,
+      bonusCoins: request.bonusAmount ?? 0,
+      mainBalance: wallet.mainBalance,
+      bonusBalance: wallet.bonusBalance,
+      replayed: true,
     };
   }
 
