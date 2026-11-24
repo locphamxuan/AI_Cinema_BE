@@ -15,49 +15,52 @@ import {
   MinLength,
 } from 'class-validator';
 import { LANGUAGE_CODE } from 'src/common/validation/language-code';
+import { IfSent } from 'src/common/validation/if-sent';
 import { Trim } from 'src/common/validation/trim';
+import { TrimEach } from './calendar-day';
 
 /** Viewer age rating of the movie; also what an under-age account is checked against. */
 export const AGE_RATINGS = ['T16', 'T18'] as const;
 
-/** Only the fields sent are changed. */
+/** Only the fields sent are changed; title, idea, genres, language and studio cannot be cleared (null is refused). */
 export class UpdateMovieProjectRequestDto {
   @ApiPropertyOptional()
+  @IfSent()
   @Trim()
   @IsString()
   @MinLength(1)
   @MaxLength(255)
-  @IsOptional()
   title?: string;
 
   @ApiPropertyOptional()
+  @IfSent()
   @Trim()
   @IsString()
   @MinLength(20)
   @MaxLength(20000)
-  @IsOptional()
   ideaDescription?: string;
 
   @ApiPropertyOptional({ type: [String] })
+  @IfSent()
   @IsArray()
   @ArrayMaxSize(5)
   @ArrayUnique()
   @IsUUID('4', { each: true })
-  @IsOptional()
   genreIds?: string[];
 
   @ApiPropertyOptional({ type: [String], description: 'A genre name the table lacks is added on the spot.' })
+  @IfSent()
+  @TrimEach()
   @IsArray()
   @ArrayMaxSize(5)
   @IsString({ each: true })
   @MinLength(1, { each: true })
   @MaxLength(100, { each: true })
-  @IsOptional()
   genreNames?: string[];
 
   @ApiPropertyOptional({ example: 'vi' })
+  @IfSent()
   @Matches(LANGUAGE_CODE)
-  @IsOptional()
   defaultLanguage?: string;
 
   @ApiPropertyOptional({ description: 'Catalog synopsis, required before the first episode is published.' })
@@ -92,7 +95,7 @@ export class UpdateMovieProjectRequestDto {
   freeEpisodeCount?: number | null;
 
   @ApiPropertyOptional({ description: 'Active studio from the catalog; only before the hand-off (BR-59).' })
+  @IfSent()
   @IsUUID('4')
-  @IsOptional()
   studioId?: string;
 }

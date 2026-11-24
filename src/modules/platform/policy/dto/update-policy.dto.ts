@@ -1,11 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, Length, MaxLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, Length, MaxLength } from 'class-validator';
 import { PolicyType } from '@prisma/client';
+import { IfSent } from 'src/common/validation/if-sent';
 import { BlankAsNull, Trim } from 'src/common/validation/trim';
 import { POLICY_CONTENT_MAX } from './create-policy.dto';
-
-/** Validated only when sent; unlike IsOptional, null is refused (the column cannot be cleared). */
-const IfSent = () => ValidateIf((_dto: object, value: unknown) => value !== undefined);
 
 /** Any field of the create body. Name, type, version and content can be changed but not cleared. */
 export class UpdatePolicyDto {

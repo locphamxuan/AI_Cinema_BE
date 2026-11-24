@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID, Matches, MaxLength, ValidateIf } from 'class-validator';
 import { Trim } from 'src/common/validation/trim';
 
 /** The lead Creator submits a (new version of the) script to the Reviewer. */
@@ -7,6 +7,8 @@ export class SubmitScriptRequestDto {
   @ApiProperty({ description: 'Full text of the script.', example: 'CẢNH 1 — NỘI. CĂN HỘ — ĐÊM ...' })
   @IsString()
   @IsNotEmpty()
+  // Kept as written (indentation matters in a script), but blank text is no script.
+  @Matches(/\S/, { message: 'content must not be blank' })
   @MaxLength(500_000)
   content: string;
 
