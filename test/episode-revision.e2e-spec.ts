@@ -1,7 +1,10 @@
 import { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
+import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode, deliver, priceEpisode, release, unpublish } from './support/media';
+import { registerMember } from './support/members';
 import { episodesOf, projectInProduction, type ProjectDetail, studioOf } from './support/projects';
 
 interface Detail extends ProjectDetail {
@@ -105,7 +108,19 @@ describe('Episode taken down to be fixed (BR-56)', () => {
     expect(events.map((e) => e.action)).toContain('PROJECT_UNDER_REVISION');
   });
 
-  it('keeps the movie COMPLETED when an episode is taken down for good', async () => {
+  it('keeps the movie COMPLETED when an episode is taken down for good, and refunds its buyer once', async () => {
+    // A member pays 4 main Coins and 6 bonus Coins from two lots: one payment of three ledger rows.
+    const admin = await signIn(app, 'admin@aicinema.com');
+    const buyer = await registerMember(app);
+    for (const amount of [{ mainAmount: 4 }, { bonusAmount: 2 }, { bonusAmount: 4 }]) {
+      await admin.post('/admin/wallet-adjustments', { userId: buyer.id, ...amount, reason: 'e2e' });
+    }
+    await buyer.post(`/episodes/${episodeId(1)}/purchase`, {}, 201);
+    const prisma = app.get(PrismaService);
+    const { coinTransactionId } = await prisma.episodeAccess.findFirstOrThrow({ where: { userId: buyer.id } });
+    const rows = await prisma.coinTransaction.findMany({ where: { paymentId: coinTransactionId! } });
+    expect(rows).toHaveLength(3);
+
     const release = await liveRelease(1);
     await unpublish(
       reviewer,
@@ -116,5 +131,13 @@ describe('Episode taken down to be fixed (BR-56)', () => {
     const d = await detail();
     expect(episodeIn(d, 1)).toMatchObject({ status: 'UNPUBLISHED', revisionStartedAt: null });
     expect(d.status).toBe('COMPLETED');
+
+    // BR-52: main back as main, bonus back as bonus; the Admin cannot refund any row of it again.
+    expect(await buyer.get('/wallet')).toMatchObject({ mainBalance: 4, bonusBalance: 6 });
+    for (const row of rows) {
+      const again = await admin.post<ApiErrorBody>(`/admin/coin-transactions/${row.id}/refund`, {}, 409);
+      expect(again.error.details).toMatchObject({ reason: 'ALREADY_REFUNDED', paymentId: coinTransactionId });
+    }
+    expect(await buyer.get('/wallet')).toMatchObject({ mainBalance: 4, bonusBalance: 6 });
   });
 });
