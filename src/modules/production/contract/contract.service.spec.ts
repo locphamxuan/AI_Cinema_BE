@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ContractDocumentSide, ContractStatus, ProjectStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -85,7 +85,7 @@ describe('ContractService', () => {
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn() };
   const handoffs = { open: jest.fn(), assertAffordable: jest.fn(), ceiling: jest.fn() };
-  const signatures = { prepare: jest.fn(), attach: jest.fn(), discard: jest.fn() };
+  const signatures = { prepare: jest.fn(), attach: jest.fn(), discard: jest.fn(), assertCounterpartSigned: jest.fn() };
   const completion = { complete: jest.fn() };
   const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
   const auditLog = { record: jest.fn() };
@@ -292,6 +292,51 @@ describe('ContractService', () => {
     expect(next.round).toBe(2);
     expect(completion.complete).not.toHaveBeenCalled();
     expect(mails.dispatch).toHaveBeenCalledWith('m1');
+  });
+
+  it('records the ceiling the Admin signed at on the new round', async () => {
+    const round = contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 200_000_000n });
+    const offer = contract({ id: 'c2', round: 2, status: ContractStatus.ADMIN_COUNTERED });
+    db.contract.findUnique.mockResolvedValue(round);
+    db.contract.findUniqueOrThrow.mockResolvedValueOnce(round).mockResolvedValue(offer);
+    db.contract.create.mockResolvedValue(offer);
+    handoffs.ceiling.mockResolvedValue(210_000_000);
+
+    await service.counter('c1', 160_000_000, ADMIN, file);
+
+    expect(handoffs.ceiling).toHaveBeenCalledWith(db, 'p1', null);
+    expect(handoffs.ceiling.mock.invocationCallOrder[0]).toBeGreaterThan(
+      handoffs.assertAffordable.mock.invocationCallOrder[0],
+    );
+    expect(db.contract.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ costVnd: 160_000_000n, ceilingVnd: 210_000_000n }) }),
+    );
+  });
+
+  it('refuses a counter-offer at the price the studio already signed, storing nothing', async () => {
+    db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 150_000_000n }));
+
+    await expect(service.counter('c1', 150_000_000, ADMIN, file)).rejects.toBeInstanceOf(BadRequestException);
+    expect(signatures.prepare).not.toHaveBeenCalled();
+  });
+
+  it('refuses to countersign while the studio legal profile is incomplete, storing nothing', async () => {
+    db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 1_000n }));
+    db.studio.findUniqueOrThrow.mockResolvedValue({ ...STUDIO_PROFILE, contactName: null });
+
+    await expect(service.sign('c1', ADMIN, file)).rejects.toMatchObject({
+      response: { details: { reason: 'STUDIO_PROFILE_INCOMPLETE', missing: ['contactName'] } },
+    });
+    expect(signatures.prepare).not.toHaveBeenCalled();
+  });
+
+  it('refuses to countersign a round the studio signed before signature images, storing nothing', async () => {
+    db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 1_000n }));
+    signatures.assertCounterpartSigned.mockRejectedValueOnce(new ConflictException('missing'));
+
+    await expect(service.sign('c1', ADMIN, file)).rejects.toThrow('missing');
+    expect(signatures.assertCounterpartSigned).toHaveBeenCalledWith(prisma, 'c1', ContractDocumentSide.ADMIN);
+    expect(signatures.prepare).not.toHaveBeenCalled();
   });
 
   it('tells whether a hand-off has a signed round', async () => {

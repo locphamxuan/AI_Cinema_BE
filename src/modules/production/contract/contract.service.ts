@@ -14,6 +14,7 @@ import { assertStudioCanSign } from './studio-login';
 import { queueContractMail, recordContractEvent, tellContractUpdate } from './contract-notice';
 import {
   assertContractStatus,
+  assertNewCost,
   CONTRACT_DETAIL,
   lockedContract,
   OPEN_CONTRACT_STATUSES,
@@ -150,6 +151,9 @@ export class ContractService {
   async sign(contractId: string, admin: AuthenticatedUser, file?: Express.Multer.File): Promise<Detailed> {
     const round = await this.readable(contractId, admin);
     assertContractStatus(round, ContractStatus.STUDIO_SIGNED, 'countersign');
+    // The FINAL copy prints Bên B as it is now, and it needs the studio's signature image to draw beside the Admin's.
+    await assertLegalProfileComplete(this.prisma, round.studioId);
+    await this.signatures.assertCounterpartSigned(this.prisma, contractId, ContractDocumentSide.ADMIN);
     const prepared = await this.signatures.prepare(round.projectId, ContractDocumentSide.ADMIN, file);
     return this.signing(prepared, async (tx, mailIds) => {
       const contract = await lockedContract(tx, contractId);
@@ -177,15 +181,19 @@ export class ContractService {
   ): Promise<Detailed> {
     const round = await this.readable(contractId, admin);
     assertContractStatus(round, ADMIN_OFFER_FROM, 'counter');
+    assertNewCost(round, costVnd);
     // The copy the Admin signs prints Bên B: it must be complete before anyone signs.
     await assertLegalProfileComplete(this.prisma, round.studioId);
     const prepared = await this.signatures.prepare(round.projectId, ContractDocumentSide.ADMIN, file);
     return this.signing(prepared, async (tx, mailIds) => {
       const contract = await lockedContract(tx, contractId);
       assertContractStatus(contract, ADMIN_OFFER_FROM, 'counter');
+      assertNewCost(contract, costVnd);
       await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
+      const ceiling = await this.handoffs.ceiling(tx, contract.projectId, contract.handoffId);
       const opened = await openNextRound(tx, contract, {
         costVnd: BigInt(costVnd),
+        ceilingVnd: BigInt(ceiling),
         proposedBy: ContractProposedBy.ADMIN,
         status: ContractStatus.ADMIN_COUNTERED,
         adminSignedAt: prepared.signedAt,

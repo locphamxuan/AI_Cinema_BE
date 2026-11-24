@@ -27,7 +27,7 @@ describe('ContractSignatureService', () => {
     signedCopy: jest.fn(),
   };
   const tx = {
-    contractSignature: { create: jest.fn(), findUnique: jest.fn() },
+    contractSignature: { create: jest.fn(), findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
     contractDocument: { create: jest.fn() },
     contract: { findUniqueOrThrow: jest.fn() },
   };
@@ -44,7 +44,11 @@ describe('ContractSignatureService', () => {
     templates.signedCopy.mockImplementation((_tx: unknown, _id: string, stamps: { side: string }[]) =>
       Promise.resolve(Buffer.from(`%PDF ${stamps.map((s) => s.side).join('+')}`)),
     );
-    tx.contract.findUniqueOrThrow.mockResolvedValue({ round: 2 });
+    tx.contract.findUniqueOrThrow.mockResolvedValue({
+      id: '9f2b4c6e-0000-4000-8000-000000000001',
+      round: 2,
+      createdAt: new Date('2026-11-20T03:00:00Z'),
+    });
     tx.contractSignature.findUnique.mockResolvedValue(null);
   });
 
@@ -88,7 +92,7 @@ describe('ContractSignatureService', () => {
     expect(documents()).toEqual([
       expect.objectContaining({
         side: 'STUDIO',
-        fileName: 'hop-dong-studio-da-ky-vong-2.pdf',
+        fileName: 'hop-dong-studio-da-ky-AIC-2026-9F2B4C6E-R2.pdf',
         mimeType: 'application/pdf',
         uploadedById: 'u1',
       }),
@@ -99,7 +103,8 @@ describe('ContractSignatureService', () => {
 
   it('renders the FINAL copy with both signatures when the second side signs', async () => {
     objects.set('contracts/p1/signature-studio-x.png', pngImage());
-    tx.contractSignature.findUnique.mockResolvedValue({
+    tx.contractSignature.findUnique.mockResolvedValue({ id: 'sig-studio' });
+    tx.contractSignature.findUniqueOrThrow.mockResolvedValue({
       side: 'STUDIO',
       storageKey: 'contracts/p1/signature-studio-x.png',
       signerName: 'Lan',
@@ -110,7 +115,7 @@ describe('ContractSignatureService', () => {
 
     await service.attach(tx as never, 'c1', prepared, 'admin', true);
 
-    expect(tx.contractSignature.findUnique).toHaveBeenCalledWith({
+    expect(tx.contractSignature.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { contractId_side: { contractId: 'c1', side: 'STUDIO' } },
     });
     expect(documents().map((d: { side: string; uploadedById: string | null }) => [d.side, d.uploadedById])).toEqual([
@@ -123,6 +128,25 @@ describe('ContractSignatureService', () => {
   it('refuses to complete a round the other side has not signed', async () => {
     const prepared = await service.prepare('p1', ContractDocumentSide.ADMIN, upload(pngImage()));
     await expect(service.attach(tx as never, 'c1', prepared, 'admin', true)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('names a round whose earlier signature has no image, before anything is uploaded', async () => {
+    await expect(service.assertCounterpartSigned(tx as never, 'c1', ContractDocumentSide.STUDIO)).rejects.toMatchObject(
+      {
+        response: {
+          message: "The other side's signature image of this round is missing; the round must be sent again",
+          details: { reason: 'COUNTERPART_SIGNATURE_MISSING', contractId: 'c1' },
+        },
+      },
+    );
+    expect(tx.contractSignature.findUnique).toHaveBeenCalledWith({
+      where: { contractId_side: { contractId: 'c1', side: 'ADMIN' } },
+      select: { id: true },
+    });
+    tx.contractSignature.findUnique.mockResolvedValue({ id: 'sig-admin' });
+    await expect(
+      service.assertCounterpartSigned(tx as never, 'c1', ContractDocumentSide.STUDIO),
+    ).resolves.toBeUndefined();
   });
 
   it('takes back every object it wrote when the signing transaction failed', async () => {

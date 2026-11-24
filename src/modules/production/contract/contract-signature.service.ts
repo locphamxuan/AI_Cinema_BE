@@ -7,7 +7,7 @@ import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { removeQuietly } from 'src/infrastructure/storage/remove-quietly';
 import { readSignatureImage, type SignatureImage } from './signature-image';
 import type { ContractSide, SignatureStamp } from './template/contract-template-pdf';
-import { ContractTemplateService } from './template/contract-template.service';
+import { contractNo, ContractTemplateService } from './template/contract-template.service';
 
 /** One party of a contract: ADMIN (Bên A) or STUDIO (Bên B); FINAL is the system's copy, never a signer. */
 export type SigningSide = typeof ContractDocumentSide.ADMIN | typeof ContractDocumentSide.STUDIO;
@@ -62,6 +62,23 @@ export class ContractSignatureService {
   }
 
   /**
+   * Before a side completes a round: the other side's signature image must be on record, or there is nothing to draw
+   * beside it. Only a round signed before signature images (22/11/2026) lacks it; such rounds are re-opened by the
+   * migration 20261124100000, so this is the clear 409 left for any that slipped through.
+   */
+  async assertCounterpartSigned(db: PrismaTx, contractId: string, side: SigningSide): Promise<void> {
+    const other = await db.contractSignature.findUnique({
+      where: { contractId_side: { contractId, side: otherSide(side) } },
+      select: { id: true },
+    });
+    if (other) return;
+    throw new ConflictException({
+      message: "The other side's signature image of this round is missing; the round must be sent again",
+      details: { reason: 'COUNTERPART_SIGNATURE_MISSING', contractId },
+    });
+  }
+
+  /**
    * Inside the signing transaction, once the round the signature belongs to exists: records the signature and
    * stores the copy carrying it; when it is the second signature of the round, also the FINAL copy with both.
    */
@@ -99,10 +116,10 @@ export class ContractSignatureService {
     };
     await this.storeCopy(tx, contractId, prepared, side, [mine], uploadedById);
     if (!completes) return;
-    const other = await tx.contractSignature.findUnique({
+    await this.assertCounterpartSigned(tx, contractId, side);
+    const other = await tx.contractSignature.findUniqueOrThrow({
       where: { contractId_side: { contractId, side: otherSide(side) } },
     });
-    if (!other) throw new ConflictException('The other side has not signed this round yet');
     const theirs: SignatureStamp = {
       side: other.side as ContractSide,
       image: await this.storage.read(other.storageKey, 'private'),
@@ -131,13 +148,16 @@ export class ContractSignatureService {
     const storageKey = `contracts/${prepared.projectId}/${side.toLowerCase()}-${randomUUID()}.pdf`;
     await this.storage.putBuffer(storageKey, body, FILE_KINDS.pdf.mimeType, 'private');
     prepared.written.push(storageKey);
-    const { round } = await tx.contract.findUniqueOrThrow({ where: { id: contractId }, select: { round: true } });
+    const contract = await tx.contract.findUniqueOrThrow({
+      where: { id: contractId },
+      select: { id: true, round: true, createdAt: true },
+    });
     await tx.contractDocument.create({
       data: {
         contractId,
         side,
         storageKey,
-        fileName: `${COPY_NAMES[side]}-vong-${round}.pdf`,
+        fileName: `${COPY_NAMES[side]}-${contractNo(contract)}.pdf`,
         mimeType: FILE_KINDS.pdf.mimeType,
         sizeBytes: BigInt(body.length),
         checksum: sha256(body),

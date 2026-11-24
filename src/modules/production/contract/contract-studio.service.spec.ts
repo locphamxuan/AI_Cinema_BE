@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ContractDocumentSide, ContractStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -72,7 +72,7 @@ describe('StudioContractService', () => {
     $queryRaw: jest.fn(),
   };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
-  const signatures = { prepare: jest.fn(), attach: jest.fn(), discard: jest.fn() };
+  const signatures = { prepare: jest.fn(), attach: jest.fn(), discard: jest.fn(), assertCounterpartSigned: jest.fn() };
   const completion = { complete: jest.fn() };
   const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
   const auditLog = { record: jest.fn() };
@@ -138,7 +138,21 @@ describe('StudioContractService', () => {
     expect(handoffs.ceiling).toHaveBeenCalledWith(db, 'p1', null);
     expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 200_000_000, null);
     expect(db.contract.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ costVnd: 200_000_000n }) }),
+      expect.objectContaining({ data: expect.objectContaining({ costVnd: 200_000_000n, ceilingVnd: 200_000_000n }) }),
+    );
+  });
+
+  it('records the ceiling of the day next to a lower cost, so every copy of the round prints it', async () => {
+    db.contract.findFirst.mockResolvedValue(contract());
+    db.contract.findUniqueOrThrow
+      .mockResolvedValueOnce(contract())
+      .mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED }));
+    handoffs.ceiling.mockResolvedValue(200_000_000);
+
+    await service.propose('c1', 150_000_000, ACTOR, file);
+
+    expect(db.contract.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ costVnd: 150_000_000n, ceilingVnd: 200_000_000n }) }),
     );
   });
 
@@ -223,18 +237,39 @@ describe('StudioContractService', () => {
       .mockResolvedValueOnce(countered)
       .mockResolvedValue(contract({ id: 'c3', round: 2, status: ContractStatus.STUDIO_SIGNED }));
     db.contract.create.mockResolvedValue(contract({ id: 'c3', round: 2, status: ContractStatus.STUDIO_SIGNED }));
+    handoffs.ceiling.mockResolvedValue(190_000_000);
 
     const next = await service.studioCounter('c1', 180_000_000, ACTOR, file);
 
     expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 180_000_000, null);
     expect(db.contract.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ studioSignedAt: SIGNED_AT, round: 2 }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ studioSignedAt: SIGNED_AT, round: 2, ceilingVnd: 190_000_000n }),
+      }),
     );
     expect(signatures.attach).toHaveBeenCalledWith(db, 'c3', PREPARED, 'studio-user', false);
     expect(next.status).toBe(ContractStatus.STUDIO_SIGNED);
     expect(completion.complete).not.toHaveBeenCalled();
     // The studio just acted: the Admin hears about it in the app, nothing is mailed back to the studio.
     expect(mails.queue).not.toHaveBeenCalled();
+  });
+
+  it('refuses to sign an Admin counter that has no Admin signature image, storing nothing', async () => {
+    db.contract.findFirst.mockResolvedValue(contract({ status: ContractStatus.ADMIN_COUNTERED, costVnd: 1_000n }));
+    signatures.assertCounterpartSigned.mockRejectedValueOnce(new ConflictException('missing'));
+
+    await expect(service.studioSign('c1', ACTOR, file)).rejects.toThrow('missing');
+    expect(signatures.assertCounterpartSigned).toHaveBeenCalledWith(prisma, 'c1', ContractDocumentSide.STUDIO);
+    expect(signatures.prepare).not.toHaveBeenCalled();
+  });
+
+  it("refuses a counter at the Admin's own price, storing nothing", async () => {
+    db.contract.findFirst.mockResolvedValue(
+      contract({ status: ContractStatus.ADMIN_COUNTERED, costVnd: 160_000_000n }),
+    );
+
+    await expect(service.studioCounter('c1', 160_000_000, ACTOR, file)).rejects.toBeInstanceOf(BadRequestException);
+    expect(signatures.prepare).not.toHaveBeenCalled();
   });
 
   it('takes the stored objects back when the transaction fails', async () => {

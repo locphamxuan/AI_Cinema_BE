@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { INestApplication } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
+import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, type Row, signIn } from './support/api';
 import { adminCounter, adminSign, proposeCost, SIGNATURE_PNG, studioSign } from './support/contracts';
@@ -18,6 +21,7 @@ interface Contract extends Row {
   round: number;
   status: string;
   costVnd: number | null;
+  previousId: string | null;
   documents: { side: string; fileName: string; sizeBytes: number; checksum: string }[];
 }
 
@@ -122,8 +126,92 @@ describe('Contract signing by signature image (e2e)', () => {
     await stranger.get(`/contracts/${contractId}/documents/FINAL/content`, 403);
   });
 
+  it('names every copy after the contract number and keeps the project and round ids in the PDF', async () => {
+    const [signed] = (await rounds()).filter((round) => round.status === 'SIGNED');
+    const names = signed.documents.map((document) => document.fileName).sort();
+    const no = `AIC-${new Date().getUTCFullYear()}-${contractId.slice(0, 8).toUpperCase()}-R2`;
+    expect(names).toEqual([
+      `hop-dong-ai-cinema-da-ky-${no}.pdf`,
+      `hop-dong-du-chu-ky-${no}.pdf`,
+      `hop-dong-studio-da-ky-${no}.pdf`,
+    ]);
+    const final = await studio.download(`/studio-portal/contracts/${contractId}/documents/FINAL/content`);
+    const keywords = (await PDFDocument.load(final.body, { updateMetadata: false })).getKeywords();
+    expect(keywords).toContain(`aicinema-project:${project.id}`);
+    expect(keywords).toContain(`aicinema-contract:${contractId}`);
+  });
+
   it('refuses a second signature on a contract that is already complete', async () => {
     await adminSign(admin, contractId, 409);
     await proposeCost(studio, contractId, HANDOFF_FEE_VND, 409);
+  });
+});
+
+/**
+ * Rounds one side signed before signature images (22/11/2026) hold no image of that signature, so the other side
+ * cannot complete them. Signing is refused with a clear reason before anything is stored, and the migration
+ * 20261124100000 re-opens such a round as a fresh unsigned one the studio signs again with an image.
+ */
+describe('Contract rounds signed before signature images (e2e)', () => {
+  const MIGRATION = join(__dirname, '../prisma/migrations/20261124100000_reopen_legacy_contract_rounds/migration.sql');
+  let app: INestApplication<App>;
+  let prisma: PrismaService;
+  let admin: Actor;
+  let studio: Actor;
+  let project: ProjectDetail;
+
+  beforeAll(async () => {
+    app = await bootApp();
+    prisma = app.get(PrismaService);
+    const [reviewer, creator] = await Promise.all([
+      signIn(app, 'reviewer02@aicinema.com'),
+      signIn(app, 'creator02@aicinema.com'),
+    ]);
+    admin = await signIn(app, 'admin@aicinema.com');
+    project = await assignedProject(reviewer, creator, 1);
+    studio = await studioAccount(admin, project.studio!.id);
+    await finalScript(reviewer, creator, project.id);
+  });
+
+  afterAll(() => app.close());
+
+  const rounds = () => admin.get<Contract[]>(`/projects/${project.id}/contracts`);
+
+  it('refuses to countersign a round whose studio signature has no image, storing nothing', async () => {
+    const [template] = await rounds();
+    await proposeCost(studio, template.id, HANDOFF_FEE_VND);
+    // What a round signed by uploading a PDF looked like: signed, but no signature image on record.
+    await prisma.contractSignature.deleteMany({ where: { contractId: template.id } });
+
+    const refused = await adminSign(admin, template.id, 409);
+
+    expect(JSON.stringify(refused)).toContain('COUNTERPART_SIGNATURE_MISSING');
+    const [still] = await rounds();
+    expect(still.status).toBe('STUDIO_SIGNED');
+    expect(await prisma.contractSignature.count({ where: { contractId: template.id } })).toBe(0);
+  });
+
+  it('re-opens the round unsigned for the same studio once the migration runs, and only once', async () => {
+    const sql = readFileSync(MIGRATION, 'utf8').trim().replace(/;$/, '');
+    await prisma.$executeRawUnsafe(sql);
+    await prisma.$executeRawUnsafe(sql);
+
+    const [legacy, reopened, ...more] = await rounds();
+    expect(more).toEqual([]);
+    expect(legacy.status).toBe('SUPERSEDED');
+    expect(reopened).toMatchObject({ status: 'SENT', round: 2, costVnd: null, previousId: legacy.id, documents: [] });
+    const told = await prisma.notification.count({
+      where: { userId: studio.id, type: 'CONTRACT_UPDATED', payload: { path: ['contractId'], equals: reopened.id } },
+    });
+    expect(told).toBe(1);
+  });
+
+  it('completes the re-opened round with both signature images', async () => {
+    const reopened = (await rounds()).find((round) => round.status === 'SENT')!;
+    await proposeCost(studio, reopened.id, HANDOFF_FEE_VND);
+    const signed = (await adminSign(admin, reopened.id)) as Contract;
+
+    expect(signed.status).toBe('SIGNED');
+    expect(signed.documents.map((document) => document.side).sort()).toEqual(['ADMIN', 'FINAL', 'STUDIO']);
   });
 });

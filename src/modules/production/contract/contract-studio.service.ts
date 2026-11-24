@@ -11,6 +11,7 @@ import { ContractHandoffService } from './contract-handoff.service';
 import { recordContractEvent, tellContractUpdate } from './contract-notice';
 import {
   assertContractStatus,
+  assertNewCost,
   CONTRACT_DETAIL,
   lockedContract,
   openNextRound,
@@ -74,7 +75,9 @@ export class StudioContractService {
     return this.signing(prepared, async (tx) => {
       const contract = await lockedContract(tx, contractId, actor.studioId);
       assertContractStatus(contract, ContractStatus.SENT, 'sign');
-      const costVnd = proposedVnd ?? (await this.handoffs.ceiling(tx, contract.projectId, contract.handoffId));
+      // The project row is locked, so the ceiling read here is the one the signed copy prints and stays fixed.
+      const ceiling = await this.handoffs.ceiling(tx, contract.projectId, contract.handoffId);
+      const costVnd = proposedVnd ?? ceiling;
       // Signing at the ceiling needs one: an unfunded or fully committed budget leaves nothing to sign for.
       if (costVnd <= 0) {
         throw new ConflictException({
@@ -87,6 +90,7 @@ export class StudioContractService {
         where: { id: contractId },
         data: {
           costVnd: BigInt(costVnd),
+          ceilingVnd: BigInt(ceiling),
           proposedBy: ContractProposedBy.STUDIO,
           studioSignedAt: prepared.signedAt,
           status: ContractStatus.STUDIO_SIGNED,
@@ -109,6 +113,7 @@ export class StudioContractService {
   async studioSign(contractId: string, actor: StudioActor, file?: Express.Multer.File): Promise<Detailed> {
     const round = await this.own(contractId, actor.studioId);
     assertContractStatus(round, ContractStatus.ADMIN_COUNTERED, 'sign');
+    await this.signatures.assertCounterpartSigned(this.prisma, contractId, ContractDocumentSide.STUDIO);
     const prepared = await this.prepare(round, file);
     return this.signing(prepared, async (tx, mailIds) => {
       const contract = await lockedContract(tx, contractId, actor.studioId);
@@ -132,13 +137,17 @@ export class StudioContractService {
   ): Promise<Detailed> {
     const round = await this.own(contractId, actor.studioId);
     assertContractStatus(round, ContractStatus.ADMIN_COUNTERED, 'answer with another price');
+    assertNewCost(round, costVnd);
     const prepared = await this.prepare(round, file);
     return this.signing(prepared, async (tx) => {
       const contract = await lockedContract(tx, contractId, actor.studioId);
       assertContractStatus(contract, ContractStatus.ADMIN_COUNTERED, 'answer with another price');
+      assertNewCost(contract, costVnd);
       await this.handoffs.assertAffordable(tx, contract.projectId, costVnd, contract.handoffId);
+      const ceiling = await this.handoffs.ceiling(tx, contract.projectId, contract.handoffId);
       const opened = await openNextRound(tx, contract, {
         costVnd: BigInt(costVnd),
+        ceilingVnd: BigInt(ceiling),
         proposedBy: ContractProposedBy.STUDIO,
         status: ContractStatus.STUDIO_SIGNED,
         studioSignedAt: prepared.signedAt,
