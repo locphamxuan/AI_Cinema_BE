@@ -23,6 +23,7 @@ const TEMPLATE_SOURCE = {
   projectId: true,
   handoffId: true,
   costVnd: true,
+  ceilingVnd: true,
   status: true,
   createdAt: true,
   studio: {
@@ -128,7 +129,7 @@ export class ContractTemplateService {
   private file(contract: Source, pdf: Buffer): StreamableFile {
     return new StreamableFile(pdf, {
       type: 'application/pdf',
-      disposition: `attachment; filename="hop-dong-${contractNo(contract)}.pdf"`,
+      disposition: `attachment; filename="hop-dong-chua-ky-${contractNo(contract)}.pdf"`,
       length: pdf.length,
     });
   }
@@ -157,7 +158,10 @@ export class ContractTemplateService {
   }
 }
 
-/** "AIC-2026-9F2B4C6E-R1": year, the start of the round id and the round. */
-function contractNo(contract: Pick<Source, 'id' | 'round' | 'createdAt'>): string {
+/**
+ * "AIC-2026-9F2B4C6E-R1": year, the start of the round id and the round. Printed on the contract and part of every
+ * file name of the round, so copies of different projects never share a name in a Downloads folder.
+ */
+export function contractNo(contract: Pick<Source, 'id' | 'round' | 'createdAt'>): string {
   return `AIC-${contract.createdAt.getUTCFullYear()}-${contract.id.slice(0, 8).toUpperCase()}-R${contract.round}`;
 }

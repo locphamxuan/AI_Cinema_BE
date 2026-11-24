@@ -31,6 +31,9 @@ model Contract {
   previousId      String?             @unique @map("previous_id") @db.Uuid
   /// Null until the studio fills it in on round 1.
   costVnd         BigInt?             @map("cost_vnd")
+  /// The budget ceiling printed on the copies of this round, fixed when its first side signs (24/11/2026), so the
+  /// FINAL copy prints the same ceiling as the copy signed first even if the budget moved meanwhile.
+  ceilingVnd      BigInt?             @map("ceiling_vnd")
   proposedBy      ContractProposedBy? @map("proposed_by")
   status          ContractStatus      @default(SENT)
   terms           String              @db.Text

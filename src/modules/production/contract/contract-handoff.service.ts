@@ -9,6 +9,8 @@ export interface BudgetedRound {
   projectId: string;
   handoffId: string | null;
   costVnd: bigint | null;
+  /** The ceiling fixed when the first side of the round signed; null before (and on rounds signed before 24/11/2026). */
+  ceilingVnd: bigint | null;
   status: ContractStatus;
 }
 
@@ -50,8 +52,13 @@ export class ContractHandoffService {
     return remainingVnd + (await this.held(db, handoffId));
   }
 
-  /** What the studio sees as the budget of a round: the ceiling while it is open, the signed cost once closed. */
+  /**
+   * The budget ceiling of a round, as its copies print it and the studio sees it: the one fixed when its first side
+   * signed; before that, the current ceiling while the round is open. Rounds closed before the ceiling was recorded
+   * (24/11/2026) show their signed cost.
+   */
   async budgetOf(db: PrismaTx, contract: BudgetedRound): Promise<number> {
+    if (contract.ceilingVnd !== null) return Number(contract.ceilingVnd);
     if (!OPEN_CONTRACT_STATUSES.includes(contract.status) && contract.costVnd !== null) return Number(contract.costVnd);
     return this.ceiling(db, contract.projectId, contract.handoffId);
   }

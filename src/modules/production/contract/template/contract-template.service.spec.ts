@@ -93,7 +93,7 @@ describe('ContractTemplateService', () => {
     expect(file.getHeaders()).toMatchObject({
       type: 'application/pdf',
       length: 8,
-      disposition: 'attachment; filename="hop-dong-AIC-2026-9F2B4C6E-R2.pdf"',
+      disposition: 'attachment; filename="hop-dong-chua-ky-AIC-2026-9F2B4C6E-R2.pdf"',
     });
   });
 
