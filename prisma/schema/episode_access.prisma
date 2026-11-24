@@ -17,7 +17,8 @@ model EpisodeAccess {
   rateVnd           Int          @map("rate_vnd")
   coinTransactionId String?      @unique @map("coin_transaction_id") @db.Uuid
   grantedAt         DateTime     @default(now()) @map("granted_at") @db.Timestamptz(6)
-  /// Set when the episode was taken down for good and the purchase was refunded.
+  /// Set when the purchase was refunded: the episode was taken down for good (BR-52) or the Admin
+  /// refunded the payment. A revoked row no longer opens the episode; the member may buy it again.
   revokedAt         DateTime?    @map("revoked_at") @db.Timestamptz(6)
   revokeReason      String?      @map("revoke_reason") @db.Text
 

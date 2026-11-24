@@ -38,8 +38,15 @@ model CoinTransaction {
   lotId             String?            @map("lot_id") @db.Uuid
   referenceType     CoinReferenceType? @map("reference_type")
   referenceId       String?            @map("reference_id") @db.Uuid
-  /// The entry this one refunds or corrects; null otherwise.
+  /// The entry this one refunds or corrects; null otherwise. A refund always points at the first row
+  /// of the payment it pays back, and a payment is refunded at most once (hand-written partial unique
+  /// index `coin_transactions_one_refund_per_payment`).
   reversesId        String?            @map("reverses_id") @db.Uuid
+  /// The payment a debit row belongs to: the id of its first row (that row points at itself). One
+  /// payment that took main Coins and several bonus lots is several rows sharing this id, and is
+  /// refunded as a whole. Null on every credit and correction (hand-written CHECK
+  /// `coin_transactions_payment_debit_check`).
+  paymentId         String?            @map("payment_id") @db.Uuid
   /// Set when a replayed callback or a double tap must not move the wallet a second time.
   idempotencyKey    String?            @unique @map("idempotency_key") @db.VarChar(100)
   /// Balances right after the entry, so a statement is shown without replaying the ledger.
@@ -54,6 +61,8 @@ model CoinTransaction {
   lot               CoinLot?           @relation("CoinLotSpentBy", fields: [lotId], references: [id], onDelete: Restrict)
   reverses          CoinTransaction?   @relation("CoinTransactionReversal", fields: [reversesId], references: [id], onDelete: Restrict)
   reversedBy        CoinTransaction[]  @relation("CoinTransactionReversal")
+  payment           CoinTransaction?   @relation("CoinPaymentRows", fields: [paymentId], references: [id], onDelete: Restrict)
+  paymentRows       CoinTransaction[]  @relation("CoinPaymentRows")
   flags             TransactionFlag[]
   createdBy         User?              @relation("CoinTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   topUp             CoinTopUp?
@@ -65,5 +74,7 @@ model CoinTransaction {
   @@index([walletId, createdAt])
   @@index([referenceType, referenceId])
   @@index([entryType, createdAt])
+  @@index([paymentId])
+  @@index([reversesId])
   @@map("coin_transactions")
 }
