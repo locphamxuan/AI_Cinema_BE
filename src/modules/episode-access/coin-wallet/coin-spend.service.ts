@@ -1,18 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
-import { CoinEntryType, CoinLotSource, type CoinTransaction, type Prisma } from '@prisma/client';
+import type { CoinEntryType, CoinTransaction, Prisma } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { noticeReceived, noticeSpent } from './coin-notices';
 import { COIN_REASON, type CoinMovement, type CreditRequest, type SpendRequest } from './coin-wallet.types';
 import { bonusOf, bumpWallet, consumeLots, lockWallet, spendableLots } from './lot-usage';
-
-/** The payments an Admin may refund; anything else is corrected with a wallet adjustment. */
-const REFUNDABLE: CoinEntryType[] = [
-  CoinEntryType.EPISODE_PURCHASE,
-  CoinEntryType.PLAN_PAYMENT,
-  CoinEntryType.PLAN_RENEWAL,
-];
 
 /**
  * The only place a Coin balance changes. Every call takes the wallet row with FOR UPDATE,
@@ -59,11 +53,15 @@ export class CoinSpendService {
     const rows: Prisma.CoinTransactionCreateManyInput[] = [];
     let mainAfter = wallet.mainBalance;
     let bonusAfter = wallet.bonusBalance;
-    // Main Coins leave on the first row; every lot the bonus part touched gets a row of its own.
+    // Main Coins leave on the first row; every lot the bonus part touched gets a row of its own. All of
+    // them carry the id of the first row as their payment, so a refund pays the whole payment back once.
+    const paymentId = randomUUID();
     const debitRow = (main: number, bonus: number, lotId?: string) => {
       mainAfter += main;
       bonusAfter += bonus;
       rows.push({
+        id: rows.length === 0 ? paymentId : undefined,
+        paymentId,
         walletId,
         entryType: request.entryType,
         mainAmount: main,
@@ -79,13 +77,13 @@ export class CoinSpendService {
         description: request.description,
       });
     };
-    debitRow(-mainCoins, 0);
-    for (const debit of debits) debitRow(0, -debit.amount, debit.id);
+    debitRow(0 - mainCoins, 0);
+    for (const debit of debits) debitRow(0, 0 - debit.amount, debit.id);
 
-    const [first] = await tx.coinTransaction.createManyAndReturn({ data: rows });
+    await tx.coinTransaction.createMany({ data: rows });
     await bumpWallet(tx, walletId, mainAfter, bonusAfter);
     const movement = {
-      transactionId: first.id,
+      transactionId: paymentId,
       mainCoins,
       bonusCoins,
       mainBalance: mainAfter,
@@ -93,44 +91,6 @@ export class CoinSpendService {
     };
     await noticeSpent(this.notifications, tx, walletId, request.entryType, movement);
     return movement;
-  }
-
-  /**
-   * Admin refund of one Coin payment row: main Coins back to main, bonus Coins back as a REFUND
-   * lot (so the bonus balance stays the sum of its lots). Only a payment is refunded, once; a credit
-   * or a correction is undone with a wallet adjustment instead. A payment that moved nothing (the
-   * empty main row of an all-bonus payment) has nothing to refund.
-   */
-  async refund(
-    tx: PrismaTx,
-    walletId: string,
-    original: Pick<CoinTransaction, 'id' | 'mainAmount' | 'bonusAmount' | 'entryType'>,
-    createdById?: string,
-  ): Promise<CoinMovement> {
-    // Checked under the wallet lock, so two refunds of the same row at once pay back once.
-    await this.locked(tx, walletId);
-    const paidNothing = original.mainAmount >= 0 && original.bonusAmount >= 0;
-    if (!REFUNDABLE.includes(original.entryType) || paidNothing) {
-      throw new ConflictException({
-        message: 'Only a Coin payment can be refunded; use a wallet adjustment for anything else',
-        details: { reason: COIN_REASON.NOT_REFUNDABLE, entryType: original.entryType },
-      });
-    }
-    if (await tx.coinTransaction.count({ where: { reversesId: original.id } })) {
-      throw new ConflictException({
-        message: 'This Coin payment has already been refunded',
-        details: { reason: COIN_REASON.ALREADY_REFUNDED },
-      });
-    }
-    return this.credit(tx, walletId, {
-      entryType: CoinEntryType.REFUND,
-      mainAmount: 0 - original.mainAmount,
-      bonusAmount: 0 - original.bonusAmount,
-      lotSource: CoinLotSource.REFUND,
-      reversesId: original.id,
-      createdById,
-      description: `Refund of ${original.entryType} ${original.id}`,
-    });
   }
 
   /** Adds Coins; a bonus amount opens a lot so those Coins still know when they run out. */

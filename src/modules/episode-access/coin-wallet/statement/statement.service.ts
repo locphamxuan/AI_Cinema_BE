@@ -58,7 +58,13 @@ export class StatementService {
     const entry = await this.prisma.coinTransaction.findFirst({ where: { id: transactionId, walletId: wallet.id } });
     if (!entry)
       throw new NotFoundException({ message: 'Transaction not found', details: { reason: 'TRANSACTION_NOT_FOUND' } });
-    return { ...lineOf(entry), walletId: wallet.id, reversesId: entry.reversesId, lotId: entry.lotId };
+    return {
+      ...lineOf(entry),
+      walletId: wallet.id,
+      reversesId: entry.reversesId,
+      lotId: entry.lotId,
+      paymentId: entry.paymentId,
+    };
   }
 
   /** Every wallet of the platform, for Billing support; filter by wallet, entry type and time. */
@@ -82,6 +88,9 @@ export class StatementService {
         ...lineOf(entry),
         walletId: entry.walletId,
         userId: entry.wallet.userId,
+        // Rows sharing one paymentId are one payment: an Admin refund pays all of them back at once.
+        paymentId: entry.paymentId,
+        reversesId: entry.reversesId,
       })),
     };
   }

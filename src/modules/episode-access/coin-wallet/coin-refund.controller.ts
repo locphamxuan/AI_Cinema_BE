@@ -1,10 +1,9 @@
-import { Controller, NotFoundException, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PERMISSION } from 'src/common/auth/permissions';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
-import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { CoinSpendService } from './coin-spend.service';
+import { CoinRefundService } from './coin-refund.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
@@ -12,29 +11,17 @@ const ID = new ParseUUIDPipe({ version: '4' });
 @ApiBearerAuth()
 @Controller('admin/coin-transactions')
 export class CoinRefundController {
-  constructor(
-    private readonly coins: CoinSpendService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly refunds: CoinRefundService) {}
 
   @Post(':id/refund')
   @RequirePermission(PERMISSION.COIN_ADJUST)
   @ApiOperation({
     summary:
-      'Refund one Coin payment row once: main Coins go back to main, bonus Coins back as a refund lot, referencing the original entry',
+      'Refund the whole Coin payment this row belongs to, once: main Coins back to main, bonus Coins back as a ' +
+      'refund lot; the episode unlock is revoked, or the plan cycle is marked REFUNDED (a running plan ends)',
   })
   @ApiOkResponse()
   refund(@Param('id', ID) id: string, @CurrentUser('id') actorId: string) {
-    // One transaction: the wallet lock, the already-refunded check and the credit commit together.
-    return this.prisma.$transaction(async (tx) => {
-      const original = await tx.coinTransaction.findUnique({ where: { id } });
-      if (!original) {
-        throw new NotFoundException({
-          message: 'Coin transaction not found',
-          details: { reason: 'COIN_TRANSACTION_NOT_FOUND' },
-        });
-      }
-      return this.coins.refund(tx, original.walletId, original, actorId);
-    });
+    return this.refunds.refundByAdmin(id, actorId);
   }
 }

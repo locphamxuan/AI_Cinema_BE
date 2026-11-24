@@ -90,6 +90,7 @@ describe('StatementService.line', () => {
       bonusBalanceAfter: 0,
       reversesId: null,
       lotId: null,
+      paymentId: null,
     });
 
     await expect(service.line('u1', 'tx-1')).resolves.toMatchObject({
@@ -98,6 +99,7 @@ describe('StatementService.line', () => {
       mainBalanceAfter: 50,
       reversesId: null,
       lotId: null,
+      paymentId: null,
     });
     expect(prisma.coinTransaction.findFirst).toHaveBeenCalledWith({
       where: { id: 'tx-1', walletId: 'w1' },
