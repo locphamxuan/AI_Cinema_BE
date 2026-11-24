@@ -26,6 +26,18 @@ describe('NotificationService', () => {
     expect(data.map((row) => row.userId)).toEqual(['a', 'b']);
   });
 
+  it('fits a title made from a long movie title into its column and drops a link too long to keep', async () => {
+    await service.notify(['a'], {
+      type: NOTIFICATION_TYPE.MEDIA_READY,
+      title: `Tập 1 của phim "${'x'.repeat(255)}" đã sẵn sàng`,
+      link: `/projects/${'y'.repeat(600)}`,
+    });
+    const [{ data }] = prisma.notification.createMany.mock.calls[0] as [{ data: { title: string; link?: string }[] }];
+    expect(data[0].title).toHaveLength(255);
+    expect(data[0].title.endsWith('…')).toBe(true);
+    expect(data[0].link).toBeUndefined();
+  });
+
   it('writes nothing without a recipient', async () => {
     await service.notify([null], { type: NOTIFICATION_TYPE.MEDIA_READY, title: 'x' });
     expect(prisma.notification.createMany).not.toHaveBeenCalled();

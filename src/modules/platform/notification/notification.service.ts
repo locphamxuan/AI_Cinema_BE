@@ -14,6 +14,15 @@ export interface NotificationContent {
   payload?: Record<string, unknown>;
 }
 
+/** Column sizes of `notifications`: a long movie title must never make the change it reports fail. */
+const TITLE_MAX = 255;
+const LINK_MAX = 500;
+
+/** Cuts a text to `max` characters, marking the cut with an ellipsis. */
+function fit(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
 /** In-app notifications: every internal alert of the platform goes here, never by email (BR-53). */
 @Injectable()
 export class NotificationService {
@@ -28,9 +37,10 @@ export class NotificationService {
       data: recipients.map((userId) => ({
         userId,
         type: content.type,
-        title: content.title,
+        title: fit(content.title, TITLE_MAX),
         body: content.body,
-        link: content.link,
+        // A link too long for its column is dropped: a cut link would open the wrong screen.
+        link: content.link && content.link.length <= LINK_MAX ? content.link : undefined,
         payload: content.payload as Prisma.InputJsonValue | undefined,
       })),
     });
