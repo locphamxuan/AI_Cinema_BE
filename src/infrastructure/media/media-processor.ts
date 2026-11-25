@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { HLS_LADDER } from 'src/common/hls/quality-ladder';
+import type { SubtitleStream } from './subtitle-streams';
 
 const SEGMENT_SECONDS = 4;
 
@@ -17,6 +18,8 @@ export interface ProbedFile {
   videoBitrate?: number;
   /** The picture carries a rotation (phone footage): HLS segments cannot keep it, so it must be encoded. */
   rotated?: boolean;
+  /** Soft subtitle streams muxed into the file (mov_text, subrip, ...), in file order. */
+  subtitles?: SubtitleStream[];
 }
 
 export interface TranscodedHls {
@@ -33,6 +36,9 @@ export abstract class MediaProcessor {
 
   /** Encodes `inputPath` into an HLS master playlist under `outputDir`. */
   abstract transcode(inputPath: string, outputDir: string, probed: ProbedFile): Promise<TranscodedHls>;
+
+  /** Writes subtitle stream `position` of `inputPath` to `outputPath` as WebVTT. */
+  abstract extractSubtitle(inputPath: string, position: number, outputPath: string): Promise<void>;
 }
 
 /** Rungs worth encoding: never upscale, but always keep at least the lowest one. */
@@ -98,6 +104,24 @@ export function hlsArguments(inputPath: string, probed: ProbedFile): string[] {
   ];
 }
 
+/** FFmpeg arguments that convert one subtitle stream (N in `0:s:N`) to a WebVTT file. */
+export function subtitleArguments(inputPath: string, position: number, outputPath: string): string[] {
+  return [
+    '-y',
+    '-v',
+    'error',
+    '-i',
+    inputPath,
+    '-map',
+    `0:s:${position}`,
+    '-c:s',
+    'webvtt',
+    '-f',
+    'webvtt',
+    outputPath,
+  ];
+}
+
 interface FfprobeOutput {
   format?: { duration?: string; bit_rate?: string };
   streams?: {
@@ -106,7 +130,7 @@ interface FfprobeOutput {
     pix_fmt?: string;
     height?: number;
     bit_rate?: string;
-    tags?: { rotate?: string };
+    tags?: { rotate?: string; language?: string; title?: string };
     side_data_list?: { rotation?: number }[];
   }[];
 }
@@ -128,6 +152,14 @@ export function parseFfprobe(json: string): ProbedFile {
     audioCodec: audio?.codec_name,
     videoBitrate: bitrate > 0 ? bitrate : undefined,
     rotated: Boolean(Number(video.tags?.rotate) || video.side_data_list?.some((data) => Number(data.rotation))),
+    subtitles: (output.streams ?? [])
+      .filter((stream) => stream.codec_type === 'subtitle')
+      .map((stream, position) => ({
+        position,
+        codec: stream.codec_name,
+        language: stream.tags?.language,
+        title: stream.tags?.title,
+      })),
   };
 }
 
@@ -182,6 +214,12 @@ export class FfmpegMediaProcessor extends MediaProcessor {
         .reverse(),
     };
   }
+
+  async extractSubtitle(inputPath: string, position: number, outputPath: string): Promise<void> {
+    await run(this.ffmpegPath, subtitleArguments(path.resolve(inputPath), position, path.resolve(outputPath)), {
+      timeoutMs: 2 * 60_000,
+    });
+  }
 }
 
 /** MEDIA_PIPELINE=mock: accepts any file as a 60-second 1080p video and writes a placeholder playlist. */
@@ -200,5 +238,9 @@ export class MockMediaProcessor extends MediaProcessor {
         .replace(/^/, '#EXTM3U\n'),
     );
     return { outputDir, qualities: [...HLS_LADDER].reverse().map((rung) => rung.name) };
+  }
+
+  async extractSubtitle(_inputPath: string, _position: number, outputPath: string): Promise<void> {
+    await writeFile(outputPath, 'WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nPhụ đề mẫu\n');
   }
 }

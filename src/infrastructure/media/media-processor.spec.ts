@@ -1,4 +1,4 @@
-import { copiesTopRung, hlsArguments, ladderFor, parseFfprobe } from './media-processor';
+import { copiesTopRung, hlsArguments, ladderFor, parseFfprobe, subtitleArguments } from './media-processor';
 
 const valueAfter = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
 
@@ -106,5 +106,48 @@ describe('ffprobe codecs', () => {
     expect(parseFfprobe(phone({ side_data_list: [{ rotation: -90 }] })).rotated).toBe(true);
     expect(parseFfprobe(phone({ tags: { rotate: '90' } })).rotated).toBe(true);
     expect(parseFfprobe(phone({ side_data_list: [{ rotation: 0 }] })).rotated).toBe(false);
+  });
+});
+
+describe('soft subtitles', () => {
+  it('lists subtitle streams with their place among subtitles, language tag and title', () => {
+    const json = JSON.stringify({
+      format: { duration: '10' },
+      streams: [
+        { codec_type: 'video', height: 720 },
+        { codec_type: 'subtitle', codec_name: 'mov_text', tags: { language: 'vie' } },
+        { codec_type: 'audio', codec_name: 'aac' },
+        { codec_type: 'subtitle', codec_name: 'subrip', tags: { language: 'und', title: 'English' } },
+      ],
+    });
+    expect(parseFfprobe(json).subtitles).toEqual([
+      { position: 0, codec: 'mov_text', language: 'vie', title: undefined },
+      { position: 1, codec: 'subrip', language: 'und', title: 'English' },
+    ]);
+  });
+
+  it('converts one subtitle stream to WebVTT', () => {
+    const args = subtitleArguments('/tmp/in.mp4', 2, '/tmp/out/vi.vtt');
+
+    expect(valueAfter(args, '-i')).toBe('/tmp/in.mp4');
+    expect(valueAfter(args, '-map')).toBe('0:s:2');
+    expect(valueAfter(args, '-c:s')).toBe('webvtt');
+    expect(args.at(-1)).toBe('/tmp/out/vi.vtt');
+  });
+
+  it('keeps subtitles out of the HLS renditions, so the copy path is unchanged', () => {
+    const args = hlsArguments('/tmp/in.mp4', {
+      durationSeconds: 60,
+      height: 360,
+      hasAudio: true,
+      videoCodec: 'h264',
+      pixelFormat: 'yuv420p',
+      audioCodec: 'aac',
+      videoBitrate: 700_000,
+      subtitles: [{ position: 0, codec: 'mov_text', language: 'vie' }],
+    });
+
+    expect(args.filter((arg) => arg.startsWith('0:s'))).toEqual([]);
+    expect(valueAfter(args, '-c:v:0')).toBe('copy');
   });
 });
