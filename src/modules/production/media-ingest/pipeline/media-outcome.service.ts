@@ -16,11 +16,20 @@ export const DONE: MediaIngestStatus[] = [
   MediaIngestStatus.SUPERSEDED,
 ];
 
+/** A WebVTT track taken from the delivered file (media_subtitles row). */
+export interface ReadySubtitle {
+  language: string;
+  fileUrl: string;
+  isDefault: boolean;
+}
+
 export interface ReadyResult {
   streamUrl: string;
   qualities: string[];
   durationSeconds: number;
   lastCheckedAt?: Date;
+  /** Self-hosted deliveries only: replaces the tracks of the asset. An HLS link keeps the ones it has. */
+  subtitles?: ReadySubtitle[];
 }
 
 /**
@@ -37,7 +46,7 @@ export class MediaOutcomeService {
     private readonly notifications: NotificationService,
   ) {}
 
-  async ready(asset: MediaAsset, result: ReadyResult): Promise<void> {
+  async ready(asset: MediaAsset, { subtitles, ...result }: ReadyResult): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const latest = await tx.mediaAsset.aggregate({ where: { episodeId: asset.episodeId }, _max: { version: true } });
       if ((latest._max.version ?? 0) > asset.version) {
@@ -54,6 +63,11 @@ export class MediaOutcomeService {
         data: { ...result, ingestStatus: MediaIngestStatus.READY, failureReason: null },
       });
       if (count === 0) return;
+      if (subtitles) {
+        // A retry processes the same asset again: its tracks are replaced, never added twice.
+        await tx.mediaSubtitle.deleteMany({ where: { mediaAssetId: asset.id } });
+        await tx.mediaSubtitle.createMany({ data: subtitles.map((track) => ({ mediaAssetId: asset.id, ...track })) });
+      }
       await tx.mediaAsset.updateMany({
         where: { episodeId: asset.episodeId, version: { lt: asset.version }, ingestStatus: MediaIngestStatus.READY },
         data: { ingestStatus: MediaIngestStatus.SUPERSEDED },

@@ -20,6 +20,7 @@ const SUBTITLE_LABEL: Record<string, string> = {
   zh: '中文',
   ko: '한국어',
   ja: '日本語',
+  fr: 'Français',
 };
 
 export const GENRES = { genres: { include: { genre: { select: { id: true, name: true } } } } };
