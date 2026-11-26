@@ -58,9 +58,9 @@ const spinView = (spin: RewardSpin) => ({
   planDays: spin.planDays,
 });
 
-/** A weight's share of the active weights, in percent with one decimal. */
+/** A weight's share of the active weights, in percent with two decimals (weights are basis points of 100 %). */
 export function chancePercent(weight: number, total: number): number {
-  return total > 0 ? Math.round((weight / total) * 1000) / 10 : 0;
+  return total > 0 ? Math.round((weight / total) * 10_000) / 100 : 0;
 }
 
 /** Draws one prize with probability weight / total weight, from a CSPRNG. */

@@ -266,7 +266,8 @@ describe('RewardSpinService', () => {
   });
 
   it('rounds a chance to one decimal and is zero when no weight is active', () => {
-    expect(chancePercent(1, 3)).toBe(33.3);
+    expect(chancePercent(1, 3)).toBe(33.33);
+    expect(chancePercent(1250, 10_000)).toBe(12.5);
     expect(chancePercent(5, 0)).toBe(0);
   });
 });

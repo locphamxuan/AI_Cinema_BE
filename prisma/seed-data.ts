@@ -65,7 +65,7 @@ export const SEED_REWARD_RULES = [5, 5, 10, 10, 15, 15, 30].map((bonusCoins, ind
   grantsSpin: index === 6,
 }));
 
-/** BR-09: the default reward wheel; the weights are relative chances. */
+/** BR-09: the default reward wheel; each weight is a chance in basis points and they add up to 10 000 (100 %). */
 export const SEED_REWARD_PRIZES: {
   code: string;
   name: string;
@@ -74,11 +74,11 @@ export const SEED_REWARD_PRIZES: {
   planDays?: number;
   weight: number;
 }[] = [
-  { code: 'bonus_20', name: '20 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 20, weight: 50 },
-  { code: 'bonus_50', name: '50 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 50, weight: 30 },
-  { code: 'bonus_100', name: '100 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 100, weight: 12 },
-  { code: 'plan_1_day', name: '1 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 1, weight: 6 },
-  { code: 'plan_3_days', name: '3 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 3, weight: 2 },
+  { code: 'bonus_20', name: '20 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 20, weight: 5000 },
+  { code: 'bonus_50', name: '50 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 50, weight: 3000 },
+  { code: 'bonus_100', name: '100 Coin thưởng', type: RewardPrizeType.BONUS_COIN, bonusCoins: 100, weight: 1200 },
+  { code: 'plan_1_day', name: '1 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 1, weight: 600 },
+  { code: 'plan_3_days', name: '3 ngày gói Tháng', type: RewardPrizeType.PLAN_DAYS, planDays: 3, weight: 200 },
 ];
 
 /** The demo Staff login (support inbox): its own password, not SEED_USER_PASSWORD. */

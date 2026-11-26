@@ -18,6 +18,8 @@ model RewardPrize {
   bonusCoins  Int?            @map("bonus_coins")
   /// Set for PLAN_DAYS only.
   planDays    Int?            @map("plan_days")
+  /// Chance in basis points (1 = 0.01 %, 10 000 = 100 %); the prizes switched on add up to 10 000.
+  /// CHECK reward_prizes_weight_range_check (1..10 000) is hand-written in its migration.
   weight      Int
   isActive    Boolean         @default(true) @map("is_active")
   createdById String          @map("created_by_id") @db.Uuid

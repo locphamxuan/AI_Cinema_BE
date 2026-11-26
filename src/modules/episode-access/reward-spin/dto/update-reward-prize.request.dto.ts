@@ -26,7 +26,7 @@ export class UpdateRewardPrizeRequestDto {
   @IsOptional()
   planDays?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Chance in basis points (10 000 = 100 %); the wheel must still add up to 100 %' })
   @IsInt()
   @Min(1)
   @Max(10_000)
@@ -35,7 +35,7 @@ export class UpdateRewardPrizeRequestDto {
 
   @ApiPropertyOptional({
     description:
-      'Switch the prize off the wheel (false) or back on (true); refused for the last active prize while members hold spins',
+      'Switch the prize off the wheel (false) or back on (true); refused when the wheel would not add up to 100 %, or for the last active prize while members hold spins',
   })
   @IsBoolean()
   @IsOptional()

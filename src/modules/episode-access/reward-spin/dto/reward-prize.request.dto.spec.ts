@@ -3,6 +3,7 @@ import { validate } from 'class-validator';
 import { CreateRewardRuleRequestDto } from '../../daily-reward/dto/create-reward-rule.request.dto';
 import { MAX_REWARD_BONUS_COINS } from '../../daily-reward/reward-ladder';
 import { CreateRewardPrizeRequestDto } from './create-reward-prize.request.dto';
+import { SetRewardChancesRequestDto } from './set-reward-chances.request.dto';
 import { UpdateRewardPrizeRequestDto } from './update-reward-prize.request.dto';
 
 const refused = async <T extends object>(cls: new () => T, body: object) =>
@@ -22,6 +23,15 @@ describe('reward rule and prize requests', () => {
     expect(await refused(CreateRewardPrizeRequestDto, { ...prize, bonusCoins })).toEqual(['bonusCoins']);
     expect(await refused(UpdateRewardPrizeRequestDto, { bonusCoins })).toEqual(['bonusCoins']);
     expect(await refused(CreateRewardRuleRequestDto, { ...rule, bonusCoins })).toEqual(['bonusCoins']);
+  });
+
+  it('takes a chance between 0.01 % and 100 % in basis points, on one prize or the whole wheel', async () => {
+    expect(await refused(CreateRewardPrizeRequestDto, { ...prize, weight: 10_001 })).toEqual(['weight']);
+    expect(await refused(CreateRewardPrizeRequestDto, { ...prize, weight: 0 })).toEqual(['weight']);
+    const id = '0b1e7f9a-2c3d-4e5f-8a9b-0c1d2e3f4a5b';
+    expect(await refused(SetRewardChancesRequestDto, { prizes: [{ id, weight: 10_000 }] })).toEqual([]);
+    expect(await refused(SetRewardChancesRequestDto, { prizes: [] })).toEqual(['prizes']);
+    expect(await refused(SetRewardChancesRequestDto, { prizes: [{ id: 'x', weight: 1.5 }] })).toEqual(['prizes']);
   });
 
   it('refuses a code or name made only of spaces', async () => {
