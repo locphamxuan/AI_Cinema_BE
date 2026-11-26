@@ -2,6 +2,7 @@ import { Controller, Delete, Get, Param, ParseUUIDPipe, Put } from '@nestjs/comm
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { assertMember } from '../members-only';
 import { SavedMovieService } from './saved-movie.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -27,6 +28,7 @@ export class SavedMovieController {
   @Put(':movieId')
   @ApiOperation({ summary: 'Save the movie to watch later' })
   save(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
+    assertMember(user);
     return this.saved.save(movieId, user.id);
   }
 

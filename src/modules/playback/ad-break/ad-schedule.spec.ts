@@ -1,9 +1,6 @@
-import { AD_EDGE_SECONDS, planCues, randomPositions, weightedOrder } from './ad-schedule';
+import { AD_EDGE_SECONDS, planCues, randomPositions, shuffled } from './ad-schedule';
 
-const ads = [
-  { id: 'ad-1', weight: 1 },
-  { id: 'ad-2', weight: 1 },
-];
+const ads = [{ id: 'ad-1' }, { id: 'ad-2' }];
 
 describe('randomPositions (BR-32)', () => {
   it('draws one cue inside each equal part of the clean window', () => {
@@ -27,26 +24,24 @@ describe('randomPositions (BR-32)', () => {
   });
 });
 
-describe('weightedOrder', () => {
-  it('draws every ad exactly once, heavier ones first on average', () => {
-    const weighted = [{ weight: 1 }, { weight: 100 }, { weight: 1 }];
-    const firsts = Array.from({ length: 20 }, () => weightedOrder(weighted)[0]?.weight);
-    expect(firsts).toContain(100);
-    expect(weightedOrder(weighted)).toHaveLength(3);
+describe('shuffled', () => {
+  it('keeps every ad exactly once and leaves the input untouched', () => {
+    const input = ['a', 'b', 'c', 'd'];
+    const order = shuffled(input);
+    expect([...order].sort()).toEqual(input);
+    expect(input).toEqual(['a', 'b', 'c', 'd']);
   });
 
-  it('puts an ad first in proportion to its weight', () => {
-    const ads = [
-      { id: 'heavy', weight: 100 },
-      { id: 'light', weight: 10 },
-    ];
-    // Evenly spread draws stand for a fair random source, so the count is exact rather than flaky.
-    const draws = 1100;
-    const firsts = Array.from({ length: draws }, (_, i) => weightedOrder(ads, () => (i + 0.5) / draws)[0].id);
-    const heavy = firsts.filter((id) => id === 'heavy').length;
-
-    expect(heavy).toBe(1000);
-    expect(heavy / (draws - heavy)).toBe(10);
+  it('reaches every order through exactly one draw, so each order is equally likely', () => {
+    // Each pair of draws (one per swap step) stands for one equally likely outcome of a fair source.
+    const orders = new Set<string>();
+    for (let first = 0; first < 3; first++) {
+      for (let second = 0; second < 2; second++) {
+        const draws = [(first + 0.5) / 3, (second + 0.5) / 2];
+        orders.add(shuffled(['a', 'b', 'c'], () => draws.shift()!).join(''));
+      }
+    }
+    expect(orders.size).toBe(6);
   });
 });
 

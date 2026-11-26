@@ -77,7 +77,7 @@ export class IdeaFileService {
     const storageKey = `movies/${projectId}/ideas/${randomUUID()}${fileName.slice(fileName.lastIndexOf('.')).toLowerCase()}`;
     await this.storage.putBuffer(storageKey, file.buffer, kind.mimeType, 'private');
 
-    return this.prisma.$transaction(async (tx) => {
+    const saved = this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM movie_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
       const last = await tx.movieIdeaFile.aggregate({ where: { projectId, fileName }, _max: { version: true } });
       const created = await tx.movieIdeaFile.create({
@@ -105,6 +105,11 @@ export class IdeaFileService {
       );
       return created;
     });
+    // No row points at the stored file when the transaction fails: it would stay in the bucket for nothing.
+    return saved.catch(async (error: unknown) => {
+      await removeQuietly(this.storage, storageKey, 'private');
+      throw error;
+    });
   }
 
   async list(projectId: string, user: AuthenticatedUser) {
@@ -121,7 +126,20 @@ export class IdeaFileService {
     assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'remove idea files');
     const file = await this.prisma.movieIdeaFile.findFirst({ where: { id: fileId, projectId } });
     if (!file) throw new NotFoundException('Idea file not found');
-    await this.prisma.movieIdeaFile.delete({ where: { id: file.id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.movieIdeaFile.delete({ where: { id: file.id } });
+      await this.auditLog.record(
+        {
+          action: CONTENT_EVENT.IDEA_FILE_REMOVED,
+          entityType: 'MovieIdeaFile',
+          entityId: file.id,
+          projectId,
+          actorId: user.id,
+          payload: { fileName: file.fileName, purpose: file.purpose, version: file.version },
+        },
+        tx,
+      );
+    });
     await removeQuietly(this.storage, file.storageKey, 'private');
   }
 

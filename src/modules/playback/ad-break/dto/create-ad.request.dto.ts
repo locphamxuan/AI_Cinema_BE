@@ -1,10 +1,12 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
-import { MAX_AD_WEIGHT } from '../ad-limits';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
+import { Trim } from 'src/common/validation/trim';
 
 export class CreateAdRequestDto {
   @ApiProperty({ example: 'Trà sữa Gong Cha — mua 1 tặng 1' })
+  @Trim()
   @IsString()
+  @MinLength(1)
   @MaxLength(255)
   title: string;
 
@@ -16,21 +18,4 @@ export class CreateAdRequestDto {
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   @MaxLength(1000)
   mediaUrl: string;
-
-  @ApiPropertyOptional({ example: 'https://gongcha.example/promo' })
-  @IsOptional()
-  @IsUrl({ require_protocol: true })
-  @MaxLength(1000)
-  clickUrl?: string;
-
-  @ApiPropertyOptional({
-    example: 3,
-    maximum: MAX_AD_WEIGHT,
-    description: 'Pick weight for the mid-roll draw; higher shows more often',
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(MAX_AD_WEIGHT)
-  weight?: number;
 }

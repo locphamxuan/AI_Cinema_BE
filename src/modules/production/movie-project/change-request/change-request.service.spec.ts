@@ -116,6 +116,15 @@ describe('ChangeRequestService', () => {
       expect(db.projectChangeRequest.create).not.toHaveBeenCalled();
     });
 
+    it('refuses an episode of another season than the one named', async () => {
+      db.episode.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+      await expect(
+        service.propose('p1', { ...DTO, seasonId: 's1', episodeId: 'e1' }, undefined, REVIEWER),
+      ).rejects.toMatchObject({ response: { details: { reason: 'EPISODE_NOT_IN_SEASON' } } });
+      expect(db.episode.count).toHaveBeenLastCalledWith({ where: { id: 'e1', seasonId: 's1' } });
+      expect(db.projectChangeRequest.create).not.toHaveBeenCalled();
+    });
+
     it('refuses an empty proof before storing anything', async () => {
       await expect(service.propose('p1', DTO, { ...PDF, size: 0 }, REVIEWER)).rejects.toBeInstanceOf(
         BadRequestException,

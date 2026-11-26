@@ -59,11 +59,30 @@ describe('AuthService.googleLogin', () => {
     expect(user.create).not.toHaveBeenCalled();
   });
 
-  it('opens a member account with a wallet at once, under the Google name', async () => {
+  it('opens nothing on a first sign-in until the terms are accepted', async () => {
+    lookups(null);
+
+    await expect(service.googleLogin({ idToken })).rejects.toMatchObject({
+      status: 409,
+      response: { details: { reason: GOOGLE_REASON.TERMS_REQUIRED } },
+    });
+    expect(user.create).not.toHaveBeenCalled();
+    expect(sessions.issue).not.toHaveBeenCalled();
+  });
+
+  it('never asks a linked member for the terms again', async () => {
+    lookups(member);
+
+    await expect(service.googleLogin({ idToken, acceptedTerms: false })).resolves.toMatchObject({
+      user: { id: member.id },
+    });
+  });
+
+  it('opens a member account with a wallet once the terms are accepted, under the Google name', async () => {
     lookups(null);
     user.create.mockResolvedValue(member);
 
-    const session = await service.googleLogin({ idToken });
+    const session = await service.googleLogin({ idToken, acceptedTerms: true });
 
     const [[{ data }]] = user.create.mock.calls as [[{ data: Record<string, unknown> }]];
     expect(data).toMatchObject({
@@ -72,6 +91,7 @@ describe('AuthService.googleLogin', () => {
       role: UserRole.MEMBER,
       googleId: 'google-sub',
       passwordHash: null,
+      termsAcceptedAt: expect.any(Date),
     });
     expect(data).not.toHaveProperty('dateOfBirth');
     expect(wallets.openForNewAccount).toHaveBeenCalledWith(tx, member.id);
@@ -83,7 +103,7 @@ describe('AuthService.googleLogin', () => {
     google.verify.mockResolvedValue({ sub: 'google-sub', email: 'member@example.com', name: ' ' });
     user.create.mockResolvedValue(member);
 
-    await service.googleLogin({ idToken });
+    await service.googleLogin({ idToken, acceptedTerms: true });
 
     expect(user.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ fullName: 'member' }) }),
@@ -93,7 +113,7 @@ describe('AuthService.googleLogin', () => {
   it('sends an email that already has a password account back to its password', async () => {
     lookups(null, { ...member, googleId: null });
 
-    await expect(service.googleLogin({ idToken })).rejects.toMatchObject({
+    await expect(service.googleLogin({ idToken, acceptedTerms: true })).rejects.toMatchObject({
       status: 409,
       response: { details: { reason: GOOGLE_REASON.EMAIL_REGISTERED } },
     });

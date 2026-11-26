@@ -9,6 +9,7 @@ import {
 } from 'src/modules/episode-access/subscription/running-plan';
 import { isFreeFor } from 'src/modules/catalog/episode-free-tier';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
+import { assertOldEnough } from './age-gate';
 
 /** A plan in one of these states lapsed on its own, so the session it opened may finish. */
 const GRACE_STATUSES: SubscriptionStatus[] = [
@@ -87,6 +88,7 @@ export class PlaybackAccessService {
     const episode = await this.prisma.episode.findFirst({
       where: { id: episodeId, ...VISIBLE_EPISODE },
       include: {
+        movie: { select: { ageRating: true } },
         approvedMediaAsset: {
           // Hardening #14: only the columns the answer is built from. The rest of media_assets
           // (ai_disclosure JSON, storage_key, failure_reason…) is studio data nothing downstream
@@ -116,6 +118,8 @@ export class PlaybackAccessService {
         details: { reason: 'EPISODE_UNDER_REVISION' },
       });
     }
+    // BR-68: watching alone passes the same age gate as joining a watch room.
+    await assertOldEnough(this.prisma, episode.movie.ageRating, userId);
     const media = episode.approvedMediaAsset;
     if (!media || media.ingestStatus !== MediaIngestStatus.READY || !media.streamUrl) {
       throw new ConflictException({

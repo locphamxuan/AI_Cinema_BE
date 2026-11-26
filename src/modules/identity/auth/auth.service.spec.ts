@@ -82,7 +82,13 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
-    const dto = { email: 'Member@Example.com', password: 'Secret123', fullName: ' Anh ', dateOfBirth: '2000-01-01' };
+    const dto = {
+      email: 'Member@Example.com',
+      password: 'Secret123',
+      fullName: ' Anh ',
+      dateOfBirth: '2000-01-01',
+      acceptedTerms: true,
+    };
 
     it('creates an adult member with a hashed password', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
@@ -91,7 +97,12 @@ describe('AuthService', () => {
       await service.register(dto);
 
       const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: Record<string, unknown> }];
-      expect(data).toMatchObject({ email: 'member@example.com', fullName: 'Anh', role: UserRole.MEMBER });
+      expect(data).toMatchObject({
+        email: 'member@example.com',
+        fullName: 'Anh',
+        role: UserRole.MEMBER,
+        termsAcceptedAt: expect.any(Date),
+      });
       expect(await bcrypt.compare('Secret123', data.passwordHash as string)).toBe(true);
       expect(wallets.openForNewAccount).toHaveBeenCalledWith(tx, profile.id);
     });
@@ -101,6 +112,16 @@ describe('AuthService', () => {
       await expect(service.register(youngster)).rejects.toThrow(ForbiddenException);
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
+
+    it.each(['1899-12-31', '2999-01-01'])(
+      'refuses the impossible birthday %s with DATE_OF_BIRTH_INVALID',
+      async (day) => {
+        await expect(service.register({ ...dto, dateOfBirth: day })).rejects.toMatchObject({
+          response: { details: { reason: 'DATE_OF_BIRTH_INVALID' } },
+        });
+        expect(prisma.user.create).not.toHaveBeenCalled();
+      },
+    );
 
     it('rejects an email that already has an account', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'existing' });
@@ -124,6 +145,10 @@ describe('AuthService', () => {
 
     it('refuses a birthday in the future', async () => {
       await expect(service.updateMe(caller, { dateOfBirth: '2999-01-01' })).rejects.toThrow(BadRequestException);
+      await expect(service.updateMe(caller, { dateOfBirth: '1800-05-01' })).rejects.toMatchObject({
+        response: { details: { reason: 'DATE_OF_BIRTH_INVALID' } },
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it('changes the password only with the current one, then signs every other session out', async () => {

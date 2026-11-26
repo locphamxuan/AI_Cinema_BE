@@ -75,6 +75,36 @@ describe('SessionTokenService.rotate', () => {
     });
   });
 
+  it('refuses a signed-out token without signing every other device out', async () => {
+    prisma.refreshToken.findUnique.mockResolvedValue(row({ revokedAt: new Date(Date.now() - 5_000) }));
+
+    await expect(service.rotate('signed-out')).rejects.toMatchObject({
+      response: { details: { reason: 'REFRESH_TOKEN_INVALID' } },
+    });
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('answers REFRESH_TOKEN_REUSED when a swapped token is replayed', async () => {
+    prisma.refreshToken.findUnique.mockResolvedValue(
+      row({ revokedAt: new Date(Date.now() - REUSE_GRACE_MS - 1_000), replacedById: 'rt-2' }),
+    );
+    prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    await expect(service.rotate('old')).rejects.toMatchObject({
+      response: { details: { reason: 'REFRESH_TOKEN_REUSED' } },
+    });
+  });
+
+  it('refuses an expired token or a locked account with REFRESH_TOKEN_INVALID', async () => {
+    prisma.refreshToken.findUnique.mockResolvedValueOnce(row({ expiresAt: new Date(Date.now() - 1) }));
+    await expect(service.rotate('expired')).rejects.toMatchObject({
+      response: { details: { reason: 'REFRESH_TOKEN_INVALID' } },
+    });
+    prisma.refreshToken.findUnique.mockResolvedValueOnce(row({ user: { id: 'u1', role: 'MEMBER', isActive: false } }));
+    await expect(service.rotate('locked')).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('reads the token again when a parallel refresh swapped it first', async () => {
     runTx();
     tx.refreshToken.create.mockResolvedValue({ id: 'new' });
@@ -87,5 +117,17 @@ describe('SessionTokenService.rotate', () => {
     expect(tx.refreshToken.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({ where: { id: 'winner', revokedAt: null } }),
     );
+  });
+
+  it('opens one more session on each login and never ends the sessions of other accounts or windows', async () => {
+    // The owner signs in as Creator, Reviewer and Admin in three windows: three independent token families.
+    prisma.refreshToken.create.mockResolvedValue({});
+    const pairs = await Promise.all(
+      ['u-creator', 'u-reviewer', 'u-admin'].map((id) => service.issue({ id, role: 'ADMIN' })),
+    );
+
+    expect(new Set(pairs.map((pair) => pair.refreshToken)).size).toBe(3);
+    expect(prisma.refreshToken.create).toHaveBeenCalledTimes(3);
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
   });
 });

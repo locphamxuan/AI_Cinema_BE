@@ -31,6 +31,7 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import {
   assertEpisodeStatus,
   assertProjectStatus,
+  changedMeanwhile,
   DELIVERY_PROJECT_STATUSES,
 } from 'src/modules/production/project-access/project-rules';
 import type {
@@ -262,7 +263,7 @@ export class MediaIngestService {
       where: { id: episodeId, status: { in: SUBMITTABLE } },
       data: { status: EpisodeStatus.PROCESSING },
     });
-    if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+    if (count === 0) throw changedMeanwhile('The episode changed meanwhile; reload it');
   }
 
   private async enqueue(mediaAssetId: string, jobId: string = mediaAssetId) {

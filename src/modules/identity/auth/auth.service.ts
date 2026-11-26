@@ -11,7 +11,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletService } from 'src/modules/episode-access/coin-wallet/wallet.service';
 import { AccessControlService } from 'src/modules/identity/access-control/access-control.service';
 import { USER_PROFILE_SELECT, type UserProfile } from 'src/modules/identity/user/user-profile';
-import { hashPassword, isAdult, normalizeEmail, verifyPassword } from './credentials';
+import { hashPassword, isAdult, isPlausibleBirthDate, normalizeEmail, verifyPassword } from './credentials';
 import type { AuthProfileDto, AuthSessionDto } from './dto/auth-session.dto';
 import type { GoogleLoginRequestDto } from './dto/google-login.request.dto';
 import { LoginRequestDto } from './dto/login.request.dto';
@@ -23,6 +23,17 @@ import { PasswordResetService } from './password-reset.service';
 import { SessionTokenService } from './session-token.service';
 
 const ADULTS_ONLY = 'AI Cinema is only for viewers aged 18 or older';
+/** Longest full name the users table keeps. */
+const FULL_NAME_MAX = 255;
+
+/** A birthday before 1900 or in the future is a typing error, refused before the age rule runs. */
+function assertBirthDate(dateOfBirth: Date): void {
+  if (isPlausibleBirthDate(dateOfBirth)) return;
+  throw new BadRequestException({
+    message: 'Date of birth must be between 1900-01-01 and today',
+    details: { reason: 'DATE_OF_BIRTH_INVALID' },
+  });
+}
 
 /** Only an active member may use Google; a staff account keeps its password sign-in. */
 function assertGoogleMember(user: Pick<UserProfile, 'role' | 'isActive'>): void {
@@ -48,6 +59,7 @@ export class AuthService {
 
   async register(dto: RegisterRequestDto): Promise<AuthSessionDto> {
     const dateOfBirth = new Date(dto.dateOfBirth);
+    assertBirthDate(dateOfBirth);
     if (!isAdult(dateOfBirth)) throw new ForbiddenException(ADULTS_ONLY);
     const email = normalizeEmail(dto.email);
     if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
@@ -59,7 +71,14 @@ export class AuthService {
     // always has a wallet, so no purchase screen ever has to open one on the spot.
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
-        data: { email, passwordHash, fullName: dto.fullName.trim(), dateOfBirth, role: UserRole.MEMBER },
+        data: {
+          email,
+          passwordHash,
+          fullName: dto.fullName.trim(),
+          dateOfBirth,
+          role: UserRole.MEMBER,
+          termsAcceptedAt: new Date(),
+        },
         select: USER_PROFILE_SELECT,
       });
       await this.wallets.openForNewAccount(tx, created.id);
@@ -86,15 +105,16 @@ export class AuthService {
   }
 
   /**
-   * Google sign-in is for members only, in one tap: a linked member signs in, a member account with
-   * that verified email is linked, and a new email opens a member account under the Google name.
-   * Staff accounts (Admin, Reviewer, Creator, Staff) sign in with their password and are never linked.
+   * Google sign-in is for members only, in one tap: a linked member signs in and a new email opens a member
+   * account under the Google name. An email that already has an account is never linked: it signs in with its
+   * password (GOOGLE_EMAIL_REGISTERED). Staff accounts sign in with their password. A new account opens only
+   * once the member accepted the terms of use, as on email sign-up (GOOGLE_TERMS_REQUIRED otherwise).
    */
   async googleLogin(dto: GoogleLoginRequestDto): Promise<AuthSessionDto> {
     const profile = await this.google.verify(dto.idToken);
     const user =
       (await this.prisma.user.findUnique({ where: { googleId: profile.sub }, select: USER_PROFILE_SELECT })) ??
-      (await this.openForGuest(profile));
+      (await this.openForGuest(profile, dto.acceptedTerms === true));
     assertGoogleMember(user);
     return this.session(user);
   }
@@ -117,8 +137,7 @@ export class AuthService {
 
   async updateMe(caller: AuthenticatedUser, dto: UpdateMyProfileRequestDto): Promise<AuthProfileDto> {
     const dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined;
-    if (dateOfBirth && dateOfBirth.getTime() > Date.now())
-      throw new BadRequestException('Birthday cannot be in the future');
+    if (dateOfBirth) assertBirthDate(dateOfBirth);
     if (dateOfBirth && caller.role === UserRole.MEMBER && !isAdult(dateOfBirth)) {
       throw new ForbiddenException(ADULTS_ONLY);
     }
@@ -161,13 +180,21 @@ export class AuthService {
   }
 
   /** Google is how a guest signs up: an email that already has an account signs in with its password instead. */
-  private async openForGuest(profile: GoogleProfile): Promise<UserProfile> {
+  private async openForGuest(profile: GoogleProfile, acceptedTerms: boolean): Promise<UserProfile> {
     const email = normalizeEmail(profile.email);
     const existing = await this.prisma.user.findUnique({
       where: { email },
       select: { ...USER_PROFILE_SELECT, googleId: true },
     });
-    if (!existing) return this.openGoogleMember(profile, email);
+    if (!existing) {
+      if (!acceptedTerms) {
+        throw new ConflictException({
+          message: 'Accept the terms of use to open your account',
+          details: { reason: GOOGLE_REASON.TERMS_REQUIRED },
+        });
+      }
+      return this.openGoogleMember(profile, email);
+    }
     const { googleId, ...user } = existing;
     if (googleId) {
       throw new ConflictException({
@@ -184,7 +211,7 @@ export class AuthService {
 
   /** One tap: the member account opens at once under the Google name. */
   private async openGoogleMember(profile: GoogleProfile, email: string): Promise<UserProfile> {
-    const name = profile.name?.trim() ?? '';
+    const name = profile.name?.trim().slice(0, FULL_NAME_MAX) ?? '';
     const fullName = name.length >= 2 ? name : email.split('@')[0].padEnd(2, '_');
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -195,6 +222,7 @@ export class AuthService {
           role: UserRole.MEMBER,
           googleId: profile.sub,
           emailVerifiedAt: new Date(),
+          termsAcceptedAt: new Date(),
         },
         select: USER_PROFILE_SELECT,
       });

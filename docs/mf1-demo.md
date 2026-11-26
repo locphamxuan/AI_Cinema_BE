@@ -29,8 +29,8 @@ Lệnh `seed:mf1-demo` xoá bộ demo cũ trước khi dựng lại, nên chạy
 | Dự án | Đang dừng ở | Bước demo tiếp theo |
 |---|---|---|
 | 1. Viết kịch bản | Creator đã nộp kịch bản bản 1 | Reviewer duyệt → Admin duyệt Kịch bản Final |
-| 2. Hợp đồng | Hệ thống đã gửi hợp đồng mẫu cho Studio | Admin upload `docs/contracts/hop-dong-ai-cinema-ban-ky-admin.pdf` kèm giá, rồi Studio upload `hop-dong-ai-cinema-ban-ky-studio.pdf` |
-| 3. Giao phim | Hợp đồng đủ 2 chữ ký: có bản ADMIN, STUDIO, FINAL | Studio giao tập bằng link phim trên R2 (lấy trong `AI_Film/CATALOG.json`) |
+| 2. Hợp đồng | Hệ thống đã gửi hợp đồng chưa ký cho Studio | Studio ký bằng ảnh `prisma/demo/signature-studio.png`, rồi Admin ký bằng `prisma/demo/signature-admin.png` (xem `docs/contracts/README.md`) |
+| 3. Giao phim | Hợp đồng đủ 2 chữ ký: có bản ADMIN, STUDIO, FINAL cùng mẫu với bản chưa ký | Studio giao tập bằng link phim trên R2 (lấy trong `AI_Film/CATALOG.json`) |
 | 4. Duyệt nội dung | Tập 1 đã giao, chờ Reviewer | Reviewer duyệt → gắn nhãn AI → kiểm tra tuân thủ → xác nhận Final Film |
 | 5. Định giá & phát hành | Tập 1 đã qua tuân thủ, Final Film đã xác nhận | Admin đặt giá Coin, chọn tập miễn phí / khoá, rồi publish |
 

@@ -39,14 +39,13 @@ export const PERMISSION = {
   BILLING_SUBSCRIPTION_READ: 'billing.subscription.read',
   BILLING_SUBSCRIPTION_CANCEL: 'billing.subscription.cancel',
   COIN_WALLET_READ: 'coin.wallet.read',
-  COIN_ADJUST: 'coin.adjust',
+  COIN_REFUND: 'coin.refund',
   COIN_TRANSACTION_READ: 'coin.transaction.read',
   REWARD_RULE_MANAGE: 'reward.rule.manage',
   ANALYTICS_REVENUE_READ: 'analytics.revenue.read',
   ANALYTICS_CHURN_READ: 'analytics.churn.read',
   // MF-5 — Admin only: profit / ROI, BR-48 revenue sharing, risky transactions
   FINANCE_REPORT_READ: 'finance:report.read',
-  FINANCE_ALLOCATION_RUN: 'finance:allocation.run',
   RISK_FLAG_MANAGE: 'risk:flag.manage',
   // MF-3 — mid-roll ads
   AD_MANAGE: 'ad.manage',
@@ -148,7 +147,10 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'billing.subscription.read': { area: 'billing', description: 'Read every subscription and its billing cycles' },
   'billing.subscription.cancel': { area: 'billing', description: "End a member's plan" },
   'coin.wallet.read': { area: 'coin', description: "Read another member's wallet and bonus lots" },
-  'coin.adjust': { area: 'coin', description: 'Correct a Coin balance by hand' },
+  'coin.refund': {
+    area: 'coin',
+    description: 'Refund a whole Coin payment (an episode unlock or a plan payment) back to the wallet',
+  },
   'coin.transaction.read': { area: 'coin', description: 'Read the Coin ledger of the whole platform' },
   'reward.rule.manage': { area: 'coin', description: 'Configure the daily check-in reward ladder' },
   'analytics.revenue.read': { area: 'billing', description: 'Read the plan revenue reports' },
@@ -156,10 +158,6 @@ export const PERMISSION_CATALOG: Record<PermissionKey, { area: string; descripti
   'finance:report.read': {
     area: 'finance',
     description: 'Read profit, ROI and the Monthly-plan revenue shared per movie',
-  },
-  'finance:allocation.run': {
-    area: 'finance',
-    description: "Share a past month's Monthly-plan revenue across movies again",
   },
   'risk:flag.manage': {
     area: 'finance',
@@ -254,14 +252,13 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     PERMISSION.BILLING_SUBSCRIPTION_READ,
     PERMISSION.BILLING_SUBSCRIPTION_CANCEL,
     PERMISSION.COIN_WALLET_READ,
-    PERMISSION.COIN_ADJUST,
+    PERMISSION.COIN_REFUND,
     PERMISSION.COIN_TRANSACTION_READ,
     PERMISSION.REWARD_RULE_MANAGE,
     PERMISSION.ANALYTICS_REVENUE_READ,
     PERMISSION.ANALYTICS_CHURN_READ,
-    // MF-5: profit / ROI per movie, BR-48 revenue sharing and risky transactions stay with the Admin.
+    // MF-5: profit / ROI per movie (BR-48 share included) and risky transactions stay with the Admin.
     PERMISSION.FINANCE_REPORT_READ,
-    PERMISSION.FINANCE_ALLOCATION_RUN,
     PERMISSION.RISK_FLAG_MANAGE,
     // MF-3: mid-roll ads shown to ad-supported plans.
     PERMISSION.AD_MANAGE,

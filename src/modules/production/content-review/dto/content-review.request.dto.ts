@@ -11,9 +11,23 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateBy,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { Trim } from 'src/common/validation/trim';
+
+/** Feedback the studio acts on is at least 5 characters; a comment on an approval may be shorter. */
+const FeedbackWhenChangesRequested = () =>
+  ValidateBy({
+    name: 'feedbackWhenChangesRequested',
+    validator: {
+      validate: (value: unknown, args) =>
+        (args?.object as ReviewMediaRequestDto).decision !== ContentReviewDecision.CHANGES_REQUESTED ||
+        (typeof value === 'string' && value.length >= 5),
+      defaultMessage: () => 'comments must be at least 5 characters when changes are requested',
+    },
+  });
 
 /** Steps 8–9: approve the delivered version or send it back with feedback for the studio. */
 export class ReviewMediaRequestDto {
@@ -25,9 +39,13 @@ export class ReviewMediaRequestDto {
     example: 'Phút 03:10 nhân vật chính bị méo mặt, nhờ studio render lại cảnh này.',
     description: 'Required when changes are requested; the Creator forwards it to the studio (BR-18)',
   })
-  @ValidateIf((dto: ReviewMediaRequestDto) => dto.decision === ContentReviewDecision.CHANGES_REQUESTED)
+  @Trim()
+  @ValidateIf(
+    (dto: ReviewMediaRequestDto) =>
+      dto.decision === ContentReviewDecision.CHANGES_REQUESTED || dto.comments !== undefined,
+  )
   @IsString()
-  @MinLength(5)
+  @FeedbackWhenChangesRequested()
   @MaxLength(5000)
   comments?: string;
 }
@@ -41,6 +59,7 @@ export class ApplyAiLabelRequestDto {
   labelType: LabelType;
 
   @ApiProperty({ example: 'Phim được tạo bằng trí tuệ nhân tạo (AI)' })
+  @Trim()
   @IsString()
   @MinLength(5)
   @MaxLength(500)
@@ -61,6 +80,7 @@ class ComplianceItemDto {
   result: 'PASS' | 'FAIL';
 
   @ApiPropertyOptional({ description: 'Required when the item fails' })
+  @Trim()
   @ValidateIf((item: ComplianceItemDto) => item.result === ComplianceResult.FAIL)
   @IsString()
   @MinLength(5)
@@ -92,6 +112,7 @@ export class RunComplianceRequestDto {
   depictsRealPersonOrEvent: boolean;
 
   @ApiPropertyOptional({ description: 'What the misleading depiction is, when there is one' })
+  @Trim()
   @ValidateIf((dto: RunComplianceRequestDto) => dto.depictsRealPersonOrEvent === true)
   @IsString()
   @MinLength(5)

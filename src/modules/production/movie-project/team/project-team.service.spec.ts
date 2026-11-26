@@ -127,15 +127,32 @@ describe('ProjectTeamService', () => {
         { id: 'e1', assignedCreatorId: 'lead' },
         { id: 'e2', assignedCreatorId: null },
       ]);
+      db.episode.updateMany.mockResolvedValue({ count: 2 });
       await service.delegate('p1', dto, LEAD);
       expect(db.projectCreatorAssignment.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ creatorId: 'second', assignedById: 'lead', delegatedFromId: 'lead' }),
       });
       expect(db.episode.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['e1', 'e2'] } },
+        where: {
+          id: { in: ['e1', 'e2'] },
+          movieId: 'p1',
+          OR: [{ assignedCreatorId: 'lead' }, { assignedCreatorId: null }],
+        },
         data: { assignedCreatorId: 'second' },
       });
       expect(actions()).toEqual([CONTENT_EVENT.EPISODE_DELEGATED]);
+    });
+
+    it('refuses the hand-over when an episode was given to someone else meanwhile', async () => {
+      db.episode.findMany.mockResolvedValue([
+        { id: 'e1', assignedCreatorId: 'lead' },
+        { id: 'e2', assignedCreatorId: null },
+      ]);
+      db.episode.updateMany.mockResolvedValue({ count: 1 });
+      await expect(service.delegate('p1', dto, LEAD)).rejects.toMatchObject({
+        response: { details: { reason: 'CHANGED_MEANWHILE' } },
+      });
+      expect(actions()).toEqual([]);
     });
 
     it('refuses delegating to oneself and an episode of another project', async () => {

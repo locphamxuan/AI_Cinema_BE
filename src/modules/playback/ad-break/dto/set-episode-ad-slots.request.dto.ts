@@ -1,18 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { MAX_POSITION_SECONDS } from 'src/modules/playback/watch-progress/dto/position-limit';
 import { MAX_AD_SLOTS_PER_EPISODE } from '../ad-limits';
 
 class EpisodeAdSlotInputDto {
   @ApiProperty({ example: 420, description: 'Second of the episode where the ad is inserted' })
   @IsInt()
   @Min(1)
+  @Max(MAX_POSITION_SECONDS)
   positionSeconds: number;
 
   @ApiPropertyOptional({
     example: null,
     nullable: true,
-    description: 'Ad to play at this cue; empty = weighted draw among the valid ads',
+    description: 'Ad to play at this cue; empty = random draw among the ACTIVE ads',
   })
   @IsOptional()
   @IsUUID('4')

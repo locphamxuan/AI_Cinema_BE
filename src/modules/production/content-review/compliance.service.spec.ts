@@ -1,4 +1,5 @@
-import { complianceVerdicts } from './compliance.service';
+import { ComplianceService, complianceVerdicts } from './compliance.service';
+import { ContentReviewService } from './content-review.service';
 import type { RunComplianceRequestDto } from './dto/content-review.request.dto';
 
 const committed = { aiDisclosure: { noRealPersonLikeness: true }, label: { labelText: 'Phim do AI tạo ra' } };
@@ -50,5 +51,37 @@ describe('Compliance items (BR-42)', () => {
       'CONTENT_SAFETY',
     );
     expect(verdict).toMatchObject({ result: 'FAIL', failureReason: 'Bạo lực quá mức' });
+  });
+});
+
+describe('ComplianceService.run', () => {
+  it('refuses a second run once the first one moved the episode on, recording no verdict', async () => {
+    const tx = {
+      episode: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      complianceCheck: { upsert: jest.fn() },
+      aiContentLabel: { findUnique: jest.fn() },
+    };
+    const asset = {
+      id: 'a1',
+      episodeId: 'e1',
+      ingestStatus: 'READY',
+      episode: { status: 'LABELED', approvedMediaAssetId: 'a1', project: { status: 'IN_PRODUCTION' } },
+    };
+    const reviews = new ContentReviewService({} as never, {} as never, {} as never, {} as never, {} as never);
+    const service = new ComplianceService(
+      { $transaction: jest.fn((work: (db: unknown) => Promise<unknown>) => work(tx)) } as never,
+      { mediaAsset: jest.fn().mockResolvedValue(asset) } as never,
+      reviews,
+      { record: jest.fn() } as never,
+      { notify: jest.fn() } as never,
+    );
+    await expect(service.run('a1', allClear, { id: 'rev' } as never)).rejects.toMatchObject({
+      response: { details: { reason: 'CHANGED_MEANWHILE' } },
+    });
+    expect(tx.episode.updateMany).toHaveBeenCalledWith({
+      where: { id: 'e1', status: 'LABELED', approvedMediaAssetId: 'a1' },
+      data: { status: 'LABELED' },
+    });
+    expect(tx.complianceCheck.upsert).not.toHaveBeenCalled();
   });
 });

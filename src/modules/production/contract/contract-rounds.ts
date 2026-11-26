@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ContractStatus, ProjectStatus, type Prisma } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { PROJECT_REF } from 'src/modules/production/project-access/project-relations';
@@ -49,18 +49,31 @@ export function assertContractStatus(
   }
 }
 
-/** The contract, row-locked, so a double click cannot answer the same round twice; a studio sees only its own. */
+/**
+ * The contract, row-locked, so a double click cannot answer the same round twice; a studio sees only its own.
+ * The project row is locked first, in the order the template send, a studio change and the cost ledger take, so a
+ * signature racing them waits instead of deadlocking, and the budget it reads cannot move until it commits.
+ */
 export async function lockedContract(tx: PrismaTx, contractId: string, studioId?: string): Promise<Detailed> {
   const found = await tx.contract.findUnique({
     where: { id: contractId },
-    select: { id: true, studioId: true, project: { select: { status: true } } },
+    select: { studioId: true, projectId: true, project: { select: { status: true } } },
   });
   if (!found || (studioId && found.studioId !== studioId)) throw new NotFoundException('Contract not found');
   if (!NEGOTIATING_PROJECT_STATUSES.includes(found.project.status)) {
     throw new ConflictException(`The project is ${found.project.status}; its contract can no longer be answered`);
   }
+  await tx.$queryRaw`SELECT id FROM movie_projects WHERE id = ${found.projectId}::uuid FOR UPDATE`;
   await tx.$queryRaw`SELECT id FROM contracts WHERE id = ${contractId}::uuid FOR UPDATE`;
+  // A round closed meanwhile (project cancelled, studio changed) shows in its status, which the caller checks next.
   return tx.contract.findUniqueOrThrow({ where: { id: contractId }, include: CONTRACT_DETAIL });
+}
+
+/** A counter-offer must change the price: the same cost is answered by signing the round instead. */
+export function assertNewCost(contract: Pick<Detailed, 'costVnd'>, costVnd: number): void {
+  if (contract.costVnd !== null && BigInt(costVnd) === contract.costVnd) {
+    throw new BadRequestException('The new cost is the same as the cost of this round; sign the round instead');
+  }
 }
 
 export function reloadContract(tx: PrismaTx, contractId: string): Promise<Detailed> {
@@ -73,7 +86,7 @@ export async function openNextRound(
   contract: Detailed,
   data: Pick<
     Prisma.ContractUncheckedCreateInput,
-    'costVnd' | 'proposedBy' | 'status' | 'adminSignedAt' | 'adminSignedById' | 'studioSignedAt'
+    'costVnd' | 'ceilingVnd' | 'proposedBy' | 'status' | 'adminSignedAt' | 'adminSignedById' | 'studioSignedAt'
   >,
 ): Promise<Detailed> {
   await tx.contract.update({ where: { id: contract.id }, data: { status: ContractStatus.SUPERSEDED } });

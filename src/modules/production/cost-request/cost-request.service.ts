@@ -16,6 +16,9 @@ import { PROJECT_REF } from 'src/modules/production/project-access/project-relat
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
 import type { CostRequestListQueryDto, CreateCostRequestDto } from './dto/cost-request.request.dto';
 
+/** A project takes more production cost while it is planned, produced or fixed (not once cancelled or completed). */
+const FUNDABLE_PROJECT: ProjectStatus[] = [...OPEN_PROJECT_STATUSES, ProjectStatus.UNDER_REVISION];
+
 /** The studio quote or another proof: PDF, DOCX, TXT or an image, at most 10 MB. */
 export const COST_PROOF_MAX_BYTES = 10 * 1024 * 1024;
 const PROOF_KINDS = [FILE_KINDS.pdf, FILE_KINDS.docx, FILE_KINDS.txt, FILE_KINDS.png, FILE_KINDS.jpeg, FILE_KINDS.webp];
@@ -57,11 +60,7 @@ export class CostRequestService {
     user: AuthenticatedUser,
   ) {
     const project = await this.access.project(projectId, user, 'reviewer');
-    assertProjectStatus(
-      project.status,
-      [...OPEN_PROJECT_STATUSES, ProjectStatus.UNDER_REVISION],
-      'ask for more production cost',
-    );
+    assertProjectStatus(project.status, FUNDABLE_PROJECT, 'ask for more production cost');
     if (!proof) throw new BadRequestException('Attach the studio quote or another proof (proof)');
     if (dto.handoffId) await this.assertHandoff(projectId, dto.handoffId);
     const attachment = await this.storeProof(projectId, proof);
@@ -147,6 +146,12 @@ export class CostRequestService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const request = await this.openRequest(tx, requestId);
+      // A project cancelled (or completed) since the request was sent takes no more money; reject the request instead.
+      const { status } = await tx.movieProject.findUniqueOrThrow({
+        where: { id: request.projectId },
+        select: { status: true },
+      });
+      assertProjectStatus(status, FUNDABLE_PROJECT, 'grant more production cost');
       const granted = grantedVnd ?? Number(request.requestedVnd);
       if (granted > Number(request.requestedVnd)) {
         throw new BadRequestException('You cannot grant more than the Reviewer asked for');

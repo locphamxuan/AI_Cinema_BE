@@ -1,6 +1,6 @@
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
-import { noticeAdjusted, noticeReceived, noticeSpent } from './coin-notices';
+import { noticeReceived, noticeSpent } from './coin-notices';
 
 describe('coin notices', () => {
   const tx = {
@@ -48,20 +48,5 @@ describe('coin notices', () => {
     await noticeReceived(notifications, tx, 'w1', 'TOP_UP', m);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(['u1'], expect.objectContaining({ type: 'COIN_RECEIVED' }), tx);
-  });
-
-  it('tells the member what the Admin corrected and why', async () => {
-    await noticeAdjusted(notifications, tx, 'w1', 'Hoàn tiền lỗi phát', {
-      transactionId: 't',
-      mainCoins: 4,
-      bonusCoins: 0,
-      mainBalance: 9,
-      bonusBalance: 0,
-    });
-    expect(notify).toHaveBeenCalledWith(
-      ['u1'],
-      expect.objectContaining({ type: 'COIN_ADJUSTED', title: 'Admin cộng 4 Coin chính' }),
-      tx,
-    );
   });
 });

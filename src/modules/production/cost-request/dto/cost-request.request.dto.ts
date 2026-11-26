@@ -61,10 +61,11 @@ export class CostRequestListQueryDto {
   @IsOptional()
   status?: CostRequestStatus;
 
-  @ApiPropertyOptional({ default: 1 })
+  @ApiPropertyOptional({ default: 1, maximum: 10_000 })
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(10_000)
   @IsOptional()
   page?: number;
 

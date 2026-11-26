@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsDateString, IsOptional } from 'class-validator';
 
 export class RevenueQueryDto {
   @ApiPropertyOptional({ example: '2026-10-01', description: 'Start of the range; 30 days ago when omitted' })
@@ -13,6 +14,11 @@ export class RevenueQueryDto {
   to?: string;
 
   @ApiPropertyOptional({ example: true, description: 'Also return the day-by-day series for the chart' })
+  // A query string is text: implicit conversion would read `?byDay=false` as true.
+  @Transform(({ obj }: { obj: Record<string, unknown> }) =>
+    obj.byDay === 'true' ? true : obj.byDay === 'false' ? false : obj.byDay,
+  )
+  @IsBoolean()
   @IsOptional()
   byDay?: boolean;
 }

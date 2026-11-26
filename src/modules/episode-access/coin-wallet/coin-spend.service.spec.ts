@@ -12,7 +12,7 @@ describe('CoinSpendService.spend', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     coinLot: { findMany: jest.fn(), update: jest.fn().mockResolvedValue({}) },
-    coinTransaction: { findUnique: jest.fn().mockResolvedValue(null), createManyAndReturn: jest.fn() },
+    coinTransaction: { findUnique: jest.fn().mockResolvedValue(null), createMany: jest.fn() },
   };
   const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000 }) };
   const service = new CoinSpendService(settings as unknown as PlatformSettingService);
@@ -31,31 +31,74 @@ describe('CoinSpendService.spend', () => {
     tx.coinTransaction.findUnique.mockResolvedValue(null);
   });
 
+  /** The rows one spend wrote. */
+  const written = () => {
+    const [[call]] = tx.coinTransaction.createMany.mock.calls as [[{ data: Record<string, unknown>[] }]];
+    return call.data;
+  };
+
   it('takes main Coins before bonus Coins and explains every part in the ledger', async () => {
     tx.coinWallet.findUniqueOrThrow.mockResolvedValue({ id: 'w1', mainBalance: 10, bonusBalance: 40 });
     tx.coinLot.findMany.mockResolvedValue([{ id: 'lot-1', remainingAmount: 40 }]);
     tx.coinLot.update.mockResolvedValue({});
-    tx.coinTransaction.createManyAndReturn.mockResolvedValue([{ id: 'tx-1' }, { id: 'tx-2' }]);
 
     const movement = await service.spend(tx as unknown as PrismaTx, 'w1', spendRequest(25));
 
     expect(movement).toEqual({
-      transactionId: 'tx-1',
+      transactionId: expect.any(String),
       mainCoins: 10,
       bonusCoins: 15,
       mainBalance: 0,
       bonusBalance: 25,
     });
-    expect(tx.coinTransaction.createManyAndReturn).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({ mainAmount: -10, bonusAmount: 0, idempotencyKey: undefined }),
-        expect.objectContaining({ mainAmount: 0, bonusAmount: -15, lotId: 'lot-1', idempotencyKey: null }),
-      ],
-    });
+    expect(written()).toEqual([
+      expect.objectContaining({ mainAmount: -10, bonusAmount: 0, idempotencyKey: undefined }),
+      expect.objectContaining({ mainAmount: 0, bonusAmount: -15, lotId: 'lot-1', idempotencyKey: null }),
+    ]);
     expect(tx.coinWallet.updateMany).toHaveBeenCalledWith({
       where: { id: 'w1' },
       data: { mainBalance: 0, bonusBalance: 25, version: { increment: 1 } },
     });
+  });
+
+  it.each([
+    ['no lot (main Coins only)', 50, [], [[-25, 0]]],
+    [
+      'one lot',
+      10,
+      [{ id: 'lot-1', remainingAmount: 40 }],
+      [
+        [-10, 0],
+        [0, -15],
+      ],
+    ],
+    [
+      'many lots, the oldest first',
+      0,
+      [
+        { id: 'lot-1', remainingAmount: 5 },
+        { id: 'lot-2', remainingAmount: 7 },
+        { id: 'lot-3', remainingAmount: 40 },
+      ],
+      [
+        [0, 0],
+        [0, -5],
+        [0, -7],
+        [0, -13],
+      ],
+    ],
+  ])('groups every row of a payment with %s under the id of its first row', async (_case, main, lots, parts) => {
+    const bonus = lots.reduce((sum, lot) => sum + lot.remainingAmount, 0);
+    tx.coinWallet.findUniqueOrThrow.mockResolvedValue({ id: 'w1', mainBalance: main, bonusBalance: bonus });
+    tx.coinLot.findMany.mockResolvedValue(lots);
+
+    const movement = await service.spend(tx as unknown as PrismaTx, 'w1', spendRequest(25));
+
+    const rows = written();
+    expect(rows.map((row) => [row.mainAmount, row.bonusAmount])).toEqual(parts);
+    expect(rows[0].id).toBe(movement.transactionId);
+    expect(rows.every((row) => row.paymentId === movement.transactionId)).toBe(true);
+    expect(rows.slice(1).every((row) => row.id === undefined)).toBe(true);
   });
 
   it('replays the same idempotency key with the main/bonus split of the first charge', async () => {
@@ -82,7 +125,7 @@ describe('CoinSpendService.spend', () => {
       mainBalance: 0,
       bonusBalance: 25,
     });
-    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+    expect(tx.coinTransaction.createMany).not.toHaveBeenCalled();
   });
 
   it('looks the key up only after taking the wallet lock, so a concurrent retry replays', async () => {
@@ -112,7 +155,7 @@ describe('CoinSpendService.spend', () => {
     await expect(
       service.spend(tx as unknown as PrismaTx, 'w1', { ...spendRequest(25), idempotencyKey: 'key-1' }),
     ).rejects.toThrow(ConflictException);
-    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+    expect(tx.coinTransaction.createMany).not.toHaveBeenCalled();
   });
 
   it('refuses a wallet that cannot cover the price, with the gap spelled out', async () => {
@@ -142,7 +185,7 @@ describe('CoinSpendService.spend', () => {
       },
     });
 
-    expect(tx.coinTransaction.createManyAndReturn).not.toHaveBeenCalled();
+    expect(tx.coinTransaction.createMany).not.toHaveBeenCalled();
   });
 
   it('refuses a payment of nothing (BR-45)', async () => {

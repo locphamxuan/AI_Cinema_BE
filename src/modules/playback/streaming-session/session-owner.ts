@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { StreamingSessionStatus } from '@prisma/client';
 
 /** Who is calling a session-owned route: the member, the guest key, or nobody. */
@@ -23,6 +23,14 @@ export function assertLiveSessionOf(
   session: { userId: string | null; guestKey: string | null; status: StreamingSessionStatus },
   caller: SessionCaller,
 ): void {
+  // The route is public, so an expired access token arrives as "no caller": a member's session answers 401
+  // (refresh the token and retry) instead of 403, which the player would read as "stop playing".
+  if (session.userId && !caller.userId) {
+    throw new UnauthorizedException({
+      message: 'Sign in again to keep playing this session',
+      details: { reason: 'SESSION_SIGN_IN_REQUIRED' },
+    });
+  }
   const mine = session.userId
     ? Boolean(caller.userId) && session.userId === caller.userId
     : Boolean(caller.guestKey) && session.guestKey === caller.guestKey;

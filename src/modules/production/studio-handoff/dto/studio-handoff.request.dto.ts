@@ -45,6 +45,7 @@ export class ChangeStudioRequestDto extends StudioChoiceDto {
   seasonId?: string;
 
   @ApiProperty({ example: 'The first studio missed two deadlines.' })
+  @Transform(trimmed)
   @IsString()
   @MinLength(5)
   @MaxLength(2000)

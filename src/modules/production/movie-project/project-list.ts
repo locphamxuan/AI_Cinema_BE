@@ -1,5 +1,6 @@
-import { ChangeRequestStatus, type MovieProject, type Prisma } from '@prisma/client';
+import { ChangeRequestStatus, ProjectStatus, type MovieProject, type Prisma } from '@prisma/client';
 import type { PaginateConfig, PaginateQuery } from '@nestarc/pagination';
+import { anyUuid, assertFilterValues, oneOf } from 'src/common/validation/filter-values';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 
 export const PERSON = { select: { id: true, fullName: true, email: true } } as const;
@@ -27,8 +28,12 @@ export const PROJECT_PAGE: Pick<
   filterableColumns: { status: ['$eq', '$in'], creatorId: ['$eq'] },
 };
 
-/** The title lives on the catalog movie, out of reach of the paginator's own search. */
+/**
+ * The title lives on the catalog movie, out of reach of the paginator's own search. The filters are checked
+ * first: an unknown status or a malformed creator id is a 400, not a database error.
+ */
 export function titledProjects(query: PaginateQuery): Prisma.MovieProjectWhereInput {
+  assertFilterValues(query, { status: oneOf(Object.values(ProjectStatus)), creatorId: anyUuid });
   return query.search ? { movie: { title: { contains: query.search, mode: 'insensitive' } } } : {};
 }
 

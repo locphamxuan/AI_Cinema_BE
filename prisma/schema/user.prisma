@@ -19,6 +19,8 @@ model User {
   phoneNumber     String?   @map("phone_number") @db.VarChar(20)
   role            UserRole  @default(MEMBER)
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  /// When the member ticked "accept the terms of use" at sign-up, by email or by a first Google sign-in.
+  termsAcceptedAt DateTime? @map("terms_accepted_at") @db.Timestamptz(6)
   isActive        Boolean   @default(true) @map("is_active")
   /// Set on STUDIO accounts only: the studio the account speaks for.
   studioId        String?   @map("studio_id") @db.Uuid
@@ -45,6 +47,7 @@ model User {
   contractsCreated        Contract[]                 @relation("ContractCreatedBy")
   contractsSignedAsAdmin  Contract[]                 @relation("ContractAdminSignedBy")
   contractDocuments       ContractDocument[]         @relation("ContractDocumentUploadedBy")
+  contractSignatures      ContractSignature[]        @relation("ContractSignatureUploadedBy")
   costRequestsMade        ProductionCostRequest[]    @relation("CostRequestRequestedBy")
   costRequestsResolved    ProductionCostRequest[]    @relation("CostRequestResolvedBy")
   movieLikes              MovieLike[]
@@ -93,8 +96,8 @@ model User {
   roomParticipations  RoomParticipant[] @relation("RoomParticipantUser")
 
   /// Forgot password: the latest e-mailed OTP is the only live one.
-  passwordResetOtps PasswordResetOtp[]
-  reviewedTransactionFlags TransactionFlag[] @relation("TransactionFlagReviewedBy")
+  passwordResetOtps        PasswordResetOtp[]
+  reviewedTransactionFlags TransactionFlag[]  @relation("TransactionFlagReviewedBy")
 
   @@index([role])
   @@index([studioId])

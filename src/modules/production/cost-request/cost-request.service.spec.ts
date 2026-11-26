@@ -35,7 +35,11 @@ describe('CostRequestService', () => {
     update: jest.fn(),
     findMany: jest.fn(),
   };
-  const db = { productionCostRequest, studioHandoff: { findFirst: jest.fn() } };
+  const db = {
+    productionCostRequest,
+    studioHandoff: { findFirst: jest.fn() },
+    movieProject: { findUniqueOrThrow: jest.fn() },
+  };
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn(), readableWhere: jest.fn() };
   const costs = { lock: jest.fn(), grant: jest.fn() };
@@ -58,6 +62,7 @@ describe('CostRequestService', () => {
     access.project.mockResolvedValue({ id: 'p1', status: ProjectStatus.IN_PRODUCTION, movie: { title: 'Phim' } });
     productionCostRequest.findUnique.mockResolvedValue({ projectId: 'p1' });
     productionCostRequest.findUniqueOrThrow.mockResolvedValue(OPEN_REQUEST);
+    db.movieProject.findUniqueOrThrow.mockResolvedValue({ status: ProjectStatus.IN_PRODUCTION });
   });
 
   it('lets the Reviewer ask once per project, with proof, and tells the Admin', async () => {
@@ -91,6 +96,19 @@ describe('CostRequestService', () => {
       data: expect.objectContaining({ status: 'APPROVED', grantedVnd: 15_000_000n, resolvedById: 'admin' }) as unknown,
     });
     expect(costs.grant).toHaveBeenCalledWith(db, OPEN_REQUEST, 15_000_000, expect.any(String), 'admin');
+  });
+
+  it('grants nothing to a project cancelled since the request was sent; it can still be rejected', async () => {
+    db.movieProject.findUniqueOrThrow.mockResolvedValue({ status: ProjectStatus.CANCELLED });
+    await expect(service.approve('req', undefined, undefined, ADMIN)).rejects.toMatchObject({
+      response: { details: { reason: 'PROJECT_STATUS_NOT_ALLOWED', status: ProjectStatus.CANCELLED } },
+    });
+    expect(costs.grant).not.toHaveBeenCalled();
+    expect(productionCostRequest.update).not.toHaveBeenCalled();
+    await service.reject('req', 'Dự án đã huỷ', ADMIN);
+    expect(productionCostRequest.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) as unknown }),
+    );
   });
 
   it('never grants more than asked nor answers twice', async () => {

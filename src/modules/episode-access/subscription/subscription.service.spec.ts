@@ -394,3 +394,51 @@ describe('SubscriptionService reads', () => {
     });
   });
 });
+
+describe('SubscriptionService.cancel', () => {
+  const prisma = {
+    subscription: { findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  };
+  const notifications = { notify: jest.fn() };
+  const auditLog = { record: jest.fn() };
+  const service = new SubscriptionService(
+    prisma as unknown as PrismaService,
+    {} as CoinSpendService,
+    {} as WalletService,
+    {} as PlatformSettingService,
+    notifications as unknown as NotificationService,
+    auditLog as unknown as AuditLogService,
+  );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-1', userId: 'u1', status: SubscriptionStatus.ACTIVE });
+    prisma.subscription.findUniqueOrThrow.mockResolvedValue({ id: 'sub-1', status: SubscriptionStatus.CANCELLED });
+  });
+
+  it('ends only an open plan, in one conditional update', async () => {
+    prisma.subscription.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.cancel('u1', 'sub-1')).resolves.toMatchObject({ status: SubscriptionStatus.CANCELLED });
+    expect(prisma.subscription.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'sub-1',
+          status: { in: [SubscriptionStatus.PENDING, SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE] },
+        },
+      }),
+    );
+    expect(notifications.notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an expired or already cancelled plan, keeping its history and sending nothing', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-1', userId: 'u1', status: SubscriptionStatus.EXPIRED });
+    prisma.subscription.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.cancel('u1', 'sub-1')).rejects.toMatchObject({
+      response: { details: { reason: SUB_REASON.ENDED } },
+    });
+    expect(notifications.notify).not.toHaveBeenCalled();
+    expect(auditLog.record).not.toHaveBeenCalled();
+  });
+});

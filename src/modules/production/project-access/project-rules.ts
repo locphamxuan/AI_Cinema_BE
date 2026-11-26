@@ -23,15 +23,34 @@ export const EPISODE_STATUSES_BEFORE_APPROVAL: EpisodeStatus[] = [
   EpisodeStatus.CHANGES_REQUESTED,
 ];
 
+/** `details.reason` of a 409 for a step the project or episode status does not allow (stable for the clients). */
+export const STATUS_REASON = {
+  PROJECT: 'PROJECT_STATUS_NOT_ALLOWED',
+  EPISODE: 'EPISODE_STATUS_NOT_ALLOWED',
+  /** A concurrent request (double click, another user) changed the row first; the client reloads. */
+  CHANGED_MEANWHILE: 'CHANGED_MEANWHILE',
+} as const;
+
+/** 409 for a conditional write that found the row already changed by a concurrent request. */
+export function changedMeanwhile(message = 'The episode changed meanwhile; reload it'): ConflictException {
+  return new ConflictException({ message, details: { reason: STATUS_REASON.CHANGED_MEANWHILE } });
+}
+
 export function assertProjectStatus(status: ProjectStatus, allowed: ProjectStatus[], action: string): void {
   if (!allowed.includes(status)) {
-    throw new ConflictException(`Cannot ${action} while the project is ${status}`);
+    throw new ConflictException({
+      message: `Cannot ${action} while the project is ${status}`,
+      details: { reason: STATUS_REASON.PROJECT, status, allowed },
+    });
   }
 }
 
 export function assertEpisodeStatus(status: EpisodeStatus, allowed: EpisodeStatus[], action: string): void {
   if (!allowed.includes(status)) {
-    throw new ConflictException(`Cannot ${action} while the episode is ${status}`);
+    throw new ConflictException({
+      message: `Cannot ${action} while the episode is ${status}`,
+      details: { reason: STATUS_REASON.EPISODE, status, allowed },
+    });
   }
 }
 

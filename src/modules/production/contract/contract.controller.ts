@@ -18,7 +18,7 @@ import { RequirePermission } from 'src/common/decorators/require-permission.deco
 import { ContractDocumentService } from './contract-document.service';
 import { ContractService } from './contract.service';
 import { ContractCostRequestDto, CreateContractRequestDto } from './dto/contract.request.dto';
-import { SignedPdfUpload } from './signed-pdf-upload';
+import { SignatureUpload } from './signature-upload';
 import { ContractTemplateService } from './template/contract-template.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -57,10 +57,10 @@ export class ContractController {
   @Post('contracts/:contractId/sign')
   @HttpCode(200)
   @RequirePermission(PERMISSION.CONTRACT_MANAGE)
-  @SignedPdfUpload()
+  @SignatureUpload()
   @ApiOperation({
     summary:
-      "Admin: agree with the studio's cost by uploading the contract PDF signed by AI Cinema; both signatures complete the contract",
+      "Admin: agree with the studio's cost by uploading AI Cinema's signature image; both signatures complete the contract and the FINAL copy is rendered",
   })
   sign(
     @Param('contractId', ID) contractId: string,
@@ -73,10 +73,10 @@ export class ContractController {
   @Post('contracts/:contractId/counter')
   @HttpCode(200)
   @RequirePermission(PERMISSION.CONTRACT_MANAGE)
-  @SignedPdfUpload('required')
+  @SignatureUpload('required')
   @ApiOperation({
     summary:
-      'Admin: send a cost with the contract PDF already signed by AI Cinema (on the template or on the studio offer); the studio then uploads its signed copy',
+      "Admin: sign the contract for a new cost with AI Cinema's signature image (on the template or on the studio offer); the studio then signs it",
   })
   counter(
     @Param('contractId', ID) contractId: string,
@@ -89,7 +89,9 @@ export class ContractController {
 
   @Get('contracts/:contractId/documents')
   @RequirePermission(PERMISSION.CONTRACT_DOCUMENT_READ)
-  @ApiOperation({ summary: 'The signed PDFs of a round: the Admin side, the studio side and the merged document' })
+  @ApiOperation({
+    summary: 'The signed copies of a round: with the Admin signature, the studio one, and FINAL with both',
+  })
   documentsOf(@Param('contractId', ID) contractId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.documents.list(contractId, user);
   }
@@ -105,7 +107,7 @@ export class ContractController {
 
   @Get('contracts/:contractId/documents/:side/content')
   @RequirePermission(PERMISSION.CONTRACT_DOCUMENT_READ)
-  @ApiOperation({ summary: 'Download ADMIN, STUDIO or FINAL — the FINAL one carries both signatures' })
+  @ApiOperation({ summary: 'Download the ADMIN, STUDIO or FINAL signed copy — the FINAL one carries both signatures' })
   download(
     @Param('contractId', ID) contractId: string,
     @Param('side', SIDE) side: ContractDocumentSide,

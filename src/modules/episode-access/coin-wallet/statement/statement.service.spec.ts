@@ -90,6 +90,7 @@ describe('StatementService.line', () => {
       bonusBalanceAfter: 0,
       reversesId: null,
       lotId: null,
+      paymentId: null,
     });
 
     await expect(service.line('u1', 'tx-1')).resolves.toMatchObject({
@@ -98,6 +99,7 @@ describe('StatementService.line', () => {
       mainBalanceAfter: 50,
       reversesId: null,
       lotId: null,
+      paymentId: null,
     });
     expect(prisma.coinTransaction.findFirst).toHaveBeenCalledWith({
       where: { id: 'tx-1', walletId: 'w1' },
@@ -132,7 +134,7 @@ describe('StatementService.ledger', () => {
         mainBalanceAfter: 50,
         bonusBalanceAfter: 0,
         walletId: 'w1',
-        wallet: { userId: 'u1' },
+        wallet: { userId: 'u1', user: { id: 'u1', fullName: 'Trần Thu Hà', email: 'ha@test.vn' } },
       },
     ]);
     prisma.coinTransaction.count.mockResolvedValue(1);
@@ -144,6 +146,33 @@ describe('StatementService.ledger', () => {
     expect(prisma.coinTransaction.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ walletId: 'w1' }) }),
     );
-    expect(page.data).toEqual([expect.objectContaining({ id: 'tx-1', walletId: 'w1', userId: 'u1', mainAmount: 50 })]);
+    expect(page.data).toEqual([
+      expect.objectContaining({
+        id: 'tx-1',
+        walletId: 'w1',
+        userId: 'u1',
+        mainAmount: 50,
+        account: { id: 'u1', fullName: 'Trần Thu Hà', email: 'ha@test.vn' },
+      }),
+    ]);
+  });
+
+  it('narrows the ledger to the accounts whose name or email holds the text', async () => {
+    await service.ledger({ kind: 'ALL', account: 'Hà' }, query);
+
+    expect(prisma.coinTransaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          wallet: {
+            user: {
+              OR: [
+                { email: { contains: 'Hà', mode: 'insensitive' } },
+                { fullName: { contains: 'Hà', mode: 'insensitive' } },
+              ],
+            },
+          },
+        }),
+      }),
+    );
   });
 });

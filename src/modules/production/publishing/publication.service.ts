@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
-  ComplianceResult,
   EpisodeStatus,
   ProjectStatus,
   type Episode,
@@ -22,11 +21,13 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import {
   assertEpisodeStatus,
   assertProjectStatus,
+  changedMeanwhile,
   DELIVERY_PROJECT_STATUSES,
 } from 'src/modules/production/project-access/project-rules';
 import type { PublishEpisodeRequestDto, UnpublishRequestDto } from './dto/publishing.request.dto';
 import { EpisodeRevisionService } from './episode-revision.service';
 import { isRefusal, withdrawFailedRelease } from './failed-release';
+import { announceTakedown, missingForRelease } from './release-gate';
 import { RoomTerminationService } from 'src/modules/playback/watch-room/room-termination.service';
 import { liftProject, WITH_PROJECT } from 'src/modules/production/project-access/project-relations';
 
@@ -39,8 +40,6 @@ const RELEASABLE: EpisodeStatus[] = [
   EpisodeStatus.UNPUBLISHED,
   EpisodeStatus.SCHEDULED,
 ];
-
-const COMPLIANCE_ITEMS = 4;
 
 type EpisodeWithMovie = Episode & { movie: Movie };
 
@@ -138,7 +137,7 @@ export class PublicationService {
           unpublishedById: user.id,
         },
       });
-      if (count === 0) throw new ConflictException('The release changed meanwhile; reload it');
+      if (count === 0) throw changedMeanwhile('The release changed meanwhile; reload it');
       if (mode === UnpublishMode.REVISION) {
         mailId = await this.revisions.sendBack(tx, publication, user.id, dto.note.trim());
       } else {
@@ -161,6 +160,7 @@ export class PublicationService {
         },
         tx,
       );
+      if (live) await announceTakedown(tx, this.notifications, episode, { mode, note: dto.note.trim(), publicationId });
     });
     await this.revisions.announce(mailId);
     // The episode is down: drop its HLS objects from the edge cache, so a signed URL issued
@@ -217,25 +217,8 @@ export class PublicationService {
   }
 
   /** What still blocks the release (BR-19, step 12); empty when it can go out. */
-  async missingForRelease(episode: EpisodeWithMovie): Promise<string[]> {
-    const missing: string[] = [];
-    const mediaAssetId = episode.approvedMediaAssetId;
-    if (!mediaAssetId) missing.push('an approved media version');
-    if (episode.status === EpisodeStatus.COMPLIANCE_PASSED && !episode.finalConfirmedAt) {
-      missing.push('the Final Film confirmation of the Reviewer');
-    }
-    if (episode.coinPrice === null) missing.push('a Coin price (BR-29)');
-    if (!episode.movie.synopsis?.trim()) missing.push('the movie synopsis');
-    if (!episode.movie.ageRating) missing.push('the movie age rating');
-    if (mediaAssetId) {
-      const [label, passed] = await Promise.all([
-        this.prisma.aiContentLabel.count({ where: { mediaAssetId } }),
-        this.prisma.complianceCheck.count({ where: { mediaAssetId, result: ComplianceResult.PASS } }),
-      ]);
-      if (!label) missing.push('an AI label (BR-40)');
-      if (passed < COMPLIANCE_ITEMS) missing.push('a passed compliance check (BR-42)');
-    }
-    return missing;
+  missingForRelease(episode: EpisodeWithMovie): Promise<string[]> {
+    return missingForRelease(this.prisma, episode);
   }
 
   /** Publishes now: the release goes out, the episode is PUBLISHED, the project may be complete. */
@@ -245,7 +228,7 @@ export class PublicationService {
       where: { id: publication.id, publishedAt: null, unpublishedAt: null },
       data: { publishedAt: now },
     });
-    if (count === 0) throw new ConflictException('The release changed meanwhile; reload it');
+    if (count === 0) throw changedMeanwhile('The release changed meanwhile; reload it');
     const episode = liftProject(
       await tx.episode.findUniqueOrThrow({ where: { id: publication.episodeId }, include: WITH_PROJECT }),
     );
@@ -295,6 +278,6 @@ export class PublicationService {
       where: { id: episode.id, status: episode.status },
       data: { status },
     });
-    if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+    if (count === 0) throw changedMeanwhile('The episode changed meanwhile; reload it');
   }
 }

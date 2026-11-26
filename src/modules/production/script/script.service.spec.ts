@@ -57,11 +57,16 @@ describe('ScriptService (MF-1 §2)', () => {
       data: expect.objectContaining({ projectId: 'p1', version: 1, content: 'CẢNH 1' }),
     });
     expect(notifications.notify).toHaveBeenCalledWith(['rev'], expect.anything(), db);
+    // Concurrent submissions queue on the project row, so they never take the same version number.
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a new version while the current one waits for its review', async () => {
     const { service } = setup({ status: ScriptStatus.SUBMITTED, currentVersion: 1 });
     await expect(service.submit('p1', { content: 'x' }, CREATOR)).rejects.toThrow(ConflictException);
+    await expect(service.submit('p1', { content: 'x' }, CREATOR)).rejects.toMatchObject({
+      response: { details: { reason: 'SCRIPT_STATUS_NOT_ALLOWED', status: ScriptStatus.SUBMITTED } },
+    });
   });
 
   it('passes an approved version on to the Admins', async () => {

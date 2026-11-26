@@ -11,14 +11,8 @@ export class AdViewDto {
   @ApiProperty({ example: 'https://cdn.aicinema.example/public/ads/gongcha-15s.mp4' })
   mediaUrl: string;
 
-  @ApiProperty({ example: null, nullable: true })
-  clickUrl: string | null;
-
   @ApiProperty({ example: 15, description: 'Read from the video when it is set; the viewer watches all of it' })
   durationSeconds: number;
-
-  @ApiProperty({ example: 3 })
-  weight: number;
 
   @ApiProperty({ enum: AdStatus, example: 'ACTIVE' })
   status: AdStatus;

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ComplianceCheckType, ComplianceResult, EpisodeStatus, PolicyType } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
@@ -7,7 +7,11 @@ import { NotificationService } from 'src/modules/platform/notification/notificat
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
-import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import {
+  assertProjectStatus,
+  changedMeanwhile,
+  DELIVERY_PROJECT_STATUSES,
+} from 'src/modules/production/project-access/project-rules';
 import { activePolicyId } from 'src/modules/platform/policy/active-policy';
 import { ContentReviewService, type ReviewedAsset } from './content-review.service';
 import type { RunComplianceRequestDto } from './dto/content-review.request.dto';
@@ -90,6 +94,13 @@ export class ComplianceService {
 
     let mailId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
+      // Claims the episode row: a second run at once (double click, other verdicts) waits here, then finds the
+      // episode no longer LABELED and is refused instead of recording a second, conflicting verdict.
+      const { count: claimed } = await tx.episode.updateMany({
+        where: { id: asset.episodeId, status: EpisodeStatus.LABELED, approvedMediaAssetId: asset.id },
+        data: { status: EpisodeStatus.LABELED },
+      });
+      if (claimed === 0) throw changedMeanwhile();
       const label = await tx.aiContentLabel.findUnique({ where: { mediaAssetId: asset.id } });
       const verdicts = complianceVerdicts({ aiDisclosure: asset.aiDisclosure, label }, dto);
       await this.record(tx, asset.id, verdicts, user.id);
@@ -119,7 +130,7 @@ export class ComplianceService {
         where: { id: asset.episodeId, status: EpisodeStatus.LABELED, approvedMediaAssetId: asset.id },
         data: { status: EpisodeStatus.COMPLIANCE_PASSED },
       });
-      if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+      if (count === 0) throw changedMeanwhile('The episode changed meanwhile; reload it');
       // MF-1 oversight: the Admins follow each step (fan-out in NotificationService).
       await this.notifications.notify(
         [],

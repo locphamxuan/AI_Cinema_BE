@@ -3,13 +3,19 @@ import type { Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { unicodeFontPath } from 'src/infrastructure/pdf/unicode-font';
-import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { ContractHandoffService } from '../contract-handoff.service';
 import { BLANK, type ContractDraft } from './contract-clauses';
 import { platformParty, studioParty } from './contract-parties';
-import { contractKeywords, renderContractPdf, type SignatureMark } from './contract-template-pdf';
+import {
+  contractKeywords,
+  renderContractPdf,
+  vnDay,
+  type ContractSide,
+  type SignatureStamp,
+} from './contract-template-pdf';
 
 const TEMPLATE_SOURCE = {
   id: true,
@@ -17,6 +23,7 @@ const TEMPLATE_SOURCE = {
   projectId: true,
   handoffId: true,
   costVnd: true,
+  ceilingVnd: true,
   status: true,
   createdAt: true,
   studio: {
@@ -28,6 +35,7 @@ const TEMPLATE_SOURCE = {
       address: true,
       taxCode: true,
       bankAccount: true,
+      bankName: true,
       representativeTitle: true,
     },
   },
@@ -50,16 +58,7 @@ const TEMPLATE_SOURCE = {
 
 type Source = Prisma.ContractGetPayload<{ select: typeof TEMPLATE_SOURCE }>;
 
-const VN_DATE = new Intl.DateTimeFormat('vi-VN', {
-  timeZone: 'Asia/Ho_Chi_Minh',
-  day: '2-digit',
-  month: '2-digit',
-  year: 'numeric',
-});
-const FOOTNOTE = 'Hợp đồng do Hệ thống AI Cinema tạo; mỗi bên ký, đóng dấu rồi tải bản PDF đã ký lên hệ thống.';
-
-/** dd/mm/yyyy in Vietnam time. */
-export const vnDay = (date: Date) => VN_DATE.format(date);
+const FOOTNOTE = 'Hợp đồng do Hệ thống AI Cinema tạo; mỗi bên ký bằng cách tải ảnh chữ ký của mình lên hệ thống.';
 
 /** "17 tháng 11 năm 2026" as a contract preamble writes it. */
 export function longVnDay(date: Date): string {
@@ -70,7 +69,8 @@ export function longVnDay(date: Date): string {
 /**
  * The contract of a round as a PDF (MF-1 §3): the 14 articles filled with the project, Bên A from the platform
  * settings, Bên B from the studio catalogue, and priced at the budget ceiling until a side proposed another cost.
- * Generated on every download from the data as it is now; nothing is stored until a side uploads its signed copy.
+ * The unsigned contract is generated on every download from the data as it is now; the signed copies are the same
+ * rendering with the uploaded signature images drawn in (signedCopy), stored when a side signs.
  */
 @Injectable()
 export class ContractTemplateService {
@@ -99,40 +99,44 @@ export class ContractTemplateService {
     return this.file(contract, await this.render(contract));
   }
 
-  /** The same contract with signatures drawn in: what the demo seed and `contracts:sign-demo` upload. */
-  async signedCopy(contractId: string, marks: SignatureMark[]): Promise<Buffer> {
-    return this.render(await this.load({ id: contractId }), marks);
+  /** The same contract, read through the signing transaction, with the given signatures drawn in. */
+  async signedCopy(client: PrismaTx, contractId: string, stamps: SignatureStamp[]): Promise<Buffer> {
+    return this.render(await this.load({ id: contractId }, client), stamps, client);
   }
 
-  private async load(where: Prisma.ContractWhereInput): Promise<Source> {
-    const contract = await this.prisma.contract.findFirst({ where, select: TEMPLATE_SOURCE });
+  /** Who signs for a side, as the contract prints it now: the representative and title of that party. */
+  async signer(client: PrismaTx, contractId: string, side: ContractSide): Promise<{ name: string; title: string }> {
+    const { partyA, partyB } = await this.draft(await this.load({ id: contractId }, client), client);
+    const party = side === 'ADMIN' ? partyA : partyB;
+    return { name: party.representative, title: party.title };
+  }
+
+  private async load(where: Prisma.ContractWhereInput, client: PrismaTx = this.prisma): Promise<Source> {
+    const contract = await client.contract.findFirst({ where, select: TEMPLATE_SOURCE });
     if (!contract) throw new NotFoundException('Contract not found');
     return contract;
   }
 
-  private async render(contract: Source, marks: SignatureMark[] = []): Promise<Buffer> {
-    return renderContractPdf(await this.draft(contract), {
+  private async render(contract: Source, stamps: SignatureStamp[] = [], client?: PrismaTx): Promise<Buffer> {
+    return renderContractPdf(await this.draft(contract, client), {
       fontPath: this.fontPath,
       footnote: FOOTNOTE,
       keywords: contractKeywords(contract.projectId, contract.id),
-      marks,
+      stamps,
     });
   }
 
   private file(contract: Source, pdf: Buffer): StreamableFile {
     return new StreamableFile(pdf, {
       type: 'application/pdf',
-      disposition: `attachment; filename="hop-dong-${contractNo(contract)}.pdf"`,
+      disposition: `attachment; filename="hop-dong-chua-ky-${contractNo(contract)}.pdf"`,
       length: pdf.length,
     });
   }
 
-  private async draft(contract: Source): Promise<ContractDraft> {
+  private async draft(contract: Source, client: PrismaTx = this.prisma): Promise<ContractDraft> {
     const { movie } = contract.project;
-    const [settings, budgetVnd] = await Promise.all([
-      this.settings.get(),
-      this.handoffs.budgetOf(this.prisma, contract),
-    ]);
+    const [settings, budgetVnd] = await Promise.all([this.settings.get(), this.handoffs.budgetOf(client, contract)]);
     return {
       contractNo: contractNo(contract),
       day: longVnDay(contract.createdAt),
@@ -154,7 +158,10 @@ export class ContractTemplateService {
   }
 }
 
-/** "AIC-2026-9F2B4C6E-R1": year, the start of the round id and the round. */
-function contractNo(contract: Pick<Source, 'id' | 'round' | 'createdAt'>): string {
+/**
+ * "AIC-2026-9F2B4C6E-R1": year, the start of the round id and the round. Printed on the contract and part of every
+ * file name of the round, so copies of different projects never share a name in a Downloads folder.
+ */
+export function contractNo(contract: Pick<Source, 'id' | 'round' | 'createdAt'>): string {
   return `AIC-${contract.createdAt.getUTCFullYear()}-${contract.id.slice(0, 8).toUpperCase()}-R${contract.round}`;
 }

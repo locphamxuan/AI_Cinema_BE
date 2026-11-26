@@ -32,6 +32,15 @@ export function isAdult(dateOfBirth: Date, today = new Date()): boolean {
   return birthday.getTime() <= today.getTime();
 }
 
+/** The oldest birthday an account may give; anything earlier is a typing error, not a person. */
+export const EARLIEST_BIRTH_DATE = new Date(Date.UTC(1900, 0, 1));
+
+/** A birthday a person can have: not before 1900 and not in the future. */
+export function isPlausibleBirthDate(dateOfBirth: Date, today = new Date()): boolean {
+  const time = dateOfBirth.getTime();
+  return Number.isFinite(time) && time >= EARLIEST_BIRTH_DATE.getTime() && time <= today.getTime();
+}
+
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }

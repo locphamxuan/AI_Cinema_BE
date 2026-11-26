@@ -11,7 +11,11 @@ import { NotificationService } from 'src/modules/platform/notification/notificat
 import { ProjectAccessService, type TitledProject } from 'src/modules/production/project-access/project-access.service';
 import { ContractService } from 'src/modules/production/contract/contract.service';
 import { ProjectLifecycleService } from 'src/modules/production/movie-project/project-lifecycle.service';
-import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import {
+  assertProjectStatus,
+  changedMeanwhile,
+  DELIVERY_PROJECT_STATUSES,
+} from 'src/modules/production/project-access/project-rules';
 import { ProductionCostService } from 'src/modules/production/production-cost/production-cost.service';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
 import { StudioService } from 'src/modules/production/studio/studio.service';
@@ -89,11 +93,14 @@ export class StudioHandoffService {
     const handoff: NewHandoff = { studio, seasonId, brief, reason: dto.reason.trim(), forfeitedVnd };
 
     const mailId = await this.prisma.$transaction(async (tx) => {
+      // Two studio changes at once would both replace the same hand-off: the second one finds it superseded.
+      await this.costs.lock(tx, projectId);
       for (const { id, forfeitedVnd: kept } of forfeited) {
-        await tx.studioHandoff.update({
-          where: { id },
+        const { count } = await tx.studioHandoff.updateMany({
+          where: { id, milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },
           data: { milestoneStatus: StudioMilestoneStatus.SUPERSEDED, forfeitedVnd: BigInt(kept) },
         });
+        if (count === 0) throw changedMeanwhile('The studio of this project changed meanwhile; reload it');
       }
       await tx.studioMilestoneEvent.createMany({
         data: replaced.map((old) => ({

@@ -18,6 +18,7 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import {
   assertEpisodeStatus,
   assertProjectStatus,
+  changedMeanwhile,
   DELIVERY_PROJECT_STATUSES,
 } from 'src/modules/production/project-access/project-rules';
 import { StudioMailService } from 'src/modules/production/studio/studio-mail.service';
@@ -30,6 +31,14 @@ export const REVIEWED_STATUSES: EpisodeStatus[] = [
   EpisodeStatus.LABELED,
   EpisodeStatus.COMPLIANCE_PASSED,
 ];
+
+/** 409 for a review step on a version that is not the one the episode is reviewed with. */
+function notCurrentVersion(): ConflictException {
+  return new ConflictException({
+    message: 'This is not the version under review; open the latest one',
+    details: { reason: 'NOT_CURRENT_VERSION' },
+  });
+}
 
 /** BR-31: an actual length this far from the target is flagged on the review sheet. */
 const DURATION_WARNING_RATIO = 0.2;
@@ -52,6 +61,8 @@ export class ContentReviewService {
     const asset = await this.access.mediaAsset(mediaAssetId, user, 'reviewer');
     assertProjectStatus(asset.episode.project.status, DELIVERY_PROJECT_STATUSES, 'review media');
 
+    // While the episode is IN_REVIEW only its newest delivery is judged, never an older version that was READY.
+    if (asset.episode.status === EpisodeStatus.IN_REVIEW) await this.assertLatestVersion(asset);
     if (dto.decision === ContentReviewDecision.CHANGES_REQUESTED) {
       this.assertUnderReview(asset, [EpisodeStatus.IN_REVIEW, ...REVIEWED_STATUSES]);
       await this.announce(
@@ -94,7 +105,7 @@ export class ContentReviewService {
         finalConfirmedById: null,
       },
     });
-    if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+    if (count === 0) throw changedMeanwhile('The episode changed meanwhile; reload it');
     await reopenOnChanges(tx, this.auditLog, {
       handoffId: asset.studioHandoffId,
       projectId: episode.movieId,
@@ -197,7 +208,16 @@ export class ContentReviewService {
       episode.status === EpisodeStatus.IN_REVIEW
         ? asset.ingestStatus === MediaIngestStatus.READY
         : episode.approvedMediaAssetId === asset.id;
-    if (!current) throw new ConflictException('This is not the version under review; open the latest one');
+    if (!current) throw notCurrentVersion();
+  }
+
+  private async assertLatestVersion(asset: ReviewedAsset): Promise<void> {
+    const latest = await this.prisma.mediaAsset.findFirst({
+      where: { episodeId: asset.episodeId },
+      orderBy: { version: 'desc' },
+      select: { id: true },
+    });
+    if (latest?.id !== asset.id) throw notCurrentVersion();
   }
 
   private async approve(
@@ -211,7 +231,7 @@ export class ContentReviewService {
       where: { id: episode.id, status: EpisodeStatus.IN_REVIEW },
       data: { status: EpisodeStatus.APPROVED, approvedMediaAssetId: asset.id },
     });
-    if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+    if (count === 0) throw changedMeanwhile('The episode changed meanwhile; reload it');
     const review = await tx.contentReview.create({
       data: { mediaAssetId: asset.id, reviewerId, decision: ContentReviewDecision.APPROVED, comments },
     });

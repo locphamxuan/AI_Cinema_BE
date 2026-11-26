@@ -5,7 +5,7 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
-import { planOf, SUB_REASON, subscriptionNotFound } from './subscription-rules';
+import { OPEN_STATUSES, planOf, SUB_REASON, subscriptionNotFound } from './subscription-rules';
 
 /** The back office's side of a subscription: reading it for support and ending it with Admin rights. */
 @Injectable()
@@ -40,7 +40,7 @@ export class SubscriptionAdminService {
       const ended = await tx.subscription.updateMany({
         where: {
           id: subscriptionId,
-          status: { in: [SubscriptionStatus.PENDING, SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE] },
+          status: { in: OPEN_STATUSES },
         },
         data: {
           status: SubscriptionStatus.CANCELLED,

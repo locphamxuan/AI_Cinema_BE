@@ -137,3 +137,24 @@ describe('Catalog movie list', () => {
     );
   });
 });
+
+describe('Catalog episodes of a season', () => {
+  const prisma = { movie: { findFirst: jest.fn() }, episode: { findMany: jest.fn() } };
+  const service = new CatalogService(prisma as unknown as PrismaService, {} as unknown as PlatformSettingService);
+
+  it.each([0, -1, 2_147_483_648])('refuses ?season=%s with 400 SEASON_NUMBER_INVALID before any query', async (n) => {
+    await expect(service.episodes('m1', n)).rejects.toMatchObject({
+      response: { details: { reason: 'SEASON_NUMBER_INVALID' } },
+    });
+    expect(prisma.movie.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('filters by a valid season number', async () => {
+    prisma.movie.findFirst.mockResolvedValue({ id: 'm1' });
+    prisma.episode.findMany.mockResolvedValue([]);
+    await service.episodes('m1', 2);
+    expect(prisma.episode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ season: { seasonNumber: 2 } }) }),
+    );
+  });
+});

@@ -197,14 +197,7 @@ export class StaffSupportService {
     if (conversation.status === SupportStatus.AI_HANDLING) {
       throw new ConflictException('The AI assistant still handles this case; Staff replies once it is escalated');
     }
-    if (
-      conversation.status === SupportStatus.STAFF_HANDLING &&
-      conversation.assignedAgentId &&
-      conversation.assignedAgentId !== user.id &&
-      user.role !== 'ADMIN'
-    ) {
-      throw new ForbiddenException('This case is assigned to another Staff member');
-    }
+    assertNotOthersCase(conversation, user);
 
     const message = await this.prisma.$transaction(async (tx) => {
       let current: SupportConversation = conversation;
@@ -264,8 +257,11 @@ export class StaffSupportService {
     return { conversation: staffCaseView(await this.caseById(id)), message: messageView(message) };
   }
 
-  async resolve(id: string, staffId: string, note?: string): Promise<SupportStaffCaseView> {
-    await this.resolution.staffResolve(id, staffId, note);
+  /** Only the assignee (or an Admin) closes the work on a case another Staff member is handling. */
+  async resolve(id: string, user: AuthenticatedUser, note?: string | null): Promise<SupportStaffCaseView> {
+    const conversation = await this.conversations.findById(id);
+    assertNotOthersCase(conversation, user);
+    await this.resolution.staffResolve(id, user.id, note ?? undefined);
     return staffCaseView(await this.caseById(id));
   }
 
@@ -288,4 +284,16 @@ export class StaffSupportService {
 function truncatePreview(value: string): string {
   const text = value.trim();
   return text.length <= 200 ? text : `${text.slice(0, 200)}�?�`;
+}
+
+/** A case another Staff member is handling is answered or resolved only by them or an Admin. */
+function assertNotOthersCase(conversation: SupportConversation, user: AuthenticatedUser): void {
+  if (
+    conversation.status === SupportStatus.STAFF_HANDLING &&
+    conversation.assignedAgentId &&
+    conversation.assignedAgentId !== user.id &&
+    user.role !== 'ADMIN'
+  ) {
+    throw new ForbiddenException('This case is assigned to another Staff member');
+  }
 }

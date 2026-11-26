@@ -59,7 +59,7 @@ export const SUPPORT_TOOL_DEFINITIONS: SupportToolDefinition[] = [
   {
     name: SUPPORT_TOOL.GET_REWARD_STATUS,
     description:
-      'Điểm danh hôm nay đã nhận chưa, chuỗi ngày điểm danh, phần thưởng các mốc, Coin thưởng sắp hết hạn, số lượt vòng quay còn lại.',
+      'Điểm danh hôm nay đã nhận chưa, chuỗi ngày điểm danh, phần thưởng các mốc, số dư Coin, số lượt vòng quay còn lại.',
     parameters: noArguments,
   },
   {
@@ -75,7 +75,8 @@ export const SUPPORT_TOOL_DEFINITIONS: SupportToolDefinition[] = [
   },
   {
     name: SUPPORT_TOOL.GET_MEMBER_WALLET,
-    description: 'Số dư Coin chính và Coin thưởng, cùng hạn dùng của các lô Coin thưởng sắp hết hạn.',
+    description:
+      'Số dư Coin chính và Coin thưởng, cùng các lô Coin thưởng còn lại (không hết hạn, lô nhận trước dùng trước).',
     parameters: noArguments,
   },
   {
@@ -135,7 +136,8 @@ export const SUPPORT_TOOL_DEFINITIONS: SupportToolDefinition[] = [
   },
   {
     name: SUPPORT_TOOL.GET_PLATFORM_POLICY_SNAPSHOT,
-    description: 'Các chính sách đang áp dụng: tỷ giá Coin, hạn Coin thưởng, khoảng nạp, cửa sổ hủy gói.',
+    description:
+      'Các chính sách đang áp dụng: tỷ giá Coin, Coin thưởng không hết hạn, khoảng nạp, số giờ trước kỳ gia hạn để tắt tự gia hạn.',
     parameters: noArguments,
   },
 ];

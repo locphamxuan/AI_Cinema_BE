@@ -1,179 +1,169 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { ContractDocumentSide } from '@prisma/client';
-import { detectKind, FILE_KINDS, safeFileName } from 'src/common/validation/uploaded-file';
-import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
+import { FILE_KINDS } from 'src/common/validation/uploaded-file';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
-import { unicodeFontPath } from 'src/infrastructure/pdf/unicode-font';
 import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import { removeQuietly } from 'src/infrastructure/storage/remove-quietly';
-import { assertUsableCounterpart, mergeSignedCounterparts, type SignedSummary } from './contract-pdf';
-import type { Detailed } from './contract-rounds';
+import { readSignatureImage, type SignatureImage } from './signature-image';
+import type { ContractSide, SignatureStamp } from './template/contract-template-pdf';
+import { contractNo, ContractTemplateService } from './template/contract-template.service';
 
-/** BR-13 sizing: a signed contract is a short document, 10 MB is already generous for a scan. */
-export const CONTRACT_PDF_MAX_BYTES = 10 * 1024 * 1024;
+/** One party of a contract: ADMIN (Bên A) or STUDIO (Bên B); FINAL is the system's copy, never a signer. */
+export type SigningSide = typeof ContractDocumentSide.ADMIN | typeof ContractDocumentSide.STUDIO;
 
-/** A counterpart written to private storage, waiting for its row to be created in the signing transaction. */
-export interface StoredPdf {
-  side: ContractDocumentSide;
-  storageKey: string;
-  fileName: string;
-  sizeBytes: number;
-  checksum: string;
-}
-
-/** What one side's upload produced: its own counterpart and, when it completed the round, the merged document. */
+/** A signature image validated and written to private storage, waiting for the signing transaction. */
 export interface PreparedSignature {
+  projectId: string;
+  side: SigningSide;
   signedAt: Date;
-  counterpart: StoredPdf;
-  final: StoredPdf | null;
+  image: SignatureImage & { storageKey: string; checksum: string };
+  /** Every object written for this signing, taken back by `discard` if the transaction fails. */
+  written: string[];
 }
 
-export interface SignatureRequest {
-  contract: Detailed;
-  side: ContractDocumentSide;
-  /** True when this upload is the second signature of the round, so the final document is built now. */
-  completes: boolean;
-  /** Name printed on the closing page of the merged document for the side signing now. */
-  signerName: string;
-  /** The cost both sides agreed on; only read when the round is completed. */
-  costVnd: bigint | null;
-}
+const COPY_NAMES: Record<ContractDocumentSide, string> = {
+  ADMIN: 'hop-dong-ai-cinema-da-ky',
+  STUDIO: 'hop-dong-studio-da-ky',
+  FINAL: 'hop-dong-du-chu-ky',
+};
+
+const sha256 = (body: Buffer) => createHash('sha256').update(body).digest('hex');
+const otherSide = (side: SigningSide): SigningSide =>
+  side === ContractDocumentSide.ADMIN ? ContractDocumentSide.STUDIO : ContractDocumentSide.ADMIN;
 
 /**
- * MF-1 (10/11/2026): the signatures of a contract are PDFs, not clicks. This service validates a side's
- * uploaded counterpart, stores it privately, and — when it is the second one — merges both into one final
- * document carrying the two signatures. Storage is written before the signing transaction and rolled back
- * with `discard` if that transaction fails, so the database never points at an object that is not there.
+ * MF-1 signing by signature image (22/11/2026): each side uploads a picture of its signature; the system draws it
+ * into that side's block of the very contract template the unsigned copy is rendered from, so the studio-signed
+ * and the FINAL copies have exactly its layout. `prepare` checks and stores the image before the signing
+ * transaction; `attach` records it and renders the signed copies inside it; `discard` takes back every object a
+ * failed transaction left, so the database never points at an object that is not there and vice versa.
  */
 @Injectable()
 export class ContractSignatureService {
-  private readonly fontPath: string | null;
-
   constructor(
     private readonly storage: ObjectStorage,
-    @Inject(APP_CONFIG) config: AppConfig,
-  ) {
-    this.fontPath = unicodeFontPath(config.briefFontPath);
+    private readonly templates: ContractTemplateService,
+  ) {}
+
+  /** Validates the uploaded image (400 otherwise) and stores it privately. */
+  async prepare(projectId: string, side: SigningSide, file: Express.Multer.File | undefined) {
+    const image = await readSignatureImage(file);
+    const storageKey = `contracts/${projectId}/signature-${side.toLowerCase()}-${randomUUID()}.${image.extension}`;
+    await this.storage.putBuffer(storageKey, image.buffer, image.mimeType, 'private');
+    const prepared: PreparedSignature = {
+      projectId,
+      side,
+      signedAt: new Date(),
+      image: { ...image, storageKey, checksum: sha256(image.buffer) },
+      written: [storageKey],
+    };
+    return prepared;
   }
 
-  /** Validates the upload, stores it, and builds the final document when it completes the round. */
-  async prepare(request: SignatureRequest, file: Express.Multer.File | undefined, tx: PrismaTx) {
-    const { contract, side, completes } = request;
-    const signedAt = new Date();
-    const counterpart = await this.store(contract.projectId, side, file);
-    if (!completes) return { signedAt, counterpart, final: null } satisfies PreparedSignature;
-    try {
-      const final = await this.merge(tx, request, counterpart, signedAt);
-      return { signedAt, counterpart, final } satisfies PreparedSignature;
-    } catch (error) {
-      await removeQuietly(this.storage, counterpart.storageKey, 'private');
-      throw error;
-    }
+  /**
+   * Before a side completes a round: the other side's signature image must be on record, or there is nothing to draw
+   * beside it. Only a round signed before signature images (22/11/2026) lacks it; such rounds are re-opened by the
+   * migration 20261124100000, so this is the clear 409 left for any that slipped through.
+   */
+  async assertCounterpartSigned(db: PrismaTx, contractId: string, side: SigningSide): Promise<void> {
+    const other = await db.contractSignature.findUnique({
+      where: { contractId_side: { contractId, side: otherSide(side) } },
+      select: { id: true },
+    });
+    if (other) return;
+    throw new ConflictException({
+      message: "The other side's signature image of this round is missing; the round must be sent again",
+      details: { reason: 'COUNTERPART_SIGNATURE_MISSING', contractId },
+    });
   }
 
-  /** Writes the rows of what `prepare` stored; call inside the signing transaction. */
-  async attach(tx: PrismaTx, contractId: string, prepared: PreparedSignature, uploadedById: string): Promise<void> {
-    const rows = [
-      { ...prepared.counterpart, uploadedById },
-      ...(prepared.final ? [{ ...prepared.final, uploadedById: null }] : []),
-    ];
-    for (const { side, storageKey, fileName, sizeBytes, checksum, uploadedById: author } of rows) {
-      await tx.contractDocument.create({
-        data: {
-          contractId,
-          side,
-          storageKey,
-          fileName,
-          mimeType: FILE_KINDS.pdf.mimeType,
-          sizeBytes: BigInt(sizeBytes),
-          checksum,
-          uploadedById: author,
-          uploadedAt: prepared.signedAt,
-        },
-      });
-    }
+  /**
+   * Inside the signing transaction, once the round the signature belongs to exists: records the signature and
+   * stores the copy carrying it; when it is the second signature of the round, also the FINAL copy with both.
+   */
+  async attach(
+    tx: PrismaTx,
+    contractId: string,
+    prepared: PreparedSignature,
+    uploadedById: string,
+    completes: boolean,
+  ): Promise<void> {
+    const { side, signedAt, image } = prepared;
+    const signer = await this.templates.signer(tx, contractId, side);
+    await tx.contractSignature.create({
+      data: {
+        contractId,
+        side,
+        storageKey: image.storageKey,
+        mimeType: image.mimeType,
+        sizeBytes: image.buffer.length,
+        width: image.width,
+        height: image.height,
+        checksum: image.checksum,
+        signerName: signer.name,
+        signerTitle: signer.title,
+        signedAt,
+        uploadedById,
+      },
+    });
+    const mine: SignatureStamp = {
+      side: side,
+      image: image.buffer,
+      signerName: signer.name,
+      signerTitle: signer.title,
+      signedAt,
+    };
+    await this.storeCopy(tx, contractId, prepared, side, [mine], uploadedById);
+    if (!completes) return;
+    await this.assertCounterpartSigned(tx, contractId, side);
+    const other = await tx.contractSignature.findUniqueOrThrow({
+      where: { contractId_side: { contractId, side: otherSide(side) } },
+    });
+    const theirs: SignatureStamp = {
+      side: other.side as ContractSide,
+      image: await this.storage.read(other.storageKey, 'private'),
+      signerName: other.signerName,
+      signerTitle: other.signerTitle,
+      signedAt: other.signedAt,
+    };
+    await this.storeCopy(tx, contractId, prepared, ContractDocumentSide.FINAL, [mine, theirs], null);
   }
 
   /** Takes back the objects a failed signing transaction left behind. */
   async discard(prepared: PreparedSignature): Promise<void> {
-    for (const stored of [prepared.counterpart, prepared.final]) {
-      if (stored) await removeQuietly(this.storage, stored.storageKey, 'private');
-    }
+    for (const key of prepared.written) await removeQuietly(this.storage, key, 'private');
   }
 
-  private async store(
-    projectId: string,
-    side: ContractDocumentSide,
-    file: Express.Multer.File | undefined,
-  ): Promise<StoredPdf> {
-    if (!file?.buffer?.length) throw new BadRequestException('Attach the signed contract PDF in the "file" field');
-    if (file.buffer.length > CONTRACT_PDF_MAX_BYTES) {
-      throw new BadRequestException(`The signed contract PDF must be at most ${CONTRACT_PDF_MAX_BYTES} bytes`);
-    }
-    const fileName = safeFileName(file.originalname);
-    detectKind(fileName, file.buffer.subarray(0, 16), [FILE_KINDS.pdf]);
-    await assertUsableCounterpart(file.buffer, side === ContractDocumentSide.ADMIN ? 'Admin' : 'Studio', projectId);
-    return this.write(projectId, side, fileName, file.buffer);
-  }
-
-  /** Both counterparts of the agreed cost are in: one final PDF holds the two signatures. */
-  private async merge(
+  /** Renders the contract with the given signatures, stores it under an unguessable key and records it. */
+  private async storeCopy(
     tx: PrismaTx,
-    request: SignatureRequest,
-    counterpart: StoredPdf,
-    signedAt: Date,
-  ): Promise<StoredPdf> {
-    const { contract, side, signerName, costVnd } = request;
-    const other = side === ContractDocumentSide.ADMIN ? ContractDocumentSide.STUDIO : ContractDocumentSide.ADMIN;
-    const earlier = await tx.contractDocument.findUnique({
-      where: { contractId_side: { contractId: contract.id, side: other } },
-      select: { storageKey: true },
-    });
-    if (!earlier) {
-      throw new ConflictException('The other side has no signed PDF on this round; it must be uploaded again');
-    }
-    const earlierBytes = await this.storage.read(earlier.storageKey, 'private');
-    const mine = await this.storage.read(counterpart.storageKey, 'private');
-    const byAdmin = side === ContractDocumentSide.ADMIN;
-    const summary: SignedSummary = {
-      contractId: contract.id,
-      round: contract.round,
-      movieTitle: contract.project.movie.title,
-      studioName: contract.studio.name,
-      costVnd: costVnd ?? 0n,
-      adminName: byAdmin ? signerName : (contract.adminSignedBy?.fullName ?? 'AI Cinema'),
-      adminSignedAt: byAdmin ? signedAt : (contract.adminSignedAt ?? signedAt),
-      studioSignedAt: byAdmin ? (contract.studioSignedAt ?? signedAt) : signedAt,
-    };
-    const merged = await mergeSignedCounterparts(
-      { admin: byAdmin ? mine : earlierBytes, studio: byAdmin ? earlierBytes : mine },
-      summary,
-      this.fontPath,
-    );
-    return this.write(
-      contract.projectId,
-      ContractDocumentSide.FINAL,
-      `hop-dong-du-chu-ky-vong-${contract.round}.pdf`,
-      merged,
-    );
-  }
-
-  /** Private object with an unguessable key: knowing the project is not enough to reach a contract PDF. */
-  private async write(
-    projectId: string,
+    contractId: string,
+    prepared: PreparedSignature,
     side: ContractDocumentSide,
-    fileName: string,
-    body: Buffer,
-  ): Promise<StoredPdf> {
-    const storageKey = `contracts/${projectId}/${side.toLowerCase()}-${randomUUID()}.pdf`;
+    stamps: SignatureStamp[],
+    uploadedById: string | null,
+  ): Promise<void> {
+    const body = await this.templates.signedCopy(tx, contractId, stamps);
+    const storageKey = `contracts/${prepared.projectId}/${side.toLowerCase()}-${randomUUID()}.pdf`;
     await this.storage.putBuffer(storageKey, body, FILE_KINDS.pdf.mimeType, 'private');
-    return {
-      side,
-      storageKey,
-      fileName,
-      sizeBytes: body.length,
-      checksum: createHash('sha256').update(body).digest('hex'),
-    };
+    prepared.written.push(storageKey);
+    const contract = await tx.contract.findUniqueOrThrow({
+      where: { id: contractId },
+      select: { id: true, round: true, createdAt: true },
+    });
+    await tx.contractDocument.create({
+      data: {
+        contractId,
+        side,
+        storageKey,
+        fileName: `${COPY_NAMES[side]}-${contractNo(contract)}.pdf`,
+        mimeType: FILE_KINDS.pdf.mimeType,
+        sizeBytes: BigInt(body.length),
+        checksum: sha256(body),
+        uploadedById,
+        uploadedAt: prepared.signedAt,
+      },
+    });
   }
 }

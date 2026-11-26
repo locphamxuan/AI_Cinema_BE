@@ -10,6 +10,7 @@ describe('PlaybackAccessService.verify', () => {
     subscription: { findFirst: jest.fn() },
     episodeAccess: { findFirst: jest.fn() },
     membershipPlan: { findFirst: jest.fn() },
+    user: { findUnique: jest.fn() },
   };
   const settings = {
     get: jest.fn().mockResolvedValue({ freeStarterEpisodeCount: 2, episodeCoinPriceMin: 1 }),
@@ -38,6 +39,7 @@ describe('PlaybackAccessService.verify', () => {
     revisionStartedAt: null,
     isFreeForGuest: false,
     isFreeForMember: false,
+    movie: { ageRating: 'T16' },
     approvedMediaAsset: media(),
     ...overrides,
   });
@@ -136,7 +138,7 @@ describe('PlaybackAccessService.verify', () => {
   });
 
   it('reads the running plan once, with code and features in the same row (P4-5)', async () => {
-    const features = { maxDevices: 3, adFree: true };
+    const features = { maxDevices: 3 };
     prisma.subscription.findFirst.mockResolvedValue({ plan: { code: 'PREMIUM', features } });
 
     await expect(service.runningPlanOf('u-1')).resolves.toEqual({ code: 'PREMIUM', features });
@@ -148,7 +150,7 @@ describe('PlaybackAccessService.verify', () => {
   });
 
   it('uses the supplied plan snapshot instead of reading the subscription again (P4-5)', async () => {
-    const plan = { code: 'YEARLY', features: { maxDevices: 4, adFree: true } };
+    const plan = { code: 'YEARLY', features: { maxDevices: 4 } };
 
     await expect(service.verify('ep-1', 'u-1', plan)).resolves.toMatchObject({
       accessType: PlaybackAccessType.SUBSCRIPTION,
@@ -184,6 +186,7 @@ describe('PlaybackAccessService.verify', () => {
     expect(prisma.episode.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: {
+          movie: { select: { ageRating: true } },
           approvedMediaAsset: {
             select: {
               id: true,
@@ -199,6 +202,17 @@ describe('PlaybackAccessService.verify', () => {
         },
       }),
     );
+  });
+  it('refuses a T18 episode to a guest and to a member without a date of birth, opens it for an adult (BR-68)', async () => {
+    prisma.episode.findFirst.mockResolvedValue(episode({ isFreeForGuest: true, movie: { ageRating: 'T18' } }));
+    await expect(service.verify('ep-1')).rejects.toMatchObject({
+      status: 403,
+      response: { details: { reason: 'AGE_RESTRICTED' } },
+    });
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: null });
+    await expect(service.verify('ep-1', 'u-1')).rejects.toBeInstanceOf(ForbiddenException);
+    prisma.user.findUnique.mockResolvedValue({ dateOfBirth: new Date('1990-01-01') });
+    await expect(service.verify('ep-1', 'u-1')).resolves.toBeDefined();
   });
 });
 

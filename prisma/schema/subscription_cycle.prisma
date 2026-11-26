@@ -2,6 +2,8 @@ enum CycleStatus {
   PAID
   FAILED
   SKIPPED
+  /// The Admin refunded the Coins of this cycle; it no longer counts as plan revenue.
+  REFUNDED
 }
 
 /// One billed cycle of a subscription, written when the plan is activated and by every

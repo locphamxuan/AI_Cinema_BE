@@ -14,6 +14,9 @@ export const SUB_REASON = {
 /** A paid plan whose renewal can still be switched on or off. */
 const RUNNING: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
 
+/** A plan that can still be ended: an unpaid intent or a running plan. */
+export const OPEN_STATUSES: SubscriptionStatus[] = [SubscriptionStatus.PENDING, ...RUNNING];
+
 /** The last moment a cancellation is still accepted: the renewal date minus the window. */
 export const windowEndOf = (renewalAt: Date, hours: number) => new Date(renewalAt.getTime() - hours * 3_600_000);
 

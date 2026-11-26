@@ -25,7 +25,13 @@ const OLD = { id: 'h1', offeredFeeVnd: 20_000_000n, milestoneStatus: StudioMiles
 
 describe('StudioHandoffService', () => {
   const db = {
-    studioHandoff: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
+    studioHandoff: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+      create: jest.fn(),
+    },
     studioMilestoneEvent: { createMany: jest.fn() },
     movieProject: { update: jest.fn() },
     season: { findFirst: jest.fn() },
@@ -33,7 +39,7 @@ describe('StudioHandoffService', () => {
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn() };
   const studios = { resolve: jest.fn() };
-  const costs = { summary: jest.fn(), assertAffordable: jest.fn() };
+  const costs = { summary: jest.fn(), assertAffordable: jest.fn(), lock: jest.fn() };
   const briefs = { prepare: jest.fn() };
   const mails = { queue: jest.fn(), dispatch: jest.fn() };
   const contracts = { sendForStudioChange: jest.fn() };
@@ -61,6 +67,7 @@ describe('StudioHandoffService', () => {
     studios.resolve.mockResolvedValue(STUDIO);
     db.studioHandoff.findMany.mockResolvedValue([OLD]);
     db.studioHandoff.create.mockResolvedValue({ id: 'h2' });
+    db.studioHandoff.updateMany.mockResolvedValue({ count: 1 });
     costs.summary.mockResolvedValue({ remainingVnd: 20_000_000 });
     briefs.prepare.mockResolvedValue(BRIEF);
     mails.queue.mockResolvedValue('mail-1');
@@ -76,8 +83,9 @@ describe('StudioHandoffService', () => {
       expect(db.studioHandoff.findMany).toHaveBeenNthCalledWith(1, {
         where: { projectId: 'p1', seasonId: null, milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },
       });
-      expect(db.studioHandoff.update).toHaveBeenCalledWith({
-        where: { id: 'h1' },
+      expect(costs.lock).toHaveBeenCalledWith(db, 'p1');
+      expect(db.studioHandoff.updateMany).toHaveBeenCalledWith({
+        where: { id: 'h1', milestoneStatus: { not: StudioMilestoneStatus.SUPERSEDED } },
         data: { milestoneStatus: StudioMilestoneStatus.SUPERSEDED, forfeitedVnd: 5_000_000n },
       });
       expect(db.studioMilestoneEvent.createMany).toHaveBeenCalledWith({
@@ -141,10 +149,19 @@ describe('StudioHandoffService', () => {
       db.season.findFirst.mockResolvedValue({ id: 's1' });
       await service.changeStudio('p1', { reason: 'x', offeredFeeVnd: 1_000_000, seasonId: 's1' }, ADMIN);
       expect(briefs.prepare).toHaveBeenCalledWith('p1', STUDIO, 's1', { senderId: 'admin', offeredFeeVnd: 1_000_000 });
-      expect(db.studioHandoff.update).toHaveBeenCalledWith({
-        where: { id: 'h1' },
+      expect(db.studioHandoff.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ id: 'h1' }),
         data: expect.objectContaining({ forfeitedVnd: 0n }),
       });
+    });
+
+    it('refuses a second studio change that raced the first one to the same hand-off', async () => {
+      db.studioHandoff.updateMany.mockResolvedValue({ count: 0 });
+      await expect(service.changeStudio('p1', DTO as never, ADMIN)).rejects.toMatchObject({
+        response: { details: { reason: 'CHANGED_MEANWHILE' } },
+      });
+      expect(db.studioHandoff.create).not.toHaveBeenCalled();
+      expect(mails.dispatch).not.toHaveBeenCalled();
     });
 
     it('counts what the old studio gives back when checking the budget', async () => {

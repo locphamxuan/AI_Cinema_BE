@@ -17,18 +17,21 @@ export class UpdatePlatformSettingRequestDto extends ContractPartySettingsDto {
   @ApiPropertyOptional({ example: 1000, description: 'VND value of one main Coin, the unit of revenue (BR-45).' })
   @IsInt()
   @Min(1)
+  @Max(1_000_000)
   @IsOptional()
   coinRateVnd?: number;
 
   @ApiPropertyOptional({ example: 1, description: 'Lowest valid Coin price of an episode (BR-47).' })
   @IsInt()
   @Min(0)
+  @Max(1_000_000)
   @IsOptional()
   episodeCoinPriceMin?: number;
 
   @ApiPropertyOptional({ example: 50, description: 'Highest valid Coin price of an episode (BR-47).' })
   @IsInt()
   @Min(0)
+  @Max(1_000_000)
   @IsOptional()
   episodeCoinPriceMax?: number;
 
@@ -38,6 +41,7 @@ export class UpdatePlatformSettingRequestDto extends ContractPartySettingsDto {
   })
   @IsInt()
   @Min(10)
+  @Max(3_600)
   @IsOptional()
   playbackHeartbeatTimeoutSeconds?: number;
 
@@ -71,12 +75,14 @@ export class UpdatePlatformSettingRequestDto extends ContractPartySettingsDto {
   @ApiPropertyOptional({ example: 10000, description: 'Lowest VND amount of a single Coin top-up.' })
   @IsInt()
   @Min(1000)
+  @Max(1_000_000_000)
   @IsOptional()
   coinTopUpMinVnd?: number;
 
   @ApiPropertyOptional({ example: 2000000, description: 'Highest VND amount of a single Coin top-up.' })
   @IsInt()
   @Min(1000)
+  @Max(1_000_000_000)
   @IsOptional()
   coinTopUpMaxVnd?: number;
 

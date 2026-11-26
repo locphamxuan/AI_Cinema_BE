@@ -7,11 +7,14 @@ model Studio {
   contactName         String?  @map("contact_name") @db.VarChar(255)
   phone               String?  @db.VarChar(30)
   note                String?  @db.Text
-  /// Bên B of the production contract (MF-1): what the Admin records so the unsigned template is filled in.
-  /// contactName is the legal representative who signs.
+  /// Legal profile, Bên B of the production contract (MF-1): filled in by the studio itself on Studio Web
+  /// (22/11/2026) and required before it signs; the Admin only reads it. contactName (kept by the Admin) is the
+  /// legal representative who signs.
   address             String?  @db.VarChar(500)
   taxCode             String?  @map("tax_code") @db.VarChar(50)
+  /// Digits only.
   bankAccount         String?  @map("bank_account") @db.VarChar(255)
+  bankName            String?  @map("bank_name") @db.VarChar(255)
   representativeTitle String?  @map("representative_title") @db.VarChar(100)
   isActive            Boolean  @default(true) @map("is_active")
   createdById         String   @map("created_by_id") @db.Uuid
