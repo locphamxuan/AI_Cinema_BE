@@ -33,17 +33,24 @@ export class NotificationService {
     const admins = MF1_NOTIFICATION_TYPES.has(content.type) ? await this.overseers(tx) : [];
     const recipients = [...new Set([...userIds, ...admins].filter((id): id is string => Boolean(id)))];
     if (!recipients.length) return;
-    await (tx ?? this.prisma).notification.createMany({
-      data: recipients.map((userId) => ({
-        userId,
-        type: content.type,
-        title: fit(content.title, TITLE_MAX),
-        body: content.body,
-        // A link too long for its column is dropped: a cut link would open the wrong screen.
-        link: content.link && content.link.length <= LINK_MAX ? content.link : undefined,
-        payload: content.payload as Prisma.InputJsonValue | undefined,
-      })),
-    });
+    const persist = async (client: PrismaTx) => {
+      await client.notification.createMany({
+        data: recipients.map((userId) => ({
+          userId,
+          type: content.type,
+          title: fit(content.title, TITLE_MAX),
+          body: content.body,
+          // A link too long for its column is dropped: a cut link would open the wrong screen.
+          link: content.link && content.link.length <= LINK_MAX ? content.link : undefined,
+          payload: content.payload as Prisma.InputJsonValue | undefined,
+        })),
+      });
+      await client.notificationRealtimeEvent.createMany({
+        data: recipients.map((userId) => ({ userId })),
+      });
+    };
+    if (tx) await persist(tx);
+    else await this.prisma.$transaction(persist);
   }
 
   /** The Admins who follow every movie project, without the one who just acted. */
@@ -85,20 +92,29 @@ export class NotificationService {
   }
 
   async markRead(userId: string, notificationId: string) {
-    const { count } = await this.prisma.notification.updateMany({
-      where: { id: notificationId, userId, readAt: null },
-      data: { readAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.notification.updateMany({
+        where: { id: notificationId, userId, readAt: null },
+        data: { readAt: new Date() },
+      });
+      if (count === 0) {
+        if (!(await tx.notification.count({ where: { id: notificationId, userId } }))) {
+          throw new NotFoundException('Notification not found');
+        }
+        return;
+      }
+      await tx.notificationRealtimeEvent.create({ data: { userId } });
     });
-    if (count === 0 && !(await this.prisma.notification.count({ where: { id: notificationId, userId } }))) {
-      throw new NotFoundException('Notification not found');
-    }
   }
 
   async markAllRead(userId: string): Promise<{ updated: number }> {
-    const { count } = await this.prisma.notification.updateMany({
-      where: { userId, readAt: null },
-      data: { readAt: new Date() },
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.notification.updateMany({
+        where: { userId, readAt: null },
+        data: { readAt: new Date() },
+      });
+      if (count > 0) await tx.notificationRealtimeEvent.create({ data: { userId } });
+      return { updated: count };
     });
-    return { updated: count };
   }
 }
