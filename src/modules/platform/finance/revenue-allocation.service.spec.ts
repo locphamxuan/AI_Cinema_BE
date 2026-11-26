@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { periodOf, periodRange, previousPeriod } from './finance-period';
 import { RevenueAllocationService, splitPool } from './revenue-allocation.service';
 
@@ -42,7 +42,7 @@ describe('RevenueAllocationService', () => {
   const prisma = {
     $queryRaw: jest.fn(),
     $transaction: jest.fn((work: (t: unknown) => Promise<unknown>) => work(tx)),
-    revenueAllocation: { count: jest.fn() },
+    revenueAllocation: { findFirst: jest.fn() },
   };
   const audit = { record: jest.fn() };
   const service = new RevenueAllocationService(prisma as never, audit as never);
@@ -51,7 +51,7 @@ describe('RevenueAllocationService', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('shares a finished month by watch seconds and audits the run', async () => {
-    prisma.revenueAllocation.count.mockResolvedValueOnce(0);
+    prisma.revenueAllocation.findFirst.mockResolvedValueOnce(null);
     prisma.$queryRaw
       .mockResolvedValueOnce([{ vnd: 1_000_000n }])
       .mockResolvedValueOnce([{ vnd: 1_000_000n }])
@@ -59,7 +59,7 @@ describe('RevenueAllocationService', () => {
         { movie_id: 'm1', seconds: 300n },
         { movie_id: 'm2', seconds: 100n },
       ]);
-    await expect(service.allocateIfMissing('2026-10', NOW)).resolves.toBe(true);
+    await expect(service.shareIfChanged('2026-10', NOW)).resolves.toBe(true);
     expect(tx.revenueAllocation.deleteMany).toHaveBeenCalledWith({ where: { period: '2026-10' } });
     expect(tx.revenueAllocation.createMany).toHaveBeenCalledWith({
       data: [
@@ -73,18 +73,30 @@ describe('RevenueAllocationService', () => {
     );
   });
 
-  it('refuses the current month, which is not over yet', async () => {
-    prisma.revenueAllocation.count.mockResolvedValueOnce(0);
-    prisma.$queryRaw.mockResolvedValueOnce([{ vnd: 5_000n }]);
-    await expect(service.allocateIfMissing('2026-11', NOW)).rejects.toThrow(ConflictException);
+  it('leaves the current month alone, which is not over yet', async () => {
+    await expect(service.shareIfChanged('2026-11', NOW)).resolves.toBe(false);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
   it('shares a month only once, and not at all without plan payments', async () => {
-    prisma.revenueAllocation.count.mockResolvedValueOnce(3);
-    await expect(service.allocateIfMissing('2026-10', NOW)).resolves.toBe(false);
-    prisma.revenueAllocation.count.mockResolvedValueOnce(0);
+    prisma.revenueAllocation.findFirst.mockResolvedValueOnce({ monthlyPoolVnd: 5_000n });
+    prisma.$queryRaw.mockResolvedValueOnce([{ vnd: 5_000n }]);
+    await expect(service.shareIfChanged('2026-10', NOW)).resolves.toBe(false);
+    prisma.revenueAllocation.findFirst.mockResolvedValueOnce(null);
     prisma.$queryRaw.mockResolvedValueOnce([{ vnd: null }]);
-    await expect(service.allocateIfMissing('2026-10', NOW)).resolves.toBe(false);
+    await expect(service.shareIfChanged('2026-10', NOW)).resolves.toBe(false);
     expect(tx.revenueAllocation.createMany).not.toHaveBeenCalled();
+  });
+
+  it('shares a month again when a refund changed its pool, even down to nothing', async () => {
+    prisma.revenueAllocation.findFirst.mockResolvedValueOnce({ monthlyPoolVnd: 5_000n });
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ vnd: null }])
+      .mockResolvedValueOnce([{ vnd: null }])
+      .mockResolvedValueOnce([{ movie_id: 'm1', seconds: 300n }]);
+    await expect(service.shareIfChanged('2026-10', NOW)).resolves.toBe(true);
+    expect(tx.revenueAllocation.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ movieId: 'm1', allocatedVnd: 0n, monthlyPoolVnd: 0n })],
+    });
   });
 });

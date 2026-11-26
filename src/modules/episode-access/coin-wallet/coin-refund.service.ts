@@ -1,8 +1,10 @@
-import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { CoinEntryType, CoinLotSource, CoinReferenceType, type CoinTransaction } from '@prisma/client';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
+import { periodOf } from 'src/modules/platform/finance/finance-period';
+import { RevenueAllocationService } from 'src/modules/platform/finance/revenue-allocation.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { noticeRefunded } from './coin-notices';
 import { CoinSpendService } from './coin-spend.service';
@@ -38,16 +40,19 @@ const notRefundable = (entryType: CoinEntryType) =>
  */
 @Injectable()
 export class CoinRefundService {
+  private readonly logger = new Logger(CoinRefundService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly coins: CoinSpendService,
     private readonly auditLog: AuditLogService,
+    private readonly allocations: RevenueAllocationService,
     @Optional() private readonly notifications?: NotificationService,
   ) {}
 
   /** POST /admin/coin-transactions/:id/refund, with any row of the payment; a second refund is a 409. */
-  refundByAdmin(transactionId: string, actorId: string) {
-    return this.prisma.$transaction(async (tx) => {
+  async refundByAdmin(transactionId: string, actorId: string) {
+    const answer = await this.prisma.$transaction(async (tx) => {
       const refund = await this.refundPayment(tx, transactionId, {
         description: 'Refunded by an Admin',
         revokeReason: ADMIN_REFUND_REASON,
@@ -89,6 +94,24 @@ export class CoinRefundService {
         subscriptionEnded: refund.subscriptionEnded,
       };
     });
+    if (answer.subscriptionCycleId) await this.reshare(answer.subscriptionCycleId);
+    return answer;
+  }
+
+  /**
+   * A refunded plan payment of a month already shared to the films would leave them overstated (BR-48). The
+   * refund is committed by now, so a failure here is only logged: the monthly job shares a changed month again.
+   */
+  private async reshare(cycleId: string): Promise<void> {
+    try {
+      const cycle = await this.prisma.subscriptionCycle.findUniqueOrThrow({
+        where: { id: cycleId },
+        select: { attemptedAt: true },
+      });
+      await this.allocations.shareIfChanged(periodOf(cycle.attemptedAt));
+    } catch (error) {
+      this.logger.error(`Could not share the month of refunded cycle ${cycleId} again`, error);
+    }
   }
 
   /**

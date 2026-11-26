@@ -29,6 +29,6 @@ export class FinanceJobs implements OnModuleInit {
   }
 
   allocateLastMonth(now = new Date()): Promise<boolean> {
-    return this.allocations.allocateIfMissing(previousPeriod(now), now);
+    return this.allocations.shareIfChanged(previousPeriod(now), now);
   }
 }

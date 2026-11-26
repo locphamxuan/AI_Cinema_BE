@@ -4,6 +4,7 @@ import type { PrismaService, PrismaTx } from 'src/infrastructure/prisma/prisma.s
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
+import type { RevenueAllocationService } from 'src/modules/platform/finance/revenue-allocation.service';
 import { CoinRefundService } from './coin-refund.service';
 import type { CoinSpendService } from './coin-spend.service';
 
@@ -56,14 +57,20 @@ describe('CoinRefundService', () => {
   const coins = { credit: jest.fn() };
   const auditLog = { record: jest.fn() };
   const notifications = { notify: jest.fn() };
-  const prisma = { $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)) };
+  const prisma = {
+    $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+    subscriptionCycle: { findUniqueOrThrow: jest.fn() },
+  };
+  const allocations = { shareIfChanged: jest.fn() };
   const service = new CoinRefundService(
     prisma as unknown as PrismaService,
     coins as unknown as CoinSpendService,
     auditLog as unknown as AuditLogService,
+    allocations as unknown as RevenueAllocationService,
     notifications as unknown as NotificationService,
   );
   const request = { description: 'why', revokeReason: 'ADMIN_REFUND' };
+  const cycle = (periodEnd: Date) => ({ id: 'cycle-1', priceCoins: 300, periodEnd, subscriptionId: 'sub-1' });
   const refundPayment = (id: string) => service.refundPayment(tx as unknown as PrismaTx, id, request);
 
   beforeEach(() => {
@@ -184,8 +191,6 @@ describe('CoinRefundService', () => {
   });
 
   describe('a plan payment', () => {
-    const cycle = (periodEnd: Date) => ({ id: 'cycle-1', priceCoins: 300, periodEnd, subscriptionId: 'sub-1' });
-
     beforeEach(() => {
       ledger = [{ ...head, entryType: CoinEntryType.PLAN_PAYMENT, mainAmount: -300 }];
     });
@@ -240,6 +245,31 @@ describe('CoinRefundService', () => {
         expect.objectContaining({ title: 'Đã hoàn 25 Coin', link: '/wallet' }),
         tx,
       );
+    });
+
+    it('shares the month again after a plan payment is refunded, and not for an episode', async () => {
+      await service.refundByAdmin('pay-1', 'admin-1');
+      expect(allocations.shareIfChanged).not.toHaveBeenCalled();
+
+      refunds = [];
+      ledger = [{ ...head, entryType: CoinEntryType.PLAN_PAYMENT, mainAmount: -300 }];
+      tx.subscriptionCycle.findUnique.mockResolvedValue(cycle(new Date(Date.now() - 86_400_000)));
+      prisma.subscriptionCycle.findUniqueOrThrow.mockResolvedValue({ attemptedAt: new Date('2026-09-30T18:00:00Z') });
+      await service.refundByAdmin('pay-1', 'admin-1');
+
+      // 18:00 UTC on 30 September is already October in Vietnam.
+      expect(allocations.shareIfChanged).toHaveBeenCalledWith('2026-10');
+    });
+
+    it('keeps the refund when sharing the month again fails; the monthly job retries it', async () => {
+      ledger = [{ ...head, entryType: CoinEntryType.PLAN_PAYMENT, mainAmount: -300 }];
+      tx.subscriptionCycle.findUnique.mockResolvedValue(cycle(new Date(Date.now() - 86_400_000)));
+      prisma.subscriptionCycle.findUniqueOrThrow.mockResolvedValue({ attemptedAt: new Date('2026-10-15T00:00:00Z') });
+      allocations.shareIfChanged.mockRejectedValueOnce(new Error('database went away'));
+
+      await expect(service.refundByAdmin('pay-1', 'admin-1')).resolves.toMatchObject({
+        subscriptionCycleId: 'cycle-1',
+      });
     });
 
     it.each([
