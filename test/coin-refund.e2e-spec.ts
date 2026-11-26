@@ -4,7 +4,7 @@ import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode, priceEpisode, release } from './support/media';
-import { registerMember } from './support/members';
+import { fundWallet, registerMember } from './support/members';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 const PRICE = 30;
@@ -69,10 +69,7 @@ describe('Refunding a Coin payment (e2e)', () => {
   /** A member holding `main` main Coins and one bonus lot per entry of `lots`. */
   async function member(main: number, lots: number[] = []): Promise<Actor> {
     const actor = await registerMember(app);
-    if (main) await admin.post('/admin/wallet-adjustments', { userId: actor.id, mainAmount: main, reason: 'e2e' });
-    for (const bonusAmount of lots) {
-      await admin.post('/admin/wallet-adjustments', { userId: actor.id, bonusAmount, reason: 'e2e bonus' });
-    }
+    await fundWallet(app, actor.id, main, lots);
     return actor;
   }
 

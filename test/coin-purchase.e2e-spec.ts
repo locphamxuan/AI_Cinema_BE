@@ -6,6 +6,7 @@ import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { Actor, bootApp, type Row, signIn } from './support/api';
 import { compliantEpisode, priceEpisode, release } from './support/media';
+import { fundWallet } from './support/members';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 const HOUR_MS = 3_600_000;
@@ -67,7 +68,7 @@ describe('Coin purchases and the monthly plan (e2e)', () => {
     const server = app.getHttpServer();
     await request(server)
       .post('/api/auth/register')
-      .send({ email, password, fullName: 'Thành viên Coin e2e', dateOfBirth: '2000-01-01' })
+      .send({ email, password, fullName: 'Thành viên Coin e2e', dateOfBirth: '2000-01-01', acceptedTerms: true })
       .expect(201);
     const login = await request(server).post('/api/auth/login').send({ email, password }).expect(200);
     const body = login.body as { accessToken: string; user: { id: string } };
@@ -76,16 +77,7 @@ describe('Coin purchases and the monthly plan (e2e)', () => {
 
   /** Coins put in by the Admin: main Coins, and bonus Coins as a lot that expires later. */
   async function fund(member: Member, mainAmount: number, bonusAmount: number) {
-    if (mainAmount) {
-      await admin.post(
-        '/admin/wallet-adjustments',
-        { userId: member.actor.id, mainAmount, reason: 'e2e funding' },
-        201,
-      );
-    }
-    if (bonusAmount) {
-      await admin.post('/admin/wallet-adjustments', { userId: member.actor.id, bonusAmount, reason: 'e2e bonus' }, 201);
-    }
+    await fundWallet(app, member.actor.id, mainAmount, bonusAmount ? [bonusAmount] : []);
   }
 
   /** A POST that may carry an Idempotency-Key, answering with its status and body. */

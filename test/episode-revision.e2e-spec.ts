@@ -4,7 +4,7 @@ import type { ApiErrorBody } from 'src/common/http/api-exception.filter';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode, deliver, priceEpisode, release, unpublish } from './support/media';
-import { registerMember } from './support/members';
+import { fundWallet, registerMember } from './support/members';
 import { episodesOf, projectInProduction, type ProjectDetail, studioOf } from './support/projects';
 
 interface Detail extends ProjectDetail {
@@ -112,9 +112,7 @@ describe('Episode taken down to be fixed (BR-56)', () => {
     // A member pays 4 main Coins and 6 bonus Coins from two lots: one payment of three ledger rows.
     const admin = await signIn(app, 'admin@aicinema.com');
     const buyer = await registerMember(app);
-    for (const amount of [{ mainAmount: 4 }, { bonusAmount: 2 }, { bonusAmount: 4 }]) {
-      await admin.post('/admin/wallet-adjustments', { userId: buyer.id, ...amount, reason: 'e2e' });
-    }
+    await fundWallet(app, buyer.id, 4, [2, 4]);
     await buyer.post(`/episodes/${episodeId(1)}/purchase`, {}, 201);
     const prisma = app.get(PrismaService);
     const { coinTransactionId } = await prisma.episodeAccess.findFirstOrThrow({ where: { userId: buyer.id } });
