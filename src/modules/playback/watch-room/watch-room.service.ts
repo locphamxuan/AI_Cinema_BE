@@ -12,7 +12,7 @@ import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
 import { CodeGuessLimiter, generateRoomCode, normalizeRoomCode } from './room-codes';
 import { RoomJoinGuard } from './room-join.guard';
 import { WatchRoomResponseDto } from './dto/watch-room.dto';
-import { assertOpen, OPEN_STATUSES, ROOM_TTL_MS, roomSnapshot } from './room-state';
+import { assertNotDisbanded, assertOpen, ROOM_TTL_MS, roomSnapshot } from './room-state';
 
 type RoomWithParticipants = NonNullable<Awaited<ReturnType<WatchRoomService['findRoom']>>>;
 
@@ -119,8 +119,8 @@ export class WatchRoomService {
     if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
     const host = room.participants.find((p) => p.userId === userId && p.role === 'HOST' && !p.leftAt);
     if (!host) throw new ForbiddenException({ message: 'Only the Host may sync', details: { reason: 'NOT_HOST' } });
-    // A disbanded or ended room never comes back to life through a late sync.
-    assertOpen(room);
+    // A disbanded room never comes back to life through a late sync.
+    assertNotDisbanded(room);
 
     // BR-69: the 15 minutes count from the last sign of the Host (play, pause, seek or the end of the episode),
     // so a room in use never expires mid-episode; it closes 15 min after the episode ends or the Host goes quiet.
@@ -183,7 +183,7 @@ export class WatchRoomService {
    */
   async promoteNextHost(roomId: string, preferredUserId?: string): Promise<string | null> {
     const room = await this.findRoom(roomId);
-    if (!room || !OPEN_STATUSES.includes(room.status)) return null;
+    if (!room || room.status === 'DISBANDED') return null;
     const candidates = room.participants
       .filter((p) => !p.leftAt && p.role !== 'HOST')
       .sort((a, b) => a.joinedAt.getTime() - b.joinedAt.getTime());
@@ -208,7 +208,7 @@ export class WatchRoomService {
     if (room.hostUserId !== userId) {
       throw new ForbiddenException({ message: 'Only the Host may continue', details: { reason: 'NOT_HOST' } });
     }
-    assertOpen(room);
+    assertNotDisbanded(room);
     const current = await this.prisma.episode.findUnique({
       where: { id: room.episodeId },
       select: { movieId: true, episodeNumber: true },
@@ -257,7 +257,7 @@ export class WatchRoomService {
   /** Edge 1.4 — the episode was taken down: every open room on it closes at once. */
   async terminateByEpisode(episodeId: string): Promise<string[]> {
     const rooms = await this.prisma.watchRoom.findMany({
-      where: { episodeId, status: { in: OPEN_STATUSES } },
+      where: { episodeId, status: { not: 'DISBANDED' } },
       select: { id: true },
     });
     if (!rooms.length) return [];

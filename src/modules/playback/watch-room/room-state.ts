@@ -12,10 +12,19 @@ export const OPEN_STATUSES: WatchRoomStatus[] = [
   WatchRoomStatus.PAUSED,
 ];
 
-/** A room the Host can still drive; a closed one answers 409 ROOM_CLOSED. */
+const roomClosed = () => new ConflictException({ message: 'Room is closed', details: { reason: 'ROOM_CLOSED' } });
+
+/** A room new members can still come into; otherwise 409 ROOM_CLOSED. */
 export function assertOpen(room: { status: WatchRoomStatus }): void {
-  if (OPEN_STATUSES.includes(room.status)) return;
-  throw new ConflictException({ message: 'Room is closed', details: { reason: 'ROOM_CLOSED' } });
+  if (!OPEN_STATUSES.includes(room.status)) throw roomClosed();
+}
+
+/**
+ * A room its Host can still drive: also one whose episode has ended, so the Host may replay it or go on to the
+ * next one. Only a disbanded room never comes back (409 ROOM_CLOSED).
+ */
+export function assertNotDisbanded(room: { status: WatchRoomStatus }): void {
+  if (room.status === WatchRoomStatus.DISBANDED) throw roomClosed();
 }
 
 /** A room as the service reads it: the row with its participants and their names. */

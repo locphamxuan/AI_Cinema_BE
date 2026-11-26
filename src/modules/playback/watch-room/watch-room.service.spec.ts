@@ -172,6 +172,19 @@ describe('WatchRoomService', () => {
     expect(prisma.watchRoom.update).not.toHaveBeenCalled();
   });
 
+  it('lets the Host replay or go on to the next episode after the episode has ended', async () => {
+    prisma.watchRoom.findUnique.mockResolvedValue(
+      room({ status: WatchRoomStatus.ENDED, participants: [host, member] }),
+    );
+    prisma.watchRoom.update.mockResolvedValue(room({ status: WatchRoomStatus.PLAYING }));
+    await newService().hostSync('u1', 'r1', { state: 'PLAYING', positionSeconds: 0 });
+    prisma.episode.findUnique.mockResolvedValue({ movieId: 'm1', episodeNumber: 1 });
+    prisma.episode.findFirst.mockResolvedValue({ id: 'ep-2', episodeNumber: 2 });
+    entitlement.canWatch.mockResolvedValue({ allowed: true });
+    await expect(newService().nextEpisode('u1', 'r1')).resolves.toMatchObject({ blockedUserIds: [] });
+    expect(prisma.watchRoom.update).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses to move a closed room to the next episode', async () => {
     prisma.watchRoom.findUnique.mockResolvedValue(room({ status: WatchRoomStatus.DISBANDED }));
     await expect(newService().nextEpisode('u1', 'r1')).rejects.toMatchObject({
