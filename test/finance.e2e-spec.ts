@@ -25,7 +25,7 @@ async function newMember(app: INestApplication<App>) {
   const server = app.getHttpServer();
   await request(server)
     .post('/api/auth/register')
-    .send({ email, password, fullName: 'Thành viên rủi ro e2e', dateOfBirth: '2000-01-01' })
+    .send({ email, password, fullName: 'Thành viên rủi ro e2e', dateOfBirth: '2000-01-01', acceptedTerms: true })
     .expect(201);
   const login = await request(server).post('/api/auth/login').send({ email, password }).expect(200);
   const body = login.body as { accessToken: string; refreshToken: string; user: { id: string } };
