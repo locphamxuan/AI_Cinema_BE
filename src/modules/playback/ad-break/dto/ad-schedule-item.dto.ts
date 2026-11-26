@@ -9,5 +9,5 @@ export class AdScheduleItemDto {
   positionSeconds: number;
 
   @ApiProperty({ example: { id: 'a1...', title: 'Trà sữa', mediaUrl: 'https://...', durationSeconds: 15 } })
-  ad: { id: string; title: string; mediaUrl: string; clickUrl: string | null; durationSeconds: number };
+  ad: { id: string; title: string; mediaUrl: string; durationSeconds: number };
 }

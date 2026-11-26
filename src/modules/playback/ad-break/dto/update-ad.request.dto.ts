@@ -1,8 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { AdStatus } from '@prisma/client';
-import { IsEnum, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
 import { Trim } from 'src/common/validation/trim';
-import { MAX_AD_WEIGHT } from '../ad-limits';
 
 export class UpdateAdRequestDto {
   @ApiPropertyOptional({ example: 'Trà sữa Gong Cha — mua 1 tặng 1' })
@@ -19,19 +18,6 @@ export class UpdateAdRequestDto {
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   @MaxLength(1000)
   mediaUrl?: string;
-
-  @ApiPropertyOptional({ example: 'https://gongcha.example/promo' })
-  @IsOptional()
-  @IsUrl({ require_protocol: true })
-  @MaxLength(1000)
-  clickUrl?: string | null;
-
-  @ApiPropertyOptional({ example: 3, maximum: MAX_AD_WEIGHT })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(MAX_AD_WEIGHT)
-  weight?: number;
 
   @ApiPropertyOptional({ enum: AdStatus, example: 'PAUSED' })
   @IsOptional()

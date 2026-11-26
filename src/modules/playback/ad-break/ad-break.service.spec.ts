@@ -1,18 +1,7 @@
 import { AdBreakStatus, StreamingSessionStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
-import { AdBreakService, isAdFreePlan } from './ad-break.service';
-
-describe('isAdFreePlan (P4-5)', () => {
-  it('is true only when the running plan features say so', () => {
-    expect(isAdFreePlan({ features: { adFree: true } })).toBe(true);
-    expect(isAdFreePlan({ features: { adFree: false } })).toBe(false);
-    expect(isAdFreePlan({ features: { maxDevices: 2 } })).toBe(false);
-    expect(isAdFreePlan({ features: { adFree: 'true' } })).toBe(false);
-    expect(isAdFreePlan({ features: null })).toBe(false);
-    expect(isAdFreePlan(null)).toBe(false);
-  });
-});
+import { AdBreakService } from './ad-break.service';
 
 describe('AdBreakService', () => {
   const prisma = {
@@ -35,9 +24,7 @@ describe('AdBreakService', () => {
     id: 'ad-1',
     title: 'Ad',
     mediaUrl: 'https://cdn.example/a.mp4',
-    clickUrl: null,
     durationSeconds: 15,
-    weight: 1,
     ...overrides,
   });
 
@@ -83,6 +70,15 @@ describe('AdBreakService', () => {
         { streamingSessionId: 'sess-1', adId: expect.any(String), positionSeconds: 1000 },
       ],
       skipDuplicates: true,
+    });
+  });
+
+  it('answers only the cues still to play when a session is reused (BR-33)', async () => {
+    await service.scheduleOf('sess-1');
+    expect(prisma.sessionAdBreak.findMany).toHaveBeenCalledWith({
+      where: { streamingSessionId: 'sess-1', status: AdBreakStatus.PENDING },
+      orderBy: { positionSeconds: 'asc' },
+      include: { ad: true },
     });
   });
 

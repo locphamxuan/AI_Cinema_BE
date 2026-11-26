@@ -3,7 +3,7 @@ import type { Ad } from '@prisma/client';
 /** No random cue in the first or last minute: intros and credits stay clean. */
 export const AD_EDGE_SECONDS = 60;
 
-/** A cue the Admin placed on the episode (episode_ad_slots); `adId` null = weighted draw. */
+/** A cue the Admin placed on the episode (episode_ad_slots); `adId` null = random draw. */
 export interface AdSlot {
   positionSeconds: number;
   adId: string | null;
@@ -15,7 +15,7 @@ export interface PlannedCue {
   adId: string;
 }
 
-type DrawableAd = Pick<Ad, 'id' | 'weight'>;
+type DrawableAd = Pick<Ad, 'id'>;
 
 /**
  * BR-32: random cue points inside (edge, duration - edge). The window is cut into `count` equal
@@ -34,17 +34,17 @@ export function randomPositions(durationSeconds: number, count: number, random: 
   });
 }
 
-/** Eligible ads shuffled by weight (heavier first on average), without replacement. */
-export function weightedOrder<T extends Pick<Ad, 'weight'>>(ads: T[], random: () => number = Math.random): T[] {
-  const remaining = [...ads];
-  const ordered: T[] = [];
-  while (remaining.length) {
-    const total = remaining.reduce((sum, ad) => sum + Math.max(ad.weight, 1), 0);
-    let draw = random() * total;
-    const index = remaining.findIndex((ad) => (draw -= Math.max(ad.weight, 1)) < 0);
-    ordered.push(...remaining.splice(index === -1 ? remaining.length - 1 : index, 1));
+/**
+ * Eligible ads in a uniform random order (Fisher-Yates), each exactly once. Every ACTIVE ad has the
+ * same chance at every cue, and drawing without replacement spreads the ads of one session evenly.
+ */
+export function shuffled<T>(ads: T[], random: () => number = Math.random): T[] {
+  const order = [...ads];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
   }
-  return ordered;
+  return order;
 }
 
 /**
@@ -52,7 +52,7 @@ export function weightedOrder<T extends Pick<Ad, 'weight'>>(ads: T[], random: ()
  *
  * - The Admin placed cues on the episode: every one inside the episode is used, so the Admin
  *   decides both where and how many times. A pinned ad plays when it is still valid; any other
- *   cue takes the next ad of a weighted draw. Ads repeat only once every valid ad has played,
+ *   cue takes the next ad of a random draw. Ads repeat only once every valid ad has played,
  *   because the Admin asked for that many cues.
  * - No placed cue: `fallbackCount` random cues, one distinct ad each (P4-4), so an episode gets
  *   fewer cues when there are fewer ads than the cap.
@@ -71,7 +71,7 @@ export function planCues(input: {
     const valid = new Set(eligible.map((ad) => ad.id));
     let deck: DrawableAd[] = [];
     const draw = (): string => {
-      if (!deck.length) deck = weightedOrder(eligible, random);
+      if (!deck.length) deck = shuffled(eligible, random);
       return deck.shift()!.id;
     };
     return slots
@@ -85,6 +85,6 @@ export function planCues(input: {
 
   const count = Math.min(fallbackCount, eligible.length);
   const positions = randomPositions(durationSeconds, count, random);
-  const picks = weightedOrder(eligible, random);
+  const picks = shuffled(eligible, random);
   return positions.map((positionSeconds, i) => ({ positionSeconds, adId: picks[i].id }));
 }

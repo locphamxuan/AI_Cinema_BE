@@ -14,7 +14,7 @@ class EpisodeAdSlotInputDto {
   @ApiPropertyOptional({
     example: null,
     nullable: true,
-    description: 'Ad to play at this cue; empty = weighted draw among the valid ads',
+    description: 'Ad to play at this cue; empty = random draw among the ACTIVE ads',
   })
   @IsOptional()
   @IsUUID('4')

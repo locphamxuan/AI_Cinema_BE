@@ -7,7 +7,7 @@ import { PlatformSettingService } from 'src/modules/platform/platform-setting/pl
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
-import { AdBreakService, isAdFreePlan } from '../ad-break/ad-break.service';
+import { AdBreakService } from '../ad-break/ad-break.service';
 import { PlaybackUrlService } from './playback-url.service';
 import { assertLiveSessionOf, type SessionCaller } from './session-owner';
 import { openSessionRow } from './session-opening';
@@ -80,7 +80,8 @@ export class StreamingSessionService {
       resumePositionSeconds: await this.resumeOf(userId, verified.episodeId),
       adSchedule: await this.ads.scheduleFor(session.id, {
         episodeId: verified.episodeId,
-        adFree: isAdFreePlan(memberPlan),
+        // BR-04: a running plan never sees ads; a Guest and a member without one always do.
+        adFree: runningPlan !== null,
         durationSeconds: verified.durationSeconds,
       }),
       idempotent,

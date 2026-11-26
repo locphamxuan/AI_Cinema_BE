@@ -198,10 +198,18 @@ describe('Playback viewing experience (e2e)', () => {
     const created = await admin.post<{ id: string; status: string; durationSeconds: number }>('/admin/ads', {
       title: `Trà sữa e2e ${Date.now()}`,
       mediaUrl: 'https://cdn.aicinema.example/public/ads/e2e-15s.mp4',
-      weight: 2,
     });
     // The length is read from the video (the mocked probe answers 60 s); the Admin never types it.
     expect(created).toMatchObject({ status: 'ACTIVE', durationSeconds: 60 });
+    expect(created).not.toHaveProperty('weight');
+    expect(created).not.toHaveProperty('clickUrl');
+    // An ad has no click-through link and no pick weight any more.
+    await admin.post(
+      '/admin/ads',
+      { title: 'Có link', mediaUrl: 'https://cdn.aicinema.example/a.mp4', weight: 2 },
+      400,
+    );
+    await admin.patch(`/admin/ads/${created.id}`, { clickUrl: 'https://gongcha.example/promo' }, 400);
     await admin.post(
       '/admin/ads',
       { title: 'Có thời lượng', mediaUrl: 'https://cdn.aicinema.example/a.mp4', durationSeconds: 15 },
@@ -291,6 +299,14 @@ describe('Playback viewing experience (e2e)', () => {
       200,
     );
     expect(after.dueAdBreakId).toBeNull();
+    // Opening the episode again reuses the live session without the cues already played or skipped.
+    const again = await asGuest<SessionView & { reused: boolean }>(
+      'post',
+      '/playback/sessions',
+      { episodeId: episodeId(0) },
+      201,
+    );
+    expect(again).toMatchObject({ sessionId: session.sessionId, reused: true, adSchedule: [] });
 
     await expect(admin.put(slotsPath, { slots: [] })).resolves.toMatchObject({ mode: 'RANDOM', slots: [] });
   });

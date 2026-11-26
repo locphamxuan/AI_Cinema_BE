@@ -24,7 +24,7 @@ export class AdCatalogService {
 
   ads(query: PaginateQuery) {
     return paginate(query, this.prisma.ad, {
-      sortableColumns: ['createdAt', 'weight', 'status'],
+      sortableColumns: ['createdAt', 'status'],
       defaultSortBy: [['createdAt', 'DESC']],
     });
   }
@@ -35,9 +35,7 @@ export class AdCatalogService {
       data: {
         title: dto.title,
         mediaUrl: dto.mediaUrl,
-        clickUrl: dto.clickUrl ?? null,
         durationSeconds,
-        weight: dto.weight ?? 1,
       },
     });
     return view(ad);
@@ -54,8 +52,6 @@ export class AdCatalogService {
       data: {
         ...(dto.title !== undefined ? { title: dto.title } : {}),
         ...(newVideo ? { mediaUrl: dto.mediaUrl, durationSeconds: await this.lengthOf(dto.mediaUrl!) } : {}),
-        ...(dto.clickUrl !== undefined ? { clickUrl: dto.clickUrl } : {}),
-        ...(dto.weight !== undefined ? { weight: dto.weight } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
     });
@@ -88,9 +84,7 @@ function view(ad: Ad): AdViewDto {
     id: ad.id,
     title: ad.title,
     mediaUrl: ad.mediaUrl,
-    clickUrl: ad.clickUrl,
     durationSeconds: ad.durationSeconds,
-    weight: ad.weight,
     status: ad.status,
   };
 }

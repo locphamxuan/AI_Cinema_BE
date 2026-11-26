@@ -153,7 +153,7 @@ describe('playback audit rows (hardening #12)', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       access.verify.mockResolvedValue(verified);
-      access.runningPlanOf.mockResolvedValue({ code: 'MONTHLY', features: { maxDevices: 2, adFree: false } });
+      access.runningPlanOf.mockResolvedValue({ code: 'MONTHLY', features: { maxDevices: 2 } });
       access.stillEntitled.mockResolvedValue(true);
       devices.check.mockResolvedValue(undefined);
       progress.progress.mockResolvedValue({ found: false, positionSeconds: 0, completed: false });
