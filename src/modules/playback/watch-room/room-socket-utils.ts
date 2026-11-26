@@ -1,6 +1,14 @@
-import type { JwtService } from '@nestjs/jwt';
-import { type AccessTokenPayload, JWT_ALGORITHM } from 'src/common/auth/authenticated-user';
+import type { Server } from 'socket.io';
 import type { LivePlaybackState } from './room-live-state';
+import { ROOM_CHANNEL, ROOM_EVENT, ROOM_TERMINATED_REASON } from './room-events';
+import type { RoomCluster } from './room-cluster';
+
+export {
+  assertActiveAccount,
+  handshakeTokenOf,
+  memberOfToken,
+  socketAuth,
+} from 'src/common/realtime/member-socket-auth';
 
 /** The playback state a stored room status starts the live clock in. */
 export function liveStateOf(status: string): LivePlaybackState {
@@ -23,58 +31,63 @@ export function socketErrorOf(e: unknown): { reason: string; details?: unknown }
   return { reason: 'ROOM_ERROR' };
 }
 
-/** The access JWT a client sends on connect: `auth.token`, else an `Authorization: Bearer` header. */
-export function handshakeTokenOf(client: {
-  handshake: { auth: unknown; headers: { authorization?: string } };
-}): string {
-  const auth = client.handshake.auth as { token?: string } | undefined;
-  const header = client.handshake.headers.authorization;
-  return auth?.token ?? (header?.startsWith('Bearer ') ? header.slice(7) : '');
-}
-
-/** A token outlives a lock-out: a socket checks the account like the HTTP guard does (audit 2026-11-12). */
-export async function assertActiveAccount(
-  prisma: { user: { findUnique(args: object): Promise<{ isActive: boolean; role: string } | null> } },
+export async function detachRoomMember(
+  server: Server,
+  cluster: RoomCluster,
+  roomId: string,
   userId: string,
 ): Promise<void> {
-  const account = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true, role: true } });
-  if (!account?.isActive) throw new Error('account deactivated');
-  // 2026-11-13: watch rooms are a Member feature only.
-  if (account.role !== 'MEMBER') throw new Error('members only');
+  const sockets = await server.in(ROOM_CHANNEL(roomId)).fetchSockets();
+  for (const socket of sockets) {
+    if ((socket.data as { userId?: string }).userId !== userId) continue;
+    socket.leave(ROOM_CHANNEL(roomId));
+    (socket.data as { roomId?: string }).roomId = undefined;
+  }
+  cluster.seats.release(roomId, userId);
+  cluster.publish({ t: 'unseat', roomId, userId, keepSocketId: '' });
 }
 
-/** The member of a handshake token: a valid access token of an active Member account (BR-69), else it throws. */
-export async function memberOfToken(
-  jwt: Pick<JwtService, 'verifyAsync'>,
-  options: { issuer: string; audience: string },
-  prisma: Parameters<typeof assertActiveAccount>[0],
-  token: string,
-): Promise<string> {
-  const payload = await jwt.verifyAsync<AccessTokenPayload>(token, {
-    algorithms: [JWT_ALGORITHM],
-    issuer: options.issuer,
-    audience: options.audience,
-  });
-  if (payload.type !== 'access') throw new Error('not an access token');
-  await assertActiveAccount(prisma, payload.sub);
-  return payload.sub;
+export async function notifyWhenRoomAlone(server: Server, roomId: string): Promise<void> {
+  const sockets = await server.in(ROOM_CHANNEL(roomId)).fetchSockets();
+  if (sockets.length === 1) {
+    sockets[0].emit(ROOM_EVENT.LAST_ONE_LEFT, {
+      message: 'Everyone else left the room; switch back to watching alone?',
+    });
+  }
 }
 
-type HandshakeSocket = Parameters<typeof handshakeTokenOf>[0] & { data: { userId?: string } };
+export function broadcastRoomTermination(
+  server: Server,
+  cluster: RoomCluster,
+  roomIds: string[],
+  reason: string,
+): void {
+  for (const roomId of roomIds) {
+    server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.TERMINATED, { roomId, reason });
+    cluster.forget(roomId);
+    cluster.publish({ t: 'drop', roomId });
+  }
+}
 
-/**
- * Socket.io middleware of the /watch namespace: a socket connects only once its token and account are checked, so
- * the client's `connect` (and the JOIN it sends at once) never reaches a gateway that does not know the member yet.
- * A refused handshake reaches the client as `connect_error` with the message `UNAUTHENTICATED`.
- */
-export function socketAuth(userOf: (token: string) => Promise<string>) {
-  return (socket: HandshakeSocket, next: (error?: Error) => void): void => {
-    userOf(handshakeTokenOf(socket)).then(
-      (userId) => {
-        socket.data.userId = userId;
-        next();
-      },
-      () => next(Object.assign(new Error('UNAUTHENTICATED'), { data: { reason: 'UNAUTHENTICATED' } })),
-    );
-  };
+export function handOverRoom(cluster: RoomCluster, roomId: string, hostUserId: string | null): void {
+  cluster.live.setHost(roomId, hostUserId);
+  cluster.publish({ t: 'host', roomId, hostUserId });
+}
+
+export async function handleHostGraceExpired(
+  server: Server,
+  cluster: RoomCluster,
+  rooms: { promoteNextHost(roomId: string): Promise<string | null>; close(roomId: string): Promise<void> },
+  roomId: string,
+  hostUserId: string,
+): Promise<void> {
+  if (await cluster.isSeated(roomId, hostUserId)) return;
+  const newHost = await rooms.promoteNextHost(roomId);
+  if (newHost) {
+    handOverRoom(cluster, roomId, newHost);
+    server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: newHost, reason: 'HOST_TIMEOUT' });
+    return;
+  }
+  await rooms.close(roomId);
+  broadcastRoomTermination(server, cluster, [roomId], ROOM_TERMINATED_REASON.HOST_LEFT);
 }

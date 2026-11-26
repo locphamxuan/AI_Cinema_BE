@@ -28,14 +28,14 @@ export class UpdateWatchRoomDto {
   positionSeconds: number;
 }
 
-/** Edge 3.2 — what a leaving Host wants for the room: hand it over, or close it for everyone. */
+/** Edge 3.2 — a leaving Host hands over to a chosen active member, or closes the room for everyone. */
 export class LeaveWatchRoomDto {
   @ApiPropertyOptional({ enum: ['TRANSFER', 'DISBAND'], description: 'Only read when the Host leaves' })
   @IsIn(['TRANSFER', 'DISBAND'])
   @IsOptional()
   action?: 'TRANSFER' | 'DISBAND';
 
-  @ApiPropertyOptional({ description: 'With TRANSFER: the member to promote; omit for the earliest one' })
+  @ApiPropertyOptional({ description: 'With TRANSFER: the active member in the room to promote' })
   @IsUUID('4')
   @IsOptional()
   newHostUserId?: string;

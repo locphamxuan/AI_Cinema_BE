@@ -15,7 +15,17 @@ import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RoomInviteService } from './room-invite.service';
 import { RoomCluster } from './room-cluster';
-import { liveStateOf, memberOfToken, socketErrorOf, socketAuth } from './room-socket-utils';
+import {
+  broadcastRoomTermination,
+  detachRoomMember,
+  handOverRoom,
+  handleHostGraceExpired,
+  liveStateOf,
+  memberOfToken,
+  notifyWhenRoomAlone,
+  socketErrorOf,
+  socketAuth,
+} from './room-socket-utils';
 import { INVALID_PAYLOAD, inviteOf, playbackOf, roomIdOf } from './room-payload';
 import { SignedInSocketGuard } from './room-socket.guard';
 import { RoomTerminationService } from './room-termination.service';
@@ -67,7 +77,9 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
   }
 
   onModuleInit(): void {
-    this.termination.register((roomIds, reason) => this.broadcastTermination(roomIds, reason));
+    this.termination.register((roomIds, reason) =>
+      broadcastRoomTermination(this.server, this.cluster, roomIds, reason),
+    );
   }
 
   /** The member of a handshake token: a valid access token of an active Member account (BR-69), else it throws. */
@@ -156,11 +168,11 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
     const userId = (client.data as SocketData).userId!;
     const roomId = roomIdOf(body);
     if (!roomId) return void client.emit(ROOM_EVENT.ERROR, INVALID_PAYLOAD);
-    this.seats.release(roomId, userId);
-    void client.leave(ROOM_CHANNEL(roomId));
-    (client.data as SocketData).roomId = undefined;
     try {
       const result = await this.rooms.leave(userId, roomId, {});
+      this.seats.release(roomId, userId);
+      await client.leave(ROOM_CHANNEL(roomId));
+      (client.data as SocketData).roomId = undefined;
       await this.afterMemberLeft(roomId, userId, result);
     } catch (e) {
       client.emit(ROOM_EVENT.ERROR, socketErrorOf(e));
@@ -174,14 +186,19 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
     const roomId = roomIdOf(body);
     if (!roomId) return void client.emit(ROOM_EVENT.ERROR, INVALID_PAYLOAD);
     if (!this.seats.isSeated(roomId, userId)) return void client.emit(ROOM_EVENT.ERROR, { reason: 'NOT_IN_ROOM' });
-    const active = await this.prisma.roomParticipant.count({ where: { roomId, leftAt: null, role: 'PARTICIPANT' } });
-    const carried = this.live.vote(roomId, userId, active);
-    this.cluster.publish({ t: 'vote', roomId, userId });
-    if (!carried) return;
-    const newHost = await this.rooms.promoteNextHost(roomId);
-    if (!newHost) return;
-    this.handOver(roomId, newHost);
-    this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: newHost, reason: 'VOTE' });
+    try {
+      await this.rooms.assertCanUse(userId);
+      const active = await this.prisma.roomParticipant.count({ where: { roomId, leftAt: null, role: 'PARTICIPANT' } });
+      const carried = this.live.vote(roomId, userId, active);
+      this.cluster.publish({ t: 'vote', roomId, userId });
+      if (!carried) return;
+      const newHost = await this.rooms.promoteNextHost(roomId);
+      if (!newHost) return;
+      handOverRoom(this.cluster, roomId, newHost);
+      this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: newHost, reason: 'VOTE' });
+    } catch (e) {
+      client.emit(ROOM_EVENT.ERROR, socketErrorOf(e));
+    }
   }
 
   /** Edges 7.1–7.3 — invite an accepted friend: 60 s cooldown, 10 min TTL, offline → notification. */
@@ -192,19 +209,24 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
     if (!body) return void client.emit(ROOM_EVENT.ERROR, INVALID_PAYLOAD);
     // Only a member sitting in the room hands out its invites: no invite to a room one is not in.
     if (!this.seats.isSeated(body.roomId, userId)) return void client.emit(ROOM_EVENT.ERROR, { reason: 'NOT_IN_ROOM' });
-    const outcome = await this.invites.invite(
-      userId,
-      body.roomId,
-      body.friendId,
-      await this.cluster.isOnline(body.friendId),
-    );
-    if (!outcome.ok) {
-      client.emit(ROOM_EVENT.INVITE_FAILED, outcome);
-      return;
+    try {
+      await this.rooms.assertCanUse(userId);
+      const outcome = await this.invites.invite(
+        userId,
+        body.roomId,
+        body.friendId,
+        await this.cluster.isOnline(body.friendId),
+      );
+      if (!outcome.ok) {
+        client.emit(ROOM_EVENT.INVITE_FAILED, outcome);
+        return;
+      }
+      if (outcome.deliver === 'SOCKET')
+        this.server.to(USER_CHANNEL(body.friendId)).emit(ROOM_EVENT.INVITED, outcome.invite);
+      client.emit(ROOM_EVENT.INVITE_SENT, { friendId: body.friendId, cooldownSeconds: INVITE_COOLDOWN_MS / 1000 });
+    } catch (e) {
+      client.emit(ROOM_EVENT.ERROR, socketErrorOf(e));
     }
-    if (outcome.deliver === 'SOCKET')
-      this.server.to(USER_CHANNEL(body.friendId)).emit(ROOM_EVENT.INVITED, outcome.invite);
-    client.emit(ROOM_EVENT.INVITE_SENT, { friendId: body.friendId, cooldownSeconds: INVITE_COOLDOWN_MS / 1000 });
   }
 
   /** One member, one seat per room (edge 5.2): the older socket is told and unseated. */
@@ -232,66 +254,43 @@ export class WatchRoomGateway implements OnGatewayInit, OnGatewayConnection, OnG
         graceSeconds: HOST_GRACE_MS / 1000,
         message: 'The Host lost the connection; waiting 45 seconds for them to come back',
       });
-      this.cluster.startGrace(roomId, HOST_GRACE_MS, () => void this.onGraceExpired(roomId, userId));
+      this.cluster.startGrace(roomId, HOST_GRACE_MS, () => {
+        void handleHostGraceExpired(this.server, this.cluster, this.rooms, roomId, userId);
+      });
       return;
     }
     this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.PARTICIPANT_LEFT, { userId });
-    await this.notifyWhenAlone(roomId);
-  }
-
-  private async onGraceExpired(roomId: string, hostUserId: string): Promise<void> {
-    if (await this.cluster.isSeated(roomId, hostUserId)) return; // the Host made it back, on any instance
-    const newHost = await this.rooms.promoteNextHost(roomId);
-    if (newHost) {
-      this.handOver(roomId, newHost);
-      this.server
-        .to(ROOM_CHANNEL(roomId))
-        .emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: newHost, reason: 'HOST_TIMEOUT' });
-      return;
-    }
-    await this.rooms.close(roomId);
-    this.broadcastTermination([roomId], ROOM_TERMINATED_REASON.HOST_LEFT);
+    await notifyWhenRoomAlone(this.server, roomId);
   }
 
   private async afterMemberLeft(
     roomId: string,
     userId: string,
     result: { closed: boolean; newHostUserId: string | null },
+    detachSocket = false,
   ): Promise<void> {
     if (result.closed) {
-      this.broadcastTermination([roomId], ROOM_TERMINATED_REASON.HOST_DISBANDED);
+      broadcastRoomTermination(this.server, this.cluster, [roomId], ROOM_TERMINATED_REASON.HOST_DISBANDED);
+      if (detachSocket) await detachRoomMember(this.server, this.cluster, roomId, userId);
       return;
     }
+    if (result.newHostUserId) handOverRoom(this.cluster, roomId, result.newHostUserId);
+    if (detachSocket) await detachRoomMember(this.server, this.cluster, roomId, userId);
     this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.PARTICIPANT_LEFT, { userId });
     if (result.newHostUserId) {
-      this.handOver(roomId, result.newHostUserId);
       this.server
         .to(ROOM_CHANNEL(roomId))
         .emit(ROOM_EVENT.HOST_CHANGED, { newHostUserId: result.newHostUserId, reason: 'HOST_LEFT' });
     }
-    await this.notifyWhenAlone(roomId);
+    await notifyWhenRoomAlone(this.server, roomId);
   }
 
-  /** Edge 3.4 — one member left alone is offered the way back to solo playback. */
-  private async notifyWhenAlone(roomId: string): Promise<void> {
-    const sockets = await this.server.in(ROOM_CHANNEL(roomId)).fetchSockets();
-    if (sockets.length === 1) {
-      sockets[0].emit(ROOM_EVENT.LAST_ONE_LEFT, {
-        message: 'Everyone else left the room; switch back to watching alone?',
-      });
-    }
-  }
-
-  private broadcastTermination(roomIds: string[], reason: string): void {
-    for (const roomId of roomIds) {
-      this.server.to(ROOM_CHANNEL(roomId)).emit(ROOM_EVENT.TERMINATED, { roomId, reason });
-      this.cluster.forget(roomId);
-      this.cluster.publish({ t: 'drop', roomId });
-    }
-  }
-
-  private handOver(roomId: string, hostUserId: string | null): void {
-    this.live.setHost(roomId, hostUserId);
-    this.cluster.publish({ t: 'host', roomId, hostUserId });
+  /** The REST leave route also removes the socket seat and broadcasts the committed DB hand-over. */
+  afterRestLeave(
+    roomId: string,
+    userId: string,
+    result: { closed: boolean; newHostUserId: string | null },
+  ): Promise<void> {
+    return this.afterMemberLeft(roomId, userId, result, true);
   }
 }
