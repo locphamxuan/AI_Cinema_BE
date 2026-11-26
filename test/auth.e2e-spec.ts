@@ -25,7 +25,7 @@ describe('Auth (e2e)', () => {
   it('signs up an adult member and refuses a minor (BR-54)', async () => {
     const res = await api()
       .post('/api/auth/register')
-      .send({ email, password, fullName: 'Nguyễn Minh Anh', dateOfBirth: '2001-02-03' })
+      .send({ email, password, fullName: 'Nguyễn Minh Anh', dateOfBirth: '2001-02-03', acceptedTerms: true })
       .expect(201);
     const session = res.body as AuthSessionDto;
     expect(session.user).toMatchObject({ email, role: 'MEMBER' });
@@ -33,8 +33,21 @@ describe('Auth (e2e)', () => {
 
     await api()
       .post('/api/auth/register')
-      .send({ email: `minor-${randomUUID()}@example.com`, password, fullName: 'Em', dateOfBirth: '2015-01-01' })
+      .send({
+        email: `minor-${randomUUID()}@example.com`,
+        password,
+        fullName: 'Em',
+        dateOfBirth: '2015-01-01',
+        acceptedTerms: true,
+      })
       .expect(403);
+  });
+
+  it('opens no account without the terms of use accepted', async () => {
+    await api()
+      .post('/api/auth/register')
+      .send({ email: `no-terms-${randomUUID()}@example.com`, password, fullName: 'Anh', dateOfBirth: '2000-01-01' })
+      .expect(400);
   });
 
   it('rejects a weak password', async () => {
@@ -45,6 +58,7 @@ describe('Auth (e2e)', () => {
         password: 'password',
         fullName: 'Weak',
         dateOfBirth: '2000-01-01',
+        acceptedTerms: true,
       })
       .expect(400);
   });

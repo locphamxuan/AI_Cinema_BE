@@ -19,6 +19,8 @@ model User {
   phoneNumber     String?   @map("phone_number") @db.VarChar(20)
   role            UserRole  @default(MEMBER)
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  /// When the member ticked "accept the terms of use" at sign-up, by email or by a first Google sign-in.
+  termsAcceptedAt DateTime? @map("terms_accepted_at") @db.Timestamptz(6)
   isActive        Boolean   @default(true) @map("is_active")
   /// Set on STUDIO accounts only: the studio the account speaks for.
   studioId        String?   @map("studio_id") @db.Uuid

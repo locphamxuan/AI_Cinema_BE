@@ -71,7 +71,14 @@ export class AuthService {
     // always has a wallet, so no purchase screen ever has to open one on the spot.
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
-        data: { email, passwordHash, fullName: dto.fullName.trim(), dateOfBirth, role: UserRole.MEMBER },
+        data: {
+          email,
+          passwordHash,
+          fullName: dto.fullName.trim(),
+          dateOfBirth,
+          role: UserRole.MEMBER,
+          termsAcceptedAt: new Date(),
+        },
         select: USER_PROFILE_SELECT,
       });
       await this.wallets.openForNewAccount(tx, created.id);
@@ -100,13 +107,14 @@ export class AuthService {
   /**
    * Google sign-in is for members only, in one tap: a linked member signs in and a new email opens a member
    * account under the Google name. An email that already has an account is never linked: it signs in with its
-   * password (GOOGLE_EMAIL_REGISTERED). Staff accounts sign in with their password.
+   * password (GOOGLE_EMAIL_REGISTERED). Staff accounts sign in with their password. A new account opens only
+   * once the member accepted the terms of use, as on email sign-up (GOOGLE_TERMS_REQUIRED otherwise).
    */
   async googleLogin(dto: GoogleLoginRequestDto): Promise<AuthSessionDto> {
     const profile = await this.google.verify(dto.idToken);
     const user =
       (await this.prisma.user.findUnique({ where: { googleId: profile.sub }, select: USER_PROFILE_SELECT })) ??
-      (await this.openForGuest(profile));
+      (await this.openForGuest(profile, dto.acceptedTerms === true));
     assertGoogleMember(user);
     return this.session(user);
   }
@@ -172,13 +180,21 @@ export class AuthService {
   }
 
   /** Google is how a guest signs up: an email that already has an account signs in with its password instead. */
-  private async openForGuest(profile: GoogleProfile): Promise<UserProfile> {
+  private async openForGuest(profile: GoogleProfile, acceptedTerms: boolean): Promise<UserProfile> {
     const email = normalizeEmail(profile.email);
     const existing = await this.prisma.user.findUnique({
       where: { email },
       select: { ...USER_PROFILE_SELECT, googleId: true },
     });
-    if (!existing) return this.openGoogleMember(profile, email);
+    if (!existing) {
+      if (!acceptedTerms) {
+        throw new ConflictException({
+          message: 'Accept the terms of use to open your account',
+          details: { reason: GOOGLE_REASON.TERMS_REQUIRED },
+        });
+      }
+      return this.openGoogleMember(profile, email);
+    }
     const { googleId, ...user } = existing;
     if (googleId) {
       throw new ConflictException({
@@ -206,6 +222,7 @@ export class AuthService {
           role: UserRole.MEMBER,
           googleId: profile.sub,
           emailVerifiedAt: new Date(),
+          termsAcceptedAt: new Date(),
         },
         select: USER_PROFILE_SELECT,
       });
