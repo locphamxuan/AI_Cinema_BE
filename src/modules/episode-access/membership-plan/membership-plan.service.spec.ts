@@ -254,7 +254,7 @@ describe('assertPlanFeatures (BR-34)', () => {
   it('lets a plan stream on as many devices as it registers, or fewer', () => {
     expect(() => assertPlanFeatures({ maxRegisteredDevices: 4, maxConcurrentStreams: 2 })).not.toThrow();
     expect(() => assertPlanFeatures({ maxRegisteredDevices: 2, maxConcurrentStreams: 2 })).not.toThrow();
-    expect(() => assertPlanFeatures({ adFree: true })).not.toThrow();
+    expect(() => assertPlanFeatures({ maxQuality: '720p' })).not.toThrow();
     expect(() => assertPlanFeatures(undefined)).not.toThrow();
   });
 

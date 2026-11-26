@@ -9,7 +9,7 @@ const valid = {
   name: 'Premium Tháng',
   period: 'MONTHLY',
   durationDays: 30,
-  features: { maxRegisteredDevices: 4, maxConcurrentStreams: 2, adFree: true, maxQuality: '1080p' },
+  features: { maxRegisteredDevices: 4, maxConcurrentStreams: 2, maxQuality: '1080p' },
 };
 
 /** The property paths class-validator refuses, nested ones as `features.maxQuality`. */
@@ -42,12 +42,10 @@ describe('membership plan requests', () => {
     const features = {
       maxRegisteredDevices: 0,
       maxConcurrentStreams: 11,
-      adFree: 'yes',
       maxQuality: '4k',
       downloads: true,
     };
     expect((await refused(UpdateMembershipPlanRequestDto, { features })).sort()).toEqual([
-      'features.adFree',
       'features.downloads',
       'features.maxConcurrentStreams',
       'features.maxQuality',
