@@ -207,6 +207,28 @@ describe('PublicationService', () => {
       expect(revisions.announce).toHaveBeenCalledWith('mail-1');
     });
 
+    it('tells the Reviewer and the lead Creator why a live episode was taken down', async () => {
+      db.publication.findUnique.mockResolvedValue(publication({ publishedAt: new Date() }));
+      access.episode.mockResolvedValue(episode({ status: EpisodeStatus.PUBLISHED }));
+      await service.unpublish('pub1', { ...dto, mode: UnpublishMode.REMOVAL }, ADMIN);
+      expect(notifications.notify).toHaveBeenCalledWith(
+        [PROJECT.reviewerId, PROJECT.creatorId],
+        expect.objectContaining({
+          type: 'EPISODE_UNPUBLISHED',
+          body: 'Sai phụ đề',
+          payload: expect.objectContaining({ episodeId: 'e1', publicationId: 'pub1', mode: UnpublishMode.REMOVAL }),
+        }),
+        db,
+      );
+    });
+
+    it('cancels a schedule without telling anyone it was taken down', async () => {
+      db.publication.findUnique.mockResolvedValue(publication({ scheduledAt: new Date() }));
+      access.episode.mockResolvedValue(episode({ status: EpisodeStatus.SCHEDULED }));
+      await service.unpublish('pub1', dto, ADMIN);
+      expect(notifications.notify).not.toHaveBeenCalled();
+    });
+
     it('takes a live episode down for good and refunds the unlocks (BR-52)', async () => {
       db.publication.findUnique.mockResolvedValue(publication({ publishedAt: new Date() }));
       access.episode.mockResolvedValue(episode({ status: EpisodeStatus.PUBLISHED }));

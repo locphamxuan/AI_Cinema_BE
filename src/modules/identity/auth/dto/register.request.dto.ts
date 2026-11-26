@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { Equals, IsDateString, IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { PASSWORD_HINT, PASSWORD_RULE } from './password-rule';
 
 import { NormalizeEmail, Trim } from 'src/common/validation/trim';
@@ -32,4 +32,11 @@ export class RegisterRequestDto {
   @ApiProperty({ example: '2003-05-14', description: 'Date of birth; members must be 18 or older (BR-54).' })
   @IsDateString({ strict: true })
   dateOfBirth: string;
+
+  @ApiProperty({
+    example: true,
+    description: 'The member ticked "accept the terms of use"; anything but true is refused.',
+  })
+  @Equals(true, { message: 'You must accept the terms of use' })
+  acceptedTerms: boolean;
 }

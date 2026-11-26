@@ -112,7 +112,7 @@ describe('Content review, AI label and compliance (e2e)', () => {
     const sheet = await reviewer.post<Sheet>(`/media-assets/${v2.id}/ai-content-labels`, LABEL, 200);
     expect(sheet.episode.status).toBe('LABELED');
     expect(sheet.aiContentLabel).toMatchObject({ ...LABEL, displayLocation: 'TOP_RIGHT' });
-    expect(sheet.aiContentLabel!.policy.name).toBe('AI-Generated Content Labeling Policy');
+    expect(sheet.aiContentLabel!.policy.name).toBe('Quy định gắn nhãn nội dung do AI tạo');
   });
 
   it('sends the version back when a compliance item fails (BR-42)', async () => {

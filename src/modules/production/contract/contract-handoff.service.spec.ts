@@ -59,10 +59,17 @@ describe('ContractHandoffService', () => {
     });
 
     it('is the ceiling for an open round and the signed cost for a closed one', async () => {
-      const round = { projectId: 'p1', handoffId: null, costVnd: 170_000_000n };
+      const round = { projectId: 'p1', handoffId: null, costVnd: 170_000_000n, ceilingVnd: null };
       await expect(service.budgetOf(db, { ...round, status: 'SENT' })).resolves.toBe(200_000_000);
       await expect(service.budgetOf(db, { ...round, status: 'SIGNED' })).resolves.toBe(170_000_000);
       await expect(service.budgetOf(db, { ...round, costVnd: null, status: 'SUPERSEDED' })).resolves.toBe(200_000_000);
+    });
+
+    it('keeps the ceiling fixed when the round was first signed, even after the budget moved', async () => {
+      const round = { projectId: 'p1', handoffId: null, costVnd: 170_000_000n, ceilingVnd: 180_000_000n };
+      await expect(service.budgetOf(db, { ...round, status: 'ADMIN_COUNTERED' })).resolves.toBe(180_000_000);
+      await expect(service.budgetOf(db, { ...round, status: 'SIGNED' })).resolves.toBe(180_000_000);
+      expect(costs.summary).not.toHaveBeenCalled();
     });
   });
 

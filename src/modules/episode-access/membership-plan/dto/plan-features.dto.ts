@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { HLS_LADDER } from 'src/common/hls/quality-ladder';
 
 /** Most devices one plan may allow, registered or playing at once. */
@@ -7,7 +7,7 @@ const MAX_PLAN_DEVICES = 10;
 
 /**
  * What a plan allows (BR-34), kept in `membership_plans.features`. MF-4 reads the two limits,
- * ad scheduling reads `adFree`, playback reads `maxQuality`; a missing key falls back to the
+ * playback reads `maxQuality`; a missing key falls back to the
  * platform default. The service also checks that streams never exceed devices.
  */
 export class PlanFeaturesDto {
@@ -34,11 +34,6 @@ export class PlanFeaturesDto {
   @Max(MAX_PLAN_DEVICES)
   @IsOptional()
   maxConcurrentStreams?: number;
-
-  @ApiPropertyOptional({ example: true, description: 'No mid-roll ads' })
-  @IsBoolean()
-  @IsOptional()
-  adFree?: boolean;
 
   @ApiPropertyOptional({
     enum: HLS_LADDER.map((rung) => rung.name),

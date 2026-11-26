@@ -10,8 +10,6 @@ export interface RiskRule {
 
 /** One top-up worth this much or more is unusual for a viewer of short AI films. */
 export const LARGE_TOP_UP_VND = 5_000_000;
-/** A hand correction of this many VND or more deserves a second look. */
-export const LARGE_ADJUSTMENT_VND = 1_000_000;
 /** This many unlocks by one wallet inside the window looks scripted. */
 export const RAPID_UNLOCK_COUNT = 15;
 export const RAPID_UNLOCK_WINDOW_MINUTES = 10;
@@ -28,15 +26,6 @@ export const RISK_RULES: RiskRule[] = [
       FROM coin_transactions ct
       WHERE ct.entry_type = 'TOP_UP' AND ct.created_at >= ${since}
         AND ct.main_amount::bigint * ct.rate_vnd >= ${LARGE_TOP_UP_VND}`,
-  },
-  {
-    code: 'LARGE_ADJUSTMENT',
-    description: `Điều chỉnh Coin bằng tay từ ${LARGE_ADJUSTMENT_VND.toLocaleString('vi-VN')} VND trở lên`,
-    query: (since) => Prisma.sql`
-      SELECT ct.id, 'Điều chỉnh tay ' || ((ABS(ct.main_amount) + ABS(ct.bonus_amount))::bigint * ct.rate_vnd) || ' VND' AS reason
-      FROM coin_transactions ct
-      WHERE ct.entry_type = 'ADJUSTMENT' AND ct.created_at >= ${since}
-        AND (ABS(ct.main_amount) + ABS(ct.bonus_amount))::bigint * ct.rate_vnd >= ${LARGE_ADJUSTMENT_VND}`,
   },
   {
     code: 'RAPID_UNLOCKS',

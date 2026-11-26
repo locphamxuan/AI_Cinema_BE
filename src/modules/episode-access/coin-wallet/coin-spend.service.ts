@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
-import { CoinEntryType, type CoinTransaction, type Prisma } from '@prisma/client';
+import type { CoinEntryType, CoinTransaction, Prisma } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
@@ -21,7 +22,7 @@ export class CoinSpendService {
     @Optional() private readonly notifications?: NotificationService,
   ) {}
 
-  /** Takes Coins out: main first, then the bonus lots that expire first. */
+  /** Takes Coins out: main first, then bonus Coins for the rest (BR-01). */
   async spend(tx: PrismaTx, walletId: string, request: SpendRequest, now = new Date()): Promise<CoinMovement> {
     // The key is looked up under the wallet lock: a concurrent retry with the same key waits for the
     // first attempt to commit and then replays it, instead of failing on the unique key.
@@ -52,11 +53,15 @@ export class CoinSpendService {
     const rows: Prisma.CoinTransactionCreateManyInput[] = [];
     let mainAfter = wallet.mainBalance;
     let bonusAfter = wallet.bonusBalance;
-    // Main Coins leave on the first row; every lot the bonus part touched gets a row of its own.
+    // Main Coins leave on the first row; every lot the bonus part touched gets a row of its own. All of
+    // them carry the id of the first row as their payment, so a refund pays the whole payment back once.
+    const paymentId = randomUUID();
     const debitRow = (main: number, bonus: number, lotId?: string) => {
       mainAfter += main;
       bonusAfter += bonus;
       rows.push({
+        id: rows.length === 0 ? paymentId : undefined,
+        paymentId,
         walletId,
         entryType: request.entryType,
         mainAmount: main,
@@ -72,62 +77,19 @@ export class CoinSpendService {
         description: request.description,
       });
     };
-    debitRow(-mainCoins, 0);
-    for (const debit of debits) debitRow(0, -debit.amount, debit.id);
+    debitRow(0 - mainCoins, 0);
+    for (const debit of debits) debitRow(0, 0 - debit.amount, debit.id);
 
-    const [first] = await tx.coinTransaction.createManyAndReturn({ data: rows });
+    await tx.coinTransaction.createMany({ data: rows });
     await bumpWallet(tx, walletId, mainAfter, bonusAfter);
     const movement = {
-      transactionId: first.id,
+      transactionId: paymentId,
       mainCoins,
       bonusCoins,
       mainBalance: mainAfter,
       bonusBalance: bonusAfter,
     };
     await noticeSpent(this.notifications, tx, walletId, request.entryType, movement);
-    return movement;
-  }
-
-  /** Puts Coins back where they came from: main back to main, bonus back to its lot. */
-  async refund(
-    tx: PrismaTx,
-    walletId: string,
-    original: Pick<CoinTransaction, 'id' | 'mainAmount' | 'bonusAmount' | 'entryType'>,
-    _now = new Date(),
-  ): Promise<CoinMovement> {
-    const wallet = await this.locked(tx, walletId);
-    const mainAmount = 0 - original.mainAmount;
-    const bonusAmount = 0 - original.bonusAmount;
-    if (mainAmount === 0 && bonusAmount === 0) {
-      throw new ConflictException({ message: 'Nothing to refund' });
-    }
-    const settings = await this.settings.get();
-    const [entry] = await tx.coinTransaction.createManyAndReturn({
-      data: [
-        {
-          walletId,
-          entryType: CoinEntryType.REFUND,
-          mainAmount,
-          bonusAmount,
-          rateVnd: settings.coinRateVnd,
-          reversesId: original.id,
-          idempotencyKey: null,
-          mainBalanceAfter: wallet.mainBalance + mainAmount,
-          bonusBalanceAfter: wallet.bonusBalance + bonusAmount,
-          description: `Refund of ${original.entryType} ${original.id}`,
-          createdById: undefined,
-        },
-      ],
-    });
-    await bumpWallet(tx, walletId, wallet.mainBalance + mainAmount, wallet.bonusBalance + bonusAmount);
-    const movement = {
-      transactionId: entry.id,
-      mainCoins: mainAmount,
-      bonusCoins: bonusAmount,
-      mainBalance: wallet.mainBalance + mainAmount,
-      bonusBalance: wallet.bonusBalance + bonusAmount,
-    };
-    await noticeReceived(this.notifications, tx, walletId, CoinEntryType.REFUND, movement);
     return movement;
   }
 

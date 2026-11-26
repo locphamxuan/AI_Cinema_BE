@@ -15,6 +15,19 @@ export interface StatementFilter {
   to?: Date;
 }
 
+/** The admin ledger also narrows to one account and shows it on every row. */
+type LedgerFilter = Omit<StatementFilter, 'userId'> & { walletId?: string; account?: string };
+
+const ACCOUNT_SELECT = { id: true, fullName: true, email: true } as const;
+type LedgerRow = CoinTransaction & {
+  wallet: { userId: string; user: { id: string; fullName: string; email: string } };
+};
+
+/** A member whose name or email contains the text, ignoring case. */
+const accountMatching = (text: string): Prisma.UserWhereInput => ({
+  OR: [{ email: { contains: text, mode: 'insensitive' } }, { fullName: { contains: text, mode: 'insensitive' } }],
+});
+
 const lineOf = (entry: CoinTransaction) => ({
   id: entry.id,
   entryType: entry.entryType,
@@ -58,30 +71,44 @@ export class StatementService {
     const entry = await this.prisma.coinTransaction.findFirst({ where: { id: transactionId, walletId: wallet.id } });
     if (!entry)
       throw new NotFoundException({ message: 'Transaction not found', details: { reason: 'TRANSACTION_NOT_FOUND' } });
-    return { ...lineOf(entry), walletId: wallet.id, reversesId: entry.reversesId, lotId: entry.lotId };
+    return {
+      ...lineOf(entry),
+      walletId: wallet.id,
+      reversesId: entry.reversesId,
+      lotId: entry.lotId,
+      paymentId: entry.paymentId,
+    };
   }
 
-  /** Every wallet of the platform, for Billing support; filter by wallet, entry type and time. */
-  async ledger(filter: Omit<StatementFilter, 'userId'> & { walletId?: string }, query: PaginateQuery) {
+  /**
+   * Every wallet of the platform, for Billing support; filter by wallet, member account (name or email),
+   * entry type and time. Each row names the account it belongs to.
+   */
+  async ledger(filter: LedgerFilter, query: PaginateQuery) {
     const page = await paginate(query, this.prisma.coinTransaction, {
       where: {
         ...(filter.walletId ? { walletId: filter.walletId } : {}),
+        ...(filter.account ? { wallet: { user: accountMatching(filter.account) } } : {}),
         ...this.between(filter.from, filter.to),
         ...(filter.kind === 'ALL' ? {} : { [counter(filter.kind)]: { ne: 0 } }),
         ...(filter.entryType ? { entryType: filter.entryType } : {}),
       },
       // `paginate` has no `include` key: `relations` alone becomes the Prisma include.
-      relations: { wallet: { select: { userId: true } } },
+      relations: { wallet: { select: { userId: true, user: { select: ACCOUNT_SELECT } } } },
       sortableColumns: ['createdAt', 'entryType'],
       defaultSortBy: [['createdAt', 'DESC']],
       filterableColumns: { entryType: ['$eq', '$in'], walletId: ['$eq'] },
     });
     return {
       ...page,
-      data: (page.data as (CoinTransaction & { wallet: { userId: string } })[]).map((entry) => ({
+      data: (page.data as LedgerRow[]).map((entry) => ({
         ...lineOf(entry),
         walletId: entry.walletId,
         userId: entry.wallet.userId,
+        account: entry.wallet.user,
+        // Rows sharing one paymentId are one payment: an Admin refund pays all of them back at once.
+        paymentId: entry.paymentId,
+        reversesId: entry.reversesId,
       })),
     };
   }

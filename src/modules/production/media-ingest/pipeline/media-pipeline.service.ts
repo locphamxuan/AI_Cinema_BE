@@ -3,7 +3,7 @@ import { mkdtemp, open, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { Inject, Injectable, OnApplicationBootstrap, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleInit } from '@nestjs/common';
 import { IngestJobType, JobStatus, MediaIngestStatus, MediaSourceMethod, type MediaAsset } from '@prisma/client';
 import { FILE_KINDS } from 'src/common/validation/uploaded-file';
 import { APP_CONFIG, type AppConfig } from 'src/config/app-config';
@@ -14,6 +14,7 @@ import { probeHls } from 'src/common/hls/hls-playlist';
 import { DONE, MediaOutcomeService, type ReadyResult } from './media-outcome.service';
 import { MediaProcessor } from 'src/infrastructure/media/media-processor';
 import { downloadTo, UnsafeUrlError, type UrlPolicy } from 'src/common/security/safe-url';
+import { storeSubtitles } from './subtitle-tracks';
 
 export const MEDIA_INGEST_JOB = 'media.ingest';
 
@@ -38,6 +39,8 @@ class MediaRejectedError extends Error {}
  */
 @Injectable()
 export class MediaPipelineService implements OnModuleInit, OnApplicationBootstrap {
+  private readonly logger = new Logger(MediaPipelineService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: JobQueue,
@@ -136,10 +139,17 @@ export class MediaPipelineService implements OnModuleInit, OnApplicationBootstra
         1,
         put,
       );
+      const subtitles = await storeSubtitles(this.processor, this.storage, this.logger, {
+        assetId: asset.id,
+        inputPath: source,
+        workDir,
+        streams: probed.subtitles ?? [],
+      });
       return {
         streamUrl: this.storage.publicUrl(`${prefix}/master.m3u8`),
         qualities: hls.qualities,
         durationSeconds: probed.durationSeconds,
+        subtitles,
       };
     });
   }

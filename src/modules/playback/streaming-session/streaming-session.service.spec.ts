@@ -80,8 +80,11 @@ describe('StreamingSessionService.create', () => {
     expect(access.runningPlanOf).toHaveBeenCalledTimes(1);
     expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1', runningPlan);
     expect(devices.check).toHaveBeenCalledWith('u-1', runningPlan, tx, 'dev-1');
-    expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { episodeId: 'ep-1', adFree: false, durationSeconds: 600 });
-    access.runningPlanOf.mockResolvedValue({ code: 'PREMIUM', features: { adFree: true } });
+    expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { episodeId: 'ep-1', adFree: true, durationSeconds: 600 });
+  });
+
+  it('never shows ads on a running plan, whatever its features say (BR-04)', async () => {
+    access.runningPlanOf.mockResolvedValue({ code: 'MONTHLY', features: {} });
     await service.create({ episodeId: 'ep-1', userId: 'u-1' });
     expect(ads.scheduleFor).toHaveBeenLastCalledWith('sess-1', {
       episodeId: 'ep-1',
@@ -91,7 +94,7 @@ describe('StreamingSessionService.create', () => {
   });
 
   it("applies the Free plan's limits and ads to a member with no running plan (BR-34)", async () => {
-    const freePlan = { code: 'free', features: { maxConcurrentStreams: 1, adFree: false } };
+    const freePlan = { code: 'free', features: { maxConcurrentStreams: 1 } };
     access.runningPlanOf.mockResolvedValue(null);
     access.freePlanOf.mockResolvedValue(freePlan);
 
@@ -100,6 +103,7 @@ describe('StreamingSessionService.create', () => {
     // Access still sees "no plan"; only the limits come from the Free plan.
     expect(access.verify).toHaveBeenCalledWith('ep-1', 'u-1', null);
     expect(devices.check).toHaveBeenCalledWith('u-1', freePlan, tx, 'dev-1');
+    // No running plan means ads, even if the Free plan was set up as ad-free.
     expect(ads.scheduleFor).toHaveBeenCalledWith('sess-1', { episodeId: 'ep-1', adFree: false, durationSeconds: 600 });
   });
 
@@ -363,8 +367,15 @@ describe('StreamingSessionService.create', () => {
       await expect(service.heartbeat('sess-1', { userId: 'u-2' }, { positionSeconds: 1 })).rejects.toMatchObject({
         response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_OWNER' }) }),
       });
+      await expect(service.heartbeat('sess-1', { guestKey: 'k' }, { positionSeconds: 1 })).rejects.toMatchObject({
+        status: 401,
+      });
+    });
+
+    it('asks a member whose token lapsed to sign in again (401) instead of ending playback', async () => {
       await expect(service.heartbeat('sess-1', {}, { positionSeconds: 1 })).rejects.toMatchObject({
-        response: expect.objectContaining({ details: expect.objectContaining({ reason: 'SESSION_NOT_OWNER' }) }),
+        status: 401,
+        response: expect.objectContaining({ details: { reason: 'SESSION_SIGN_IN_REQUIRED' } }),
       });
     });
 

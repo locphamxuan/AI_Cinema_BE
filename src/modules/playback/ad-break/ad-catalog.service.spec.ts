@@ -17,7 +17,7 @@ describe('AdCatalogService', () => {
   );
 
   const dto = { title: 'Ad', mediaUrl: 'https://cdn.example/a.mp4' };
-  const row = { id: 'ad-1', ...dto, clickUrl: null, durationSeconds: 15, weight: 1, status: AdStatus.ACTIVE };
+  const row = { id: 'ad-1', ...dto, durationSeconds: 15, status: AdStatus.ACTIVE };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -27,9 +27,9 @@ describe('AdCatalogService', () => {
   });
 
   it('creates an active ad whose length is read from the video', async () => {
-    await expect(service.create(dto)).resolves.toMatchObject({ id: 'ad-1', durationSeconds: 15, weight: 1 });
+    await expect(service.create(dto)).resolves.toEqual({ ...row, status: AdStatus.ACTIVE });
     expect(processor.probe).toHaveBeenCalledWith(dto.mediaUrl);
-    expect(prisma.ad.create).toHaveBeenCalledWith({ data: expect.objectContaining({ durationSeconds: 15 }) });
+    expect(prisma.ad.create).toHaveBeenCalledWith({ data: { ...dto, durationSeconds: 15 } });
   });
 
   it('refuses a video it cannot read or one too long to be a mid-roll', async () => {

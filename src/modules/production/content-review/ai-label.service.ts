@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ComplianceResult, EpisodeStatus, PolicyType } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
@@ -7,7 +7,11 @@ import { NotificationService } from 'src/modules/platform/notification/notificat
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
-import { assertProjectStatus, DELIVERY_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import {
+  assertProjectStatus,
+  changedMeanwhile,
+  DELIVERY_PROJECT_STATUSES,
+} from 'src/modules/production/project-access/project-rules';
 import { activePolicyId } from 'src/modules/platform/policy/active-policy';
 import { ContentReviewService, REVIEWED_STATUSES } from './content-review.service';
 import type { ApplyAiLabelRequestDto } from './dto/content-review.request.dto';
@@ -37,7 +41,7 @@ export class AiLabelService {
         where: { id: asset.episodeId, status: { in: REVIEWED_STATUSES }, approvedMediaAssetId: asset.id },
         data: { status: EpisodeStatus.LABELED },
       });
-      if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+      if (count === 0) throw changedMeanwhile('The episode changed meanwhile; reload it');
       // The compliance check judged the previous label; it has to be run again.
       await tx.complianceCheck.updateMany({
         where: { mediaAssetId: asset.id },

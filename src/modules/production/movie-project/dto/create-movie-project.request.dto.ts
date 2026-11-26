@@ -5,7 +5,6 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
-  IsDateString,
   IsIn,
   IsInt,
   IsOptional,
@@ -22,6 +21,7 @@ import { LANGUAGE_CODE } from 'src/common/validation/language-code';
 import { AGE_RATINGS } from './update-movie-project.request.dto';
 
 import { Trim } from 'src/common/validation/trim';
+import { IsCalendarDay, TrimEach } from './calendar-day';
 import { IsVnd } from 'src/modules/production/production-cost/dto/vnd';
 
 /** BR-31: any length the Reviewer wants; the bound only catches typos (12 h). */
@@ -45,14 +45,14 @@ export class NewEpisodeDto {
     example: '2026-11-30',
     description: 'Day the studio must deliver the episode (BR-38); the studio due date cannot be later.',
   })
-  @IsDateString({ strict: true })
+  @IsCalendarDay()
   deliveryDeadline: string;
 
   @ApiPropertyOptional({
     example: '2026-12-10',
     description: "Expected release day: within the season's release window, not before the deadline (BR-60).",
   })
-  @IsDateString({ strict: true })
+  @IsCalendarDay()
   @IsOptional()
   expectedReleaseDate?: string;
 
@@ -73,12 +73,12 @@ export class NewSeasonDto {
   title?: string;
 
   @ApiPropertyOptional({ example: '2026-12-01', description: 'First day of the release window (BR-60).' })
-  @IsDateString({ strict: true })
+  @IsCalendarDay()
   @IsOptional()
   releaseStartDate?: string;
 
   @ApiPropertyOptional({ example: '2026-12-31', description: 'Last day of the release window (BR-60).' })
-  @IsDateString({ strict: true })
+  @IsCalendarDay()
   @IsOptional()
   releaseEndDate?: string;
 
@@ -124,6 +124,7 @@ export class CreateMovieProjectRequestDto {
     example: ['Hậu tận thế'],
     description: 'Genre names; one the list does not have yet is added to the genres table on the spot.',
   })
+  @TrimEach()
   @IsArray()
   @ArrayMaxSize(5)
   @IsString({ each: true })

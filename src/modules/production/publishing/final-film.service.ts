@@ -10,6 +10,7 @@ import { ProjectAccessService } from 'src/modules/production/project-access/proj
 import {
   assertEpisodeStatus,
   assertProjectStatus,
+  changedMeanwhile,
   DELIVERY_PROJECT_STATUSES,
 } from 'src/modules/production/project-access/project-rules';
 
@@ -100,7 +101,7 @@ export class FinalFilmService {
       },
       data,
     });
-    if (count === 0) throw new ConflictException('The episode changed meanwhile; reload it');
+    if (count === 0) throw changedMeanwhile('The episode changed meanwhile; reload it');
   }
 
   private record(

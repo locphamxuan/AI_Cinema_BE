@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ContractDocumentSide, ContractStatus, ProjectStatus } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -15,19 +15,32 @@ const ADMIN = { id: 'admin', role: 'ADMIN' } as const;
 const PROJECT = { id: 'p1', status: 'ASSIGNED', reviewerId: 'rev', creatorId: 'cre', movie: { title: 'Phim' } };
 const SIGNED_AT = new Date('2026-11-10T03:00:00.000Z');
 
-const stored = (side: ContractDocumentSide) => ({
-  side,
-  storageKey: `contracts/p1/${side.toLowerCase()}-k.pdf`,
-  fileName: 'hop-dong.pdf',
-  sizeBytes: 1024,
-  checksum: 'a'.repeat(64),
+const prepared = (): PreparedSignature => ({
+  projectId: 'p1',
+  side: ContractDocumentSide.ADMIN,
+  signedAt: SIGNED_AT,
+  image: {
+    buffer: Buffer.from('png'),
+    mimeType: 'image/png',
+    extension: 'png',
+    width: 300,
+    height: 100,
+    storageKey: 'contracts/p1/signature-admin-k.png',
+    checksum: 'a'.repeat(64),
+  },
+  written: ['contracts/p1/signature-admin-k.png'],
 });
 
-const prepared = (side: ContractDocumentSide, final = false): PreparedSignature => ({
-  signedAt: SIGNED_AT,
-  counterpart: stored(side),
-  final: final ? stored(ContractDocumentSide.FINAL) : null,
-});
+/** A studio whose legal profile is complete, so it may be signed with. */
+const STUDIO_PROFILE = {
+  name: 'Studio A',
+  contactName: 'Lan',
+  address: '12 Nguyễn Huệ, Quận 1',
+  taxCode: '0312345678',
+  bankAccount: '0123456789',
+  bankName: 'ACB',
+  representativeTitle: 'Giám đốc',
+};
 
 const contract = (overrides: Record<string, unknown> = {}) => ({
   id: 'c1',
@@ -57,7 +70,7 @@ describe('ContractService', () => {
   const db = {
     movieProject: { findUniqueOrThrow: jest.fn() },
     user: { findUniqueOrThrow: jest.fn(), count: jest.fn().mockResolvedValue(1) },
-    studio: { findUniqueOrThrow: jest.fn().mockResolvedValue({ name: 'Studio A' }) },
+    studio: { findUniqueOrThrow: jest.fn() },
     contract: {
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(),
@@ -72,7 +85,7 @@ describe('ContractService', () => {
   const prisma = { ...db, $transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)) };
   const access = { project: jest.fn() };
   const handoffs = { open: jest.fn(), assertAffordable: jest.fn(), ceiling: jest.fn() };
-  const signatures = { prepare: jest.fn(), attach: jest.fn(), discard: jest.fn() };
+  const signatures = { prepare: jest.fn(), attach: jest.fn(), discard: jest.fn(), assertCounterpartSigned: jest.fn() };
   const completion = { complete: jest.fn() };
   const notifications = { notify: jest.fn(), adminIds: jest.fn(), studioAccountIds: jest.fn() };
   const auditLog = { record: jest.fn() };
@@ -87,7 +100,7 @@ describe('ContractService', () => {
     auditLog as unknown as AuditLogService,
     mails as unknown as StudioMailService,
   );
-  const file = { buffer: Buffer.from('%PDF-1.7'), originalname: 'ky.pdf', size: 8 } as Express.Multer.File;
+  const file = { buffer: Buffer.from('png'), originalname: 'chu-ky.png', size: 3 } as Express.Multer.File;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -95,11 +108,11 @@ describe('ContractService', () => {
     mails.queue.mockResolvedValue('m1');
     notifications.studioAccountIds.mockResolvedValue(['studio-user']);
     access.project.mockResolvedValue(PROJECT);
-    db.user.findUniqueOrThrow.mockResolvedValue({ fullName: 'Nguyễn Văn A' });
+    db.studio.findUniqueOrThrow.mockResolvedValue(STUDIO_PROFILE);
     db.contract.findUnique.mockResolvedValue({ id: 'c1', studioId: 's1', project: { status: 'ASSIGNED' } });
     db.movieProject.findUniqueOrThrow.mockResolvedValue({ id: 'p1', studioId: 's1', status: ProjectStatus.ASSIGNED });
     completion.complete.mockImplementation((_tx, id: string) => Promise.resolve(contract({ id, status: 'SIGNED' })));
-    signatures.prepare.mockResolvedValue(prepared(ContractDocumentSide.ADMIN, true));
+    signatures.prepare.mockResolvedValue(prepared());
   });
 
   it("sends the project's studio a template with no cost and tells the studio accounts", async () => {
@@ -122,6 +135,13 @@ describe('ContractService', () => {
       expect.objectContaining({ link: '/contracts' }),
       db,
     );
+  });
+
+  it('locks the project row first, so two sends at once cannot open two rounds', async () => {
+    db.contract.count.mockResolvedValue(1);
+    await expect(service.sendTemplate(db as never, 'p1', 'admin')).rejects.toThrow(ConflictException);
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(db.contract.count.mock.invocationCallOrder[0]);
   });
 
   it('sends nothing to a studio that has no Studio Web login yet', async () => {
@@ -167,34 +187,32 @@ describe('ContractService', () => {
     await expect(service.sendTemplate(db as never, 'p1', 'admin')).rejects.toThrow(/studio/);
   });
 
-  it('completes the contract when the Admin uploads its signed PDF over the studio one', async () => {
+  it('completes the contract when the Admin uploads its signature on the round the studio signed', async () => {
     const round = contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 150_000_000n });
     db.contract.findUnique.mockResolvedValue(round);
     db.contract.findUniqueOrThrow.mockResolvedValue(round);
 
     await service.sign('c1', ADMIN, file);
 
-    expect(signatures.prepare).toHaveBeenCalledWith(
-      expect.objectContaining({ side: ContractDocumentSide.ADMIN, completes: true, signerName: 'Nguyễn Văn A' }),
-      file,
-      prisma,
-    );
+    expect(signatures.prepare).toHaveBeenCalledWith('p1', ContractDocumentSide.ADMIN, file);
     expect(db.contract.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
       data: { status: ContractStatus.SIGNED, adminSignedAt: SIGNED_AT, adminSignedById: 'admin' },
     });
-    expect(signatures.attach).toHaveBeenCalledWith(db, 'c1', expect.objectContaining({ signedAt: SIGNED_AT }), 'admin');
+    // The FINAL copy is rendered before the round closes, so it prints the ceiling the studio's copy printed.
+    expect(signatures.attach).toHaveBeenCalledWith(db, 'c1', prepared(), 'admin', true);
+    expect(signatures.attach.mock.invocationCallOrder[0]).toBeLessThan(db.contract.update.mock.invocationCallOrder[0]);
     expect(completion.complete).toHaveBeenCalledWith(db, 'c1', 'admin', []);
     expect(mails.dispatch).toHaveBeenCalled();
   });
 
-  it('leaves no stored PDF behind when the signing transaction fails', async () => {
+  it('leaves no stored object behind when the signing transaction fails', async () => {
     db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 1_000n }));
     db.contract.findUniqueOrThrow.mockResolvedValue(contract({ status: ContractStatus.SENT }));
 
     await expect(service.sign('c1', ADMIN, file)).rejects.toThrow(ConflictException);
 
-    expect(signatures.discard).toHaveBeenCalledWith(prepared(ContractDocumentSide.ADMIN, true));
+    expect(signatures.discard).toHaveBeenCalledWith(prepared());
     expect(completion.complete).not.toHaveBeenCalled();
   });
 
@@ -213,13 +231,13 @@ describe('ContractService', () => {
     expect(signatures.prepare).not.toHaveBeenCalled();
   });
 
-  it('lets the Admin sign first: a signed offer straight on the unanswered template (demo order)', async () => {
+  it('lets the Admin sign first: a signed offer straight on the unanswered template', async () => {
     const template = contract({ status: ContractStatus.SENT, costVnd: null });
     const offer = contract({ id: 'c2', round: 2, status: ContractStatus.ADMIN_COUNTERED });
     db.contract.findUnique.mockResolvedValue(template);
     db.contract.findUniqueOrThrow.mockResolvedValueOnce(template).mockResolvedValue(offer);
     db.contract.create.mockResolvedValue(offer);
-    signatures.prepare.mockResolvedValue(prepared(ContractDocumentSide.ADMIN));
+    signatures.prepare.mockResolvedValue(prepared());
 
     const next = await service.counter('c1', 150_000_000, ADMIN, file);
 
@@ -240,22 +258,28 @@ describe('ContractService', () => {
     expect(signatures.prepare).not.toHaveBeenCalled();
   });
 
-  it('counters within the budget, opening a new round with the Admin-signed PDF on it', async () => {
+  it('refuses to sign an offer while the studio legal profile is incomplete', async () => {
+    db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 1_000n }));
+    db.studio.findUniqueOrThrow.mockResolvedValue({ ...STUDIO_PROFILE, taxCode: null, bankName: ' ' });
+
+    await expect(service.counter('c1', 150_000_000, ADMIN, file)).rejects.toMatchObject({
+      response: { details: { reason: 'STUDIO_PROFILE_INCOMPLETE', missing: ['taxCode', 'bankName'] } },
+    });
+    expect(signatures.prepare).not.toHaveBeenCalled();
+  });
+
+  it('counters within the budget, opening a new round the Admin signed', async () => {
     const round = contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 200_000_000n });
     db.contract.findUnique.mockResolvedValue(round);
     db.contract.findUniqueOrThrow
       .mockResolvedValueOnce(round)
       .mockResolvedValue(contract({ id: 'c2', round: 2, status: ContractStatus.ADMIN_COUNTERED }));
     db.contract.create.mockResolvedValue(contract({ id: 'c2', round: 2, status: ContractStatus.ADMIN_COUNTERED }));
-    signatures.prepare.mockResolvedValue(prepared(ContractDocumentSide.ADMIN));
+    signatures.prepare.mockResolvedValue(prepared());
 
     const next = await service.counter('c1', 160_000_000, ADMIN, file);
 
-    expect(signatures.prepare).toHaveBeenCalledWith(
-      expect.objectContaining({ completes: false, costVnd: 160_000_000n }),
-      file,
-      prisma,
-    );
+    expect(signatures.prepare).toHaveBeenCalledWith('p1', ContractDocumentSide.ADMIN, file);
     expect(handoffs.assertAffordable).toHaveBeenCalledWith(db, 'p1', 160_000_000, null);
     expect(db.contract.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
@@ -264,10 +288,55 @@ describe('ContractService', () => {
     expect(db.contract.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ adminSignedAt: SIGNED_AT, round: 2 }) }),
     );
-    expect(signatures.attach).toHaveBeenCalledWith(db, 'c2', expect.anything(), 'admin');
+    expect(signatures.attach).toHaveBeenCalledWith(db, 'c2', prepared(), 'admin', false);
     expect(next.round).toBe(2);
     expect(completion.complete).not.toHaveBeenCalled();
     expect(mails.dispatch).toHaveBeenCalledWith('m1');
+  });
+
+  it('records the ceiling the Admin signed at on the new round', async () => {
+    const round = contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 200_000_000n });
+    const offer = contract({ id: 'c2', round: 2, status: ContractStatus.ADMIN_COUNTERED });
+    db.contract.findUnique.mockResolvedValue(round);
+    db.contract.findUniqueOrThrow.mockResolvedValueOnce(round).mockResolvedValue(offer);
+    db.contract.create.mockResolvedValue(offer);
+    handoffs.ceiling.mockResolvedValue(210_000_000);
+
+    await service.counter('c1', 160_000_000, ADMIN, file);
+
+    expect(handoffs.ceiling).toHaveBeenCalledWith(db, 'p1', null);
+    expect(handoffs.ceiling.mock.invocationCallOrder[0]).toBeGreaterThan(
+      handoffs.assertAffordable.mock.invocationCallOrder[0],
+    );
+    expect(db.contract.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ costVnd: 160_000_000n, ceilingVnd: 210_000_000n }) }),
+    );
+  });
+
+  it('refuses a counter-offer at the price the studio already signed, storing nothing', async () => {
+    db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 150_000_000n }));
+
+    await expect(service.counter('c1', 150_000_000, ADMIN, file)).rejects.toBeInstanceOf(BadRequestException);
+    expect(signatures.prepare).not.toHaveBeenCalled();
+  });
+
+  it('refuses to countersign while the studio legal profile is incomplete, storing nothing', async () => {
+    db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 1_000n }));
+    db.studio.findUniqueOrThrow.mockResolvedValue({ ...STUDIO_PROFILE, contactName: null });
+
+    await expect(service.sign('c1', ADMIN, file)).rejects.toMatchObject({
+      response: { details: { reason: 'STUDIO_PROFILE_INCOMPLETE', missing: ['contactName'] } },
+    });
+    expect(signatures.prepare).not.toHaveBeenCalled();
+  });
+
+  it('refuses to countersign a round the studio signed before signature images, storing nothing', async () => {
+    db.contract.findUnique.mockResolvedValue(contract({ status: ContractStatus.STUDIO_SIGNED, costVnd: 1_000n }));
+    signatures.assertCounterpartSigned.mockRejectedValueOnce(new ConflictException('missing'));
+
+    await expect(service.sign('c1', ADMIN, file)).rejects.toThrow('missing');
+    expect(signatures.assertCounterpartSigned).toHaveBeenCalledWith(prisma, 'c1', ContractDocumentSide.ADMIN);
+    expect(signatures.prepare).not.toHaveBeenCalled();
   });
 
   it('tells whether a hand-off has a signed round', async () => {

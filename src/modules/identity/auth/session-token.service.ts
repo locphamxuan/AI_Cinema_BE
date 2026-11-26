@@ -22,6 +22,14 @@ export interface TokenPair {
 /** How long after a swap the old refresh token may still be retried once (its answer was lost on the way). */
 export const REUSE_GRACE_MS = 60_000;
 
+/** One answer for an unknown, expired, signed-out or locked-account refresh token. */
+function invalidRefreshToken(): UnauthorizedException {
+  return new UnauthorizedException({
+    message: 'Invalid or expired refresh token',
+    details: { reason: 'REFRESH_TOKEN_INVALID' },
+  });
+}
+
 @Injectable()
 export class SessionTokenService {
   constructor(
@@ -44,9 +52,9 @@ export class SessionTokenService {
       where: { tokenHash: hashRefreshToken(refreshToken) },
       include: { user: { select: { id: true, role: true, isActive: true } } },
     });
-    if (!stored) throw new UnauthorizedException('Invalid refresh token');
+    if (!stored) throw invalidRefreshToken();
     // A token the OAuth endpoint issued keeps its scopes; swapping it here would drop them.
-    if (stored.oauthClientId) throw new UnauthorizedException('Invalid refresh token');
+    if (stored.oauthClientId) throw invalidRefreshToken();
     // A retry of a refresh whose answer never reached the app (weak network, app sent to the background) comes right
     // after the swap: it carries on from the token that replaced it. Any later reuse still reads as theft.
     const retried =
@@ -54,13 +62,17 @@ export class SessionTokenService {
     if (retried && stored.expiresAt > new Date() && stored.user.isActive) {
       return { userId: stored.userId, tokens: await this.swap(stored.replacedById!, stored.user) };
     }
+    // Only a token that was swapped for another one can be replayed by a thief. A token revoked by a sign-out,
+    // a password change or a lock has no successor: a stale app presenting it must not sign out every device.
+    if (stored.revokedAt && !stored.replacedById) throw invalidRefreshToken();
     if (stored.revokedAt) {
       await this.revokeAll(stored.userId);
-      throw new UnauthorizedException('This refresh token was already used; every session has been signed out');
+      throw new UnauthorizedException({
+        message: 'This refresh token was already used; every session has been signed out',
+        details: { reason: 'REFRESH_TOKEN_REUSED' },
+      });
     }
-    if (stored.expiresAt <= new Date() || !stored.user.isActive) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
+    if (stored.expiresAt <= new Date() || !stored.user.isActive) throw invalidRefreshToken();
 
     try {
       return { userId: stored.userId, tokens: await this.swap(stored.id, stored.user) };
@@ -82,7 +94,7 @@ export class SessionTokenService {
         where: { id: tokenId, revokedAt: null },
         data: { revokedAt: new Date(), replacedById: created.id },
       });
-      if (count === 0) throw new UnauthorizedException('Invalid refresh token');
+      if (count === 0) throw invalidRefreshToken();
     });
     return { accessToken: await this.signAccess(user), refreshToken: next, accessTokenExpiresIn: this.accessTtl };
   }

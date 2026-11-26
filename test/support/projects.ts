@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { SEED_USER_PASSWORD } from '../../prisma/seed-accounts';
 import type { Actor, Row } from './api';
-import { adminSign, proposeCost } from './contracts';
+import { adminSign, LEGAL_PROFILE, proposeCost } from './contracts';
 
 export interface ProjectDetail extends Row {
   status: string;
@@ -32,7 +32,11 @@ const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOS
 export async function newStudio(anyActor: Actor, name = 'Studio Ánh Trăng'): Promise<Row> {
   admins.set(anyActor, admins.get(anyActor) ?? anyActor.signInAs(ADMIN_EMAIL));
   const admin = await admins.get(anyActor)!;
-  const studio = await admin.post<Row>('/studios', { name, email: `studio-${randomUUID()}@anhtrang.example` });
+  const studio = await admin.post<Row>('/studios', {
+    name,
+    email: `studio-${randomUUID()}@anhtrang.example`,
+    contactName: 'Nguyễn Thị Lan',
+  });
   // A contract only goes to a studio that can sign in to Studio Web (STUDIO_HAS_NO_LOGIN).
   await admin.post(`/studios/${studio.id}/accounts`, {
     email: `owner-${randomUUID()}@studio.example`,
@@ -45,12 +49,17 @@ export async function newStudio(anyActor: Actor, name = 'Studio Ánh Trăng'): P
 /** One Admin sign-in per actor: signing the Admin in again on every call would end its earlier sessions. */
 const admins = new WeakMap<Actor, Promise<Actor>>();
 
-/** The Admin opens a login for the studio (MF-1, 07/11/2026) and signs in with it. */
+/**
+ * The Admin opens a login for the studio (MF-1, 07/11/2026) and signs in with it; the studio then fills in its
+ * legal profile, which it needs before signing a contract (22/11/2026).
+ */
 export async function studioAccount(anyActor: Actor, studioId: string): Promise<Actor> {
   const admin = await anyActor.signInAs(ADMIN_EMAIL);
   const email = `login-${randomUUID()}@studio.example`;
   await admin.post(`/studios/${studioId}/accounts`, { email, fullName: 'Studio e2e', password: SEED_USER_PASSWORD });
-  return admin.signInAs(email);
+  const studio = await admin.signInAs(email);
+  await studio.put('/studio-portal/profile', LEGAL_PROFILE);
+  return studio;
 }
 
 /**
@@ -94,8 +103,8 @@ export async function finalScript(reviewer: Actor, creator: Actor, projectId: st
 }
 
 /**
- * MF-1 §3–4 (10/11/2026): the studio quotes HANDOFF_FEE_VND and uploads its signed contract PDF, the Admin
- * uploads the AI Cinema counterpart: the round carries both signatures and the project is handed off.
+ * MF-1 §3–4: the studio quotes HANDOFF_FEE_VND and signs with its signature image, the Admin countersigns with
+ * AI Cinema's: the round carries both signatures and the project is handed off.
  */
 export async function signContract(reviewer: Actor, projectId: string, studio: Actor): Promise<void> {
   const admin = await reviewer.signInAs(ADMIN_EMAIL);

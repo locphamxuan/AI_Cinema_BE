@@ -2,7 +2,7 @@ import { CoinEntryType } from '@prisma/client';
 import type { PrismaTx } from 'src/infrastructure/prisma/prisma.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
 import type { NotificationService } from 'src/modules/platform/notification/notification.service';
-import type { CoinMovement } from './coin-wallet.types';
+import type { CoinMovement, PaymentRefund } from './coin-wallet.types';
 
 /** Below this many Coins in all, the member is told the wallet is running low. */
 const LOW_BALANCE_COINS = 10;
@@ -90,24 +90,30 @@ export async function noticeReceived(
   );
 }
 
-/** The Admin corrected the wallet: the member sees by how much and why. */
-export async function noticeAdjusted(
+/** The Admin refunded a payment: the member sees what came back, and what they no longer have. */
+export async function noticeRefunded(
   notifications: NotificationService | undefined,
   tx: PrismaTx,
-  walletId: string,
-  reason: string,
-  m: CoinMovement,
+  refund: PaymentRefund,
 ): Promise<void> {
   if (!notifications) return;
-  const added = m.mainCoins + m.bonusCoins > 0;
+  const lost = [
+    refund.episodeAccessId ? 'Tập phim đã mua được khoá lại.' : null,
+    refund.subscriptionEnded ? 'Gói thành viên đã kết thúc.' : null,
+  ].filter(Boolean);
+  const after = `Số dư: ${refund.mainBalance} Coin chính, ${refund.bonusBalance} Coin thưởng.`;
   await notifications.notify(
-    [await ownerOf(tx, walletId)],
+    [await ownerOf(tx, refund.walletId)],
     {
-      type: NOTIFICATION_TYPE.COIN_ADJUSTED,
-      title: `${added ? 'Admin cộng' : 'Admin trừ'} ${coins(m.mainCoins, m.bonusCoins)}`,
-      body: `Lý do: ${reason}. ${balance(m)}`,
+      type: NOTIFICATION_TYPE.COIN_RECEIVED,
+      title: `Đã hoàn ${refund.mainCoins + refund.bonusCoins} Coin`,
+      body: [
+        `Quản trị viên đã hoàn ${coins(refund.mainCoins, refund.bonusCoins)} đã dùng để ${SPENT_FOR[refund.entryType] ?? 'thanh toán'}.`,
+        ...lost,
+        after,
+      ].join(' '),
       link: '/wallet',
-      payload: { transactionId: m.transactionId },
+      payload: { transactionId: refund.refundTransactionId, paymentId: refund.paymentId },
     },
     tx,
   );

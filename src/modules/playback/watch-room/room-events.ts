@@ -51,6 +51,9 @@ export const ROOM_TERMINATED_REASON = {
   EXPIRED: 'EXPIRED',
 } as const;
 
+/** Why an older socket lost its seat (edge 5.2): the same member joined the room from another device. */
+export const SESSION_REPLACED_REASON = 'JOINED_FROM_ANOTHER_DEVICE';
+
 /** Room capacity: a student watch party of family and friends, never a broadcast (edge 4.2). */
 export const ROOM_CAPACITY = 8;
 

@@ -7,11 +7,16 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { Trim } from 'src/common/validation/trim';
+
+/** A moment with its time zone: "2026-11-20T20:00:00+07:00" or "…Z"; a bare date or local time is ambiguous. */
+const INSTANT_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 
 /** Step 12 (BR-29): the Coin price of one episode; outside the Admin's range it is kept and flagged (BR-47). */
 export class SetCoinPriceRequestDto {
@@ -39,6 +44,9 @@ export class SetAccessFlagsRequestDto {
 export class PublishEpisodeRequestDto {
   @ApiPropertyOptional({ example: '2026-11-20T20:00:00+07:00', description: 'Omit to publish at once' })
   @IsDateString({ strict: true })
+  @Matches(INSTANT_WITH_ZONE, {
+    message: 'scheduledAt must be a date and time with its UTC offset, e.g. …T20:00:00+07:00',
+  })
   @IsOptional()
   scheduledAt?: string;
 }
@@ -63,6 +71,7 @@ export class UnpublishRequestDto {
     example: 'Studio báo nhạc nền tập này chưa xử lý xong bản quyền.',
     description: 'With REVISION it is the feedback the Creator forwards to the studio',
   })
+  @Trim()
   @IsString()
   @MinLength(5)
   @MaxLength(2000)
@@ -72,6 +81,7 @@ export class UnpublishRequestDto {
 /** The Admin asks the Reviewer to change an out-of-range price; the Admin never edits it (BR-47). */
 export class RequestPriceChangeRequestDto {
   @ApiProperty({ example: 'Giá 120 Coin cao hơn nhiều so với khoảng 1–50 của nền tảng, nhờ xem lại.' })
+  @Trim()
   @IsString()
   @MinLength(5)
   @MaxLength(2000)

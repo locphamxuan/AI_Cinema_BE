@@ -15,7 +15,7 @@ class EpisodeAdSlotViewDto {
   @ApiProperty({ example: 420 })
   positionSeconds: number;
 
-  @ApiProperty({ type: EpisodeAdSlotAdDto, nullable: true, description: 'null = weighted draw' })
+  @ApiProperty({ type: EpisodeAdSlotAdDto, nullable: true, description: 'null = random draw among the ACTIVE ads' })
   ad: EpisodeAdSlotAdDto | null;
 }
 

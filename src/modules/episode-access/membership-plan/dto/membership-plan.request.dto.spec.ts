@@ -9,7 +9,7 @@ const valid = {
   name: 'Premium Tháng',
   period: 'MONTHLY',
   durationDays: 30,
-  features: { maxRegisteredDevices: 4, maxConcurrentStreams: 2, adFree: true, maxQuality: '1080p' },
+  features: { maxRegisteredDevices: 4, maxConcurrentStreams: 2, maxQuality: '1080p' },
 };
 
 /** The property paths class-validator refuses, nested ones as `features.maxQuality`. */
@@ -42,12 +42,10 @@ describe('membership plan requests', () => {
     const features = {
       maxRegisteredDevices: 0,
       maxConcurrentStreams: 11,
-      adFree: 'yes',
       maxQuality: '4k',
       downloads: true,
     };
     expect((await refused(UpdateMembershipPlanRequestDto, { features })).sort()).toEqual([
-      'features.adFree',
       'features.downloads',
       'features.maxConcurrentStreams',
       'features.maxQuality',
@@ -59,5 +57,14 @@ describe('membership plan requests', () => {
     expect(await refused(SetPlanPriceRequestDto, { priceCoins: 300 })).toEqual([]);
     expect(await refused(SetPlanPriceRequestDto, { priceCoins: 0 })).toEqual(['priceCoins']);
     expect(await refused(SetPlanPriceRequestDto, { priceCoins: 100_001 })).toEqual(['priceCoins']);
+  });
+
+  it('reads an ISO start date as a Date and refuses one that is not a date', async () => {
+    const body = { priceCoins: 300, effectiveFrom: '2027-01-01T00:00:00.000Z' };
+    expect(await refused(SetPlanPriceRequestDto, body)).toEqual([]);
+    expect(plainToInstance(SetPlanPriceRequestDto, body).effectiveFrom).toEqual(new Date(body.effectiveFrom));
+    expect(await refused(SetPlanPriceRequestDto, { priceCoins: 300, effectiveFrom: 'soon' })).toEqual([
+      'effectiveFrom',
+    ]);
   });
 });

@@ -63,14 +63,7 @@ const PROJECT_DETAIL = {
 type ListRow = Prisma.MovieProjectGetPayload<{ include: typeof LIST_ROW }>;
 
 /** Fields of an update that the catalog shows; the others belong to the project row. */
-const MOVIE_FIELDS: ReadonlySet<string> = new Set([
-  'title',
-  'synopsis',
-  'defaultLanguage',
-  'ageRating',
-  'releaseYear',
-  'freeEpisodeCount',
-]);
+const MOVIE_FIELDS: ReadonlySet<string> = new Set(['title', 'synopsis', 'defaultLanguage', 'ageRating', 'releaseYear']);
 
 function splitUpdate(fields: Omit<UpdateMovieProjectRequestDto, 'genreIds' | 'genreNames'>) {
   const entries = Object.entries(fields);

@@ -68,6 +68,13 @@ describe('IdeaFileService', () => {
       );
     });
 
+    it('removes the stored file when the version cannot be recorded', async () => {
+      db.movieIdeaFile.create.mockRejectedValue(new Error('db down'));
+      await expect(service.upload('p1', PDF, REVIEWER)).rejects.toThrow('db down');
+      const [key] = storage.putBuffer.mock.calls[0] as [string];
+      expect(storage.remove).toHaveBeenCalledWith(key, 'private');
+    });
+
     it('starts a new name at version 1 and keeps the purpose', async () => {
       db.movieIdeaFile.aggregate.mockResolvedValue({ _max: { version: null } });
       await expect(service.upload('p1', PDF, REVIEWER, 'REFERENCE' as never)).resolves.toMatchObject({
@@ -108,10 +115,26 @@ describe('IdeaFileService', () => {
   });
 
   describe('remove', () => {
-    it('deletes the row, then the object', async () => {
-      db.movieIdeaFile.findFirst.mockResolvedValue({ id: 'f1', storageKey: 'k1' });
+    it('deletes the row with an audit event, then the object', async () => {
+      db.movieIdeaFile.findFirst.mockResolvedValue({
+        id: 'f1',
+        storageKey: 'k1',
+        fileName: 'a.pdf',
+        purpose: 'IDEA',
+        version: 2,
+      });
       await service.remove('p1', 'f1', REVIEWER);
       expect(db.movieIdeaFile.delete).toHaveBeenCalledWith({ where: { id: 'f1' } });
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: CONTENT_EVENT.IDEA_FILE_REMOVED,
+          entityId: 'f1',
+          projectId: 'p1',
+          actorId: 'rev',
+          payload: { fileName: 'a.pdf', purpose: 'IDEA', version: 2 },
+        }),
+        db,
+      );
       expect(storage.remove).toHaveBeenCalledWith('k1', 'private');
     });
 

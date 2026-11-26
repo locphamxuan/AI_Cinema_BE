@@ -107,7 +107,7 @@ describe('Daily check-in and the reward wheel (e2e)', () => {
       name: '40 Coin thưởng',
       type: 'BONUS_COIN',
       bonusCoins: 40,
-      weight: 1,
+      weight: 10_000,
     });
     const member = await memberOnDaySix();
 
@@ -131,7 +131,13 @@ describe('Daily check-in and the reward wheel (e2e)', () => {
       201,
     );
     await admin.post(`/admin/membership-plans/${plan.id}/prices`, { priceCoins: 300 }, 201);
-    await onlyPrize({ code: `e2e_days_${stamp}`, name: '3 ngày gói Tháng', type: 'PLAN_DAYS', planDays: 3, weight: 1 });
+    await onlyPrize({
+      code: `e2e_days_${stamp}`,
+      name: '3 ngày gói Tháng',
+      type: 'PLAN_DAYS',
+      planDays: 3,
+      weight: 10_000,
+    });
     const member = await memberOnDaySix();
     await member.post('/daily-rewards/check-in', {}, 201);
 
@@ -177,5 +183,44 @@ describe('Daily check-in and the reward wheel (e2e)', () => {
       400,
     );
     await admin.patch(`/admin/membership-plans/${plan.id}`, { isActive: false });
+  });
+
+  it('keeps the prizes switched on at exactly 100 % and rebalances the whole wheel in one save', async () => {
+    const a = await onlyPrize({ code: 'e2e_a_' + stamp, name: 'A', type: 'BONUS_COIN', bonusCoins: 5, weight: 10_000 });
+    const b = await admin.post<Row>(
+      '/admin/reward-prizes',
+      { code: 'e2e_b_' + stamp, name: 'B', type: 'BONUS_COIN', bonusCoins: 9, weight: 2500, isActive: false },
+      201,
+    );
+    const refused = await admin.patch<{ error: { details: { reason: string } } }>(
+      '/admin/reward-prizes/' + b.id,
+      { isActive: true },
+      409,
+    );
+    expect(refused.error.details.reason).toBe('REWARD_WHEEL_NOT_100');
+    await admin.post(
+      '/admin/reward-prizes',
+      { code: 'e2e_c_' + stamp, name: 'C', type: 'BONUS_COIN', bonusCoins: 1, weight: 1 },
+      409,
+    );
+    await admin.put('/admin/reward-prizes/chances', { prizes: [{ id: a.id, weight: 7500 }] }, 409);
+
+    const wheel = await admin.put<Row[]>('/admin/reward-prizes/chances', {
+      prizes: [
+        { id: a.id, weight: 7500 },
+        { id: b.id, weight: 2500 },
+      ],
+    });
+    const on = wheel.filter((p) => p.isActive).map((p) => [p.id, p.weight]);
+    expect(on).toEqual(
+      expect.arrayContaining([
+        [a.id, 7500],
+        [b.id, 2500],
+      ]),
+    );
+    expect(on).toHaveLength(2);
+    const member = await registerMember(app);
+    const view = await member.get<{ prizes: { id: string; chancePercent: number }[] }>('/rewards/spins');
+    expect(view.prizes.find((p) => p.id === b.id)?.chancePercent).toBe(25);
   });
 });

@@ -38,9 +38,27 @@ describe('UserService.update', () => {
     expect(sessions.revokeAll).toHaveBeenCalledWith('u1');
   });
 
+  it('keeps a Studio login on its role instead of failing the database check', async () => {
+    prisma.user.findUnique.mockResolvedValue({ role: UserRole.STUDIO, email: 's@studio.vn' });
+    await expect(service.update('u1', { role: UserRole.MEMBER }, admin)).rejects.toMatchObject({
+      response: { details: { reason: 'STUDIO_ACCOUNT_ROLE_LOCKED' } },
+    });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    // Locking it is still allowed.
+    await service.update('u1', { isActive: false }, admin);
+    expect(prisma.user.update).toHaveBeenCalled();
+  });
+
   it('signs a locked account out of every session', async () => {
     await service.update('u1', { isActive: false }, admin);
+    expect(forgetAccount).toHaveBeenCalledWith('u1');
     expect(sessions.revokeAll).toHaveBeenCalledWith('u1');
+  });
+
+  it('signs an account out everywhere for a lock made elsewhere (a risk flag)', async () => {
+    await service.signOutEverywhere('m1');
+    expect(forgetAccount).toHaveBeenCalledWith('m1');
+    expect(sessions.revokeAll).toHaveBeenCalledWith('m1');
   });
 
   it('keeps the sessions when nothing security-relevant changes', async () => {

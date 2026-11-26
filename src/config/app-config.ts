@@ -55,7 +55,7 @@ export interface AppConfig {
     publicationSweepMs: number;
     overdueSweepMs: number;
     hlsCheckMs: number;
-    /** MF-2: subscription auto-renew, bonus lot expiry, top-up expiry and reconciliation. */
+    /** MF-2: subscription auto-renew, top-up expiry and reconciliation. */
     subscriptionRenewalSweepMs: number;
     coinTopUpSweepMs: number;
     emailRedeliverySweepMs: number;

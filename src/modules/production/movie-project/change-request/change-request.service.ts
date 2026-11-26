@@ -205,6 +205,17 @@ export class ChangeRequestService {
     if (dto.episodeId && !(await this.prisma.episode.count({ where: { id: dto.episodeId, movieId: projectId } }))) {
       throw new BadRequestException('The episode does not belong to this project');
     }
+    // A request about an episode of one season cannot name another season.
+    if (
+      dto.seasonId &&
+      dto.episodeId &&
+      !(await this.prisma.episode.count({ where: { id: dto.episodeId, seasonId: dto.seasonId } }))
+    ) {
+      throw new BadRequestException({
+        message: 'The episode is not in that season',
+        details: { reason: 'EPISODE_NOT_IN_SEASON' },
+      });
+    }
   }
 
   private async storeProof(projectId: string, file: Express.Multer.File) {

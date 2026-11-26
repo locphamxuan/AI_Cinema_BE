@@ -68,7 +68,7 @@ export function sessionHarness() {
     aiLabel: null,
   };
 
-  const runningPlan = { code: 'MONTHLY', features: { maxDevices: 2, adFree: false } };
+  const runningPlan = { code: 'MONTHLY', features: { maxDevices: 2 } };
 
   const reset = () => {
     jest.clearAllMocks();

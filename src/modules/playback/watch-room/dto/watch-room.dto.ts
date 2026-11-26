@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Max, Min } from 'class-validator';
+import { MAX_POSITION_SECONDS } from 'src/modules/playback/watch-progress/dto/position-limit';
 import { formatRoomCode } from '../room-codes';
 
 export class CreateWatchRoomDto {
@@ -23,6 +24,7 @@ export class UpdateWatchRoomDto {
   @ApiProperty({ example: 120, description: 'Host clock, seconds from the episode start' })
   @IsNumber()
   @Min(0)
+  @Max(MAX_POSITION_SECONDS)
   positionSeconds: number;
 }
 

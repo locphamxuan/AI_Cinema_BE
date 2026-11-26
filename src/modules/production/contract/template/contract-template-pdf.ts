@@ -5,19 +5,35 @@ import { articles, LEGAL_BASES, money, type ContractDraft, type ContractParty } 
 export type ContractSide = 'ADMIN' | 'STUDIO';
 type Text = (value: string) => string;
 
-/** Draws one side's signature and seal inside its box (demo signing only; the contract the studio gets is unsigned). */
-export interface SignatureMark {
+/**
+ * One side's signature on a signed copy (MF-1, 22/11/2026): the image it uploaded, drawn in its signature block
+ * with the signer's name, title and the signing date. Without stamps the contract is the unsigned one.
+ */
+export interface SignatureStamp {
   side: ContractSide;
-  draw: (doc: PDFKit.PDFDocument, box: { x: number; y: number; partyName: string }, text: Text) => void;
+  image: Buffer;
+  signerName: string;
+  signerTitle: string;
+  signedAt: Date;
 }
+
+const VN_DATE = new Intl.DateTimeFormat('vi-VN', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+
+/** dd/mm/yyyy in Vietnam time. */
+export const vnDay = (date: Date) => VN_DATE.format(date);
 
 const LEFT = 56;
 const WIDTH = 483;
 const RIGHT_BOX = 320;
 
 /**
- * The PDF names the project it belongs to in its keywords, so an upload of another project's contract is refused.
- * PDF readers keep the keywords when a signer adds a signature; a scanned copy has none and is accepted as is.
+ * Every copy the system renders names its project and round in the PDF keywords, so a stored or downloaded copy
+ * can always be traced back to the round it was issued for.
  */
 export const PROJECT_MARKER = 'aicinema-project:';
 export const CONTRACT_MARKER = 'aicinema-contract:';
@@ -74,25 +90,27 @@ function annex(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text): void {
   );
 }
 
-function signatures(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text, marks: SignatureMark[]): void {
+function signatures(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text, stamps: SignatureStamp[]): void {
   if (doc.y > 600) doc.addPage();
   const top = doc.y + 24;
-  doc.fontSize(11);
-  doc.text(text('ĐẠI DIỆN BÊN A'), LEFT, top, { width: 220, align: 'center' });
-  doc.text(text('ĐẠI DIỆN BÊN B'), RIGHT_BOX, top, { width: 220, align: 'center' });
-  doc.fontSize(9).fillColor('#555555');
-  doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), LEFT, top + 15, { width: 220, align: 'center' });
-  doc.text(text('(Ký, ghi rõ họ tên, đóng dấu)'), RIGHT_BOX, top + 15, { width: 220, align: 'center' });
-  doc.fillColor('#000000');
-  for (const mark of marks) {
-    const admin = mark.side === 'ADMIN';
-    mark.draw(doc, { x: admin ? LEFT : RIGHT_BOX, y: top, partyName: admin ? c.partyA.name : c.partyB.name }, text);
+  const blocks = [
+    { side: 'ADMIN', x: LEFT, label: 'ĐẠI DIỆN BÊN A', party: c.partyA },
+    { side: 'STUDIO', x: RIGHT_BOX, label: 'ĐẠI DIỆN BÊN B', party: c.partyB },
+  ] as const;
+  for (const { side, x, label, party } of blocks) {
+    const stamp = stamps.find((s) => s.side === side);
+    const box = { width: 220, align: 'center' } as const;
+    doc.fontSize(11).text(text(label), x, top, box);
+    doc
+      .fontSize(9)
+      .fillColor('#555555')
+      .text(text('(Ký, ghi rõ họ tên, đóng dấu)'), x, top + 15, box);
+    doc.fillColor('#000000');
+    if (stamp) doc.image(stamp.image, x + 20, top + 32, { fit: [180, 80], align: 'center', valign: 'center' });
+    doc.fontSize(11).text(text(stamp?.signerName ?? party.representative), x, top + 120, box);
+    doc.fontSize(9).text(text(stamp?.signerTitle ?? party.title), x, top + 136, box);
+    if (stamp) doc.text(text(`Ngày ký: ${vnDay(stamp.signedAt)}`), x, top + 150, box);
   }
-  doc.fontSize(11);
-  doc.text(text(c.partyA.representative), LEFT, top + 120, { width: 220, align: 'center' });
-  doc.text(text(c.partyB.representative), RIGHT_BOX, top + 120, { width: 220, align: 'center' });
-  doc.fontSize(9).text(text(c.partyA.title), LEFT, top + 136, { width: 220, align: 'center' });
-  doc.text(text(c.partyB.title), RIGHT_BOX, top + 136, { width: 220, align: 'center' });
 }
 
 function footers(doc: PDFKit.PDFDocument, c: ContractDraft, text: Text, note: string): void {
@@ -117,11 +135,11 @@ export interface RenderOptions {
   footnote: string;
   /** Written into the PDF keywords: see contractKeywords. */
   keywords?: string;
-  /** Signatures already on the copy: none on the contract the studio receives. */
-  marks?: SignatureMark[];
+  /** Signatures drawn on the copy: none on the unsigned contract. */
+  stamps?: SignatureStamp[];
 }
 
-/** The production contract as a PDF: unsigned unless marks are given, which is what the studio receives. */
+/** The production contract as a PDF: unsigned without stamps, otherwise the same pages with the signatures drawn in. */
 export function renderContractPdf(c: ContractDraft, options: RenderOptions): Promise<Buffer> {
   const { fontPath } = options;
   const text = pdfText(fontPath);
@@ -166,7 +184,7 @@ export function renderContractPdf(c: ContractDraft, options: RenderOptions): Pro
     doc.fontSize(10);
     for (const p of paragraphs) doc.text(text(p), { align: 'justify' });
   }
-  signatures(doc, c, text, options.marks ?? []);
+  signatures(doc, c, text, options.stamps ?? []);
   annex(doc, c, text);
   footers(doc, c, text, options.footnote);
   doc.end();

@@ -1,32 +1,13 @@
 import { createHash } from 'node:crypto';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ContractDocumentSide } from '@prisma/client';
-import { PDFDocument } from 'pdf-lib';
-import type { AppConfig } from 'src/config/app-config';
 import type { ObjectStorage } from 'src/infrastructure/storage/object-storage';
-import type { Detailed } from './contract-rounds';
-import { CONTRACT_PDF_MAX_BYTES, ContractSignatureService } from './contract-signature.service';
+import { ContractSignatureService } from './contract-signature.service';
+import type { ContractTemplateService } from './template/contract-template.service';
+import { pngImage } from './template/template.fixtures';
 
-const pdf = async (pages = 1): Promise<Buffer> => {
-  const doc = await PDFDocument.create();
-  for (let i = 0; i < pages; i += 1) doc.addPage([200, 200]);
-  return Buffer.from(await doc.save());
-};
-
-const upload = (buffer: Buffer, originalname = 'hop-dong-da-ky.pdf') =>
+const upload = (buffer: Buffer, originalname = 'chu-ky.png') =>
   ({ buffer, originalname, size: buffer.length }) as Express.Multer.File;
-
-const CONTRACT = {
-  id: 'c1',
-  projectId: 'p1',
-  round: 1,
-  costVnd: 170_000_000n,
-  adminSignedAt: null,
-  studioSignedAt: null,
-  adminSignedBy: null,
-  project: { movie: { title: 'Giấc Mơ Số' } },
-  studio: { id: 's1', name: 'Lumen Studio' },
-} as unknown as Detailed;
 
 describe('ContractSignatureService', () => {
   const objects = new Map<string, Buffer>();
@@ -41,88 +22,140 @@ describe('ContractSignatureService', () => {
       return Promise.resolve();
     }),
   };
-  const tx = { contractDocument: { findUnique: jest.fn(), create: jest.fn() } };
+  const templates = {
+    signer: jest.fn(),
+    signedCopy: jest.fn(),
+  };
+  const tx = {
+    contractSignature: { create: jest.fn(), findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
+    contractDocument: { create: jest.fn() },
+    contract: { findUniqueOrThrow: jest.fn() },
+  };
   const service = new ContractSignatureService(
     storage as unknown as ObjectStorage,
-    {
-      briefFontPath: null,
-    } as unknown as AppConfig,
+    templates as unknown as ContractTemplateService,
   );
-  const prepare = (side: ContractDocumentSide, completes: boolean, file?: Express.Multer.File) =>
-    service.prepare(
-      { contract: CONTRACT, side, completes, signerName: 'Nguyễn Văn A', costVnd: CONTRACT.costVnd },
-      file,
-      tx as never,
-    );
+  const documents = () => tx.contractDocument.create.mock.calls.map(([arg]) => (arg as { data: never }).data);
 
   beforeEach(() => {
     jest.clearAllMocks();
     objects.clear();
-    tx.contractDocument.findUnique.mockResolvedValue(null);
-  });
-
-  it('stores a signed PDF under an unguessable private key and records its checksum', async () => {
-    const file = await pdf();
-    const prepared = await prepare(ContractDocumentSide.STUDIO, false, upload(file));
-
-    expect(prepared.final).toBeNull();
-    expect(prepared.counterpart.storageKey).toMatch(/^contracts\/p1\/studio-[0-9a-f-]{36}\.pdf$/);
-    expect(prepared.counterpart.checksum).toBe(createHash('sha256').update(file).digest('hex'));
-    expect(prepared.counterpart.fileName).toBe('hop-dong-da-ky.pdf');
-    expect(storage.putBuffer).toHaveBeenCalledWith(prepared.counterpart.storageKey, file, 'application/pdf', 'private');
-  });
-
-  it('refuses a missing file, a file that is not a PDF, and one over the size limit', async () => {
-    await expect(prepare(ContractDocumentSide.ADMIN, false, undefined)).rejects.toBeInstanceOf(BadRequestException);
-    await expect(
-      prepare(ContractDocumentSide.ADMIN, false, upload(Buffer.from('not a pdf at all'), 'ke-hoach.pdf')),
-    ).rejects.toThrow(/must be one of \.pdf/);
-    // A real PDF renamed to .txt is refused too: the extension and the content must agree.
-    await expect(prepare(ContractDocumentSide.ADMIN, false, upload(await pdf(), 'hop-dong.txt'))).rejects.toThrow(
-      /must be one of \.pdf/,
+    templates.signer.mockResolvedValue({ name: 'Nguyễn Thị Lan', title: 'Giám đốc' });
+    templates.signedCopy.mockImplementation((_tx: unknown, _id: string, stamps: { side: string }[]) =>
+      Promise.resolve(Buffer.from(`%PDF ${stamps.map((s) => s.side).join('+')}`)),
     );
-    const huge = upload(Buffer.alloc(CONTRACT_PDF_MAX_BYTES + 1, 1));
-    await expect(prepare(ContractDocumentSide.ADMIN, false, huge)).rejects.toThrow(/at most/);
+    tx.contract.findUniqueOrThrow.mockResolvedValue({
+      id: '9f2b4c6e-0000-4000-8000-000000000001',
+      round: 2,
+      createdAt: new Date('2026-11-20T03:00:00Z'),
+    });
+    tx.contractSignature.findUnique.mockResolvedValue(null);
+  });
+
+  it('checks the signature image and stores it under an unguessable private key before the transaction', async () => {
+    const image = pngImage();
+    const prepared = await service.prepare('p1', ContractDocumentSide.STUDIO, upload(image));
+
+    expect(prepared.image.storageKey).toMatch(/^contracts\/p1\/signature-studio-[0-9a-f-]{36}\.png$/);
+    expect(prepared.image).toMatchObject({ mimeType: 'image/png', width: 300, height: 100 });
+    expect(prepared.image.checksum).toBe(createHash('sha256').update(image).digest('hex'));
+    expect(storage.putBuffer).toHaveBeenCalledWith(prepared.image.storageKey, image, 'image/png', 'private');
+    expect(prepared.written).toEqual([prepared.image.storageKey]);
+  });
+
+  it('refuses a missing file or one that is not a signature image, and stores nothing', async () => {
+    await expect(service.prepare('p1', ContractDocumentSide.ADMIN, undefined)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(
+      service.prepare('p1', ContractDocumentSide.ADMIN, upload(Buffer.from('%PDF-1.7 signed'), 'hop-dong.pdf')),
+    ).rejects.toThrow(/must be one of \.png, \.jpg, \.jpeg/);
     expect(storage.putBuffer).not.toHaveBeenCalled();
   });
 
-  it('merges both counterparts into one final document when the second side signs', async () => {
-    const studioKey = 'contracts/p1/studio-already-there.pdf';
-    objects.set(studioKey, await pdf(2));
-    tx.contractDocument.findUnique.mockResolvedValue({ storageKey: studioKey });
+  it('records the signature with its signer and stores the copy carrying it', async () => {
+    const prepared = await service.prepare('p1', ContractDocumentSide.STUDIO, upload(pngImage()));
 
-    const prepared = await prepare(ContractDocumentSide.ADMIN, true, upload(await pdf(3)));
+    await service.attach(tx as never, 'c1', prepared, 'u1', false);
 
-    expect(prepared.final).not.toBeNull();
-    expect(prepared.final!.side).toBe(ContractDocumentSide.FINAL);
-    expect(prepared.final!.fileName).toBe('hop-dong-du-chu-ky-vong-1.pdf');
-    const merged = await PDFDocument.load(objects.get(prepared.final!.storageKey)!, { updateMetadata: false });
-    // 3 Admin pages + 2 studio pages + the closing page naming both signatures.
-    expect(merged.getPageCount()).toBe(6);
-  });
-
-  it('refuses to complete a round whose other counterpart is missing, and keeps no orphan behind', async () => {
-    await expect(prepare(ContractDocumentSide.ADMIN, true, upload(await pdf()))).rejects.toBeInstanceOf(
-      ConflictException,
-    );
-    expect(objects.size).toBe(0);
-  });
-
-  it('writes one row per stored PDF, the merged one with no uploader', async () => {
-    const prepared = await prepare(ContractDocumentSide.STUDIO, false, upload(await pdf()));
-    await service.attach(tx as never, 'c9', { ...prepared, final: { ...prepared.counterpart, side: 'FINAL' } }, 'u1');
-
-    const [first, second] = tx.contractDocument.create.mock.calls as [{ data: never }][];
-    expect(first[0]).toMatchObject({
-      data: { contractId: 'c9', side: ContractDocumentSide.STUDIO, uploadedById: 'u1', mimeType: 'application/pdf' },
+    expect(tx.contractSignature.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        contractId: 'c1',
+        side: 'STUDIO',
+        signerName: 'Nguyễn Thị Lan',
+        signerTitle: 'Giám đốc',
+        uploadedById: 'u1',
+        signedAt: prepared.signedAt,
+      }),
     });
-    expect(second[0]).toMatchObject({ data: { side: 'FINAL', uploadedById: null } });
+    expect(templates.signer).toHaveBeenCalledWith(tx, 'c1', 'STUDIO');
+    expect(documents()).toEqual([
+      expect.objectContaining({
+        side: 'STUDIO',
+        fileName: 'hop-dong-studio-da-ky-AIC-2026-9F2B4C6E-R2.pdf',
+        mimeType: 'application/pdf',
+        uploadedById: 'u1',
+      }),
+    ]);
+    expect(prepared.written).toHaveLength(2);
+    expect(objects.get(prepared.written[1])!.toString()).toBe('%PDF STUDIO');
   });
 
-  it('takes its objects back when the signing transaction failed', async () => {
-    const prepared = await prepare(ContractDocumentSide.STUDIO, false, upload(await pdf()));
-    expect(objects.size).toBe(1);
+  it('renders the FINAL copy with both signatures when the second side signs', async () => {
+    objects.set('contracts/p1/signature-studio-x.png', pngImage());
+    tx.contractSignature.findUnique.mockResolvedValue({ id: 'sig-studio' });
+    tx.contractSignature.findUniqueOrThrow.mockResolvedValue({
+      side: 'STUDIO',
+      storageKey: 'contracts/p1/signature-studio-x.png',
+      signerName: 'Lan',
+      signerTitle: 'Giám đốc',
+      signedAt: new Date('2026-11-20T03:00:00Z'),
+    });
+    const prepared = await service.prepare('p1', ContractDocumentSide.ADMIN, upload(pngImage()));
+
+    await service.attach(tx as never, 'c1', prepared, 'admin', true);
+
+    expect(tx.contractSignature.findUniqueOrThrow).toHaveBeenCalledWith({
+      where: { contractId_side: { contractId: 'c1', side: 'STUDIO' } },
+    });
+    expect(documents().map((d: { side: string; uploadedById: string | null }) => [d.side, d.uploadedById])).toEqual([
+      ['ADMIN', 'admin'],
+      ['FINAL', null],
+    ]);
+    expect(objects.get(prepared.written[2])!.toString()).toBe('%PDF ADMIN+STUDIO');
+  });
+
+  it('refuses to complete a round the other side has not signed', async () => {
+    const prepared = await service.prepare('p1', ContractDocumentSide.ADMIN, upload(pngImage()));
+    await expect(service.attach(tx as never, 'c1', prepared, 'admin', true)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('names a round whose earlier signature has no image, before anything is uploaded', async () => {
+    await expect(service.assertCounterpartSigned(tx as never, 'c1', ContractDocumentSide.STUDIO)).rejects.toMatchObject(
+      {
+        response: {
+          message: "The other side's signature image of this round is missing; the round must be sent again",
+          details: { reason: 'COUNTERPART_SIGNATURE_MISSING', contractId: 'c1' },
+        },
+      },
+    );
+    expect(tx.contractSignature.findUnique).toHaveBeenCalledWith({
+      where: { contractId_side: { contractId: 'c1', side: 'ADMIN' } },
+      select: { id: true },
+    });
+    tx.contractSignature.findUnique.mockResolvedValue({ id: 'sig-admin' });
+    await expect(
+      service.assertCounterpartSigned(tx as never, 'c1', ContractDocumentSide.STUDIO),
+    ).resolves.toBeUndefined();
+  });
+
+  it('takes back every object it wrote when the signing transaction failed', async () => {
+    const prepared = await service.prepare('p1', ContractDocumentSide.STUDIO, upload(pngImage()));
+    await service.attach(tx as never, 'c1', prepared, 'u1', false);
+    expect(objects.size).toBe(2);
+
     await service.discard(prepared);
+
     expect(objects.size).toBe(0);
   });
 });

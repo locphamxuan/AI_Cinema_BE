@@ -50,6 +50,7 @@ describe('RewardSpinService', () => {
   const available = { id: 'spin-1', userId: 'u1', status: RewardSpinStatus.AVAILABLE, grantedAt: new Date() };
 
   const tx = {
+    $queryRaw: jest.fn(),
     rewardPrize: { findMany: jest.fn() },
     rewardSpin: { updateMany: jest.fn(), update: jest.fn() },
   };
@@ -77,6 +78,7 @@ describe('RewardSpinService', () => {
     jest.clearAllMocks();
     prisma.rewardSpin.findFirst.mockResolvedValue(available);
     prisma.rewardSpin.count.mockResolvedValue(0);
+    tx.$queryRaw.mockResolvedValue([{ id: 'p-bonus' }]);
     tx.rewardPrize.findMany.mockResolvedValue([bonusPrize]);
     tx.rewardSpin.updateMany.mockResolvedValue({ count: 1 });
     tx.rewardSpin.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
@@ -87,7 +89,9 @@ describe('RewardSpinService', () => {
       planDays: null,
       subscriptionId: null,
       promoValueCoins: null,
-      prize: data.planDays ? daysPrize : bonusPrize,
+      prizeId: data.planDays ? 'p-days' : 'p-bonus',
+      prizeName: data.planDays ? '3 ngày' : '50 Coin thưởng',
+      prizeType: data.planDays ? RewardPrizeType.PLAN_DAYS : RewardPrizeType.BONUS_COIN,
       ...data,
     }));
     wallets.walletOf.mockResolvedValue({ id: 'w1', mainBalance: 0, bonusBalance: 50 });
@@ -101,7 +105,13 @@ describe('RewardSpinService', () => {
 
     expect(tx.rewardSpin.updateMany).toHaveBeenCalledWith({
       where: { id: 'spin-1', status: RewardSpinStatus.AVAILABLE },
-      data: expect.objectContaining({ status: RewardSpinStatus.USED, prizeId: 'p-bonus', idempotencyKey: 'k1' }),
+      data: expect.objectContaining({
+        status: RewardSpinStatus.USED,
+        prizeId: 'p-bonus',
+        prizeName: '50 Coin thưởng',
+        prizeType: RewardPrizeType.BONUS_COIN,
+        idempotencyKey: 'k1',
+      }),
     });
     expect(coins.credit).toHaveBeenCalledWith(
       tx,
@@ -124,7 +134,20 @@ describe('RewardSpinService', () => {
       expect.objectContaining({ action: CONTENT_EVENT.REWARD_SPIN_USED }),
       tx,
     );
-    expect(result).toMatchObject({ bonusCoins: 50, bonusBalance: 50, availableSpins: 0 });
+    expect(result).toMatchObject({
+      bonusCoins: 50,
+      bonusBalance: 50,
+      availableSpins: 0,
+      prize: { id: 'p-bonus', name: '50 Coin thưởng', type: 'BONUS_COIN' },
+    });
+  });
+
+  it('locks the active prizes and does not draw one deleted just before', async () => {
+    tx.$queryRaw.mockResolvedValue([]);
+
+    await expect(service.spin('u1')).rejects.toMatchObject({ response: { details: { reason: SPIN_REASON.NO_PRIZE } } });
+    expect(tx.rewardPrize.findMany).not.toHaveBeenCalled();
+    expect(tx.rewardSpin.updateMany).not.toHaveBeenCalled();
   });
 
   it('gives plan days through the plan service and keeps their promotion value', async () => {
@@ -175,7 +198,9 @@ describe('RewardSpinService', () => {
       status: RewardSpinStatus.USED,
       bonusCoins: 50,
       subscriptionId: null,
-      prize: bonusPrize,
+      prizeId: 'p-bonus',
+      prizeName: '50 Coin thưởng',
+      prizeType: RewardPrizeType.BONUS_COIN,
     });
 
     await expect(service.spin('u1', 'k1')).resolves.toMatchObject({ bonusCoins: 50 });
@@ -200,6 +225,32 @@ describe('RewardSpinService', () => {
     expect(wheel.prizes[0]).not.toHaveProperty('weight');
   });
 
+  it('keeps showing what a past spin won after the prize was deleted', async () => {
+    prisma.rewardPrize.findMany.mockResolvedValue([]);
+    prisma.rewardSpin.findMany.mockResolvedValue([
+      {
+        ...available,
+        status: RewardSpinStatus.USED,
+        spunAt: new Date(),
+        prizeId: null,
+        prizeName: '50 Coin thưởng',
+        prizeType: RewardPrizeType.BONUS_COIN,
+        bonusCoins: 50,
+        planDays: null,
+      },
+    ]);
+
+    const wheel = await service.mine('u1');
+
+    expect(wheel.history[0].prize).toEqual({
+      id: null,
+      name: '50 Coin thưởng',
+      type: 'BONUS_COIN',
+      bonusCoins: 50,
+      planDays: null,
+    });
+  });
+
   it('shows each prize with its chance so a member can preview the wheel without a spin', async () => {
     prisma.rewardSpin.count.mockResolvedValue(0);
     prisma.rewardPrize.findMany.mockResolvedValue([
@@ -215,7 +266,8 @@ describe('RewardSpinService', () => {
   });
 
   it('rounds a chance to one decimal and is zero when no weight is active', () => {
-    expect(chancePercent(1, 3)).toBe(33.3);
+    expect(chancePercent(1, 3)).toBe(33.33);
+    expect(chancePercent(1250, 10_000)).toBe(12.5);
     expect(chancePercent(5, 0)).toBe(0);
   });
 });

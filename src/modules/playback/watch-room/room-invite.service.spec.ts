@@ -42,6 +42,13 @@ describe('RoomInviteService (edges 7.1–7.3)', () => {
     await expect(service.invite('u1', 'r1', 'f1', true, 60_000)).resolves.toMatchObject({ ok: true });
   });
 
+  it('forgets cooldowns that ran out, so the memory does not grow with every invite ever sent', async () => {
+    const service = newService();
+    await service.invite('u1', 'r1', 'f1', true, 0);
+    await service.invite('u1', 'r2', 'f1', true, 70_000);
+    expect((service as unknown as { sentAt: Map<string, number> }).sentAt.size).toBe(1);
+  });
+
   it('refuses anyone who is not an accepted friend, blocked pairs included (edge 7.3)', async () => {
     friendships.acceptedFriends.mockResolvedValue([]);
     await expect(newService().invite('u1', 'r1', 'stranger', true, 0)).resolves.toEqual({
@@ -78,10 +85,15 @@ describe('room socket utils', () => {
   it('maps statuses and errors for the socket', () => {
     expect(liveStateOf('PLAYING')).toBe('PLAYING');
     expect(liveStateOf('CREATED')).toBe('PAUSED');
-    expect(socketErrorOf({ getResponse: () => ({ message: 'Phòng đầy', details: { reason: 'ROOM_FULL' } }) })).toEqual({
-      reason: 'Phòng đầy',
+    expect(
+      socketErrorOf({ getResponse: () => ({ message: 'The room is full', details: { reason: 'ROOM_FULL' } }) }),
+    ).toEqual({
+      reason: 'The room is full',
       details: { reason: 'ROOM_FULL' },
     });
-    expect(socketErrorOf(new Error('boom'))).toEqual({ reason: 'boom' });
+    // A database fault never sends its text to the client.
+    expect(socketErrorOf(new Error('Invalid `prisma.watchRoom.findUnique()` invocation'))).toEqual({
+      reason: 'ROOM_ERROR',
+    });
   });
 });

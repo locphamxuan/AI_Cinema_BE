@@ -16,6 +16,7 @@ import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notificatio
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import {
   assertProjectStatus,
+  changedMeanwhile,
   DELIVERY_PROJECT_STATUSES,
   OPEN_PROJECT_STATUSES,
 } from 'src/modules/production/project-access/project-rules';
@@ -97,7 +98,7 @@ export class ProjectLifecycleService {
           status: project.status === ProjectStatus.DRAFT ? ProjectStatus.ASSIGNED : project.status,
         },
       });
-      if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
+      if (count === 0) throw changedMeanwhile('The project changed meanwhile; reload it');
       // The lead takes a seat; the previous lead's seat ends and their episodes go back to the team.
       if (project.creatorId && project.creatorId !== creatorId)
         await this.team.release(tx, projectId, project.creatorId);
@@ -144,7 +145,7 @@ export class ProjectLifecycleService {
         where: { id: projectId, status: { in: OPEN_PROJECT_STATUSES } },
         data: { status: ProjectStatus.CANCELLED, cancelReason: reason.trim(), cancelledAt: new Date() },
       });
-      if (count === 0) throw new ConflictException('The project changed meanwhile; reload it');
+      if (count === 0) throw changedMeanwhile('The project changed meanwhile; reload it');
       const withdrawn = await this.withdrawScheduledReleases(tx, projectId, reason, user.id);
       const closedDeals = await this.closeOpenDeals(tx, projectId);
       const studio = await this.notifications.studioAccountIds(project.studioId, tx);

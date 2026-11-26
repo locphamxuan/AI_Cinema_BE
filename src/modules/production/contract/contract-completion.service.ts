@@ -11,7 +11,7 @@ import { reloadContract, type Detailed } from './contract-rounds';
 export const vnd = (amount: number | bigint) => `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
 
 /**
- * The end of a negotiation: the round carries both signed PDFs and the merged final document, so the project
+ * The end of a negotiation: the round carries both signatures and the FINAL copy rendered with them, so the project
  * is handed off to the studio, the event is recorded and both sides are told. Split out of ContractService so
  * the Admin and studio sides of the flow share exactly one completion path.
  */
@@ -39,7 +39,7 @@ export class ContractCompletionService {
       this.notifications,
       tx,
       signed,
-      `Hợp đồng với studio "${signed.studio.name}" đã đủ chữ ký hai bên (${vnd(signed.costVnd!)}); bản PDF ghép đủ hai chữ ký đã sẵn sàng, Studio bắt đầu sản xuất.`,
+      `Hợp đồng với studio "${signed.studio.name}" đã đủ chữ ký hai bên (${vnd(signed.costVnd!)}); bản hợp đồng đủ hai chữ ký đã sẵn sàng, Studio bắt đầu sản xuất.`,
     );
     const title = signed.project.movie.title;
     mailIds.push(
@@ -52,7 +52,7 @@ export class ContractCompletionService {
         `/projects/${signed.projectId}`,
         [
           `Hợp đồng phim "${title}" đã đủ chữ ký hai bên, chi phí sản xuất ${vnd(signed.costVnd!)}.`,
-          'Bản PDF hợp đồng mang đủ hai chữ ký đã được hệ thống ghép và có thể tải về trên Studio Web.',
+          'Bản PDF hợp đồng mang đủ hai chữ ký (cùng mẫu với bản chưa ký) đã sẵn sàng để tải về trên Studio Web.',
           'Studio có thể bắt đầu sản xuất. Kịch bản Final và hạn giao từng tập nằm trên Studio Web.',
         ],
       ),

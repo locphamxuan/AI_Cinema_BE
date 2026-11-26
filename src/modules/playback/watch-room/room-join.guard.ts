@@ -2,14 +2,11 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { FriendshipStatus, StreamingSessionStatus } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WatchEntitlementService } from 'src/modules/episode-access/access-decision/watch-entitlement.service';
-import { isAdult } from 'src/modules/identity/auth/credentials';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
+import { assertOldEnough } from '../playback-access/age-gate';
 import { deviceLimitsOf } from '../playback-access/device-eligibility.port';
 import { ROOM_CAPACITY } from './room-events';
-
-/** Movie labels only confirmed adults may watch (edge 6.2, Điều 44 Luật Điện ảnh 134/2025/QH15). */
-const ADULT_LABELS = new Set(['T18']);
 
 /**
  * The paywall gate of a watch room (edges 1.1, 4.2, 5.1, 6.2, 7.3): every member is checked at the
@@ -51,7 +48,7 @@ export class RoomJoinGuard {
     const check = await this.entitlement.canWatch(episodeId, userId);
     if (check.allowed) return;
     throw new ForbiddenException({
-      message: 'Tập này cần mở khóa bằng Coin hoặc Gói Hội viên để xem cùng nhóm',
+      message: 'Unlock this episode with Coins or a membership plan to watch it together',
       details: { reason: 'ENTITLEMENT_REQUIRED', nextAction: check.reason, required: check.required },
     });
   }
@@ -62,13 +59,13 @@ export class RoomJoinGuard {
       where: { id: episodeId },
       select: { movie: { select: { ageRating: true } } },
     });
-    if (!episode || !ADULT_LABELS.has(episode.movie.ageRating ?? '')) return;
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { dateOfBirth: true } });
-    if (user?.dateOfBirth && isAdult(user.dateOfBirth)) return;
-    throw new ForbiddenException({
-      message: 'Tập phim này dành cho khán giả từ 18 tuổi trở lên. Tài khoản của bạn chưa đủ điều kiện tham gia',
-      details: { reason: 'AGE_RESTRICTED', ageRating: 'T18' },
-    });
+    if (!episode) return;
+    await assertOldEnough(
+      this.prisma,
+      episode.movie.ageRating,
+      userId,
+      'This episode is for viewers aged 18 or older; this account cannot join',
+    );
   }
 
   /** Edge 4.2 — the room capacity cap; a member already in the room may always come back. */
@@ -77,7 +74,7 @@ export class RoomJoinGuard {
     if (active.some((p) => p.userId === userId)) return;
     if (active.length >= ROOM_CAPACITY) {
       throw new ConflictException({
-        message: 'Phòng đã đủ số lượng thành viên tối đa',
+        message: 'The room is full',
         details: { reason: 'ROOM_FULL', capacity: ROOM_CAPACITY },
       });
     }
@@ -131,7 +128,7 @@ export class RoomJoinGuard {
     });
     if (live.length < maxConcurrentStreams) return;
     throw new ConflictException({
-      message: 'Tài khoản đã đạt số thiết bị phát đồng thời tối đa',
+      message: 'This account already plays on as many devices as its plan allows',
       details: {
         reason: 'DEVICE_LIMIT_EXCEEDED',
         maxConcurrentStreams,

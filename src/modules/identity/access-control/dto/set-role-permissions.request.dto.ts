@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsString } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsString, MaxLength } from 'class-validator';
 
 export class SetRolePermissionsRequestDto {
   @ApiProperty({
@@ -7,6 +7,8 @@ export class SetRolePermissionsRequestDto {
     description: 'Every permission the role holds from now on.',
   })
   @IsArray()
+  @ArrayMaxSize(200)
   @IsString({ each: true })
+  @MaxLength(100, { each: true })
   permissions: string[];
 }

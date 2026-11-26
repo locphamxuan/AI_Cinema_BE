@@ -1,7 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EpisodeStatus, type Episode } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService, type PrismaTx } from 'src/infrastructure/prisma/prisma.service';
+import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
+import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import {
   assertEpisodeStatus,
@@ -22,12 +24,17 @@ import {
   type ReleaseWindow,
 } from '../episode-schedule';
 
+/** BR-37: at most 100 episodes in a season and 20 seasons in a movie, as the create form allows. */
+export const MAX_EPISODES_PER_SEASON = 100;
+export const MAX_SEASONS_PER_MOVIE = 20;
+
 /** Seasons and episodes of a project; numbering goes on where the movie left off (BR-37). */
 @Injectable()
 export class ProjectStructureService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async addSeason(projectId: string, dto: NewSeasonDto, user: AuthenticatedUser) {
@@ -37,6 +44,12 @@ export class ProjectStructureService {
     return this.prisma.$transaction(async (tx) => {
       await this.lockMovie(tx, projectId);
       const last = await tx.season.aggregate({ where: { movieId: projectId }, _max: { seasonNumber: true } });
+      if ((last._max.seasonNumber ?? 0) >= MAX_SEASONS_PER_MOVIE) {
+        throw new ConflictException({
+          message: `A movie has at most ${MAX_SEASONS_PER_MOVIE} seasons`,
+          details: { reason: 'SEASON_LIMIT_REACHED', max: MAX_SEASONS_PER_MOVIE },
+        });
+      }
       const season = await tx.season.create({
         data: {
           movieId: projectId,
@@ -77,12 +90,10 @@ export class ProjectStructureService {
         );
       }
     }
-    return this.prisma.season.update({
-      where: { id: seasonId },
-      data: {
-        title: dto.title,
-        ...window,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.season.update({ where: { id: seasonId }, data: { title: dto.title, ...window } });
+      await this.record(tx, CONTENT_EVENT.SEASON_UPDATED, 'Season', seasonId, project.id, user.id, Object.keys(dto));
+      return updated;
     });
   }
 
@@ -93,6 +104,13 @@ export class ProjectStructureService {
     assertProjectStatus(project.status, OPEN_PROJECT_STATUSES, 'add an episode');
     return this.prisma.$transaction(async (tx) => {
       await this.lockMovie(tx, project.id);
+      const inSeason = await tx.episode.count({ where: { seasonId } });
+      if (inSeason >= MAX_EPISODES_PER_SEASON) {
+        throw new ConflictException({
+          message: `A season has at most ${MAX_EPISODES_PER_SEASON} episodes`,
+          details: { reason: 'EPISODE_LIMIT_REACHED', max: MAX_EPISODES_PER_SEASON },
+        });
+      }
       const [episode] = await this.createEpisodes(
         tx,
         project.id,
@@ -113,7 +131,32 @@ export class ProjectStructureService {
     }
     const { deliveryDeadline, expectedReleaseDate, ...fields } = dto;
     const schedule = await this.scheduleChange(episode, deliveryDeadline, expectedReleaseDate);
-    return this.prisma.episode.update({ where: { id: episodeId }, data: { ...fields, ...schedule } });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.episode.update({ where: { id: episodeId }, data: { ...fields, ...schedule } });
+      await this.record(
+        tx,
+        CONTENT_EVENT.EPISODE_UPDATED,
+        'Episode',
+        episodeId,
+        episode.project.id,
+        user.id,
+        Object.keys(dto),
+      );
+      return updated;
+    });
+  }
+
+  /** The project history shows who changed a season or an episode, and which fields (§4.1.6). */
+  private record(
+    tx: PrismaTx,
+    action: typeof CONTENT_EVENT.SEASON_UPDATED | typeof CONTENT_EVENT.EPISODE_UPDATED,
+    entityType: 'Season' | 'Episode',
+    entityId: string,
+    projectId: string,
+    actorId: string,
+    fields: string[],
+  ) {
+    return this.auditLog.record({ action, entityType, entityId, projectId, actorId, payload: { fields } }, tx);
   }
 
   /**

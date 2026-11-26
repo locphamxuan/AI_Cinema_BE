@@ -7,7 +7,8 @@ import { RiskFlagService } from './risk-flag.service';
 
 /**
  * BR-48: early each month the previous month's Monthly-plan revenue is shared once (the sweep repeats every few
- * hours and does nothing once the month has rows). The risk rules scan the Coin ledger every hour.
+ * hours and does nothing once the month has rows). The risk rules scan the Coin ledger every hour and tell the
+ * Admins about new flags.
  */
 @Injectable()
 export class FinanceJobs implements OnModuleInit {
@@ -23,11 +24,11 @@ export class FinanceJobs implements OnModuleInit {
       this.allocateLastMonth().then(() => undefined),
     );
     this.queue.every('finance.risk-scan', this.config.schedules.riskScanSweepMs, () =>
-      this.risk.scan().then(() => undefined),
+      this.risk.scanAndNotify().then(() => undefined),
     );
   }
 
   allocateLastMonth(now = new Date()): Promise<boolean> {
-    return this.allocations.allocateIfMissing(previousPeriod(now), now);
+    return this.allocations.shareIfChanged(previousPeriod(now), now);
   }
 }

@@ -31,7 +31,7 @@ describe('Watch room across two API instances (e2e)', () => {
     const password = 'Member@123';
     await request(app.getHttpServer())
       .post('/api/auth/register')
-      .send({ email, password, fullName: 'Thành viên cụm', dateOfBirth: '2000-01-01' })
+      .send({ email, password, fullName: 'Thành viên cụm', dateOfBirth: '2000-01-01', acceptedTerms: true })
       .expect(201);
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password }).expect(200);
     return { token: (login.body as { accessToken: string }).accessToken, actor: await signIn(app, email, password) };

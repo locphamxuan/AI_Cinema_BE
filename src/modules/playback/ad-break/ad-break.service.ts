@@ -1,7 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AdBreakStatus, AdStatus, type Ad } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import type { RunningPlanSnapshot } from 'src/modules/episode-access/subscription/running-plan';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { assertLiveSessionOf, type SessionCaller } from '../streaming-session/session-owner';
 import { planCues } from './ad-schedule';
@@ -21,7 +20,7 @@ const AD_COMPLETION_TOLERANCE_SECONDS = 2;
 export interface AdScheduleItem {
   breakId: string;
   positionSeconds: number;
-  ad: { id: string; title: string; mediaUrl: string; clickUrl: string | null; durationSeconds: number };
+  ad: { id: string; title: string; mediaUrl: string; durationSeconds: number };
 }
 
 /**
@@ -40,10 +39,10 @@ export class AdBreakService {
   /**
    * Step 13: lays the session's mid-roll cues (BR-32, BR-51). The cues the Admin placed on the
    * episode decide where and how many; an episode without any gets adMaxBreaksPerEpisode random
-   * cues. Each cue holds its pinned ad or a weighted draw among the currently valid ads.
+   * cues. Each cue holds its pinned ad or a random draw among the ACTIVE ads.
    *
-   * ad-free comes from the plan snapshot create() already read; this service never queries
-   * subscriptions. Cross-session / per-viewer frequency caps are not tracked yet.
+   * BR-04: ad-free means the member has a running plan, which create() already read; this service
+   * never queries subscriptions. Cross-session / per-viewer frequency caps are not tracked yet.
    */
   async scheduleFor(
     sessionId: string,
@@ -75,10 +74,13 @@ export class AdBreakService {
     return this.scheduleOf(sessionId);
   }
 
-  /** Cues already laid for a session, e.g. when a double tap reuses it. */
+  /**
+   * Cues of a session still to play, e.g. when a double tap or a reopen reuses it. A cue already played or
+   * skipped is left out, so a reused session never shows the same ad twice (BR-33).
+   */
   async scheduleOf(sessionId: string): Promise<AdScheduleItem[]> {
     const rows = await this.prisma.sessionAdBreak.findMany({
-      where: { streamingSessionId: sessionId },
+      where: { streamingSessionId: sessionId, status: AdBreakStatus.PENDING },
       orderBy: { positionSeconds: 'asc' },
       include: { ad: true },
     });
@@ -213,16 +215,6 @@ export class AdBreakService {
   }
 }
 
-/**
- * P4-5: whether the running plan removes ads, read off the snapshot create() already
- * fetched. Only a literal `true` counts: missing/typed-wrong JSON leaves ads on.
- */
-export function isAdFreePlan(runningPlan: Pick<RunningPlanSnapshot, 'features'> | null): boolean {
-  const features = runningPlan?.features;
-  if (!features || typeof features !== 'object' || Array.isArray(features)) return false;
-  return (features as { adFree?: unknown }).adFree === true;
-}
-
 function adBreakView(row: { id: string; status: AdBreakStatus; playedAt: Date | null; completedView: boolean }) {
   return {
     breakId: row.id,
@@ -240,7 +232,6 @@ function scheduleItem(row: { id: string; positionSeconds: number; ad: Ad }): AdS
       id: row.ad.id,
       title: row.ad.title,
       mediaUrl: row.ad.mediaUrl,
-      clickUrl: row.ad.clickUrl,
       durationSeconds: row.ad.durationSeconds,
     },
   };

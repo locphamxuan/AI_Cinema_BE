@@ -8,6 +8,7 @@ import { RequirePermission } from 'src/common/decorators/require-permission.deco
 import { SupportChatService } from './support-chat.service';
 import { CloseSupportConversationRequestDto } from 'src/modules/support/chat/dto/close-support-conversation.request.dto';
 import { ConfirmResolvedSupportCaseRequestDto } from 'src/modules/support/chat/dto/confirm-resolved-support-case.request.dto';
+import { ListSupportMessagesQueryDto } from './dto/list-support-messages.query.dto';
 import { RequestStaffRequestDto } from 'src/modules/support/chat/dto/request-staff.request.dto';
 import { SendSupportMessageRequestDto } from 'src/modules/support/chat/dto/send-support-message.request.dto';
 
@@ -47,10 +48,9 @@ export class MemberSupportController {
   messages(
     @CurrentUser('id') memberId: string,
     @Param('id', ID) id: string,
-    @Query('before') before?: string,
-    @Query('limit') limit?: string,
+    @Query() query: ListSupportMessagesQueryDto,
   ) {
-    return this.chat.listMessages(memberId, id, before, limit ? Number(limit) : undefined);
+    return this.chat.listMessages(memberId, id, query.before, query.limit);
   }
 
   @Post(':id/messages')

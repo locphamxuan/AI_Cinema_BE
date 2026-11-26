@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { OptionalUser } from 'src/common/decorators/optional-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
+import { assertMember } from '../members-only';
 import { EngagementService } from './engagement.service';
 
 const ID = new ParseUUIDPipe({ version: '4' });
@@ -25,6 +26,7 @@ export class EngagementController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Give the movie a heart' })
   like(@Param('movieId', ID) movieId: string, @CurrentUser() user: AuthenticatedUser) {
+    assertMember(user);
     return this.engagement.like(movieId, user.id);
   }
 

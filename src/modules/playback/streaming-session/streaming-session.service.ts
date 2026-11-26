@@ -1,12 +1,13 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { EpisodeStatus, StreamingEndReason, type StreamingSession } from '@prisma/client';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
 import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
 import { PlatformSettingService } from 'src/modules/platform/platform-setting/platform-setting.service';
 import { DeviceEligibilityPort } from '../playback-access/device-eligibility.port';
 import { PlaybackAccessService } from '../playback-access/playback-access.service';
 import { WatchProgressService } from '../watch-progress/watch-progress.service';
-import { AdBreakService, isAdFreePlan } from '../ad-break/ad-break.service';
+import { AdBreakService } from '../ad-break/ad-break.service';
 import { PlaybackUrlService } from './playback-url.service';
 import { assertLiveSessionOf, type SessionCaller } from './session-owner';
 import { openSessionRow } from './session-opening';
@@ -79,7 +80,8 @@ export class StreamingSessionService {
       resumePositionSeconds: await this.resumeOf(userId, verified.episodeId),
       adSchedule: await this.ads.scheduleFor(session.id, {
         episodeId: verified.episodeId,
-        adFree: isAdFreePlan(memberPlan),
+        // BR-04: a running plan never sees ads; a Guest and a member without one always do.
+        adFree: runningPlan !== null,
         durationSeconds: verified.durationSeconds,
       }),
       idempotent,
@@ -201,8 +203,9 @@ export class StreamingSessionService {
    * Access is NOT granted here — the caller hands the id back to Main Flow 2.
    */
   async nextEpisode(episodeId: string): Promise<NextEpisodeView> {
-    const current = await this.prisma.episode.findUnique({
-      where: { id: episodeId },
+    // Public route: an episode viewers cannot see (unreleased, removed) stays unknown, so it leaks no movie id.
+    const current = await this.prisma.episode.findFirst({
+      where: { id: episodeId, ...VISIBLE_EPISODE },
       select: { movieId: true, episodeNumber: true },
     });
     if (!current) {

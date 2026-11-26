@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PriceAlertStatus, ProjectStatus, UserRole } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AuditLogService } from 'src/modules/platform/audit-log/audit-log.service';
@@ -43,7 +43,9 @@ describe('PricingService', () => {
     id: 'a1',
     episodeId: 'e1',
     status,
+    coinPrice: 120,
     episode: {
+      movieId: 'p1',
       episodeNumber: 3,
       movie: { id: 'p1', title: 'Phim', project: { reviewerId: 'rev' } },
     },
@@ -150,6 +152,32 @@ describe('PricingService', () => {
       where: { id: 'a1', status: { in: [PriceAlertStatus.OPEN, PriceAlertStatus.CHANGE_REQUESTED] } },
       data: expect.objectContaining({ status: PriceAlertStatus.RESOLVED, handledById: 'admin' }),
     });
+    expect(auditLog.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'PRICE_ALERT_RESOLVED',
+        entityType: 'PriceAlert',
+        entityId: 'a1',
+        projectId: 'p1',
+        actorId: 'admin',
+        payload: { episodeId: 'e1', coinPrice: 120 },
+      }),
+      db,
+    );
+  });
+
+  it('records the question the Admin asked about an alert', async () => {
+    db.priceAlert.findUnique.mockResolvedValue(alertRow(PriceAlertStatus.OPEN));
+    await service.requestChange('a1', '  Giá quá cao ', ADMIN);
+    expect(auditLog.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PRICE_CHANGE_ASKED', payload: { episodeId: 'e1', note: 'Giá quá cao' } }),
+      db,
+    );
+  });
+
+  it('refuses an unknown alert status in the list filter', () => {
+    expect(() => service.listAlerts({ path: '/admin/price-alerts', filter: { status: '$eq:LOST' } })).toThrow(
+      BadRequestException,
+    );
   });
 
   it('refuses a resolved, a racing or an unknown alert', async () => {
@@ -194,6 +222,13 @@ describe('PricingService', () => {
       isFreeForGuest: false,
       isFreeForMember: false,
     });
+  });
+
+  it('refuses a request that sends no flag at all', async () => {
+    await expect(service.setAccessFlags('e1', {}, ADMIN)).rejects.toMatchObject({
+      response: { details: { reason: 'NO_ACCESS_FLAG' } },
+    });
+    expect(db.episode.update).not.toHaveBeenCalled();
   });
 
   it('refuses to flag an episode of a cancelled project', async () => {

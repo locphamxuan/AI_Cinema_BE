@@ -1,6 +1,5 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { MAX_AD_WEIGHT } from '../ad-limits';
 import { CreateAdRequestDto } from './create-ad.request.dto';
 import { UpdateAdRequestDto } from './update-ad.request.dto';
 
@@ -12,13 +11,22 @@ async function invalidProperties(type: new () => object, value: Record<string, u
   return errors.map((error) => error.property);
 }
 
-describe('ad request bounds (P4-6)', () => {
-  it('rejects a weight above the ceiling and accepts the ceiling itself', async () => {
-    await expect(invalidProperties(CreateAdRequestDto, { ...base, weight: MAX_AD_WEIGHT + 1 })).resolves.toEqual([
-      'weight',
-    ]);
-    await expect(invalidProperties(CreateAdRequestDto, { ...base, weight: MAX_AD_WEIGHT })).resolves.toEqual([]);
-    await expect(invalidProperties(UpdateAdRequestDto, { weight: MAX_AD_WEIGHT + 1 })).resolves.toEqual(['weight']);
+describe('ad request bounds', () => {
+  it('refuses a blank title and trims the one it keeps', async () => {
+    await expect(invalidProperties(CreateAdRequestDto, { ...base, title: '   ' })).resolves.toEqual(['title']);
+    await expect(invalidProperties(UpdateAdRequestDto, { title: '' })).resolves.toEqual(['title']);
+    expect(plainToInstance(CreateAdRequestDto, { ...base, title: '  Gong Cha  ' }).title).toBe('Gong Cha');
+  });
+
+  it('refuses the removed click-through link and pick weight fields', async () => {
+    const errors = await validate(
+      plainToInstance(CreateAdRequestDto, { ...base, clickUrl: 'https://x.example', weight: 2 }),
+      {
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      },
+    );
+    expect(errors.map((error) => error.property).sort()).toEqual(['clickUrl', 'weight']);
   });
 
   it('takes a video served by the API itself (local storage has no TLD)', async () => {

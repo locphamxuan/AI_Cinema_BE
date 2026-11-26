@@ -1,33 +1,14 @@
 import type { PrismaClient } from '@prisma/client';
-import { PDFDocument } from 'pdf-lib';
-import { contractKeywords } from 'src/modules/production/contract/template/contract-template-pdf';
-import { asUpload, inDays, loadDemoData, pickFilm } from './demo-data';
+import { readSignatureImage } from 'src/modules/production/contract/signature-image';
+import { inDays, loadDemoData, pickFilm, signatureUpload } from './demo-data';
 import { deliverFromR2 } from './deliver-from-r2';
-import { contractIdOf, marksFor, signDemoContract, SIGN_DEMO_USAGE } from './demo-signer';
-
-async function pdfNamed(keywords?: string): Promise<Buffer> {
-  const doc = await PDFDocument.create();
-  doc.addPage([100, 100]);
-  if (keywords) doc.setKeywords([keywords]);
-  return Buffer.from(await doc.save());
-}
 
 describe('MF-1 demo CLI', () => {
-  it('reads which round a downloaded contract PDF belongs to', async () => {
-    await expect(contractIdOf(await pdfNamed(contractKeywords('p1', 'c-42')))).resolves.toBe('c-42');
-    await expect(contractIdOf(await pdfNamed())).rejects.toThrow(/not downloaded from AI Cinema/);
-  });
-
-  it('signs as the studio, or as the Admin on the copy the studio already signed', () => {
-    expect(marksFor('studio')).toEqual(['STUDIO']);
-    expect(marksFor('admin')).toEqual(['STUDIO', 'ADMIN']);
-    expect(() => marksFor('reviewer')).toThrow(/studio" or "admin/);
-  });
-
   it('takes every demo value from the data file and a catalogue film with enough episodes', () => {
     const { data, film } = loadDemoData();
     expect(data.platformParty.contractCompanyName).toBeTruthy();
-    expect(data.studioProfile.taxCode).toBeTruthy();
+    expect(data.studioLegalProfile.taxCode).toMatch(/^\d{10}$/);
+    expect(data.studioContact.contactName).toBeTruthy();
     expect(data.project.budgetVnd).toBeGreaterThan(0);
     expect(data.stages.length).toBeGreaterThanOrEqual(5);
     expect(film.episodes.length).toBeGreaterThanOrEqual(1);
@@ -38,34 +19,14 @@ describe('MF-1 demo CLI', () => {
     expect(() => pickFilm([film], 3)).toThrow(/no film with 3 episodes/);
   });
 
-  it('writes the downloaded contract again with the demo signature of the side', async () => {
-    const signedCopy = jest
-      .fn<Promise<Buffer>, [string, { side: string }[]]>()
-      .mockResolvedValue(Buffer.from('%PDF-signed'));
-    const app = { get: () => ({ signedCopy }) } as never;
-    const files = {
-      read: jest.fn().mockResolvedValue(await pdfNamed(contractKeywords('p1', 'c-7'))),
-      write: jest.fn(),
-    };
-
-    await expect(signDemoContract(app, ['hop-dong.PDF', 'studio'], files)).resolves.toBe('hop-dong-da-ky-studio.pdf');
-    await expect(signDemoContract(app, ['a.pdf', 'admin', 'out.pdf'], files)).resolves.toBe('out.pdf');
-
-    expect(signedCopy.mock.calls.map(([id, marks]) => [id, marks.map((m) => m.side)])).toEqual([
-      ['c-7', ['STUDIO']],
-      ['c-7', ['STUDIO', 'ADMIN']],
-    ]);
-    expect(files.write).toHaveBeenCalledWith('out.pdf', Buffer.from('%PDF-signed'));
-    await expect(signDemoContract(app, ['a.pdf'], files)).rejects.toThrow(SIGN_DEMO_USAGE);
-  });
-
-  it('builds dates and uploads the way the services expect them', () => {
+  it('builds dates, and signature uploads the signing services accept', async () => {
     expect(inDays(0)).toBe(new Date().toISOString().slice(0, 10));
-    expect(asUpload(Buffer.from('%PDF'), 'a.pdf')).toMatchObject({
-      originalname: 'a.pdf',
-      size: 4,
-      mimetype: 'application/pdf',
-    });
+    const { data } = loadDemoData();
+    for (const name of [data.signatures.studio, data.signatures.admin]) {
+      const upload = signatureUpload(name);
+      expect(upload).toMatchObject({ originalname: name, mimetype: 'image/png' });
+      await expect(readSignatureImage(upload)).resolves.toMatchObject({ mimeType: 'image/png' });
+    }
   });
 
   it('delivers an episode as its R2 file, ready for review', async () => {

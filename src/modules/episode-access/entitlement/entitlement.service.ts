@@ -6,7 +6,9 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { NotificationService } from 'src/modules/platform/notification/notification.service';
 import { NOTIFICATION_TYPE } from 'src/modules/platform/notification/notification-types';
+import { CoinRefundService } from '../coin-wallet/coin-refund.service';
 import { CoinSpendService } from '../coin-wallet/coin-spend.service';
+import { lockWallet } from '../coin-wallet/lot-usage';
 import { WalletService } from '../coin-wallet/wallet.service';
 
 /** What the caller may filter the "my unlocks" list by. */
@@ -36,6 +38,15 @@ const EPISODE_VIEW = {
 
 type EpisodeAccessRow = Prisma.EpisodeAccessGetPayload<{ include: typeof EPISODE_VIEW }>;
 
+/** An unlock bought with Coins that a take-down pays back. */
+interface DueAccess {
+  id: string;
+  userId: string;
+  paidCoins: number;
+  coinTransactionId: string | null;
+  episode: { movieId: string };
+}
+
 const lineOf = (row: EpisodeAccessRow) => ({
   id: row.id,
   source: row.source,
@@ -47,14 +58,15 @@ const lineOf = (row: EpisodeAccessRow) => ({
 
 /**
  * What a member has unlocked, and the refund that follows a take-down. BR-52: an episode taken
- * down for good is paid back main and bonus as they were spent, and the refund points back at the
- * purchase it reverses.
+ * down for good is paid back main and bonus as they were spent, once, and the refund points back at
+ * the payment it reverses.
  */
 @Injectable()
 export class EntitlementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly coins: CoinSpendService,
+    private readonly refunds: CoinRefundService,
     private readonly wallets: WalletService,
     private readonly notifications: NotificationService,
     private readonly auditLog: AuditLogService,
@@ -92,20 +104,17 @@ export class EntitlementService {
     return due.length;
   }
 
-  private async refundEpisode(
-    tx: PrismaTx,
-    access: {
-      id: string;
-      userId: string;
-      paidCoins: number;
-      coinTransactionId: string | null;
-      episode: { movieId: string };
-    },
-    episodeId: string,
-    reason: string,
-  ): Promise<void> {
-    const movement = await this.refund(tx, access, reason);
-    await tx.episodeAccess.update({ where: { id: access.id }, data: { revokedAt: new Date(), revokeReason: reason } });
+  private async refundEpisode(tx: PrismaTx, access: DueAccess, episodeId: string, reason: string): Promise<void> {
+    // The wallet lock first, then the unlock: the order an Admin refund takes too, so the two never
+    // deadlock, and whichever comes second finds the purchase revoked and refunded.
+    const wallet = await this.wallets.walletOf(access.userId, tx);
+    await lockWallet(tx, wallet.id);
+    const { count } = await tx.episodeAccess.updateMany({
+      where: { id: access.id, revokedAt: null },
+      data: { revokedAt: new Date(), revokeReason: reason },
+    });
+    if (count === 0) return;
+    const refunded = await this.refund(tx, access, wallet.id, reason);
     await this.auditLog.record(
       {
         action: CONTENT_EVENT.EPISODE_ACCESS_REVOKED,
@@ -113,47 +122,45 @@ export class EntitlementService {
         entityId: access.id,
         projectId: access.episode.movieId,
         actorId: null,
-        payload: { episodeId, reason, refundedCoins: access.paidCoins, transactionId: movement },
+        payload: { episodeId, reason, refundedCoins: refunded?.coins ?? 0, transactionId: refunded?.transactionId },
       },
       tx,
     );
-    await this.notifyRefund(tx, access.userId, access.paidCoins, reason, { episodeId });
+    if (refunded) await this.notifyRefund(tx, access.userId, refunded.coins, reason, { episodeId });
   }
 
   /**
-   * Pays a purchase back exactly as it was paid (BR-52): the main Coins to the main balance, the
-   * bonus Coins to a new bonus lot with the default expiry, so a refund never turns promotion
-   * Coins into main Coins. Returns the ledger entry that did it.
+   * Pays a purchase back exactly as it was paid (BR-52): the whole payment, main Coins to the main
+   * balance and bonus Coins back as bonus Coins, through the same refund an Admin uses, so a payment
+   * is never refunded twice. Null when nothing moved: a free unlock, or a payment refunded before.
    */
   private async refund(
     tx: PrismaTx,
-    access: { userId: string; id: string; paidCoins: number; coinTransactionId: string | null },
+    access: DueAccess,
+    walletId: string,
     reason: string,
-  ): Promise<string | undefined> {
-    if (access.paidCoins <= 0) return undefined;
-    const paid = access.coinTransactionId
-      ? await tx.coinTransaction.findUnique({
-          where: { id: access.coinTransactionId },
-          select: { mainAmount: true },
-        })
-      : null;
-    // The linked entry is the first row of the debit: it holds the whole main part (negative) and
-    // the bonus left on the lot rows after it, so the bonus paid is the rest of the price.
-    // Without the entry the whole price goes back as main.
-    const mainAmount = paid ? 0 - paid.mainAmount : access.paidCoins;
-    const bonusAmount = access.paidCoins - mainAmount;
-    const wallet = await this.wallets.walletOf(access.userId, tx);
-    const movement = await this.coins.credit(tx, wallet.id, {
+  ): Promise<{ transactionId: string; coins: number } | null> {
+    if (access.paidCoins <= 0) return null;
+    const description = `Refund: the content was taken down for good (${reason})`;
+    if (access.coinTransactionId) {
+      const refund = await this.refunds.refundPayment(tx, access.coinTransactionId, {
+        description,
+        revokeReason: reason,
+      });
+      if (refund.alreadyRefunded) return null;
+      return { transactionId: refund.refundTransactionId, coins: refund.mainCoins + refund.bonusCoins };
+    }
+    // An unlock with no ledger entry (older data): the whole price goes back as main Coins. The row
+    // was revoked above, so this runs once.
+    const movement = await this.coins.credit(tx, walletId, {
       entryType: CoinEntryType.REFUND,
-      mainAmount,
-      bonusAmount,
+      mainAmount: access.paidCoins,
       lotSource: CoinLotSource.REFUND,
       referenceType: CoinReferenceType.EPISODE_ACCESS,
       referenceId: access.id,
-      reversesId: access.coinTransactionId ?? undefined,
-      description: `Refund: the content was taken down for good (${reason})`,
+      description,
     });
-    return movement.transactionId;
+    return { transactionId: movement.transactionId, coins: access.paidCoins };
   }
 
   private async notifyRefund(
