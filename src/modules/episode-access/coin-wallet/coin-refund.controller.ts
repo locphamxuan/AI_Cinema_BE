@@ -14,7 +14,7 @@ export class CoinRefundController {
   constructor(private readonly refunds: CoinRefundService) {}
 
   @Post(':id/refund')
-  @RequirePermission(PERMISSION.COIN_ADJUST)
+  @RequirePermission(PERMISSION.COIN_REFUND)
   @ApiOperation({
     summary:
       'Refund the whole Coin payment this row belongs to, once: main Coins back to main, bonus Coins back as a ' +

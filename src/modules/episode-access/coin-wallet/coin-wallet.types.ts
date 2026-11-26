@@ -37,16 +37,6 @@ export interface CreditRequest {
   reversesId?: string;
 }
 
-/** A manual correction; either part may be negative, but a bonus debit never creates Coins. */
-export interface AdjustmentRequest {
-  mainAmount?: number;
-  bonusAmount?: number;
-  reason: string;
-  rateVnd?: number;
-  idempotencyKey?: string;
-  createdById?: string;
-}
-
 /** What one write to a wallet did. */
 export interface CoinMovement {
   transactionId: string;
@@ -61,8 +51,6 @@ export interface CoinMovement {
 /** Reasons travel in `error.details.reason`: error.code already carries the HTTP status. */
 export const COIN_REASON = {
   INSUFFICIENT_COINS: 'INSUFFICIENT_COINS',
-  NOTHING_TO_ADJUST: 'NOTHING_TO_ADJUST',
-  SPLIT_THE_CORRECTION: 'SPLIT_THE_CORRECTION',
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
   NOT_REFUNDABLE: 'NOT_REFUNDABLE',
   ALREADY_REFUNDED: 'ALREADY_REFUNDED',

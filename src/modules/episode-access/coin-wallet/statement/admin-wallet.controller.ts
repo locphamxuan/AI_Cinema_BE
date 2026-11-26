@@ -1,14 +1,10 @@
 import { Paginate, type PaginateQuery } from '@nestarc/pagination';
-import { ParseUUIDPipe, Controller, Get, Param, Post, Body, Query } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiHeader, ApiOperation } from '@nestjs/swagger';
-import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
+import { ParseUUIDPipe, Controller, Get, Param, Query } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { PERMISSION } from 'src/common/auth/permissions';
-import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { IdempotencyKey } from 'src/common/decorators/idempotency-key.decorator';
 import { RequirePermission } from 'src/common/decorators/require-permission.decorator';
 import { AdminWalletService } from 'src/modules/episode-access/coin-wallet/statement/admin-wallet.service';
 import { CoinStatementQueryDto } from 'src/modules/episode-access/coin-wallet/statement/dto/coin-statement-query.dto';
-import { WalletAdjustmentRequestDto } from 'src/modules/episode-access/coin-wallet/statement/dto/wallet-adjustment.request.dto';
 
 const ID = new ParseUUIDPipe({ version: '4' });
 
@@ -30,23 +26,9 @@ export class AdminWalletController {
   @Get('coin-transactions')
   @RequirePermission(PERMISSION.COIN_TRANSACTION_READ)
   @ApiOperation({
-    summary: 'Coin ledger of the whole platform',
+    summary: 'Coin ledger of the whole platform; every row names the member account it belongs to',
   })
   ledger(@Paginate() query: PaginateQuery, @Query() filter: CoinStatementQueryDto) {
     return this.adminWallets.ledger(filter, query);
-  }
-
-  @Post('wallet-adjustments')
-  @RequirePermission(PERMISSION.COIN_ADJUST)
-  @ApiOperation({
-    summary: 'Correct a wallet by hand; writes an ADJUSTMENT row and an audit event',
-  })
-  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Sending it twice corrects the wallet once' })
-  adjust(
-    @Body() dto: WalletAdjustmentRequestDto,
-    @CurrentUser() admin: AuthenticatedUser,
-    @IdempotencyKey() idempotencyKey?: string,
-  ) {
-    return this.adminWallets.adjust(dto, admin, idempotencyKey);
   }
 }

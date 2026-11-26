@@ -90,29 +90,6 @@ export async function noticeReceived(
   );
 }
 
-/** The Admin corrected the wallet: the member sees by how much and why. */
-export async function noticeAdjusted(
-  notifications: NotificationService | undefined,
-  tx: PrismaTx,
-  walletId: string,
-  reason: string,
-  m: CoinMovement,
-): Promise<void> {
-  if (!notifications) return;
-  const added = m.mainCoins + m.bonusCoins > 0;
-  await notifications.notify(
-    [await ownerOf(tx, walletId)],
-    {
-      type: NOTIFICATION_TYPE.COIN_ADJUSTED,
-      title: `${added ? 'Admin cộng' : 'Admin trừ'} ${coins(m.mainCoins, m.bonusCoins)}`,
-      body: `Lý do: ${reason}. ${balance(m)}`,
-      link: '/wallet',
-      payload: { transactionId: m.transactionId },
-    },
-    tx,
-  );
-}
-
 /** The Admin refunded a payment: the member sees what came back, and what they no longer have. */
 export async function noticeRefunded(
   notifications: NotificationService | undefined,

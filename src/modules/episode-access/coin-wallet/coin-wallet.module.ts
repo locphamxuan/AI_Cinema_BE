@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { NotificationModule } from 'src/modules/platform/notification/notification.module';
 import { PlatformSettingModule } from 'src/modules/platform/platform-setting/platform-setting.module';
 import { AuditLogModule } from 'src/modules/platform/audit-log/audit-log.module';
-import { CoinAdjustService } from './coin-adjust.service';
 import { CoinRefundController } from './coin-refund.controller';
 import { CoinRefundService } from './coin-refund.service';
 import { CoinSpendService } from './coin-spend.service';
@@ -14,20 +13,13 @@ import { WalletService } from './wallet.service';
 import { AdminWalletService } from './statement/admin-wallet.service';
 
 /**
- * The Coin purse every purchase of MF-2 goes through: the wallet screen, the statement, the
- * manual corrections and the sweeper that expires bonus lots.
+ * The Coin purse every purchase of MF-2 goes through: the wallet screen, the statement, the Admin's
+ * ledger and the refund of a whole Coin payment. The Admin never edits a balance by hand.
  */
 @Module({
   imports: [PlatformSettingModule, NotificationModule, AuditLogModule],
   controllers: [WalletController, CoinRefundController, StatementController, AdminWalletController],
-  providers: [
-    WalletService,
-    CoinSpendService,
-    CoinRefundService,
-    CoinAdjustService,
-    StatementService,
-    AdminWalletService,
-  ],
-  exports: [WalletService, CoinSpendService, CoinRefundService, CoinAdjustService, StatementService],
+  providers: [WalletService, CoinSpendService, CoinRefundService, StatementService, AdminWalletService],
+  exports: [WalletService, CoinSpendService, CoinRefundService, StatementService],
 })
 export class CoinWalletModule {}

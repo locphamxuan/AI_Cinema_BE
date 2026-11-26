@@ -10,7 +10,7 @@ import { COIN_REASON, type PaymentRefund, type RefundRequest } from './coin-wall
 import { lockWallet } from './lot-usage';
 import { purchaseOf, undoPurchase } from './refunded-purchase';
 
-/** The payments that can be refunded; anything else is corrected with a wallet adjustment. */
+/** The payments that can be refunded: episode unlocks and plan payments. */
 const REFUNDABLE: CoinEntryType[] = [
   CoinEntryType.EPISODE_PURCHASE,
   CoinEntryType.PLAN_PAYMENT,
@@ -25,7 +25,7 @@ const sum = (rows: { mainAmount: number; bonusAmount: number }[], part: 'mainAmo
 
 const notRefundable = (entryType: CoinEntryType) =>
   new ConflictException({
-    message: 'Only a Coin payment can be refunded; use a wallet adjustment for anything else',
+    message: 'Only an episode unlock or a plan payment can be refunded',
     details: { reason: COIN_REASON.NOT_REFUNDABLE, entryType },
   });
 
