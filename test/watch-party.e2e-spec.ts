@@ -5,7 +5,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode, priceEpisode, release } from './support/media';
-import { registerMember } from './support/members';
+import { giveMonthlyPlan, registerMember } from './support/members';
 import { episodesOf, projectInProduction, type ProjectDetail } from './support/projects';
 
 interface Room {
@@ -52,19 +52,26 @@ describe('Watch party and recommendations (e2e)', () => {
 
   afterAll(() => app.close());
 
-  it('refuses a room on an episode the Host may not watch (paywall gate, edge 1.1)', async () => {
-    const refused = await member.post<{ error: { details: { reason: string } } }>(
-      '/watch-rooms',
-      { episodeId: episodeId(1) },
-      403,
-    );
-    expect(refused.error.details.reason).toBe('ENTITLEMENT_REQUIRED');
+  it('refuses a room to a member without a running Monthly plan, to create or to join (BR-69)', async () => {
+    const host = await registerMember(app);
+    await giveMonthlyPlan(app, host.id);
+    const room = await host.post<Room>('/watch-rooms', { episodeId: episodeId(0) }, 201);
+    const outsider = await registerMember(app);
+    for (const [path, body] of [
+      ['/watch-rooms', { episodeId: episodeId(0) }],
+      ['/watch-rooms/join', { roomCode: room.roomCode }],
+    ] as const) {
+      const refused = await outsider.post<{ error: { details: { reason: string } } }>(path, body, 403);
+      expect(refused.error.details.reason).toBe('WATCH_PARTY_PLAN_REQUIRED');
+    }
+    await host.post(`/watch-rooms/${room.id}/leave`, { action: 'DISBAND' }, 200);
   });
 
   it('runs a room: create, join by code, Host-only sync, next episode, transfer and disband', async () => {
     // Watch rooms are for Members only (2026-11-13): the Admin is refused, a second Member joins.
     await admin.post('/watch-rooms/join', { roomCode: 'ABC-DEF' }, 403);
     const viewer = await registerMember(app);
+    await Promise.all([giveMonthlyPlan(app, member.id), giveMonthlyPlan(app, viewer.id)]);
     const room = await member.post<Room>('/watch-rooms', { episodeId: episodeId(0) }, 201);
     expect(room.roomCode).toMatch(/^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$/);
 
@@ -82,9 +89,7 @@ describe('Watch party and recommendations (e2e)', () => {
     expect(snapshot.serverTimestamp).toEqual(expect.any(Number));
     await reviewer.get(`/watch-rooms/${room.id}`, 403);
 
-    // The Host cannot move the room to a paid episode it has no right to; once members may watch it, it moves.
-    await member.post(`/watch-rooms/${room.id}/next-episode`, {}, 403);
-    await priceEpisode(reviewer, episodeId(1), 10, { isFreeForMember: true });
+    // The Monthly plan covers the paid episode, so the Host moves the room on; a member cannot.
     const moved = await member.post<Room & { blockedUserIds: string[] }>(
       `/watch-rooms/${room.id}/next-episode`,
       {},
@@ -103,6 +108,29 @@ describe('Watch party and recommendations (e2e)', () => {
     const closed = await viewer.post<{ closed: boolean }>(`/watch-rooms/${room.id}/leave`, { action: 'DISBAND' }, 200);
     expect(closed.closed).toBe(true);
     await member.post(`/watch-rooms/${room.id}/join`, {}, 409);
+  });
+
+  it('hands the room to the member the Host picks, who then controls it (BR-69)', async () => {
+    const host = await registerMember(app);
+    const first = await registerMember(app);
+    const chosen = await registerMember(app);
+    for (const actor of [host, first, chosen]) await giveMonthlyPlan(app, actor.id);
+    const room = await host.post<Room>('/watch-rooms', { episodeId: episodeId(0) }, 201);
+    await first.post('/watch-rooms/join', { roomCode: room.roomCode }, 200);
+    await chosen.post('/watch-rooms/join', { roomCode: room.roomCode }, 200);
+
+    const leave = `/watch-rooms/${room.id}/leave`;
+    const unnamed = await host.post<{ error: { details: { reason: string } } }>(leave, { action: 'TRANSFER' }, 400);
+    expect(unnamed.error.details.reason).toBe('NEW_HOST_REQUIRED');
+    const handed = await host.post<{ closed: boolean; newHostUserId: string }>(
+      leave,
+      { action: 'TRANSFER', newHostUserId: chosen.id },
+      200,
+    );
+    expect(handed).toEqual({ closed: false, newHostUserId: chosen.id });
+    await chosen.call('put', `/watch-rooms/${room.id}`, { state: 'PLAYING', positionSeconds: 5 }, 200);
+    await first.call('put', `/watch-rooms/${room.id}`, { state: 'PAUSED', positionSeconds: 5 }, 403);
+    await chosen.post(leave, { action: 'DISBAND' }, 200);
   });
 
   it('recommends to a member and shows trending titles to a guest (BR-68)', async () => {

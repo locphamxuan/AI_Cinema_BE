@@ -150,6 +150,16 @@ export class StudioPortalController {
     return this.portal.project(projectId, user);
   }
 
+  @Get('projects/:projectId/idea-files/:fileId/content')
+  @ApiOperation({ summary: 'Download an idea or synopsis file of a project of this studio' })
+  ideaFile(
+    @Param('projectId', ID) projectId: string,
+    @Param('fileId', ID) fileId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.portal.ideaFile(projectId, fileId, user);
+  }
+
   @Post('projects/:projectId/poster')
   @UseInterceptors(POSTER, RemoveTempUploadInterceptor)
   @ApiConsumes('multipart/form-data')

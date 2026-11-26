@@ -16,3 +16,15 @@ model Notification {
   @@index([userId, readAt, createdAt])
   @@map("notifications")
 }
+
+/// Transactional outbox: publish an invalidation only after its notification change commits.
+model NotificationRealtimeEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("notification_realtime_events")
+}

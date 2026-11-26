@@ -13,6 +13,7 @@ import { E2E_REDIS_URL } from './e2e-env';
 import { type Actor, bootApp, signIn } from './support/api';
 import { compliantEpisode, priceEpisode, release } from './support/media';
 import { episodesOf, projectInProduction } from './support/projects';
+import { giveMonthlyPlan } from './support/members';
 
 /**
  * Two API instances behind one Redis (socket.io Redis adapter + RoomCluster): the Host plays on
@@ -34,7 +35,9 @@ describe('Watch room across two API instances (e2e)', () => {
       .send({ email, password, fullName: 'Thành viên cụm', dateOfBirth: '2000-01-01', acceptedTerms: true })
       .expect(201);
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password }).expect(200);
-    return { token: (login.body as { accessToken: string }).accessToken, actor: await signIn(app, email, password) };
+    const actor = await signIn(app, email, password);
+    await giveMonthlyPlan(app, actor.id);
+    return { token: (login.body as { accessToken: string }).accessToken, actor };
   }
 
   function connect(app: INestApplication<App>, token: string): Promise<Socket> {

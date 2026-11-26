@@ -1,9 +1,11 @@
 import type { Server, Socket } from 'socket.io';
+import { ForbiddenException } from '@nestjs/common';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import type { AppConfig } from 'src/config/app-config';
 import { RoomCluster } from './room-cluster';
 import { ROOM_EVENT } from './room-events';
 import { WatchRoomScreenGateway } from './watch-room-screen.gateway';
+import type { WatchRoomService } from './watch-room.service';
 
 const R1 = '0f9c8e2a-2f1b-4a53-9d4f-6f0b6a1d2c33';
 const B1 = '1f9c8e2a-2f1b-4a53-9d4f-6f0b6a1d2c33';
@@ -15,14 +17,19 @@ function setup() {
     watchRoom: { findUnique: jest.fn() },
     sessionAdBreak: { findFirst: jest.fn() },
   };
+  const rooms = { assertCanUse: jest.fn().mockResolvedValue(undefined) };
   const cluster = new RoomCluster({ redisUrl: null } as unknown as AppConfig);
   const publish = jest.spyOn(cluster, 'publish');
-  const gateway = new WatchRoomScreenGateway(prisma as unknown as PrismaService, cluster);
+  const gateway = new WatchRoomScreenGateway(
+    prisma as unknown as PrismaService,
+    cluster,
+    rooms as unknown as WatchRoomService,
+  );
   const roomEmit = jest.fn();
   gateway.server = { to: jest.fn(() => ({ emit: roomEmit })) } as unknown as Server;
   const emit = jest.fn();
   const client = { data: { userId: 'host' }, emit } as unknown as Socket;
-  return { prisma, gateway, roomEmit, client, emit, publish };
+  return { prisma, gateway, roomEmit, client, emit, publish, rooms };
 }
 
 describe('WatchRoomScreenGateway', () => {
@@ -47,6 +54,17 @@ describe('WatchRoomScreenGateway', () => {
     await gateway.onChat(client, { roomId: R1, text: '  ' });
     expect(emit).toHaveBeenCalledWith(ROOM_EVENT.CHAT_REJECTED, { reason: 'EMPTY' });
     expect(roomEmit).not.toHaveBeenCalled();
+  });
+
+  it('blocks room chat after the Monthly plan is no longer valid', async () => {
+    const { prisma, gateway, client, emit, rooms } = setup();
+    rooms.assertCanUse.mockRejectedValue(new ForbiddenException({ details: { reason: 'WATCH_PARTY_PLAN_REQUIRED' } }));
+    await gateway.onChat(client, { roomId: R1, text: 'hello' });
+    expect(emit).toHaveBeenCalledWith(ROOM_EVENT.ERROR, {
+      reason: ROOM_EVENT.ERROR,
+      details: { reason: 'WATCH_PARTY_PLAN_REQUIRED' },
+    });
+    expect(prisma.roomParticipant.findFirst).not.toHaveBeenCalled();
   });
 
   it('shows the Host ad from the Host session to the room, then clears it', async () => {

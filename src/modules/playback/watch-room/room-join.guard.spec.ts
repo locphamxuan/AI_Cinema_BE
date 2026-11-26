@@ -36,13 +36,19 @@ describe('RoomJoinGuard', () => {
     prisma.episode.findUnique.mockResolvedValue({ movie: { ageRating: 'P' } });
     prisma.friendship.count.mockResolvedValue(0);
     prisma.streamingSession.findMany.mockResolvedValue([]);
-    playbackAccess.runningPlanOf.mockResolvedValue(null);
+    playbackAccess.runningPlanOf.mockResolvedValue({ code: 'MONTHLY', features: { maxConcurrentStreams: 2 } });
     playbackAccess.freePlanOf.mockResolvedValue({ code: 'FREE', features: { maxConcurrentStreams: 2 } });
     settings.get.mockResolvedValue({ playbackHeartbeatTimeoutSeconds: 60 });
   });
 
   it('admits an entitled adult into a room with space', async () => {
     await expect(guard.assertMayJoin('u1', 'ep', room())).resolves.toBeUndefined();
+  });
+
+  it('requires a current Monthly plan before checking episode entitlement', async () => {
+    playbackAccess.runningPlanOf.mockResolvedValue(null);
+    expect(await reasonOf(guard.assertMayJoin('u1', 'ep', room()))).toBe('WATCH_PARTY_PLAN_REQUIRED');
+    expect(entitlement.canWatch).not.toHaveBeenCalled();
   });
 
   it('refuses a member without a right to the episode, with the paywall info (edge 1.1)', async () => {

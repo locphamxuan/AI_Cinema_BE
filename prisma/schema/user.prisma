@@ -94,6 +94,7 @@ model User {
   friendshipsSent     Friendship[]      @relation("FriendshipSender")
   friendshipsReceived Friendship[]      @relation("FriendshipReceiver")
   roomParticipations  RoomParticipant[] @relation("RoomParticipantUser")
+  notificationRealtimeEvents NotificationRealtimeEvent[]
 
   /// Forgot password: the latest e-mailed OTP is the only live one.
   passwordResetOtps        PasswordResetOtp[]

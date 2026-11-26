@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, StreamableFile } from '@nestjs/common';
 import { ContentReviewDecision, ScriptStatus } from '@prisma/client';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { ObjectStorage } from 'src/infrastructure/storage/object-storage';
+import { streamIdeaFile } from 'src/modules/production/movie-project/idea-file/idea-file.stream';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { StudioAccountService } from 'src/modules/production/studio/studio-account.service';
 import { STUDIO_POSTER_FIELDS, studioPosterOf } from './poster/studio-poster.view';
@@ -17,6 +19,7 @@ export class StudioPortalService {
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
     private readonly accounts: StudioAccountService,
+    private readonly storage: ObjectStorage,
   ) {}
 
   studioOf(user: AuthenticatedUser): Promise<string> {
@@ -66,6 +69,11 @@ export class StudioPortalService {
         id: true,
         status: true,
         ideaDescription: true,
+        ideaFiles: {
+          orderBy: [{ fileName: 'asc' }, { version: 'desc' }],
+          distinct: ['fileName'],
+          select: { id: true, fileName: true, purpose: true, version: true, sizeBytes: true, createdAt: true },
+        },
         handedOffAt: true,
         ...STUDIO_POSTER_FIELDS,
         movie: { select: { title: true, synopsis: true, ageRating: true, defaultLanguage: true } },
@@ -111,12 +119,13 @@ export class StudioPortalService {
         },
       },
     });
-    const { movie, script, studioPosterFileName, studioPosterUploadedAt, ...rest } = project;
+    const { movie, script, ideaFiles, studioPosterFileName, studioPosterUploadedAt, ...rest } = project;
     const finalScript = script?.status === ScriptStatus.FINAL ? (script.versions[0] ?? null) : null;
     return {
       ...rest,
       ...movie,
       finalScript,
+      ideaFiles: ideaFiles.map((file) => ({ ...file, sizeBytes: Number(file.sizeBytes) })),
       studioPoster: studioPosterOf({ studioPosterFileName, studioPosterUploadedAt }),
       episodes: episodes.map(({ mediaAssets, ...episode }) => {
         const latest = mediaAssets[0];
@@ -128,5 +137,11 @@ export class StudioPortalService {
         };
       }),
     };
+  }
+
+  /** An idea or synopsis file of a project the studio was sent a contract for. */
+  async ideaFile(projectId: string, fileId: string, user: AuthenticatedUser): Promise<StreamableFile> {
+    await this.access.studioProject(projectId, await this.accounts.studioOf(user));
+    return streamIdeaFile(this.prisma, this.storage, projectId, fileId);
   }
 }
