@@ -7,7 +7,7 @@ model RewardRule {
   name        String   @db.VarChar(255)
   /// 1 = the first day of a streak.
   streakDay   Int      @map("streak_day")
-  /// Bonus Coins this streak day pays; they land in a lot that expires (BR-28).
+  /// Bonus Coins this streak day pays; they land in a lot that never expires (BR-82).
   bonusCoins  Int      @map("bonus_coins")
   /// The milestone day: checking in on it also grants one reward spin (BR-09).
   grantsSpin  Boolean  @default(false) @map("grants_spin")
