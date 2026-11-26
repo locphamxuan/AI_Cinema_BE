@@ -79,12 +79,22 @@ export class UserService {
       },
       select: USER_PROFILE_SELECT,
     });
-    this.accessControl.forgetAccount(userId);
     // A locked account, a new role or a new password must not keep the sessions issued before.
     if (dto.isActive === false || dto.password || (dto.role !== undefined && dto.role !== existing.role)) {
-      await this.sessions.revokeAll(userId);
+      await this.signOutEverywhere(userId);
+    } else {
+      this.accessControl.forgetAccount(userId);
     }
     return user;
+  }
+
+  /**
+   * Ends every session of an account just locked or changed: its cached role and active flag are forgotten, so
+   * the next request with an old access token is refused, and every refresh token is revoked.
+   */
+  async signOutEverywhere(userId: string): Promise<void> {
+    this.accessControl.forgetAccount(userId);
+    await this.sessions.revokeAll(userId);
   }
 
   /**

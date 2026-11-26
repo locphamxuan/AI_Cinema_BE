@@ -45,7 +45,7 @@ export class FinanceController {
   @Post('risk/scan')
   @HttpCode(200)
   @RequirePermission(PERMISSION.RISK_FLAG_MANAGE)
-  @ApiOperation({ summary: 'Run the risk rules now over the last 7 days' })
+  @ApiOperation({ summary: 'Run the risk rules now over the last 7 days; answers the new flags per rule' })
   scan() {
     return this.risk.scan();
   }
@@ -53,7 +53,10 @@ export class FinanceController {
   @Post('risk/flags/:flagId/review')
   @HttpCode(200)
   @RequirePermission(PERMISSION.RISK_FLAG_MANAGE)
-  @ApiOperation({ summary: 'Confirm or dismiss a flag, with a note' })
+  @ApiOperation({
+    summary: 'Lock the member account of a flag (signs it out everywhere; note required) or dismiss the flag',
+    description: '409 when the flag is no longer open, or RISK_FLAG_NOT_A_MEMBER when the account is not a member',
+  })
   review(
     @Param('flagId', ID) flagId: string,
     @Body() dto: ReviewTransactionFlagRequestDto,

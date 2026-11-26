@@ -51,7 +51,14 @@ describe('UserService.update', () => {
 
   it('signs a locked account out of every session', async () => {
     await service.update('u1', { isActive: false }, admin);
+    expect(forgetAccount).toHaveBeenCalledWith('u1');
     expect(sessions.revokeAll).toHaveBeenCalledWith('u1');
+  });
+
+  it('signs an account out everywhere for a lock made elsewhere (a risk flag)', async () => {
+    await service.signOutEverywhere('m1');
+    expect(forgetAccount).toHaveBeenCalledWith('m1');
+    expect(sessions.revokeAll).toHaveBeenCalledWith('m1');
   });
 
   it('keeps the sessions when nothing security-relevant changes', async () => {

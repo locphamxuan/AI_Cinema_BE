@@ -19,13 +19,16 @@ model RevenueAllocation {
   @@map("revenue_allocations")
 }
 
+/// OPEN until the Admin acts: ACCOUNT_LOCKED (the member's account was locked from the flag) or DISMISSED.
+/// CONFIRMED is kept for flags reviewed before 26/11/2026, when the Admin could only mark a risk as real.
 enum TransactionFlagStatus {
   OPEN
   CONFIRMED
   DISMISSED
+  ACCOUNT_LOCKED
 }
 
-/// A Coin ledger row a risk rule found suspicious; the Admin confirms or dismisses it.
+/// A Coin ledger row a risk rule found suspicious; the Admin locks the member's account or dismisses it.
 model TransactionFlag {
   id                String                @id @default(uuid()) @db.Uuid
   coinTransactionId String                @map("coin_transaction_id") @db.Uuid
