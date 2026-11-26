@@ -203,12 +203,12 @@ describe('CoinSpendService.credit', () => {
     coinLot: { create: jest.fn() },
     coinTransaction: { findUnique: jest.fn().mockResolvedValue(null), createManyAndReturn: jest.fn() },
   };
-  const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000, bonusCoinExpiryDays: 30 }) };
+  const settings = { get: jest.fn().mockResolvedValue({ coinRateVnd: 1000 }) };
   const service = new CoinSpendService(settings as unknown as PlatformSettingService);
 
   beforeEach(() => {
     jest.clearAllMocks();
-    settings.get.mockResolvedValue({ coinRateVnd: 1000, bonusCoinExpiryDays: 30 });
+    settings.get.mockResolvedValue({ coinRateVnd: 1000 });
     tx.coinWallet.findUniqueOrThrow.mockResolvedValue({ id: 'w1', mainBalance: 0, bonusBalance: 0 });
     tx.coinWallet.updateMany.mockResolvedValue({ count: 1 });
     tx.coinTransaction.findUnique.mockResolvedValue(null);
@@ -227,7 +227,7 @@ describe('CoinSpendService.credit', () => {
     expect(tx.coinLot.create).not.toHaveBeenCalled();
   });
 
-  it('parks bonus Coins in a lot that knows when it runs out', async () => {
+  it('parks bonus Coins in a lot of their own', async () => {
     tx.coinLot.create.mockResolvedValue({ id: 'lot-9' });
 
     await service.credit(tx as unknown as PrismaTx, 'w1', {
