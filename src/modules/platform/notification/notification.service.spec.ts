@@ -7,8 +7,15 @@ import { NOTIFICATION_TYPE } from './notification-types';
 describe('NotificationService', () => {
   const prisma = {
     notification: { createMany: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
+    notificationRealtimeEvent: { createMany: jest.fn(), create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() },
     user: { findMany: jest.fn() },
+    $transaction: jest.fn(),
   };
+  prisma.$transaction.mockImplementation((work: unknown) =>
+    typeof work === 'function'
+      ? (work as (tx: typeof prisma) => Promise<unknown>)(prisma)
+      : Promise.all(work as Promise<unknown>[]),
+  );
   const service = new NotificationService(prisma as unknown as PrismaService);
 
   beforeEach(() => {
@@ -44,9 +51,14 @@ describe('NotificationService', () => {
   });
 
   it('writes inside the given transaction', async () => {
-    const tx = { notification: { createMany: jest.fn() }, user: { findMany: jest.fn().mockResolvedValue([]) } };
+    const tx = {
+      notification: { createMany: jest.fn() },
+      notificationRealtimeEvent: { createMany: jest.fn() },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
+    };
     await service.notify(['a'], { type: NOTIFICATION_TYPE.MEDIA_READY, title: 'x' }, tx as never);
     expect(tx.notification.createMany).toHaveBeenCalled();
+    expect(tx.notificationRealtimeEvent.createMany).toHaveBeenCalledWith({ data: [{ userId: 'a' }] });
     expect(prisma.notification.createMany).not.toHaveBeenCalled();
   });
 
@@ -56,12 +68,25 @@ describe('NotificationService', () => {
     expect(prisma.notification.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'n1', userId: 'user-1', readAt: null } }),
     );
+    expect(prisma.notificationRealtimeEvent.create).toHaveBeenCalledWith({ data: { userId: 'user-1' } });
   });
 
   it('answers 404 for a notification of someone else', async () => {
     prisma.notification.updateMany.mockResolvedValue({ count: 0 });
     prisma.notification.count.mockResolvedValue(0);
     await expect(service.markRead('user-1', 'n2')).rejects.toThrow(NotFoundException);
+    expect(prisma.notificationRealtimeEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('publishes a realtime invalidation only when mark-all-read changes rows', async () => {
+    prisma.notification.updateMany.mockResolvedValue({ count: 2 });
+    await expect(service.markAllRead('user-1')).resolves.toEqual({ updated: 2 });
+    expect(prisma.notificationRealtimeEvent.create).toHaveBeenCalledWith({ data: { userId: 'user-1' } });
+
+    prisma.notificationRealtimeEvent.create.mockClear();
+    prisma.notification.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.markAllRead('user-1')).resolves.toEqual({ updated: 0 });
+    expect(prisma.notificationRealtimeEvent.create).not.toHaveBeenCalled();
   });
 
   it('lists the active admins', async () => {

@@ -9,10 +9,8 @@ import { deviceLimitsOf } from '../playback-access/device-eligibility.port';
 import { ROOM_CAPACITY } from './room-events';
 
 /**
- * The paywall gate of a watch room (edges 1.1, 4.2, 5.1, 6.2, 7.3): every member is checked at the
- * door, before a participant row exists — entitlement first (no ride-along on the Host's stream),
- * then the age label, the room capacity, the MF-4 concurrent-device cap, and blocks between the
- * joiner and the Host. Each refusal carries a `reason` the clients map to their own bottom sheets.
+ * The room gate (BR-69): require a running Monthly plan before checking episode entitlement, age,
+ * capacity, concurrent devices and blocks. Each refusal carries a `reason` the clients can explain.
  */
 @Injectable()
 export class RoomJoinGuard {
@@ -30,6 +28,7 @@ export class RoomJoinGuard {
     room?: { hostUserId: string | null; participants: { userId: string; leftAt: Date | null }[] },
     deviceKey?: string,
   ): Promise<void> {
+    await this.assertActiveMonthlyPlan(userId);
     await this.assertEntitled(userId, episodeId);
     await this.assertOldEnough(userId, episodeId);
     if (room) {
@@ -37,6 +36,15 @@ export class RoomJoinGuard {
       await this.assertNotBlocked(userId, room.hostUserId);
     }
     await this.assertDeviceSlotFree(userId, deviceKey);
+  }
+
+  /** Watch Party is a Monthly-plan benefit; coin ownership and the default Free plan do not qualify. */
+  async assertActiveMonthlyPlan(userId: string): Promise<void> {
+    if (await this.playbackAccess.runningPlanOf(userId)) return;
+    throw new ForbiddenException({
+      message: 'A Monthly plan that is still valid is required to use Watch Party',
+      details: { reason: 'WATCH_PARTY_PLAN_REQUIRED' },
+    });
   }
 
   /**

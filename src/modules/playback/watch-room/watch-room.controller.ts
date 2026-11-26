@@ -4,6 +4,7 @@ import { Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, P
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from 'src/common/auth/authenticated-user';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { WatchRoomGateway } from './watch-room.gateway';
 import { WatchRoomService } from './watch-room.service';
 import {
   CreateWatchRoomDto,
@@ -21,7 +22,10 @@ const ID = new ParseUUIDPipe({ version: '4' });
 @RequirePermission(PERMISSION.WATCH_PARTY)
 @Controller('watch-rooms')
 export class WatchRoomController {
-  constructor(private readonly rooms: WatchRoomService) {}
+  constructor(
+    private readonly rooms: WatchRoomService,
+    private readonly gateway: WatchRoomGateway,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a watch room for an episode; the Host passes the paywall gate too (BR-69)' })
@@ -84,9 +88,15 @@ export class WatchRoomController {
   @Post(':roomId/leave')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Leave; a Host chooses TRANSFER or DISBAND, else the earliest member takes over (edge 3.2)',
+    summary: 'Leave; a Host chooses an active successor for TRANSFER or closes the room with DISBAND (edge 3.2)',
   })
-  leave(@CurrentUser() user: AuthenticatedUser, @Param('roomId', ID) roomId: string, @Body() dto: LeaveWatchRoomDto) {
-    return this.rooms.leave(user.id, roomId, dto);
+  async leave(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('roomId', ID) roomId: string,
+    @Body() dto: LeaveWatchRoomDto,
+  ) {
+    const result = await this.rooms.leave(user.id, roomId, dto);
+    await this.gateway.afterRestLeave(roomId, user.id, result);
+    return result;
   }
 }

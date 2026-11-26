@@ -11,6 +11,7 @@ import { AuditLogService } from 'src/modules/platform/audit-log/audit-log.servic
 import { CONTENT_EVENT } from 'src/modules/platform/audit-log/content-events';
 import { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import { assertProjectStatus, OPEN_PROJECT_STATUSES } from 'src/modules/production/project-access/project-rules';
+import { streamIdeaFile } from './idea-file.stream';
 
 /** BR-12: documents, UTF-8 TXT, images or video, at most 100 MB each. */
 export const IDEA_FILE_MAX_BYTES = 100 * 1024 * 1024;
@@ -145,12 +146,6 @@ export class IdeaFileService {
 
   async download(projectId: string, fileId: string, user: AuthenticatedUser): Promise<StreamableFile> {
     await this.access.project(projectId, user, 'read');
-    const file = await this.prisma.movieIdeaFile.findFirst({ where: { id: fileId, projectId } });
-    if (!file) throw new NotFoundException('Idea file not found');
-    return new StreamableFile(await this.storage.stream(file.storageKey, 'private'), {
-      type: file.mimeType,
-      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
-      length: Number(file.sizeBytes),
-    });
+    return streamIdeaFile(this.prisma, this.storage, projectId, fileId);
   }
 }

@@ -42,3 +42,37 @@ export async function fundWallet(
     );
   }
 }
+
+/** A running Monthly plan, e.g. for watch rooms (BR-69), written straight to the database. */
+export async function giveMonthlyPlan(app: INestApplication<App>, userId: string): Promise<void> {
+  const prisma = app.get(PrismaService);
+  const now = new Date();
+  if (await prisma.subscription.count({ where: { userId, status: 'ACTIVE', currentPeriodEnd: { gt: now } } })) return;
+  const admin = await prisma.user.findFirstOrThrow({ where: { role: 'ADMIN' }, select: { id: true } });
+  // Kept off sale, so it never shows up among the plans other suites list or buy.
+  const plan = await prisma.membershipPlan.upsert({
+    where: { code: 'e2e_watch_party_monthly' },
+    update: {},
+    create: {
+      code: 'e2e_watch_party_monthly',
+      name: 'Gói Tháng e2e xem nhóm',
+      period: 'MONTHLY',
+      durationDays: 30,
+      isActive: false,
+      createdById: admin.id,
+    },
+  });
+  const end = new Date(now.getTime() + 30 * 86_400_000);
+  await prisma.subscription.create({
+    data: {
+      userId,
+      planId: plan.id,
+      status: 'ACTIVE',
+      priceCoins: 300,
+      autoRenew: false,
+      startedAt: now,
+      currentPeriodStart: now,
+      currentPeriodEnd: end,
+    },
+  });
+}

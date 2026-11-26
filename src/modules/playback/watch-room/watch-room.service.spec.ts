@@ -17,9 +17,14 @@ describe('WatchRoomService', () => {
       updateMany: jest.fn(),
     },
     roomParticipant: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
-    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+    $transaction: jest.fn(),
   };
-  const guard = { assertMayJoin: jest.fn() };
+  prisma.$transaction.mockImplementation((work: unknown) =>
+    typeof work === 'function'
+      ? (work as (tx: typeof prisma) => Promise<unknown>)(prisma)
+      : Promise.all(work as Promise<unknown>[]),
+  );
+  const guard = { assertMayJoin: jest.fn(), assertActiveMonthlyPlan: jest.fn() };
   const entitlement = { canWatch: jest.fn() };
   const newService = () =>
     new WatchRoomService(
@@ -46,6 +51,7 @@ describe('WatchRoomService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     guard.assertMayJoin.mockResolvedValue(undefined);
+    guard.assertActiveMonthlyPlan.mockResolvedValue(undefined);
   });
 
   it('creates a room with a unique code once the Host passes the paywall gate', async () => {
@@ -168,8 +174,45 @@ describe('WatchRoomService', () => {
     await expect(
       newService().leave('u1', 'r1', { action: 'TRANSFER', newHostUserId: 'stranger' }),
     ).rejects.toMatchObject({ response: { details: { reason: 'NEW_HOST_NOT_IN_ROOM' } } });
-    expect(prisma.roomParticipant.update).not.toHaveBeenCalled();
-    expect(prisma.watchRoom.update).not.toHaveBeenCalled();
+    expect(prisma.roomParticipant.updateMany).not.toHaveBeenCalled();
+    expect(prisma.watchRoom.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit successor for a voluntary transfer when other members are present', async () => {
+    prisma.watchRoom.findUnique.mockResolvedValue(room({ participants: [host, member] }));
+    await expect(newService().leave('u1', 'r1', { action: 'TRANSFER' })).rejects.toMatchObject({
+      response: { details: { reason: 'NEW_HOST_REQUIRED' } },
+    });
+    expect(prisma.roomParticipant.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('atomically promotes the selected active member and updates the room host', async () => {
+    prisma.watchRoom.findUnique.mockResolvedValue(room({ participants: [host, member] }));
+    prisma.roomParticipant.updateMany.mockResolvedValue({ count: 1 });
+    prisma.watchRoom.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(newService().leave('u1', 'r1', { action: 'TRANSFER', newHostUserId: 'u2' })).resolves.toEqual({
+      closed: false,
+      newHostUserId: 'u2',
+    });
+
+    expect(prisma.roomParticipant.updateMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: { id: 'p1', role: 'HOST', leftAt: null } }),
+    );
+    expect(prisma.roomParticipant.updateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: 'p2', roomId: 'r1', role: 'PARTICIPANT', leftAt: null },
+        data: { role: 'HOST' },
+      }),
+    );
+    expect(prisma.watchRoom.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'r1', hostUserId: 'u1', status: { not: 'DISBANDED' } },
+        data: { hostUserId: 'u2' },
+      }),
+    );
   });
 
   it('lets the Host replay or go on to the next episode after the episode has ended', async () => {
@@ -195,28 +238,27 @@ describe('WatchRoomService', () => {
 
   it('disbands the room when the Host leaves alone', async () => {
     prisma.watchRoom.findUnique.mockResolvedValue(room());
-    prisma.roomParticipant.update.mockResolvedValue({});
-    prisma.watchRoom.update.mockResolvedValue({});
+    prisma.roomParticipant.updateMany.mockResolvedValue({ count: 1 });
+    prisma.watchRoom.updateMany.mockResolvedValue({ count: 1 });
     const res = await newService().leave('u1', 'r1');
     expect(res.closed).toBe(true);
-    expect(prisma.watchRoom.update).toHaveBeenCalledWith(
+    expect(prisma.watchRoom.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'DISBANDED' }) }),
     );
   });
 
   it('hands the seat to the earliest member when the Host leaves without a choice (edge 3.2)', async () => {
     prisma.watchRoom.findUnique.mockResolvedValue(room({ participants: [host, member] }));
-    prisma.roomParticipant.update.mockResolvedValue({});
-    prisma.roomParticipant.updateMany.mockResolvedValue({});
-    prisma.watchRoom.update.mockResolvedValue({});
+    prisma.roomParticipant.updateMany.mockResolvedValue({ count: 1 });
+    prisma.watchRoom.updateMany.mockResolvedValue({ count: 1 });
     const res = await newService().leave('u1', 'r1');
     expect(res).toEqual({ closed: false, newHostUserId: 'u2' });
   });
 
   it('disbands for everyone when the Host chooses so (edge 3.2)', async () => {
     prisma.watchRoom.findUnique.mockResolvedValue(room({ participants: [host, member] }));
-    prisma.roomParticipant.update.mockResolvedValue({});
-    prisma.watchRoom.update.mockResolvedValue({});
+    prisma.roomParticipant.updateMany.mockResolvedValue({ count: 1 });
+    prisma.watchRoom.updateMany.mockResolvedValue({ count: 1 });
     const res = await newService().leave('u1', 'r1', { action: 'DISBAND' });
     expect(res.closed).toBe(true);
   });

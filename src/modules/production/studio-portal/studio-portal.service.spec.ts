@@ -1,6 +1,8 @@
+import { Readable } from 'node:stream';
 import { NotFoundException } from '@nestjs/common';
 import { ContentReviewDecision, ScriptStatus, UserRole } from '@prisma/client';
 import type { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import type { ObjectStorage } from 'src/infrastructure/storage/object-storage';
 import type { ProjectAccessService } from 'src/modules/production/project-access/project-access.service';
 import type { StudioAccountService } from 'src/modules/production/studio/studio-account.service';
 import { StudioPortalService } from './studio-portal.service';
@@ -12,13 +14,16 @@ describe('StudioPortalService', () => {
     studio: { findUniqueOrThrow: jest.fn() },
     movieProject: { findMany: jest.fn(), findUniqueOrThrow: jest.fn() },
     episode: { findMany: jest.fn() },
+    movieIdeaFile: { findFirst: jest.fn() },
   };
+  const storage = { stream: jest.fn() };
   const access = { studioProject: jest.fn() };
   const accounts = { studioOf: jest.fn() };
   const service = new StudioPortalService(
     prisma as unknown as PrismaService,
     access as unknown as ProjectAccessService,
     accounts as unknown as StudioAccountService,
+    storage as unknown as ObjectStorage,
   );
 
   const projectRow = (scriptStatus: ScriptStatus | null) => ({
@@ -33,6 +38,7 @@ describe('StudioPortalService', () => {
       ? { status: scriptStatus, finalizedAt: null, currentVersion: 2, versions: [{ version: 2, content: 'Bản 2' }] }
       : null,
     contracts: [{ id: 'c1' }],
+    ideaFiles: [{ id: 'f1', fileName: 'y-tuong.pdf', purpose: 'IDEA', version: 2, sizeBytes: 2048n }],
   });
 
   beforeEach(() => {
@@ -103,6 +109,7 @@ describe('StudioPortalService', () => {
       synopsis: 'Tóm tắt',
       finalScript: { version: 2, content: 'Bản 2' },
       contracts: [{ id: 'c1' }],
+      ideaFiles: [{ id: 'f1', fileName: 'y-tuong.pdf', purpose: 'IDEA', version: 2, sizeBytes: 2048 }],
       studioPoster: { fileName: 'poster.png', uploadedAt: new Date(5) },
     });
     expect(view).not.toHaveProperty('script');
@@ -134,5 +141,28 @@ describe('StudioPortalService', () => {
     access.studioProject.mockRejectedValue(new NotFoundException());
     await expect(service.project('p9', STUDIO_USER)).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.movieProject.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('downloads an idea file only after checking the studio may read the project', async () => {
+    prisma.movieIdeaFile.findFirst.mockResolvedValue({
+      storageKey: 'movies/p1/ideas/a.pdf',
+      mimeType: 'application/pdf',
+      fileName: 'ý tưởng.pdf',
+      sizeBytes: 4n,
+    });
+    storage.stream.mockResolvedValue(Readable.from(Buffer.from('%PDF')));
+
+    const file = await service.ideaFile('p1', 'f1', STUDIO_USER);
+
+    expect(access.studioProject).toHaveBeenCalledWith('p1', 's1');
+    expect(prisma.movieIdeaFile.findFirst).toHaveBeenCalledWith({ where: { id: 'f1', projectId: 'p1' } });
+    expect(file.getHeaders().disposition).toContain(encodeURIComponent('ý tưởng.pdf'));
+
+    prisma.movieIdeaFile.findFirst.mockResolvedValue(null);
+    await expect(service.ideaFile('p1', 'x', STUDIO_USER)).rejects.toBeInstanceOf(NotFoundException);
+    access.studioProject.mockRejectedValue(new NotFoundException());
+    storage.stream.mockClear();
+    await expect(service.ideaFile('p9', 'f1', STUDIO_USER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(storage.stream).not.toHaveBeenCalled();
   });
 });

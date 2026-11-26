@@ -8,11 +8,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WatchEntitlementService } from 'src/modules/episode-access/access-decision/watch-entitlement.service';
-import { VISIBLE_EPISODE } from 'src/modules/catalog/episode-visibility';
 import { CodeGuessLimiter, generateRoomCode, normalizeRoomCode } from './room-codes';
 import { RoomJoinGuard } from './room-join.guard';
 import { WatchRoomResponseDto } from './dto/watch-room.dto';
 import { assertNotDisbanded, assertOpen, ROOM_TTL_MS, roomSnapshot } from './room-state';
+import { advanceRoomEpisode } from './watch-room-next-episode';
 
 type RoomWithParticipants = NonNullable<Awaited<ReturnType<WatchRoomService['findRoom']>>>;
 
@@ -26,6 +26,11 @@ export class WatchRoomService {
     private readonly guard: RoomJoinGuard,
     private readonly entitlement: WatchEntitlementService,
   ) {}
+
+  /** Used by REST and socket actions after a room has already been opened. */
+  assertCanUse(userId: string): Promise<void> {
+    return this.guard.assertActiveMonthlyPlan(userId);
+  }
 
   /** The Host, too, passes the paywall gate: a room never starts on an episode its Host cannot watch. */
   async create(userId: string, dto: { episodeId: string }, deviceKey?: string): Promise<WatchRoomResponseDto> {
@@ -103,6 +108,7 @@ export class WatchRoomService {
   }
 
   async detail(userId: string, roomId: string): Promise<WatchRoomResponseDto> {
+    await this.assertCanUse(userId);
     const room = await this.findRoom(roomId);
     if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
     const inRoom = room.participants.some((p) => p.userId === userId);
@@ -121,6 +127,7 @@ export class WatchRoomService {
     if (!host) throw new ForbiddenException({ message: 'Only the Host may sync', details: { reason: 'NOT_HOST' } });
     // A disbanded room never comes back to life through a late sync.
     assertNotDisbanded(room);
+    await this.assertCanUse(userId);
 
     // BR-69: the 15 minutes count from the last sign of the Host (play, pause, seek or the end of the episode),
     // so a room in use never expires mid-episode; it closes 15 min after the episode ends or the Host goes quiet.
@@ -148,33 +155,85 @@ export class WatchRoomService {
     roomId: string,
     opts: { action?: 'TRANSFER' | 'DISBAND'; newHostUserId?: string } = {},
   ): Promise<{ closed: boolean; newHostUserId: string | null }> {
-    const room = await this.findRoom(roomId);
-    if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
-    const me = room.participants.find((p) => p.userId === userId);
-    // Checked before the Host steps out: a wrong pick must not close the room for everyone.
-    const handOverTo = opts.action !== 'DISBAND' ? opts.newHostUserId : undefined;
-    if (me?.role === 'HOST' && handOverTo) {
-      const named = room.participants.some((p) => p.userId === handOverTo && !p.leftAt && p.role !== 'HOST');
-      if (!named) {
+    return this.prisma.$transaction(async (tx) => {
+      const room = await tx.watchRoom.findUnique({
+        where: { id: roomId },
+        include: { participants: { include: { participant: { select: { fullName: true } } } } },
+      });
+      if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
+      const me = room.participants.find((p) => p.userId === userId);
+      if (!me || me.leftAt || room.status === 'DISBANDED') {
+        return { closed: room.status === 'DISBANDED', newHostUserId: null };
+      }
+
+      if (me.role !== 'HOST') {
+        await tx.roomParticipant.updateMany({
+          where: { id: me.id, leftAt: null },
+          data: { leftAt: new Date() },
+        });
+        return { closed: false, newHostUserId: null };
+      }
+
+      const candidates = room.participants
+        .filter((p) => p.userId !== userId && !p.leftAt && p.role !== 'HOST')
+        .sort((a, b) => a.joinedAt.getTime() - b.joinedAt.getTime());
+      const requestedHost = opts.action === 'DISBAND' ? undefined : opts.newHostUserId;
+      if (requestedHost && !candidates.some((p) => p.userId === requestedHost)) {
         throw new BadRequestException({
           message: 'The new Host must be a member still in the room',
           details: { reason: 'NEW_HOST_NOT_IN_ROOM' },
         });
       }
-    }
-    if (me) await this.prisma.roomParticipant.update({ where: { id: me.id }, data: { leftAt: new Date() } });
-    if (me?.role !== 'HOST') return { closed: false, newHostUserId: null };
+      if (opts.action === 'TRANSFER' && !requestedHost && candidates.length) {
+        throw new BadRequestException({
+          message: 'Choose a member in the room to become the new Host',
+          details: { reason: 'NEW_HOST_REQUIRED' },
+        });
+      }
 
-    if (opts.action === 'DISBAND') {
-      await this.close(roomId);
-      return { closed: true, newHostUserId: null };
-    }
-    const newHost = await this.promoteNextHost(roomId, opts.newHostUserId);
-    if (!newHost) {
-      await this.close(roomId);
-      return { closed: true, newHostUserId: null };
-    }
-    return { closed: false, newHostUserId: newHost };
+      const next = requestedHost ? candidates.find((p) => p.userId === requestedHost) : candidates[0];
+      const now = new Date();
+      const left = await tx.roomParticipant.updateMany({
+        where: { id: me.id, role: 'HOST', leftAt: null },
+        data: { leftAt: now, role: 'PARTICIPANT' },
+      });
+      if (left.count !== 1) {
+        throw new ConflictException({ message: 'The Host changed while leaving', details: { reason: 'HOST_CHANGED' } });
+      }
+
+      if (opts.action === 'DISBAND' || !next) {
+        const closed = await tx.watchRoom.updateMany({
+          where: { id: roomId, hostUserId: userId, status: { not: 'DISBANDED' } },
+          data: { status: 'DISBANDED', expiresAt: now },
+        });
+        if (closed.count !== 1) {
+          throw new ConflictException({
+            message: 'The room changed while leaving',
+            details: { reason: 'ROOM_CHANGED' },
+          });
+        }
+        return { closed: true, newHostUserId: null };
+      }
+
+      const promoted = await tx.roomParticipant.updateMany({
+        where: { id: next.id, roomId, role: 'PARTICIPANT', leftAt: null },
+        data: { role: 'HOST' },
+      });
+      if (promoted.count !== 1) {
+        throw new ConflictException({
+          message: 'The selected member is no longer in the room',
+          details: { reason: 'NEW_HOST_NOT_IN_ROOM' },
+        });
+      }
+      const transferred = await tx.watchRoom.updateMany({
+        where: { id: roomId, hostUserId: userId, status: { not: 'DISBANDED' } },
+        data: { hostUserId: next.userId },
+      });
+      if (transferred.count !== 1) {
+        throw new ConflictException({ message: 'The room changed while leaving', details: { reason: 'ROOM_CHANGED' } });
+      }
+      return { closed: false, newHostUserId: next.userId };
+    });
   }
 
   /**
@@ -203,55 +262,7 @@ export class WatchRoomService {
    * against the new episode first: those without a right to it are let go with the paywall info.
    */
   async nextEpisode(userId: string, roomId: string): Promise<{ room: WatchRoomResponseDto; blockedUserIds: string[] }> {
-    const room = await this.findRoom(roomId);
-    if (!room) throw new NotFoundException({ message: 'Room not found', details: { reason: 'ROOM_NOT_FOUND' } });
-    if (room.hostUserId !== userId) {
-      throw new ForbiddenException({ message: 'Only the Host may continue', details: { reason: 'NOT_HOST' } });
-    }
-    assertNotDisbanded(room);
-    const current = await this.prisma.episode.findUnique({
-      where: { id: room.episodeId },
-      select: { movieId: true, episodeNumber: true },
-    });
-    const next =
-      current &&
-      (await this.prisma.episode.findFirst({
-        where: { movieId: current.movieId, episodeNumber: { gt: current.episodeNumber }, ...VISIBLE_EPISODE },
-        orderBy: { episodeNumber: 'asc' },
-      }));
-    if (!next) {
-      throw new NotFoundException({ message: 'No next episode', details: { reason: 'NO_NEXT_EPISODE' } });
-    }
-
-    const active = room.participants.filter((p) => !p.leftAt);
-    const checks = await Promise.all(
-      active.map(async (p) => ({ p, check: await this.entitlement.canWatch(next.id, p.userId) })),
-    );
-    // The Host is checked first: a refused move must not have sent anyone out of the room.
-    const hostCheck = checks.find(({ p }) => p.userId === userId);
-    if (hostCheck && !hostCheck.check.allowed) {
-      throw new ForbiddenException({
-        message: 'Unlock the next episode before playing it for the room',
-        details: { reason: 'ENTITLEMENT_REQUIRED', required: hostCheck.check.required },
-      });
-    }
-    const blocked = checks.filter(({ p, check }) => !check.allowed && p.userId !== userId);
-    await Promise.all(
-      blocked.map(({ p }) => this.prisma.roomParticipant.update({ where: { id: p.id }, data: { leftAt: new Date() } })),
-    );
-
-    const updated = await this.prisma.watchRoom.update({
-      where: { id: roomId },
-      data: {
-        episodeId: next.id,
-        currentPositionSeconds: 0,
-        status: 'PAUSED',
-        lastHostPingAt: new Date(),
-        expiresAt: new Date(Date.now() + ROOM_TTL_MS),
-      },
-      include: { participants: { include: { participant: { select: { fullName: true } } } } },
-    });
-    return { room: roomSnapshot(updated), blockedUserIds: blocked.map(({ p }) => p.userId) };
+    return advanceRoomEpisode(this.prisma, this.entitlement, userId, roomId, () => this.assertCanUse(userId));
   }
 
   /** Edge 1.4 — the episode was taken down: every open room on it closes at once. */

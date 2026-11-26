@@ -12,6 +12,8 @@ import { RoomCluster } from './room-cluster';
 import { ROOM_CHANNEL, ROOM_EVENT } from './room-events';
 import { optionalUuid, roomIdOf } from './room-payload';
 import { isChatRejection, RoomSharedScreen } from './room-shared-screen';
+import { socketErrorOf } from './room-socket-utils';
+import { WatchRoomService } from './watch-room.service';
 
 interface SocketData {
   userId?: string;
@@ -31,6 +33,7 @@ export class WatchRoomScreenGateway implements OnGatewayInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cluster: RoomCluster,
+    private readonly rooms: WatchRoomService,
   ) {}
 
   /** Same state on every API instance: what changes here is mirrored through RoomCluster. */
@@ -108,6 +111,7 @@ export class WatchRoomScreenGateway implements OnGatewayInit {
       client.emit(ROOM_EVENT.ERROR, { reason: 'INVALID_PAYLOAD' });
       return null;
     }
+    if (!(await this.assertCanUse(client, userId))) return null;
     const row = await this.prisma.roomParticipant.findFirst({
       where: { roomId, userId, leftAt: null, room: { status: { not: 'DISBANDED' } } },
       select: { participant: { select: { fullName: true } } },
@@ -126,9 +130,20 @@ export class WatchRoomScreenGateway implements OnGatewayInit {
       client.emit(ROOM_EVENT.ERROR, { reason: 'INVALID_PAYLOAD' });
       return false;
     }
+    if (!(await this.assertCanUse(client, userId))) return false;
     const room = await this.prisma.watchRoom.findUnique({ where: { id: roomId }, select: { hostUserId: true } });
     if (room?.hostUserId === userId) return true;
     client.emit(ROOM_EVENT.ERROR, { reason: 'NOT_HOST' });
     return false;
+  }
+
+  private async assertCanUse(client: Socket, userId: string): Promise<boolean> {
+    try {
+      await this.rooms.assertCanUse(userId);
+      return true;
+    } catch (error) {
+      client.emit(ROOM_EVENT.ERROR, socketErrorOf(error));
+      return false;
+    }
   }
 }
