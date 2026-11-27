@@ -216,7 +216,6 @@ describe('SupportTools — sensitive fields stay out', () => {
     const { tools, settings } = buildTools();
     settings.get.mockResolvedValue({
       coinRateVnd: 1000,
-      bonusCoinExpiryDays: 30,
       coinTopUpMinVnd: 10000,
       coinTopUpMaxVnd: 2000000,
       subscriptionCancelWindowHours: 24,

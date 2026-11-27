@@ -46,7 +46,6 @@ describe('StaffAiAssistService', () => {
     retrieval.retrieve.mockResolvedValue([ARTICLE]);
     settings.get.mockResolvedValue({
       coinRateVnd: 1000,
-      bonusCoinExpiryDays: 30,
       subscriptionCancelWindowHours: 24,
       refundOnRemoval: true,
     });
