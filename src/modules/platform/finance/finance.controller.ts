@@ -23,7 +23,7 @@ export class FinanceController {
 
   @Get('films')
   @RequirePermission(PERMISSION.FINANCE_REPORT_READ)
-  @ApiOperation({ summary: 'Per movie: cost, episode sales less refunds, Monthly-plan share, profit, ROI' })
+  @ApiOperation({ summary: 'Per movie: cost, episode sales less refunds, Monthly-plan share, profit' })
   filmFinance() {
     return this.films.films();
   }

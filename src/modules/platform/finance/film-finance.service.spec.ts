@@ -23,28 +23,26 @@ describe('financeOf', () => {
       planShareVnd: 30_000_000,
       revenueVnd: 120_000_000,
       profitVnd: -30_000_000,
-      roiPercent: -20,
       breakEven: 'NOT_YET',
       studioName: 'Studio A',
     });
   });
 
-  it('calls a film without production cost NO_COST, never broken even, with no ROI', () => {
-    expect(financeOf(row())).toMatchObject({ profitVnd: 0, roiPercent: null, breakEven: 'NO_COST' });
+  it('calls a film without production cost NO_COST, never broken even', () => {
+    expect(financeOf(row())).toMatchObject({ profitVnd: 0, breakEven: 'NO_COST' });
     expect(financeOf(row({ sales_vnd: 5_000n })).breakEven).toBe('NO_COST');
   });
 
   it('marks a film whose revenue covers its cost as broken even', () => {
     expect(financeOf(row({ cost_vnd: 10_000_000n, sales_vnd: 15_000_000n }))).toMatchObject({
       profitVnd: 5_000_000,
-      roiPercent: 50,
       breakEven: 'BROKE_EVEN',
     });
   });
 });
 
 describe('totalsOf', () => {
-  it('sums both revenue sources, gives ROI over cost and margin over revenue', () => {
+  it('sums both revenue sources, gives the margin over revenue', () => {
     const films = [
       financeOf(row({ cost_vnd: 150_000_000n, sales_vnd: 92_000_000n, refund_vnd: 2_000_000n, plan_vnd: 30_000_000n })),
       financeOf(row({ movie_id: 'm2' })),
@@ -56,15 +54,14 @@ describe('totalsOf', () => {
       planShareVnd: 30_000_000,
       revenueVnd: 135_000_000,
       profitVnd: -25_000_000,
-      roiPercent: -15.62,
       marginPercent: -18.52,
       costedMovies: 2,
       brokeEvenMovies: 1,
     });
   });
 
-  it('has no ROI or margin while nothing was spent or earned', () => {
-    expect(totalsOf([])).toMatchObject({ roiPercent: null, marginPercent: null, costedMovies: 0 });
+  it('has no margin while nothing was spent or earned', () => {
+    expect(totalsOf([])).toMatchObject({ marginPercent: null, costedMovies: 0 });
   });
 });
 

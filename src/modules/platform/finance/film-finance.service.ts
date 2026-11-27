@@ -14,7 +14,7 @@ interface FinanceRow {
   plan_vnd: bigint;
 }
 
-/** NO_COST: no production cost recorded yet, so neither ROI nor break-even means anything. */
+/** NO_COST: no production cost recorded yet, so break-even means nothing. */
 export type BreakEvenStatus = 'NO_COST' | 'BROKE_EVEN' | 'NOT_YET';
 
 export interface FilmFinance {
@@ -32,14 +32,12 @@ export interface FilmFinance {
   planShareVnd: number;
   revenueVnd: number;
   profitVnd: number;
-  /** Profit / production cost in percent, 2 decimals; null while the film has no cost recorded. */
-  roiPercent: number | null;
   breakEven: BreakEvenStatus;
 }
 
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 10000) / 100 : null);
 
-/** Profit and ROI of one film from its raw sums (PROJECT_OVERVIEW §3: Lợi nhuận = Doanh thu − Phí sản xuất). */
+/** Profit of one film from its raw sums (PROJECT_OVERVIEW §3: Lợi nhuận = Doanh thu − Phí sản xuất). */
 export function financeOf(row: FinanceRow): FilmFinance {
   const cost = Number(row.cost_vnd);
   const refunded = Number(row.refund_vnd);
@@ -58,12 +56,11 @@ export function financeOf(row: FinanceRow): FilmFinance {
     planShareVnd: plan,
     revenueVnd: revenue,
     profitVnd: profit,
-    roiPercent: percent(profit, cost),
     breakEven: cost <= 0 ? 'NO_COST' : profit >= 0 ? 'BROKE_EVEN' : 'NOT_YET',
   };
 }
 
-/** Sums of every film; the margin is profit over revenue, ROI profit over cost. */
+/** Sums of every film; the margin is profit over revenue. */
 export function totalsOf(films: FilmFinance[]) {
   const sum = (pick: (f: FilmFinance) => number) => films.reduce((total, f) => total + pick(f), 0);
   const cost = sum((f) => f.productionCostVnd);
@@ -75,7 +72,6 @@ export function totalsOf(films: FilmFinance[]) {
     planShareVnd: sum((f) => f.planShareVnd),
     revenueVnd: revenue,
     profitVnd: profit,
-    roiPercent: percent(profit, cost),
     marginPercent: percent(profit, revenue),
     costedMovies: films.filter((f) => f.breakEven !== 'NO_COST').length,
     brokeEvenMovies: films.filter((f) => f.breakEven === 'BROKE_EVEN').length,
