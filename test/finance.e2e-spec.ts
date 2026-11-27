@@ -32,7 +32,7 @@ async function newMember(app: INestApplication<App>) {
   return { actor: new Actor(app, body.accessToken, body.user.id), refreshToken: body.refreshToken, email, password };
 }
 
-/** MF-5, Admin only: profit / ROI per movie (BR-48 plan share included) and risky Coin transactions. */
+/** MF-5, Admin only: profit per movie (BR-48 plan share included) and risky Coin transactions. */
 describe('Finance and risk (e2e)', () => {
   let app: INestApplication<App>;
   let admin: Actor;
@@ -64,11 +64,11 @@ describe('Finance and risk (e2e)', () => {
     return { member, flag: flag! };
   }
 
-  it('reads profit and ROI for every movie', async () => {
+  it('reads the profit of every movie', async () => {
     const body = await admin.get<{
       currentPeriod: string;
       totals: { productionCostVnd: number; episodeSalesVnd: number; planShareVnd: number };
-      films: { roiPercent: number | null; breakEven: string }[];
+      films: { profitVnd: number; breakEven: string }[];
     }>('/admin/finance/films');
     expect(body.currentPeriod).toMatch(/^\d{4}-\d{2}$/);
     expect(body.totals.productionCostVnd).toEqual(expect.any(Number));

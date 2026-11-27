@@ -75,7 +75,7 @@ describe('Coin purchases and the monthly plan (e2e)', () => {
     return { actor: new Actor(app, body.accessToken, body.user.id), token: body.accessToken };
   }
 
-  /** Coins put in by the Admin: main Coins, and bonus Coins as a lot that expires later. */
+  /** Coins put in by the Admin: main Coins, and bonus Coins as a lot of their own. */
   async function fund(member: Member, mainAmount: number, bonusAmount: number) {
     await fundWallet(app, member.actor.id, mainAmount, bonusAmount ? [bonusAmount] : []);
   }

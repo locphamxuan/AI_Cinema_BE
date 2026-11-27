@@ -34,7 +34,6 @@ function build() {
   const settings = {
     get: jest.fn().mockResolvedValue({
       coinRateVnd: 1000,
-      bonusCoinExpiryDays: 30,
       subscriptionCancelWindowHours: 24,
       refundOnRemoval: true,
     }),
